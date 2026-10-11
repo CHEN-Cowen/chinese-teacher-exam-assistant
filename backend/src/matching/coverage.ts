@@ -34,12 +34,28 @@ export type MonitoringStatus =
   /** 监测中，存在在报批次 */
   | 'open_batch_exists'
   /** 监测暂停（如实告知用户） */
-  | 'paused';
+  | 'paused'
+  /** 该省尚未开始任何官方渠道监测（只能表达「暂未收录·待接入」，不得展示来源/城市） */
+  | 'not_started';
+
+/** 省级覆盖口径：用户选择省时，只能看到该省实际监测的城市与来源 */
+export interface ProvinceCoverage {
+  /** 省级行政区划代码（330000 浙江省 / 320000 江苏省） */
+  code: string;
+  label: string;
+  status: MonitoringStatus;
+  /** 该省已实际监测的市级代码；not_started 省份必须为空数组 */
+  monitoredRegionCodes: string[];
+  /** 该省覆盖边界说明：未监测城市统一表述为「暂未收录」，不等于当地没有招聘 */
+  scopeNote: string;
+}
 
 export interface MonitoringCoverage {
   subject: 'chinese';
   subjectLabel: string;
   status: MonitoringStatus;
+  /** 受邀试用省份的逐省覆盖口径（浙江/江苏） */
+  provinces: ProvinceCoverage[];
   regions: MonitoredRegion[];
   /** 全部监测栏目最近一次核对的统一时间（取各栏目巡检时间的最早值） */
   lastCheckedAt: string;
@@ -52,18 +68,38 @@ export interface MonitoringCoverage {
 }
 
 /** 覆盖数据版本：监测范围/巡检结论更新时随响应返回 */
-export const COVERAGE_VERSION = 'kb-monitoring-coverage-1.0.0';
+export const COVERAGE_VERSION = 'kb-monitoring-coverage-1.1.0';
 
 export const COVERAGE_CHECKED_AT = '2026-10-06T11:30:00+08:00';
 
 /**
  * 首批监测范围：浙江省杭州市、宁波市（含市辖区县，如鄞州）。
  * 三个官方栏目已于 2026-10-06 完成巡检：当前 0 个在报语文批次。
+ * 江苏省为受邀试用范围，但尚无任何经人工巡检的官方栏目：
+ * 首批监测城市待 10 名受邀用户的真实报考意向确定后接入，接入前不登记任何城市/来源。
  */
 export const REAL_COVERAGE: MonitoringCoverage = {
   subject: 'chinese',
   subjectLabel: '语文教师',
   status: 'monitoring_no_open',
+  provinces: [
+    {
+      code: '330000',
+      label: '浙江省',
+      status: 'monitoring_no_open',
+      monitoredRegionCodes: ['330100', '330200'],
+      scopeNote:
+        '浙江已监测杭州、宁波（含鄞州等区县）两市教育/人社官方栏目；省内其余城市暂未收录，「暂未收录」不代表当地没有招聘。',
+    },
+    {
+      code: '320000',
+      label: '江苏省',
+      status: 'not_started',
+      monitoredRegionCodes: [],
+      scopeNote:
+        '江苏尚未开始官方渠道监测：首批监测城市将依据受邀试用用户的报考意向确定后接入；接入前江苏全省均为「暂未收录」，不代表当地没有招聘，也没有可核对的官方来源。',
+    },
+  ],
   regions: [
     {
       code: '330100',
@@ -109,5 +145,5 @@ export const REAL_COVERAGE: MonitoringCoverage = {
   nextWindowNote:
     '按往年节奏，下一窗口预计在 2026 年 11—12 月（提前批/冬季批）；鄞州 7 月 31 日预告批次的报名时间待官方通知，本监测会持续跟踪。',
   scopeNote:
-    '当前仅监测浙江杭州、宁波两市教育/人社官方渠道；其他城市暂未收录，「暂未收录」不代表当地没有招聘。',
+    '真实监测目前仅覆盖浙江杭州、宁波两市教育/人社官方渠道；江苏省尚未开始监测，浙江其余城市与江苏全部城市当前均为「暂未收录」；「暂未收录」不代表当地没有招聘。',
 };

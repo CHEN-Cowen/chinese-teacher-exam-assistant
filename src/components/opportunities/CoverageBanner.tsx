@@ -1,4 +1,8 @@
 import type { CoverageDTO } from "@/lib/opportunities/api-types";
+import {
+  buildProvinceScopeViews,
+  coverageProvinceLine,
+} from "@/lib/opportunities/coverage-view";
 
 /** "YYYY-MM-DD..." → "M月D日"；无法解析时原样返回 */
 function formatDay(iso: string): string {
@@ -8,12 +12,13 @@ function formatDay(iso: string): string {
 }
 
 /**
- * 真实监测覆盖说明（模块 1）：
- * 说清「实际覆盖哪些地区、最近核对时间、当前是否有在报批次」，
- * 避免把「暂未收录」误读成「当地无招聘」。
+ * 真实监测覆盖说明（模块 1 / M0 逐省口径）：
+ * 逐省说清「实际监测哪些城市、有哪些官方来源、最近核对时间、当前是否有在报批次」；
+ * 尚未监测的省份（江苏）只能显示「暂未收录（待接入）」，不列城市不列来源，
+ * 避免把「暂未收录」误读成「当地无招聘」或「全省已覆盖」。
  */
 export function CoverageBanner({ coverage }: { coverage: CoverageDTO }) {
-  const regionText = coverage.regions.map((r) => r.label).join("、");
+  const provinceViews = buildProvinceScopeViews(coverage);
   return (
     <details
       aria-label="官方监测覆盖说明"
@@ -40,10 +45,10 @@ export function CoverageBanner({ coverage }: { coverage: CoverageDTO }) {
           </span>
           <span className="min-w-0">
             <span className="block text-sm font-semibold text-ink">
-              官方来源已核对 · {regionText}
+              真实监测范围 · {coverageProvinceLine(coverage)}
             </span>
             <span className="mt-0.5 block text-xs text-ink-muted">
-              {formatDay(coverage.lastCheckedAt)} 更新 · 点击查看监测范围
+              {formatDay(coverage.lastCheckedAt)} 核对 · 点击查看监测城市与官方来源
             </span>
           </span>
         </span>
@@ -67,32 +72,72 @@ export function CoverageBanner({ coverage }: { coverage: CoverageDTO }) {
           ；{coverage.nextWindowNote}
         </p>
 
-        <ul className="mt-3 space-y-1.5 text-xs text-ink-muted">
-          {coverage.regions.flatMap((region) =>
-            region.sources.map((source) => (
-              <li
-                key={source.id}
-                className="flex flex-wrap items-center gap-x-2 gap-y-0.5"
+        {provinceViews.map((province) => (
+          <section
+            key={province.code}
+            data-testid={`coverage-province-${province.code}`}
+            className="mt-3 border-t border-line pt-3 first:border-t-0 first:pt-3"
+          >
+            <p className="flex flex-wrap items-center gap-x-2 text-sm font-semibold text-ink">
+              <span>{province.label}</span>
+              <span
+                className={
+                  province.status === "not_started"
+                    ? "inline-flex items-center rounded-full bg-canvas px-2 py-0.5 text-xs font-medium text-ink-muted ring-1 ring-line"
+                    : "inline-flex items-center rounded-full bg-success-soft px-2 py-0.5 text-xs font-medium text-success"
+                }
               >
-                <span
-                  aria-hidden="true"
-                  className={
-                    source.ok
-                      ? "inline-block h-1.5 w-1.5 rounded-full bg-success"
-                      : "inline-block h-1.5 w-1.5 rounded-full bg-danger"
-                  }
-                />
-                <span>
-                  {region.label} · {source.name}
-                </span>
-                <span>
-                  {source.ok ? "来源可访问" : `来源异常：${source.failReason ?? "未知原因"}`}
-                </span>
-                <span>核对于 {formatDay(source.lastCheckedAt)}</span>
-              </li>
-            )),
-          )}
-        </ul>
+                {province.statusLabel}
+              </span>
+              <span className="text-xs font-normal text-ink-muted">
+                监测城市：{province.cityText}
+              </span>
+            </p>
+
+            {province.status === "not_started" ? (
+              <p
+                className="mt-1.5 text-xs leading-5 text-ink-muted"
+                data-testid={`coverage-pending-${province.code}`}
+              >
+                {province.scopeNote}
+              </p>
+            ) : (
+              <>
+                <ul className="mt-1.5 space-y-1.5 text-xs text-ink-muted">
+                  {province.monitoredRegions.flatMap((region) =>
+                    region.sources.map((source) => (
+                      <li
+                        key={source.id}
+                        className="flex flex-wrap items-center gap-x-2 gap-y-0.5"
+                      >
+                        <span
+                          aria-hidden="true"
+                          className={
+                            source.ok
+                              ? "inline-block h-1.5 w-1.5 rounded-full bg-success"
+                              : "inline-block h-1.5 w-1.5 rounded-full bg-danger"
+                          }
+                        />
+                        <span>
+                          {region.label} · {source.name}
+                        </span>
+                        <span>
+                          {source.ok
+                            ? "来源可访问"
+                            : `来源异常：${source.failReason ?? "未知原因"}`}
+                        </span>
+                        <span>核对于 {formatDay(source.lastCheckedAt)}</span>
+                      </li>
+                    )),
+                  )}
+                </ul>
+                <p className="mt-1.5 text-xs leading-5 text-ink-muted">
+                  {province.scopeNote}
+                </p>
+              </>
+            )}
+          </section>
+        ))}
 
         <p className="mt-3 border-t border-line pt-3 text-xs leading-relaxed text-ink-muted">
           {coverage.scopeNote}

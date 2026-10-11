@@ -57,6 +57,15 @@ function coverage(over: Partial<MonitoringCoverage> = {}): MonitoringCoverage {
     subject: 'chinese',
     subjectLabel: '语文教师',
     status: 'monitoring_no_open',
+    provinces: [
+      {
+        code: '330000',
+        label: '浙江省',
+        status: 'monitoring_no_open',
+        monitoredRegionCodes: ['330100', '330200'],
+        scopeNote: '',
+      },
+    ],
     regions: [
       {
         code: '330100',

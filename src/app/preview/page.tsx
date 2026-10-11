@@ -12,6 +12,7 @@ import {
 } from "@/lib/guest/guestSession";
 import { buildGuestPreview, type GuestPreview } from "@/lib/guest/previewEngine";
 import { GUEST_COVERAGE } from "@/lib/guest/coverage";
+import { coverageProvinceLine } from "@/lib/opportunities/coverage-view";
 import { getRollingDemoAnnouncements } from "@/lib/seed/demoTimeline";
 import { Hero } from "@/components/ia/Hero";
 import { OpportunityCard } from "@/components/ia/OpportunityCard";
@@ -162,7 +163,7 @@ function formatCoverageLine(): string {
   const day = Number.isNaN(d.getTime())
     ? GUEST_COVERAGE.lastCheckedAt
     : `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
-  return `杭州、宁波语文教师渠道 · ${day}核对 · 当前在报 ${GUEST_COVERAGE.openOpportunityCount} 个`;
+  return `${coverageProvinceLine(GUEST_COVERAGE)} · ${day}核对 · 当前在报 ${GUEST_COVERAGE.openOpportunityCount} 个`;
 }
 
 function ReadyPreview({ preview }: { preview: GuestPreviewReady }) {
@@ -551,8 +552,8 @@ function UncoveredRegionsCard({ regionLabels }: { regionLabels: string[] }) {
       </h2>
       <p className="mt-1 text-xs text-ink-muted">{regionLabels.join("、")}</p>
       <p className="mt-1.5 text-xs leading-5 text-ink-muted">
-        暂未收录不等于当地没有招聘：可能公告尚未发布，或还没进入演示数据的覆盖范围。
-        这里提供的是初步判断，报名前请以当地教育局或人社局官网为准。
+        暂未收录不等于当地没有招聘：真实监测目前仅覆盖浙江杭州、宁波，江苏尚未接入；
+        本页岗位均为虚构演示示例，报名前请以当地教育局或人社局官网为准。
       </p>
       <Link
         href="/onboarding?from=preview"

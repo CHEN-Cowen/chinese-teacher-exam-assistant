@@ -104,6 +104,7 @@ function toUnit(candidate: OpportunityCandidate, data: DemoData): UnitMatchDTO {
       employmentNature: unit.employmentNature,
       allocation: unit.allocation,
       teachingScope: unit.teachingScope,
+      schoolPlacement: unit.schoolPlacement,
       registerUrl: unit.registerUrl,
       sourceRow: unit.requirements[0]?.evidence,
       materials: unit.materials ?? [],

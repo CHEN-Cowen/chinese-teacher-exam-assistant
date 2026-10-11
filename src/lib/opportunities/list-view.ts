@@ -103,12 +103,24 @@ function isActionableRecommendation(
 }
 
 /**
- * 区划层级前缀：省级码（330000）→ ["33"]；市级/区县级（330100/330102）→ ["3301","33"]。
- * 画像选浙江省时，省内任何城市岗位都算覆盖；选城市时只认该城市前缀。
+ * 画像地区是否已被真实监测覆盖。
+ *
+ * 前缀不能跨级套用：监测杭州市（330100）不能让同省的温州市（330300）也算覆盖，
+ * 否则选择省时会被误导为「全省已覆盖」。
+ * - 省级（330000）：该省至少有 1 个实际监测城市即视为「省内有监测」，
+ *   具体监测了哪些城市由 CoverageBanner 逐省说明；
+ * - 市级（330300）：只认真实监测的城市前缀（3303）；
+ * - 区县级（330111）：认所属城市已监测（市级监测覆盖其下区县）。
  */
-function regionPrefixes(code: string): string[] {
-  if (code.slice(2, 4) === "00") return [code.slice(0, 2)];
-  return [code.slice(0, 4), code.slice(0, 2)];
+function isRegionCovered(prefCode: string, monitoredCodes: ReadonlySet<string>): boolean {
+  if (prefCode.length !== 6) return false;
+  if (prefCode.slice(2, 6) === "0000") {
+    const provincePrefix = prefCode.slice(0, 2);
+    return [...monitoredCodes].some((code) => code.slice(0, 2) === provincePrefix);
+  }
+  const cityPrefix = prefCode.slice(0, 4);
+  if (monitoredCodes.has(prefCode)) return true;
+  return [...monitoredCodes].some((code) => code.slice(0, 4) === cityPrefix);
 }
 
 /**
@@ -122,6 +134,14 @@ function isRegionOnlyMismatch(unit: UnitMatchDTO): boolean {
   return fails.every((d) => d.dimension === "region");
 }
 
+/**
+ * 计算画像中「暂未收录官方公告」的地区。
+ *
+ * 口径（M0）：只有真实监测覆盖（coverage.provinces 逐省登记的监测城市，
+ * 兼容旧字段 coverage.regions）才算覆盖；演示岗位（dataset=demo）是虚构示例，
+ * 绝不能让苏州/南京等演示卡抑制「江苏暂未收录」提示，否则会暗示全省已覆盖。
+ * 「暂未收录」≠ 当地没有招聘。
+ */
 function computeUncoveredRegions(
   profile: UserRecruitmentProfile | undefined,
   response: MatchResponse,
@@ -129,28 +149,17 @@ function computeUncoveredRegions(
   // 受邀模式在会话恢复期间可能暂时传入不完整画像。
   // 未取到地区时只是无法计算“暂未收录地区”，不应让整个机会页崩溃。
   if (!profile?.regions?.length) return [];
-  const allUnits = [
-    ...response.groups.preliminary,
-    ...response.groups.needInfo.flatMap((g) => g.units),
-    ...response.groups.manualReview,
-    ...response.groups.notEligible,
-    ...response.groups.closed,
-  ];
-  const coveredPrefixes = new Set<string>();
-  for (const unit of allUnits)
-    for (const prefix of regionPrefixes(unit.unit.region.code))
-      coveredPrefixes.add(prefix);
-  for (const region of response.coverage.regions)
-    for (const prefix of regionPrefixes(region.code))
-      coveredPrefixes.add(prefix);
+  const monitoredCodes = new Set<string>([
+    ...response.coverage.provinces.flatMap((p) => p.monitoredRegionCodes),
+    ...response.coverage.regions.map((r) => r.code),
+  ]);
 
   const result: UncoveredRegion[] = [];
   const seen = new Set<string>();
   for (const pref of profile.regions) {
     if (seen.has(pref.code)) continue;
     seen.add(pref.code);
-    if (regionPrefixes(pref.code).some((prefix) => coveredPrefixes.has(prefix)))
-      continue;
+    if (isRegionCovered(pref.code, monitoredCodes)) continue;
     result.push({
       code: pref.code,
       label: pref.city ? `${pref.province}${pref.city}` : pref.province,

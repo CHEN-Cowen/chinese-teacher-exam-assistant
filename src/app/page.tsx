@@ -11,6 +11,7 @@ import { LoadingPage } from "@/components/ui/Loading";
 import { useCurrentUser } from "@/lib/auth";
 import { guestSessionService } from "@/lib/guest/guestSession";
 import { GUEST_COVERAGE } from "@/lib/guest/coverage";
+import { coverageProvinceLine } from "@/lib/opportunities/coverage-view";
 import { track } from "@/lib/analytics/eventService";
 
 /** "YYYY-MM-DD..." → "YYYY年M月D日"；无法解析时原样返回 */
@@ -60,7 +61,7 @@ export default function Home() {
 
   if (status === "loading") return <LoadingPage />;
 
-  const regionText = GUEST_COVERAGE.regions.map((r) => r.label).join("、");
+  const regionText = coverageProvinceLine(GUEST_COVERAGE);
 
   const handleStart = () => {
     track("home_start_match_clicked", "home");
@@ -259,7 +260,7 @@ export default function Home() {
           <div className="flex flex-wrap items-center gap-3 md:gap-4">
             <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold text-ink">
-                当前覆盖：{regionText} · 语文教师岗位
+                真实监测：{regionText} · 语文教师岗位
               </p>
               <p className="mt-1 text-xs text-ink-muted" data-testid="home-coverage-summary">
                 最近核对 {formatDate(GUEST_COVERAGE.lastCheckedAt)} · 官方来源共 {SOURCE_COUNT} 个 ·

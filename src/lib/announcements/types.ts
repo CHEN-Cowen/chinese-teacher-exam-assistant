@@ -60,6 +60,14 @@ export interface AllocationMethod {
   description: string;
 }
 
+/**
+ * 具体任教学校定岗状态：招聘单位/岗位组名不得自动当作最终学校。
+ * specified=官方岗位表逐校列明；unspecified=统一调配/按分择岗/未公布。
+ */
+export type SchoolPlacement =
+  | { status: "specified"; schoolName: string }
+  | { status: "unspecified"; note: string };
+
 /** 行政区域引用（code 使用统计用区划代码，6 位） */
 export interface RegionRef {
   code: string;
@@ -197,6 +205,8 @@ export interface ApplicationUnit {
   organizationType: OrganizationType;
   employmentNature: EmploymentNature;
   allocation: AllocationMethod;
+  /** 具体任教学校定岗状态；缺省按 allocation 保守派生为未知，禁止从 name 推断校名 */
+  schoolPlacement?: SchoolPlacement;
   /** 官方报名入口（版本级或单元级） */
   registerUrl?: string;
   requirements: Requirement[];

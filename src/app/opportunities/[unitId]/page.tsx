@@ -51,6 +51,7 @@ import { MaterialsList } from "@/components/opportunities/MaterialsList";
 import { ConsultationPanel } from "@/components/opportunities/ConsultationPanel";
 import { track, trackView } from "@/lib/analytics/eventService";
 import { gateStateMeta } from "@/lib/gate-states";
+import { schoolDisplayText } from "@/lib/opportunities/school-placement";
 import { useOnlineStatus, isForbiddenError } from "@/lib/useOnlineStatus";
 
 function scrollToId(id: string) {
@@ -494,6 +495,10 @@ export default function OpportunityDetailPage() {
         <p className="text-sm text-ink-muted">
           {unit.announcement.publisher} · 报名
           {closed ? "" : deadline.text}
+        </p>
+        {/* 任教学校：逐校列明才给校名；统一择岗/调配显示具体学校未知，招聘单位不等于学校 */}
+        <p className="text-sm text-ink-muted" data-testid="school-placement">
+          任教学校：{schoolDisplayText(unit.unit)}
         </p>
         {/* 模块 7.5：dataset === "real" 已在加载后 early return，此处不再渲染提示 */}
         {unit.announcement.dataset === "demo" && (

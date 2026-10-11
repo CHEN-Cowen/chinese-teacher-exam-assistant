@@ -13,6 +13,7 @@ import {
   REAL_COVERAGE,
   type MonitoredRegion,
   type MonitoringStatus,
+  type ProvinceCoverage,
 } from '../matching/coverage.js';
 import {
   MAJOR_ALIAS_VERSION,
@@ -51,6 +52,8 @@ export interface CoverageDTO {
   subject: string;
   subjectLabel: string;
   status: MonitoringStatus;
+  /** 逐省覆盖口径：选择省时只能看到该省实际监测城市与来源 */
+  provinces: ProvinceCoverage[];
   regions: MonitoredRegion[];
   lastCheckedAt: string;
   openOpportunityCount: number;
@@ -104,6 +107,7 @@ export interface UnitMatchDTO {
     | 'employmentNature'
     | 'allocation'
     | 'teachingScope'
+    | 'schoolPlacement'
     | 'registerUrl'
     | 'sourceRow'
     | 'materials'
@@ -195,6 +199,7 @@ export function buildCoverage(): CoverageDTO {
     subject: REAL_COVERAGE.subject,
     subjectLabel: REAL_COVERAGE.subjectLabel,
     status: REAL_COVERAGE.status,
+    provinces: REAL_COVERAGE.provinces,
     regions: REAL_COVERAGE.regions,
     lastCheckedAt: REAL_COVERAGE.lastCheckedAt,
     openOpportunityCount: REAL_COVERAGE.openOpportunityCount,
@@ -284,6 +289,7 @@ export function toUnitMatchDTO(
       employmentNature: unit.employmentNature,
       allocation: unit.allocation,
       teachingScope: unit.teachingScope,
+      schoolPlacement: unit.schoolPlacement,
       registerUrl: unit.registerUrl,
       sourceRow: unit.sourceRow,
       materials: unit.materials ?? [],

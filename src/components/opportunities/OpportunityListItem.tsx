@@ -13,6 +13,7 @@ import { GateTag, MatchStatusTag } from "@/components/ia/MatchStatusTag";
 import { primaryFailedGate } from "@/lib/gate-states";
 import type { UnitMatchDTO } from "@/lib/opportunities/api-types";
 import { listCardNextStepLabel } from "@/lib/opportunities/list-view";
+import { schoolDisplayText } from "@/lib/opportunities/school-placement";
 import {
   FOLLOW_STATUS_LABELS,
   STUDY_TARGET_ROLE_LABELS,
@@ -116,6 +117,11 @@ export function OpportunityListItem({
             {natureShortLabel(unit.unit.employmentNature.code as never)} ·{" "}
             {stageLabel(unit.unit.stage)} · 招 {unit.unit.headcount} 人
           </span>
+        </p>
+
+        {/* 任教学校：只有官方逐校列明才显示校名；统一择岗/调配明确显示未知，不虚构学校 */}
+        <p className="mt-1 text-xs text-ink-muted" data-testid="school-placement">
+          任教学校：{schoolDisplayText(unit.unit)}
         </p>
 
         <p

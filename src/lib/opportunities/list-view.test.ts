@@ -82,11 +82,58 @@ function makeResponse(
       evaluatedAt: "2026-10-05T10:00:00+08:00",
     },
     coverage: {
-      version: "kb-monitoring-coverage-1.0.0",
+      version: "kb-monitoring-coverage-1.1.0",
       subject: "chinese",
       subjectLabel: "语文",
       status: "monitoring_no_open",
-      regions: [],
+      provinces: [
+        {
+          code: "330000",
+          label: "浙江省",
+          status: "monitoring_no_open",
+          monitoredRegionCodes: ["330100", "330200"],
+          scopeNote: "浙江仅监测杭州、宁波；其余城市暂未收录。",
+        },
+        {
+          code: "320000",
+          label: "江苏省",
+          status: "not_started",
+          monitoredRegionCodes: [],
+          scopeNote: "江苏暂未收录，不代表当地没有招聘。",
+        },
+      ],
+      regions: [
+        {
+          code: "330100",
+          label: "浙江·杭州",
+          authority: "杭州市教育局",
+          sources: [
+            {
+              id: "src-hz",
+              name: "杭州教育网招聘栏目",
+              url: "https://edu.hangzhou.gov.cn/x",
+              lastCheckedAt: "2026-10-06T11:30:00+08:00",
+              ok: true,
+              failReason: null,
+            },
+          ],
+        },
+        {
+          code: "330200",
+          label: "浙江·宁波",
+          authority: "宁波市教育局",
+          sources: [
+            {
+              id: "src-nb",
+              name: "宁波教育局招聘栏目",
+              url: "http://jyj.ningbo.gov.cn/x",
+              lastCheckedAt: "2026-10-06T11:30:00+08:00",
+              ok: true,
+              failReason: null,
+            },
+          ],
+        },
+      ],
       lastCheckedAt: "2026-10-06T11:30:00+08:00",
       openOpportunityCount: 0,
       nextWindowNote: "",
@@ -360,6 +407,171 @@ describe("buildListViewModel：模块 5 异常态与地区分流", () => {
     expect(view.uncoveredRegions).toEqual([
       { code: "440000", label: "广东省" },
     ]);
+  });
+
+  /** 构造指定地区/分配方式的演示单元（其余字段沿用合格夹具） */
+  function demoUnitInRegion(
+    unitId: string,
+    region: { code: string; province: string; city?: string },
+    allocationCode = "direct_school",
+  ): UnitMatchDTO {
+    const base = makeUnit(unitId, "preliminary_eligible");
+    return {
+      ...base,
+      unit: {
+        ...base.unit,
+        region,
+        allocation: { code: allocationCode, description: allocationCode },
+      },
+    };
+  }
+
+  it("江苏画像：苏州/南京虚构演示岗位不构成真实覆盖，江苏省仍标记暂未收录", () => {
+    const suzhou = demoUnitInRegion(
+      "unit-suzhou-demo",
+      { code: "320500", province: "江苏省", city: "苏州市" },
+      "score_based_choice",
+    );
+    const nanjing = demoUnitInRegion(
+      "unit-nanjing-demo",
+      { code: "320100", province: "江苏省", city: "南京市" },
+    );
+    const response = makeResponse({} as never);
+    response.groups.preliminary = [suzhou];
+    response.groups.notEligible = [nanjing];
+
+    const view = buildListViewModel(
+      response,
+      profileWith([{ code: "320000", province: "江苏省", level: "required" }]),
+    );
+    expect(view.uncoveredRegions).toEqual([
+      { code: "320000", label: "江苏省" },
+    ]);
+    // 演示卡本身仍可见（演示分区），但不能抹掉真实覆盖缺口
+    expect(view.priority?.unit.id).toBe("unit-suzhou-demo");
+  });
+
+  it("浙江温州画像：温州演示卡不抑制「温州市暂未收录」（真实监测仅杭州、宁波）", () => {
+    const wenzhou = demoUnitInRegion(
+      "unit-wenzhou-demo",
+      { code: "330300", province: "浙江省", city: "温州市" },
+    );
+    const response = makeResponse({} as never);
+    response.groups.closed = [
+      {
+        ...wenzhou,
+        gates: [
+          { code: "registration_closed", passed: false, reason: "已截止" },
+        ],
+      },
+    ];
+    const view = buildListViewModel(
+      response,
+      profileWith([
+        { code: "330300", province: "浙江省", city: "温州市", level: "required" },
+      ]),
+    );
+    expect(view.uncoveredRegions).toEqual([
+      { code: "330300", label: "浙江省温州市" },
+    ]);
+  });
+
+  it("浙江+江苏画像：浙江（杭州/宁波已监测）不在暂未收录列表，江苏在列表", () => {
+    const response = makeResponse({
+      hangzhou: makeUnit("unit-hangzhou-01", "preliminary_eligible"),
+    });
+    const view = buildListViewModel(
+      response,
+      profileWith([
+        { code: "330000", province: "浙江省", level: "required" },
+        { code: "320000", province: "江苏省", level: "consider" },
+      ]),
+    );
+    expect(view.uncoveredRegions.map((r) => r.code)).toEqual(["320000"]);
+  });
+
+  it("真实 AI 初核待复核记录即使混入 preliminary 也不进任何主要推荐（前端证据闸门兜底）", () => {
+    const realPending = makeUnit("real-yz-2026-chinese-01", "preliminary_eligible", {
+      announcement: {
+        id: "real-yinzhou-2026-autumn",
+        title: "鄞州区公开招聘事业编制教师公告",
+        publisher: "宁波市鄞州区教育局",
+        organizationType: "government_unified",
+        officialUrl: "https://www.nbyz.gov.cn/x",
+        dataset: "real",
+        reviewStatus: "ai_reviewed_pending",
+        reviewedBy: null,
+        reviewedAt: null,
+      },
+      version: {
+        id: "real-yinzhou-2026-autumn-v1",
+        versionNumber: 1,
+        sourceKind: "original",
+        publishedAt: "2026-07-31T00:00:00+08:00",
+        timeline: { pendingItems: ["报名时间另行通知"] },
+        officialSource: {
+          id: "src",
+          locator: { kind: "url", url: "https://www.nbyz.gov.cn/x" },
+          state: "ai_extracted",
+          checkedAt: "2026-10-06T11:30:00+08:00",
+        },
+      },
+      gates: [
+        {
+          code: "evidence_not_reviewed",
+          passed: false,
+          reason: "高影响字段尚未经人工复核",
+        },
+      ],
+    });
+    const response = makeResponse({} as never);
+    response.groups.preliminary = [realPending];
+
+    const view = buildListViewModel(response);
+    expect(view.priority).toBeNull();
+    expect(view.otherPreliminary).toEqual([]);
+    expect(view.validCount).toBe(0);
+    expect(view.closed.map((u) => u.unit.id)).toEqual([]);
+  });
+
+  it("已人工复核且证据为 official 的真实记录满足发布门槛时可进主要推荐（正向路径不被误杀）", () => {
+    const realPublished = makeUnit("real-hz-published", "preliminary_eligible", {
+      unit: {
+        id: "real-hz-published",
+        code: "HZ-PUB",
+        name: "杭州第二中学富春学校·高中语文教师",
+        region: { code: "330111", province: "浙江省", city: "杭州市", district: "富阳区" },
+        stage: "high",
+        headcount: 4,
+        organizationType: "institution_unified",
+        employmentNature: {
+          code: "public_institution_staff",
+          officialName: "事业编制",
+        },
+        allocation: { code: "direct_school", description: "按报考学校直接定岗" },
+        schoolPlacement: {
+          status: "specified",
+          schoolName: "杭州第二中学富春学校",
+        },
+      },
+      announcement: {
+        id: "real-hangzhou-published",
+        title: "杭州市教育局公开招聘公告",
+        publisher: "杭州市教育局",
+        organizationType: "institution_unified",
+        officialUrl: "https://edu.hangzhou.gov.cn/art/x.html",
+        dataset: "real",
+        reviewStatus: "human_reviewed",
+        reviewedBy: "reviewer-chen",
+        reviewedAt: "2026-10-08T10:00:00+08:00",
+      },
+    });
+    const response = makeResponse({} as never);
+    response.groups.preliminary = [realPublished];
+
+    const view = buildListViewModel(response);
+    expect(view.priority?.unit.id).toBe("real-hz-published");
+    expect(view.validCount).toBe(1);
   });
 
   it("受邀模式传入空占位画像时，机会页不应因缺少 regions 而崩溃", () => {

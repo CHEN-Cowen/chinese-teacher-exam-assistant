@@ -29,12 +29,13 @@ import type {
   Requirement,
   RequirementCriterion,
   RequirementDimension,
+  SchoolPlacement,
   StageCode,
 } from './types.js';
 import { COVERAGE_CHECKED_AT } from './coverage.js';
 
 /** 真实台账数据版本 */
-export const REAL_CATALOG_VERSION = 'kb-real-catalog-1.0.0';
+export const REAL_CATALOG_VERSION = 'kb-real-catalog-1.1.0';
 
 /** 本轮 AI 初核时间（与覆盖巡检时间一致） */
 export const REAL_CHECKED_AT = COVERAGE_CHECKED_AT;
@@ -131,6 +132,8 @@ interface RealUnitSpec {
   nature: EmploymentNature;
   allocation: AllocationMethod;
   teachingScope?: string;
+  /** 具体任教学校定岗状态；岗位组/统一调配批次必须显式给 unspecified */
+  schoolPlacement?: SchoolPlacement;
   registerUrl?: string;
   requirements: Requirement[];
   sourceRow: EvidenceAnchor;
@@ -146,6 +149,7 @@ function unit(announcementId: string, spec: RealUnitSpec): ApplicationUnit {
     versionId: `${announcementId}-v1`,
     region: spec.region,
     teachingScope: spec.teachingScope,
+    schoolPlacement: spec.schoolPlacement,
     subject: 'chinese',
     stage: spec.stage,
     headcount: spec.headcount,
@@ -304,6 +308,10 @@ function yinzhou(): RecruitmentAnnouncement {
       nature: NATURE_PUBLIC_YZ,
       allocation: ALLOC_OTHER,
       teachingScope: '鄞州区教育局下属学校，具体定岗学校以岗位计划表为准',
+      schoolPlacement: {
+        status: 'unspecified',
+        note: '预告批次岗位计划表仅列「初中语文教师」岗位组（序号1，招7名），未逐校列明定岗学校；录取后定岗学校以官方分配规则及岗位计划表为准',
+      },
       requirements,
       sourceRow,
     }),
@@ -454,6 +462,10 @@ function hangzhou(): RecruitmentAnnouncement {
       nature: NATURE_PUBLIC_HZ,
       allocation: ALLOC_DIRECT,
       teachingScope: '杭州第二中学富春学校（富阳区）',
+      schoolPlacement: {
+        status: 'specified',
+        schoolName: '杭州第二中学富春学校',
+      },
       registerUrl: 'https://jszp.hzedu.gov.cn/',
       requirements: hangzhouRequirements(5),
       sourceRow: aiAnchor(
@@ -479,6 +491,10 @@ function hangzhou(): RecruitmentAnnouncement {
       nature: NATURE_PUBLIC_HZ,
       allocation: ALLOC_DIRECT,
       teachingScope: '杭州第二中学高新学校（滨江区）',
+      schoolPlacement: {
+        status: 'specified',
+        schoolName: '杭州第二中学高新学校',
+      },
       registerUrl: 'https://jszp.hzedu.gov.cn/',
       requirements: hangzhouRequirements(6),
       sourceRow: aiAnchor(
@@ -580,6 +596,10 @@ function ningbo(): RecruitmentAnnouncement {
       nature: NATURE_PUBLIC_NB,
       allocation: ALLOC_DIRECT,
       teachingScope: '宁波市教育局直属·宁波外国语学校（面向全国招聘）',
+      schoolPlacement: {
+        status: 'specified',
+        schoolName: '宁波外国语学校',
+      },
       registerUrl:
         'https://nbeea.nbedu.net.cn/#/teacherE?No=603&type=2&newsId=1973',
       requirements,

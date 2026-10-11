@@ -11,10 +11,28 @@ import type { CoverageDTO } from "@/lib/opportunities/api-types";
 export const GUEST_COVERAGE_LAST_UPDATED = "2026-10-06";
 
 export const GUEST_COVERAGE: CoverageDTO = {
-  version: "kb-monitoring-coverage-1.0.0",
+  version: "kb-monitoring-coverage-1.1.0",
   subject: "chinese",
   subjectLabel: "语文教师",
   status: "monitoring_no_open",
+  provinces: [
+    {
+      code: "330000",
+      label: "浙江省",
+      status: "monitoring_no_open",
+      monitoredRegionCodes: ["330100", "330200"],
+      scopeNote:
+        "浙江已监测杭州、宁波（含鄞州等区县）两市教育/人社官方栏目；省内其余城市暂未收录，「暂未收录」不代表当地没有招聘。",
+    },
+    {
+      code: "320000",
+      label: "江苏省",
+      status: "not_started",
+      monitoredRegionCodes: [],
+      scopeNote:
+        "江苏尚未开始官方渠道监测：首批监测城市将依据受邀试用用户的报考意向确定后接入；接入前江苏全省均为「暂未收录」，不代表当地没有招聘，也没有可核对的官方来源。",
+    },
+  ],
   regions: [
     {
       code: "330100",
@@ -60,5 +78,5 @@ export const GUEST_COVERAGE: CoverageDTO = {
   nextWindowNote:
     "按往年节奏，下一窗口预计在 2026 年 11—12 月（提前批/冬季批）；鄞州 7 月 31 日预告批次的报名时间待官方通知，会持续跟踪。",
   scopeNote:
-    "当前仅监测浙江杭州、宁波两市教育官方渠道；其他城市暂未收录，「暂未收录」不代表当地没有招聘。",
+    "真实监测目前仅覆盖浙江杭州、宁波两市教育/人社官方渠道；江苏省尚未开始监测，浙江其余城市与江苏全部城市当前均为「暂未收录」；「暂未收录」不代表当地没有招聘。",
 };

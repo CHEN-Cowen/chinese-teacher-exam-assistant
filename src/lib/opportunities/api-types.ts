@@ -152,6 +152,11 @@ export interface UnitMatchDTO {
     employmentNature: { code: string; officialName: string };
     allocation: { code: string; description: string };
     teachingScope?: string;
+    /**
+     * 具体任教学校定岗状态。缺省视为未知；任何情况下都不得把
+     * unit.name（可能是招聘单位或岗位组名）直接当作最终任教学校。
+     */
+    schoolPlacement?: SchoolPlacementDTO;
     registerUrl?: string;
     /** 岗位表行级证据锚点（附件 + 工作表/序号/行 + 摘录） */
     sourceRow?: EvidenceAnchorDTO;
@@ -225,17 +230,43 @@ export interface CoverageRegionDTO {
   sources: CoverageSourceDTO[];
 }
 
+export type CoverageStatusDTO =
+  | "monitoring_no_open"
+  | "open_batch_exists"
+  | "paused"
+  /** 尚未开始监测的省份：只允许表达「暂未收录·待接入」，无城市无来源 */
+  | "not_started";
+
+/** 逐省覆盖口径：用户选择省时只能看到该省实际监测的城市 */
+export interface ProvinceScopeDTO {
+  code: string;
+  label: string;
+  status: CoverageStatusDTO;
+  /** 该省已实际监测的市级代码；not_started 省份为空数组 */
+  monitoredRegionCodes: string[];
+  scopeNote: string;
+}
+
 export interface CoverageDTO {
   version: string;
   subject: string;
   subjectLabel: string;
-  status: "monitoring_no_open" | "open_batch_exists" | "paused";
+  status: CoverageStatusDTO;
+  provinces: ProvinceScopeDTO[];
   regions: CoverageRegionDTO[];
   lastCheckedAt: string;
   openOpportunityCount: number;
   nextWindowNote: string;
   scopeNote: string;
 }
+
+/**
+ * 具体任教学校定岗状态（与后端 types.ts SchoolPlacement 对齐）：
+ * specified=官方岗位表逐校列明；unspecified=统一调配/按分择岗/未公布。
+ */
+export type SchoolPlacementDTO =
+  | { status: "specified"; schoolName: string }
+  | { status: "unspecified"; note: string };
 
 export interface MatchResponse {
   meta: MetaDTO;
