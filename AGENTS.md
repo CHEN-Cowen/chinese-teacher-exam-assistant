@@ -10,11 +10,12 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 <!-- BEGIN:v7-docs-pointer -->
 
-## 当前产品基线：v7.0
+## 当前产品基线：v7.1
 
 修改产品流程、页面信息架构、路由、领域模型、演示数据或验收标准之前，先读以下文档（路径相对于本仓库根目录），再动代码：
 
-- `PRD-全国教师公开招聘助手-v7.0-研究验证版.md` — 当前产品需求的唯一事实来源；产品行为与验收以此为准
+- `PRD-教招有据-v7.1-首次体验与报考闭环优化版.md` — 当前迭代需求与验收的主要事实来源；本文明确调整的内容以此为准
+- `PRD-全国教师公开招聘助手-v7.0-研究验证版.md` — 产品定位、资格规则、数据可信度与 v7.1 未覆盖行为的基础事实来源
 - `docs/china-network-accessibility.md` — 国内网络基线、允许域名与验收方法
 
 涉及历史路由迁移、既有领域对象、公告数据管线或回退策略时，再查阅以下 V6.1 兼容参考：
@@ -24,6 +25,6 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - `docs/v6.1-information-architecture.md`
 - `docs/v6.1-data-pipeline.md`
 
-V7 与 V6.1 内容冲突时，以 V7 为准。不要把上述文档内容复制进本文件；保持指针简短，文档本身以仓库中的最新版本为准。
+需求冲突时按“用户最新要求 → v7.1 → v7.0 → V6.1”处理。不要把上述文档内容复制进本文件；保持指针简短，文档本身以仓库中的最新版本为准。
 
 <!-- END:v7-docs-pointer -->
