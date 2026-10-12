@@ -10,6 +10,7 @@ import {
   SUBJECT_LABELS,
   TASK_STATUS_LABELS,
   materialStatusLabel,
+  regionFullLabel,
   natureShortLabel,
   stageLabel,
   stageSubjectLabel,
@@ -37,6 +38,16 @@ describe("学段学科枚举格式化", () => {
     expect(stageSubjectLabel("middle", "chinese")).toBe("初中 · 语文");
     expect(stageSubjectLabel("primary", "mathematics")).toBe("小学 · 数学");
     expect(stageSubjectLabel("high", "english")).toBe("高中 · 英语");
+  });
+
+  it("regionFullLabel 输出完整省市区；未公布的层级省略，不猜测补齐（v7.1 M4）", () => {
+    expect(regionFullLabel({ code: "330212", province: "浙江省", city: "宁波市", district: "鄞州区" })).toBe(
+      "浙江省 宁波市 鄞州区",
+    );
+    expect(regionFullLabel({ code: "330100", province: "浙江省", city: "杭州市" })).toBe(
+      "浙江省 杭州市",
+    );
+    expect(regionFullLabel({ code: "330000", province: "浙江省" })).toBe("浙江省");
   });
 
   it("STAGE_LABELS 和 SUBJECT_LABELS 不包含蛇形命名", () => {

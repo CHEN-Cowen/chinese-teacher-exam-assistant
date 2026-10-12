@@ -7,7 +7,7 @@ import {
   deadlineText,
   natureShortLabel,
   regionLabel,
-  stageLabel,
+  stageSubjectLabel,
 } from "@/lib/ia/labels";
 import { GateTag, MatchStatusTag } from "@/components/ia/MatchStatusTag";
 import { primaryFailedGate } from "@/lib/gate-states";
@@ -93,7 +93,7 @@ export function OpportunityListItem({
               >
                 ◌
               </span>
-              地区不在选择范围
+              偏好范围外
             </span>
           ) : (
             <MatchStatusTag status={unit.overall} />
@@ -115,13 +115,15 @@ export function OpportunityListItem({
           )}
           <span className="text-ink-muted">
             {natureShortLabel(unit.unit.employmentNature.code as never)} ·{" "}
-            {stageLabel(unit.unit.stage)} · 招 {unit.unit.headcount} 人
+            {stageSubjectLabel(unit.unit.stage, unit.unit.subject)} · 招{" "}
+            {unit.unit.headcount} 人
           </span>
         </p>
 
-        {/* 任教学校：只有官方逐校列明才显示校名；统一择岗/调配明确显示未知，不虚构学校 */}
+        {/* 任教学校（v7.1 M4）：只有官方逐校列明才显示校名和市区；录用后选岗/统一调配
+            给官方口径说明，不虚构学校，也不把招聘单位/岗位组名当作最终任教学校 */}
         <p className="mt-1 text-xs text-ink-muted" data-testid="school-placement">
-          任教学校：{schoolDisplayText(unit.unit)}
+          任教学校：{schoolDisplayText(unit.unit, regionLabel(unit.unit.region))}
         </p>
 
         <p

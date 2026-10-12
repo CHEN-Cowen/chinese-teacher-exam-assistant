@@ -9,6 +9,7 @@ import type {
   AnnouncementVersion,
   EmploymentNatureCode,
   RecruitmentAnnouncement,
+  SchoolPlacement,
 } from "@/lib/announcements/types";
 import type { UserRecruitmentProfile } from "@/lib/profile/types";
 import type {
@@ -36,8 +37,10 @@ import {
   deadlineText,
   dimensionLabel,
   natureShortLabel,
+  regionFullLabel,
   regionLabel,
   stageLabel,
+  subjectLabel,
 } from "./labels";
 
 /** 单条条件的行内展示（机会卡展开后的第二层） */
@@ -61,7 +64,11 @@ export interface OpportunityRow {
   announcementId: string;
   /** 地区/报考单元 */
   regionText: string;
+  /** 完整省市区（v7.1 M4 卡片第一层；未公布的层级省略，不猜测补齐） */
+  regionFullText: string;
   unitName: string;
+  /** 学科（v7.1 M4 卡片第一层：学段和学科） */
+  subjectText: string;
   /** 用工性质/学段 */
   natureText: string;
   /** 用工形式稳定编码（v7.1 M3 偏好筛选用；文案变化不影响此编码） */
@@ -76,6 +83,10 @@ export interface OpportunityRow {
   /** 报名截止 ISO 日期（排序与剩余天数计算用，不直接展示） */
   registrationEnd: string;
   registrationClosed: boolean;
+  /** 分配方式编码（任教学校表达用；招聘单位/岗位组名不得当作最终学校） */
+  allocationCode: string;
+  /** 官方逐校列明的定岗状态（未登记视为未知，不虚构学校） */
+  schoolPlacement?: SchoolPlacement;
   /** 一句话依据 */
   oneLineReason: string;
   /** 主异常闸门 code（无失败闸门为 null） */
@@ -143,7 +154,9 @@ function toRow(candidate: OpportunityCandidate, nowIso: string): OpportunityRow 
     unitId: unit.id,
     announcementId: announcement.id,
     regionText: regionLabel(unit.region),
+    regionFullText: regionFullLabel(unit.region),
     unitName: unit.name,
+    subjectText: subjectLabel(unit.subject),
     natureText: natureShortLabel(unit.employmentNature.code),
     natureCode: unit.employmentNature.code,
     stageText: stageLabel(unit.stage),
@@ -152,6 +165,8 @@ function toRow(candidate: OpportunityCandidate, nowIso: string): OpportunityRow 
     deadline: deadline.text,
     registrationEnd: version.timeline.registrationEnd,
     registrationClosed: deadline.closed,
+    allocationCode: unit.allocation.code,
+    schoolPlacement: unit.schoolPlacement,
     oneLineReason: match.summary,
     gateCode: primaryGate ? primaryGate.code : null,
     gateReason: primaryGate ? primaryGate.reason : null,

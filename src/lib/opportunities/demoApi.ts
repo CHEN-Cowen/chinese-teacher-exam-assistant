@@ -98,6 +98,7 @@ function toUnit(candidate: OpportunityCandidate, data: DemoData): UnitMatchDTO {
       code: unit.code,
       name: unit.name,
       region: unit.region,
+      subject: unit.subject,
       stage: unit.stage,
       headcount: unit.headcount,
       organizationType: unit.organizationType,

@@ -19,6 +19,9 @@ import { coverageProvinceLine } from "@/lib/opportunities/coverage-view";
 import { getRollingDemoAnnouncements } from "@/lib/seed/demoTimeline";
 import { Hero } from "@/components/ia/Hero";
 import { OpportunityCard } from "@/components/ia/OpportunityCard";
+import type { GuestCardNextStepKind } from "@/lib/ia/opportunities-view";
+import type { OpportunityRow } from "@/lib/ia/opportunities-view";
+import { safeOfficialLink } from "@/lib/links/official";
 import { Disclosure, LayerHeading } from "@/components/ia/Layer";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -222,6 +225,7 @@ function ReadyPreview({
   onSelectNaturePref: (value: EmploymentNaturePreference) => void;
   prefSaveError: boolean;
 }) {
+  const router = useRouter();
   const { view, followUps, limitations, primaryAction } = preview;
 
   // P0 漏斗②：访客看到至少一个有效（初步符合）机会；同用户只记一次
@@ -252,6 +256,30 @@ function ReadyPreview({
     });
   };
 
+  /**
+   * v7.1 M4 四档主行动（与卡片上的按钮一一对应）：
+   * 初步符合→登录并保存；待补信息→回画像补一项；建议确认/明确不符→展开看要点/原因；
+   * 异常态→打开官方公告。展开判断依据降为次级文本操作。
+   */
+  const handleCardNextStep = (kind: GuestCardNextStepKind, row: OpportunityRow) => {
+    switch (kind) {
+      case "login":
+        router.push("/login?next=/opportunities");
+        break;
+      case "onboarding":
+        router.push("/onboarding?from=preview");
+        break;
+      case "official": {
+        const href = safeOfficialLink(row.officialUrl) ?? row.officialUrl;
+        if (href) window.open(href, "_blank", "noopener,noreferrer");
+        break;
+      }
+      case "expand":
+        toggleRow(row.unitId);
+        break;
+    }
+  };
+
   const archivedCount =
     preview.natureOutOfPreference.length +
     view.regionOutOfScope.length +
@@ -276,8 +304,10 @@ function ReadyPreview({
               <OpportunityCard
                 key={row.unitId}
                 row={row}
+                natureOutOfPreference
                 expanded={openIds.has(row.unitId)}
                 onToggle={() => toggleRow(row.unitId)}
+                onSelectNextStep={handleCardNextStep}
               />
             ))}
           </section>
@@ -296,6 +326,7 @@ function ReadyPreview({
                 regionOutOfScope
                 expanded={openIds.has(row.unitId)}
                 onToggle={() => toggleRow(row.unitId)}
+                onSelectNextStep={handleCardNextStep}
               />
             ))}
           </section>
@@ -310,6 +341,7 @@ function ReadyPreview({
                 row={row}
                 expanded={openIds.has(row.unitId)}
                 onToggle={() => toggleRow(row.unitId)}
+                onSelectNextStep={handleCardNextStep}
               />
             ))}
           </section>
@@ -324,6 +356,7 @@ function ReadyPreview({
                 row={row}
                 expanded={openIds.has(row.unitId)}
                 onToggle={() => toggleRow(row.unitId)}
+                onSelectNextStep={handleCardNextStep}
               />
             ))}
           </section>
@@ -480,6 +513,7 @@ function ReadyPreview({
             priority
             expanded={priorityOpen}
             onToggle={() => setPriorityOpen((v) => !v)}
+            onSelectNextStep={handleCardNextStep}
           />
           <SummaryCard />
           <InvitedTrialHandoff />
@@ -492,7 +526,7 @@ function ReadyPreview({
                 <section className="space-y-3">
                   <LayerHeading title="其他可能适合" count={otherPreliminary.length} />
                   {otherPreliminary.map((row) => (
-                    <OpportunityCard key={row.unitId} row={row} expanded={openIds.has(row.unitId)} onToggle={() => toggleRow(row.unitId)} />
+                    <OpportunityCard key={row.unitId} row={row} expanded={openIds.has(row.unitId)} onToggle={() => toggleRow(row.unitId)} onSelectNextStep={handleCardNextStep} />
                   ))}
                 </section>
               )}
@@ -505,7 +539,7 @@ function ReadyPreview({
                     <LayerHeading title={`补充${followUp.dimensionText}后再判断`} count={followUp.affectsCount} />
                     <p className="text-xs leading-5 text-ink-muted">{followUp.reason}</p>
                     {group.rows.map((row) => (
-                      <OpportunityCard key={row.unitId} row={row} expanded={openIds.has(row.unitId)} onToggle={() => toggleRow(row.unitId)} />
+                      <OpportunityCard key={row.unitId} row={row} expanded={openIds.has(row.unitId)} onToggle={() => toggleRow(row.unitId)} onSelectNextStep={handleCardNextStep} />
                     ))}
                   </section>
                 );
@@ -515,7 +549,7 @@ function ReadyPreview({
                 <section className="space-y-3">
                   <LayerHeading title="需要向招聘单位确认" count={view.manualReview.length} />
                   {view.manualReview.map((row) => (
-                    <OpportunityCard key={row.unitId} row={row} expanded={openIds.has(row.unitId)} onToggle={() => toggleRow(row.unitId)} />
+                    <OpportunityCard key={row.unitId} row={row} expanded={openIds.has(row.unitId)} onToggle={() => toggleRow(row.unitId)} onSelectNextStep={handleCardNextStep} />
                   ))}
                 </section>
               )}

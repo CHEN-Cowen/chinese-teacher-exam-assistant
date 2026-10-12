@@ -16,7 +16,7 @@ import {
   deadlineText,
   natureShortLabel,
   regionLabel,
-  stageLabel,
+  stageSubjectLabel,
 } from "@/lib/ia/labels";
 import { MATCH_STATUS_LABELS } from "@/lib/matching/types";
 import { opportunitiesApi } from "@/lib/opportunities/api";
@@ -490,15 +490,17 @@ export default function OpportunityDetailPage() {
           {regionLabel(unit.unit.region)} ·{" "}
           {unit.unit.employmentNature.officialName}（
           {natureShortLabel(unit.unit.employmentNature.code as never)}） ·{" "}
-          {stageLabel(unit.unit.stage)} · 招 {unit.unit.headcount} 人
+          {stageSubjectLabel(unit.unit.stage, unit.unit.subject)} · 招{" "}
+          {unit.unit.headcount} 人
         </p>
         <p className="text-sm text-ink-muted">
           {unit.announcement.publisher} · 报名
           {closed ? "" : deadline.text}
         </p>
-        {/* 任教学校：逐校列明才给校名；统一择岗/调配显示具体学校未知，招聘单位不等于学校 */}
+        {/* 任教学校（v7.1 M4）：逐校列明才给校名和市区；录用后选岗/统一调配给官方口径，
+            招聘单位与岗位组名不等于最终任教学校 */}
         <p className="text-sm text-ink-muted" data-testid="school-placement">
-          任教学校：{schoolDisplayText(unit.unit)}
+          任教学校：{schoolDisplayText(unit.unit, regionLabel(unit.unit.region))}
         </p>
         {/* 模块 7.5：dataset === "real" 已在加载后 early return，此处不再渲染提示 */}
         {unit.announcement.dataset === "demo" && (

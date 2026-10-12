@@ -22,34 +22,36 @@ describe("学校定岗展示派生：招聘单位/岗位组 ≠ 最终任教学�
     }
   });
 
-  it("按分择岗：即使岗位名是学校联盟，也绝不把名称当学校（苏州员额制场景）", () => {
+  it("按分择岗：显示「录用后选岗，具体学校以官方安排为准」，绝不把岗位名当学校（苏州员额制场景）", () => {
     const text = schoolDisplayText({
       allocation: {
         code: "score_based_choice",
         description: "按总成绩从高到低依次择岗",
       },
     });
-    expect(text).toContain("具体学校未知");
-    expect(text).toContain("择岗");
+    expect(text).toBe("录用后选岗，具体学校以官方安排为准");
   });
 
-  it("统一调配：明确显示录取后统一调配、学校未知", () => {
+  it("统一调配：明确显示录取后统一调配、具体学校以官方安排为准，不虚构学校", () => {
     const display = deriveSchoolDisplay({
       allocation: { code: "unified_assignment", description: "统一调配" },
     });
     expect(display.known).toBe(false);
-    expect(display.note).toContain("统一调配");
+    expect(display.note).toBe("录取后统一调配，具体学校以官方安排为准");
   });
 
-  it("显式 specified 才展示官方岗位表列明的具体校名", () => {
-    const text = schoolDisplayText({
+  it("显式 specified 才展示官方岗位表列明的具体校名，传入地区时附市区", () => {
+    const unit = {
       allocation: { code: "direct_school", description: "按报考学校直接定岗" },
       schoolPlacement: {
         status: "specified",
         schoolName: "杭州第二中学富春学校",
       },
-    });
-    expect(text).toBe("杭州第二中学富春学校");
+    } as const;
+    expect(schoolDisplayText(unit)).toBe("杭州第二中学富春学校");
+    expect(schoolDisplayText(unit, "杭州市 富阳区")).toBe(
+      "杭州第二中学富春学校（杭州市 富阳区）",
+    );
   });
 
   it("显式 unspecified 的说明优先于分配方式默认文案", () => {

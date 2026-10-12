@@ -101,6 +101,7 @@ export interface UnitMatchDTO {
     | 'code'
     | 'name'
     | 'region'
+    | 'subject'
     | 'stage'
     | 'headcount'
     | 'organizationType'
@@ -283,6 +284,7 @@ export function toUnitMatchDTO(
       code: unit.code,
       name: unit.name,
       region: unit.region,
+      subject: unit.subject,
       stage: unit.stage,
       headcount: unit.headcount,
       organizationType: unit.organizationType,

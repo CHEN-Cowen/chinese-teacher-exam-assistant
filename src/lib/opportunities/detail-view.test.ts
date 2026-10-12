@@ -36,6 +36,7 @@ function makeUnit(overrides: Partial<UnitMatchDTO> = {}): UnitMatchDTO {
       code: "HZ",
       name: "杭州初中语文岗位组",
       region: { code: "330100", province: "浙江省", city: "杭州市" },
+      subject: "chinese",
       stage: "middle",
       headcount: 12,
       organizationType: "government_unified",

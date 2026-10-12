@@ -3,16 +3,20 @@
 import { useId } from "react";
 import { cn } from "@/lib/utils";
 import type { DimensionView, OpportunityRow } from "@/lib/ia/opportunities-view";
+import { guestCardNextStep, type GuestCardNextStepKind } from "@/lib/ia/opportunities-view";
 import { GateTag, MatchStatusTag } from "./MatchStatusTag";
 import { safeOfficialLink } from "@/lib/links/official";
+import { schoolDisplayText } from "@/lib/opportunities/school-placement";
 import { Button } from "@/components/ui/Button";
 
 /**
- * 访客机会卡（模块 5 信息层级：首层五要素 + 一个下一步）：
- * 地区+报考单元 · 用工性质/学段 · 招聘人数 · 匹配状态 · 报名截止 ·
- * 一条关键依据或风险 · 一个下一步（查看判断依据）。
- * 长证据（逐项条件、官方来源）按需展开。
- * Preview 中的机会都是虚构示例，因此不提供关注、保存或报名动作。
+ * 访客机会卡（v7.1 M4 第一层九要素 + 一个下一步）：
+ * 省市区 · 学校或报考单元 · 匹配状态 · 学段学科 · 用工形式 · 招聘人数 ·
+ * 报名截止 · 一条关键依据 · 一个明确下一步（四档状态对应不同主行动）。
+ * 长证据（逐项条件、官方来源）按需展开，不把卡片堆成公告全文。
+ * 偏好分层：地区不在意向范围显示「偏好范围外」、用工形式不符合偏好显示
+ * 「不符合当前偏好」——两者都不是资格结论，不得与「明确不符合」混淆。
+ * Preview 中的机会都是虚构示例，因此不提供关注或报名动作。
  *
  * 颜色全部走语义 Token（bg-surface / text-ink / bg-brand-soft 等），
  * 不再用散落的 blue-* / slate-* / red-* 等原始色阶（模块 0A 设计系统）。
@@ -34,16 +38,46 @@ interface OpportunityCardProps {
   onToggle: () => void;
   priority?: boolean;
   /**
-   * 展示在「岗位地区不在你选择的范围」分区：这些单元 overall 仍是 not_eligible，
-   * 但语义上只是地区偏好不重叠，不能显示红色「明确不符合」标签。
+   * 展示在「偏好范围外」分区：这些单元 overall 仍是 not_eligible，
+   * 但语义上只是地区意向不重叠，不能显示红色「明确不符合」标签。
    */
   regionOutOfScope?: boolean;
+  /**
+   * 展示在「不符合当前偏好」分区（v7.1 M3 偏好筛选）：overall 不受影响，
+   * 只是用工形式不在用户当前选择的偏好内，同样不是资格不符合。
+   */
+  natureOutOfPreference?: boolean;
+  /**
+   * 四档主行动回调（v7.1 M4：初步符合→查看依据并保存；待补信息→补充一项继续判断；
+   * 建议确认→查看确认要点；明确不符→查看不符合原因）。
+   * 未提供时主按钮退化为展开判断依据。
+   */
+  onSelectNextStep?: (kind: GuestCardNextStepKind, row: OpportunityRow) => void;
 }
 
-export function OpportunityCard({ row, expanded, onToggle, priority = false, regionOutOfScope = false }: OpportunityCardProps) {
+export function OpportunityCard({
+  row,
+  expanded,
+  onToggle,
+  priority = false,
+  regionOutOfScope = false,
+  natureOutOfPreference = false,
+  onSelectNextStep,
+}: OpportunityCardProps) {
   const panelId = useId();
   const closed = row.gateCode !== null;
   const officialLink = safeOfficialLink(row.officialUrl);
+  const nextStep = guestCardNextStep(row);
+  const showPreferenceTag = !closed && (regionOutOfScope || natureOutOfPreference);
+
+  const handlePrimary = () => {
+    if (onSelectNextStep) {
+      onSelectNextStep(nextStep.kind, row);
+      return;
+    }
+    onToggle();
+  };
+  const primaryLabel = onSelectNextStep ? nextStep.label : expanded ? "收起判断依据" : "查看为什么";
 
   return (
     <article
@@ -62,41 +96,51 @@ export function OpportunityCard({ row, expanded, onToggle, priority = false, reg
           </span>
         </p>
 
-        {/* 五要素之一：地区 + 报考单元 + 状态 */}
+        {/* 要素一/二/三：省市区 + 报考单元 + 匹配状态（或偏好/异常标签） */}
         <div className="flex items-start justify-between gap-3">
           <p className="min-w-0 text-sm font-semibold text-ink">
-            <span className="font-normal text-ink-muted">{row.regionText}</span>
+            <span className="font-normal text-ink-muted">{row.regionFullText}</span>
             <span className="mx-1.5 text-ink-muted/60" aria-hidden="true">|</span>
             <span className="break-words">{row.unitName}</span>
           </p>
           {closed && row.gateCode ? (
             <GateTag code={row.gateCode} />
-          ) : regionOutOfScope ? (
-            <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs font-medium text-ink-muted">
+          ) : showPreferenceTag ? (
+            <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs font-medium text-ink-muted">
               <span
                 aria-hidden="true"
                 className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-ink-muted text-[10px] font-bold text-white"
               >
                 ◌
               </span>
-              地区不在选择范围
+              {regionOutOfScope ? "偏好范围外" : "不符合当前偏好"}
             </span>
           ) : (
             <MatchStatusTag status={row.status} />
           )}
         </div>
 
-        {/* 五要素之二：用工性质 + 学段 + 招聘人数 */}
+        {/* 要素四/五/六：学段学科 + 用工形式 + 招聘人数 */}
         <p className="mt-2 text-sm text-ink-muted">
-          {row.natureText} · {row.stageText} · 招 {row.headcount} 人
+          {row.stageText} · {row.subjectText} · {row.natureText} · 招 {row.headcount} 人
         </p>
 
-        {/* 五要素之三：报名截止 */}
-        <p className={cn("mt-1 text-sm", closed ? "text-ink-muted" : "text-ink-muted")}>
+        {/* 学校规则（v7.1 M4）：逐校列明才给校名；录用后选岗/统一调配给官方口径；
+            招聘单位与岗位组名不当作最终任教学校 */}
+        <p className="mt-1 text-sm text-ink-muted" data-testid="school-placement">
+          任教学校：
+          {schoolDisplayText(
+            { allocation: { code: row.allocationCode }, schoolPlacement: row.schoolPlacement },
+            row.regionText,
+          )}
+        </p>
+
+        {/* 要素七：报名截止 */}
+        <p className="mt-1 text-sm text-ink-muted">
           报名{row.deadline}
         </p>
 
-        {/* 五要素之四：一条关键依据或风险 */}
+        {/* 要素八：一条关键依据或风险 */}
         <p
           className={cn(
             "mt-2 text-sm leading-6",
@@ -106,17 +150,28 @@ export function OpportunityCard({ row, expanded, onToggle, priority = false, reg
           {closed ? row.gateReason : row.oneLineReason}
         </p>
 
-        {/* 示例只用于理解判断方式，不提供保存、关注或报名。 */}
-        <div className="mt-3">
+        {/* 要素九：一个明确下一步（四档主行动）+ 判断依据（次级，按需展开） */}
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
           <Button
             size="sm"
             variant={expanded ? "outline" : "primary"}
-            onClick={onToggle}
+            onClick={handlePrimary}
             aria-expanded={expanded}
             aria-controls={panelId}
           >
-            {expanded ? "收起判断依据" : "查看为什么"}
+            {primaryLabel}
           </Button>
+          {onSelectNextStep && (
+            <button
+              type="button"
+              onClick={onToggle}
+              aria-expanded={expanded}
+              aria-controls={panelId}
+              className="text-xs font-medium text-ink-muted underline underline-offset-2 hover:text-ink"
+            >
+              {expanded ? "收起判断依据" : "查看判断依据"}
+            </button>
+          )}
         </div>
       </div>
 

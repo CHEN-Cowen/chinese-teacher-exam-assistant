@@ -6,6 +6,7 @@ import {
   V61_SEED_PROFILE,
 } from "@/lib/seed/v61-opportunities";
 import { buildOpportunitiesView, guestCardNextStep } from "./opportunities-view";
+import { schoolDisplayText } from "@/lib/opportunities/school-placement";
 
 describe("机会页视图模型", () => {
   const view = buildOpportunitiesView(V61_SEED_ANNOUNCEMENTS, V61_SEED_PROFILE, V61_NOW);
@@ -175,5 +176,68 @@ describe("guestCardNextStep：每张卡一个下一步", () => {
       kind: "official",
       label: "查看公告留档",
     });
+  });
+});
+
+describe("v7.1 M4：卡片第一层九要素与学校表达", () => {
+  const view = buildOpportunitiesView(V61_SEED_ANNOUNCEMENTS, V61_SEED_PROFILE, V61_NOW);
+
+  it("每张有效卡都带完整省市区、学科与分配方式编码（第一层固定信息齐备）", () => {
+    const rows = [
+      view.priority,
+      ...view.preliminary,
+      ...view.needInfoGroups.flatMap((g) => g.rows),
+      ...view.manualReview,
+    ].filter((r): r is NonNullable<typeof r> => r !== null);
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      // 省市区：公告未公布的层级省略，但省级必须始终在场
+      expect(row.regionFullText).toContain(row.regionText.slice(0, 3));
+      expect(row.subjectText).toBe("语文");
+      expect(row.allocationCode.length).toBeGreaterThan(0);
+    }
+    expect(view.priority!.regionFullText).toBe("浙江省 杭州市");
+    const yinzhou = view.needInfoGroups[0].rows.find((r) => r.unitId === "unit-yinzhou-01");
+    expect(yinzhou!.regionFullText).toBe("浙江省 宁波市 鄞州区");
+  });
+
+  it("录用后选岗（按成绩择岗）：学校行走「录用后选岗」口径，绝不显示岗位组名当学校", () => {
+    const suzhou = view.manualReview.find((r) => r.unitId === "unit-suzhou-01")!;
+    expect(suzhou.allocationCode).toBe("score_based_choice");
+    expect(suzhou.schoolPlacement).toBeUndefined();
+    // 与 OpportunityCard 相同的调用形状：行模型没有 allocation 对象，只有 allocationCode
+    expect(
+      schoolDisplayText(
+        { allocation: { code: suzhou.allocationCode }, schoolPlacement: suzhou.schoolPlacement },
+        suzhou.regionText,
+      ),
+    ).toBe("录用后选岗，具体学校以官方安排为准");
+  });
+
+  it("统一调配：明确显示「录取后统一调配，具体学校以官方安排为准」，不虚构学校", () => {
+    const hefei = view.preliminary.find(
+      (r) => r.announcementId === V61_SCENARIO_IDS.supplemented,
+    )!;
+    expect(hefei.allocationCode).toBe("unified_assignment");
+    expect(
+      schoolDisplayText(
+        { allocation: { code: hefei.allocationCode }, schoolPlacement: hefei.schoolPlacement },
+        hefei.regionText,
+      ),
+    ).toBe("录取后统一调配，具体学校以官方安排为准");
+  });
+
+  it("直接定岗但未逐校列明：明确显示未知，以官方岗位计划表为准；招聘单位名不冒充学校", () => {
+    const hangzhou = view.priority!;
+    expect(hangzhou.allocationCode).toBe("direct_school");
+    expect(hangzhou.schoolPlacement).toBeUndefined();
+    const schoolText = schoolDisplayText(
+      { allocation: { code: hangzhou.allocationCode }, schoolPlacement: hangzhou.schoolPlacement },
+      hangzhou.regionText,
+    );
+    expect(schoolText).toContain("具体学校未知");
+    expect(schoolText).toContain("官方岗位计划表");
+    // 招聘单位/岗位组名不得被当作学校兜底
+    expect(schoolText).not.toContain(hangzhou.unitName);
   });
 });

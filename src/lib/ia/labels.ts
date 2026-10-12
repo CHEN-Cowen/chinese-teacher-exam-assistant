@@ -111,6 +111,15 @@ export function regionLabel(region: RegionRef): string {
   return region.district ?? region.city ?? region.province;
 }
 
+/**
+ * 卡片第一层的完整省市区表达（v7.1 M4：省、市、区一眼可见）。
+ * 信息未公布的部分省略，不猜测补齐。
+ */
+export function regionFullLabel(region: RegionRef): string {
+  const parts = [region.province, region.city, region.district].filter(Boolean);
+  return parts.join(" ");
+}
+
 /** 条件维度文案（“补充户籍信息后判断”分组标题用） */
 export const DIMENSION_LABELS: Record<string, string> = {
   region: "地区意向",

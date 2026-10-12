@@ -146,6 +146,8 @@ export interface UnitMatchDTO {
     code: string;
     name: string;
     region: RegionRefDTO;
+    /** 学科（v7.1 M4 卡片第一层：学段和学科） */
+    subject: string;
     stage: string;
     headcount: number;
     organizationType: string;
