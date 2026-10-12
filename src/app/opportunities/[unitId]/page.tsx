@@ -51,7 +51,9 @@ import { MaterialsList } from "@/components/opportunities/MaterialsList";
 import { ConsultationPanel } from "@/components/opportunities/ConsultationPanel";
 import { track, trackView } from "@/lib/analytics/eventService";
 import { gateStateMeta } from "@/lib/gate-states";
+import { buildMapEntry } from "@/lib/opportunities/map-link";
 import { schoolDisplayText } from "@/lib/opportunities/school-placement";
+import { MapLink } from "@/components/opportunities/MapLink";
 import { useOnlineStatus, isForbiddenError } from "@/lib/useOnlineStatus";
 
 function scrollToId(id: string) {
@@ -502,6 +504,17 @@ export default function OpportunityDetailPage() {
         <p className="text-sm text-ink-muted" data-testid="school-placement">
           任教学校：{schoolDisplayText(unit.unit, regionLabel(unit.unit.region))}
         </p>
+        {/* v7.1 M5 地图轻量入口：用户主动点击后新窗口打开国内地图；连市也未明确时隐藏 */}
+        {(() => {
+          const mapEntry = buildMapEntry({
+            city: unit.unit.region.city,
+            district: unit.unit.region.district,
+            schoolPlacement: unit.unit.schoolPlacement,
+          });
+          return mapEntry ? (
+            <MapLink entry={mapEntry} unitId={unitId} from="opportunity_detail" />
+          ) : null;
+        })()}
         {/* 模块 7.5：dataset === "real" 已在加载后 early return，此处不再渲染提示 */}
         {unit.announcement.dataset === "demo" && (
           <aside

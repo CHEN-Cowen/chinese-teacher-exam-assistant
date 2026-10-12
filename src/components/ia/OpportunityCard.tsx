@@ -6,7 +6,9 @@ import type { DimensionView, OpportunityRow } from "@/lib/ia/opportunities-view"
 import { guestCardNextStep, type GuestCardNextStepKind } from "@/lib/ia/opportunities-view";
 import { GateTag, MatchStatusTag } from "./MatchStatusTag";
 import { safeOfficialLink } from "@/lib/links/official";
+import { buildMapEntry } from "@/lib/opportunities/map-link";
 import { schoolDisplayText } from "@/lib/opportunities/school-placement";
+import { MapLink } from "@/components/opportunities/MapLink";
 import { Button } from "@/components/ui/Button";
 
 /**
@@ -69,6 +71,12 @@ export function OpportunityCard({
   const officialLink = safeOfficialLink(row.officialUrl);
   const nextStep = guestCardNextStep(row);
   const showPreferenceTag = !closed && (regionOutOfScope || natureOutOfPreference);
+  // v7.1 M5：连市也未明确时 buildMapEntry 返回 null，卡片不渲染地图入口
+  const mapEntry = buildMapEntry({
+    city: row.region.city,
+    district: row.region.district,
+    schoolPlacement: row.schoolPlacement,
+  });
 
   const handlePrimary = () => {
     if (onSelectNextStep) {
@@ -245,6 +253,14 @@ export function OpportunityCard({
           <p className="mt-2 text-[11px] text-ink-muted">
             演示示例，非在报岗位；字段以官方公告为准。初步匹配结果不等于保证可以报名，最终资格以招聘单位审核为准。
           </p>
+
+          {/* v7.1 M5 地图轻量入口（展开区）：用户主动点击后新窗口打开国内地图；
+              无明确市区时入口整体隐藏 */}
+          {mapEntry && (
+            <div className="mt-3 border-t border-line pt-3">
+              <MapLink entry={mapEntry} unitId={row.unitId} from="guest_preview_card" />
+            </div>
+          )}
         </div>
       )}
     </article>

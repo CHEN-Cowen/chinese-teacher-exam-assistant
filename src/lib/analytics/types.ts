@@ -79,7 +79,9 @@ export type AnalyticsEventType =
   | "priority_opportunity_viewed" // 查看优先机会
   // —— v7.1 M3 用工形式偏好（结果页三选一，只影响筛选不形成资格结论） ——
   | "nature_preference_changed" // 切换用工形式偏好（public_only/official_open/undecided）
-  | "schedule_action_started"; // 日程页点击下一项行动
+  | "schedule_action_started" // 日程页点击下一项行动
+  // —— v7.1 M5 地图轻量入口（只记岗位 ID、入口与地点类别枚举，不记地址/搜索文本） ——
+  | "map_entry_clicked";
 
 /**
  * 统一分析事件。

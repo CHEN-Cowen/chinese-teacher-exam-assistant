@@ -62,6 +62,7 @@
 |---|---|---|---|
 | 产品必要（同源） | `http://localhost:3000`（本地） / `https://<已备案产品域名>`（受邀） | 页面、脚本、样式、字体、图片、`/api/*` 接口、favicon | 浏览器侧唯一允许的自动加载来源 |
 | 用户点击外链 | `*.gov.cn` 及各地人社/教育部门官网、`*.edu.cn` 等 | 公告原文、报名入口；`<a target="_blank" rel="noopener noreferrer">`，不自动加载 | 允许，扫描器只登记不阻断 |
+| 用户点击外链（地图） | `uri.amap.com`（高德 URI API 网页搜索） | v7.1 M5 地图轻量入口「在地图中查看 ↗」；`<a target="_blank" rel="noopener noreferrer">`，点击前零地图资源请求，不内嵌 SDK、不申请定位；不可达不影响页面 | 允许，扫描器只登记不阻断 |
 | 用户点击外链（示例数据） | `www.example*.com/.cn/.org`、`pan.example.invalid` 等占位域名 | 演示种子中的占位值 | 仅 demo 数据 |
 | AI/OCR | 无 | — | 未接入；见 4.3 接入前置条件 |
 | 对象存储 | 无 | — | 未接入；未来浏览器只接受后端签发的短时 URL，桶域名不进 CSP |

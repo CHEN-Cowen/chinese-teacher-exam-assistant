@@ -9,6 +9,7 @@ import type {
   AnnouncementVersion,
   EmploymentNatureCode,
   RecruitmentAnnouncement,
+  RegionRef,
   SchoolPlacement,
 } from "@/lib/announcements/types";
 import type { UserRecruitmentProfile } from "@/lib/profile/types";
@@ -87,6 +88,8 @@ export interface OpportunityRow {
   allocationCode: string;
   /** 官方逐校列明的定岗状态（未登记视为未知，不虚构学校） */
   schoolPlacement?: SchoolPlacement;
+  /** 行政区引用（v7.1 M5 地图入口构造用；公告未公布的层级为空，不猜测补齐） */
+  region: RegionRef;
   /** 一句话依据 */
   oneLineReason: string;
   /** 主异常闸门 code（无失败闸门为 null） */
@@ -167,6 +170,7 @@ function toRow(candidate: OpportunityCandidate, nowIso: string): OpportunityRow 
     registrationClosed: deadline.closed,
     allocationCode: unit.allocation.code,
     schoolPlacement: unit.schoolPlacement,
+    region: unit.region,
     oneLineReason: match.summary,
     gateCode: primaryGate ? primaryGate.code : null,
     gateReason: primaryGate ? primaryGate.reason : null,
