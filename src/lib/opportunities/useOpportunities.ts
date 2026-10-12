@@ -192,7 +192,8 @@ export type ActiveProfileLoadState =
 
 /**
  * 供详情页复用的画像读取（v7.1 M8：响应认证状态）。
- * - demo：本地草稿 + 补充事实；
+ * - demo + 未登录：本地草稿 + 补充事实（isGuest=true，保存/设主要目标触发登录）；
+ * - demo + 已登录演示账号：同用本地画像，但 isGuest=false，不再重复触发登录跳转；
  * - invited + 已登录：占位 ready，由后端读取已持久化画像（isGuest=false）；
  * - invited + 未登录：使用本机访客画像（isGuest=true），通过请求体发送。
  */
@@ -210,10 +211,16 @@ export function useActiveProfile(): ActiveProfileLoadState {
         ? { status: "ready", profile: active.profile, isGuest: true }
         : { status: "no-profile", reason: active.reason };
     }
-    // demo 模式：本地草稿 + 补充事实
+    // demo 模式：本地草稿 + 补充事实。会话恢复完成前先等待，避免把已登录演示账号
+    // 短暂误判为访客而触发多余的登录跳转。
+    if (authStatus === "loading") return { status: "loading" };
     const active = buildActiveProfile();
     return active.ready
-      ? { status: "ready", profile: active.profile, isGuest: true }
+      ? {
+          status: "ready",
+          profile: active.profile,
+          isGuest: authStatus !== "authenticated",
+        }
       : { status: "no-profile", reason: active.reason };
   }, [authStatus]);
 }

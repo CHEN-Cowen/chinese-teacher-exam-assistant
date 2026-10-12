@@ -20,27 +20,16 @@ async function loginFromPreview(page) {
 }
 
 async function fillOnboarding(page) {
-  // 第 1 组：地区（添加第一个地区，默认浙江省·必须接受）
+  // v7.1 M2 两屏基础画像：第一屏地区，第二屏基础资格（学历+专业+毕业+教资）
+  // 第 1 屏：地区（添加第一个地区，默认浙江省·必须接受）
   await page.getByRole("button", { name: "添加第一个地区" }).click();
   await page.getByRole("button", { name: "下一步", exact: true }).click();
 
-  // 第 2 组：学历 + 学位
+  // 第 2 屏：基础资格 — 学历（本科）+ 专业 + 毕业时间 + 教资状态
   await page.getByRole("button", { name: "本科", exact: true }).click();
-  await page.getByRole("button", { name: "学士学位", exact: true }).click();
-  await page.getByRole("button", { name: "下一步", exact: true }).click();
-
-  // 第 3 组：专业（v7 文案：placeholder 为示例格式）
   await page.getByLabel("专业全称").fill("汉语言文学（师范）");
-  await page.getByRole("button", { name: "下一步", exact: true }).click();
-
-  // 第 4 组：毕业时间 + 当前状态
   await page.locator('input[type="month"]').fill("2024-06");
-  await page.getByRole("button", { name: "已毕业，暂时没落实工作", exact: true }).click();
-  await page.getByRole("button", { name: "下一步", exact: true }).click();
-
-  // 第 5 组：教资（默认语文/初中）+ 至少一种用工形式
   await page.getByRole("button", { name: "已经取得教师资格证", exact: true }).click();
-  await page.getByText("事业编", { exact: true }).click();
   await page.getByRole("button", { name: "查看筛选结果" }).click();
 }
 
@@ -95,7 +84,7 @@ await runBrowser(async (page) => {
   await page.goto(`${BASE}/`, { waitUntil: "networkidle" });
   await page.getByTestId("start-onboarding").click();
   await page.waitForURL("**/onboarding", { timeout: 10000 });
-  check("画像页第 1 组展示", (await page.locator("body").innerText()).includes("你能接受去哪些地区"), "");
+  check("画像页第 1 组展示", (await page.locator("body").innerText()).includes("你想优先查看哪些地区"), "");
 
   await fillOnboarding(page);
   await page.waitForURL("**/preview", { timeout: 10000 });
@@ -122,7 +111,10 @@ await runBrowser(async (page) => {
   ), "pending 清空");
 
   // —— 查看匹配依据 ——
-  await page.locator("#priority-opportunity a").first().click();
+  // 等待优先区域卡片内的详情链接渲染后再点击
+  const priorityLink = page.locator("#priority-opportunity a[href^='/opportunities/']").first();
+  await priorityLink.waitFor({ state: "visible", timeout: 15000 });
+  await priorityLink.click();
   await page.waitForURL(/\/opportunities\/.+/, { timeout: 10000 });
   await page.getByText("影响当前判断的条件").waitFor({ timeout: 15000 });
   body = await page.locator("body").innerText();
@@ -131,29 +123,50 @@ await runBrowser(async (page) => {
   check("虚构官方域名不可点击", await page.locator('a[href*="example.gov.cn"]').count() === 0, "");
 
   // —— 关注 ——
-  await page.getByRole("button", { name: "保存这个机会" }).click();
-  await page.waitForTimeout(900);
-  // v7：跟进控件收在「我的跟进」折叠层内，断言与后续操作前先展开
+  // v7：跟进控件收在「我的跟进」折叠层内，断言与后续操作前先展开。
+  // 注意：每次关注/流转都会触发 runAction → refreshDetail → 整页 loading，
+  // <details id="follow"> 重挂载后回到关闭态，因此每个动作后都要：
+  //   1) 等目标按钮 attached（证明已关注视图完成渲染，与折叠状态无关）；
+  //   2) 重新展开 details；
+  //   3) 再等按钮 visible。
+  // 不能用正文包含「考虑中/准备报名」判断——未关注态帮助文案与按钮文案均含这些词，会误判。
   const openFollowDetails = async () => {
     await page.locator("#follow").evaluate((el) => {
       if (el instanceof HTMLDetailsElement) el.open = true;
     });
   };
   await openFollowDetails();
+  await page.waitForTimeout(300);
+  // Hero 主行动与跟进区可能出现同名按钮（如「保存这个机会」），统一用 .first() 取页面上第一个
+  const saveButton = page.getByRole("button", { name: "保存这个机会" }).first();
+  await saveButton.waitFor({ state: "visible", timeout: 15000 });
+  await saveButton.click();
+  const preparingButton = page.locator("#follow button", { hasText: "标记为准备报名" }).first();
+  await preparingButton.waitFor({ state: "attached", timeout: 15000 });
+  await openFollowDetails();
+  await preparingButton.waitFor({ state: "visible", timeout: 15000 });
   body = await page.locator("body").innerText();
   check("关注成功：进入考虑中", body.includes("考虑中"), "");
 
   // —— 标记准备报名 + 设为主要目标（同页完成后再看日程） ——
-  await page.getByRole("button", { name: "标记为准备报名" }).first().click();
-  await page.waitForTimeout(900);
+  await preparingButton.click();
+  const registeredButton = page.locator("#follow button", { hasText: "我已完成报名" }).first();
+  await registeredButton.waitFor({ state: "attached", timeout: 15000 });
+  await openFollowDetails();
+  await registeredButton.waitFor({ state: "visible", timeout: 15000 });
   body = await page.locator("body").innerText();
   check("已标记准备报名", body.includes("准备报名"), "");
 
+  const setPrimaryButton = page.locator("#follow button", { hasText: "设为重点准备" }).first();
+  await setPrimaryButton.waitFor({ state: "visible", timeout: 15000 });
+  await setPrimaryButton.click();
+  const confirmPrimary = page.getByRole("button", { name: "确认设为重点准备" });
+  await confirmPrimary.waitFor({ state: "visible", timeout: 15000 });
+  await confirmPrimary.click();
+  const backupButton = page.locator("#follow button", { hasText: "改为备选目标" }).first();
+  await backupButton.waitFor({ state: "attached", timeout: 15000 });
   await openFollowDetails();
-  await page.getByRole("button", { name: /设为重点准备/ }).first().click();
-  await page.waitForTimeout(400);
-  await page.getByRole("button", { name: "确认设为重点准备" }).click();
-  await page.waitForTimeout(900);
+  await backupButton.waitFor({ state: "visible", timeout: 15000 });
   body = await page.locator("body").innerText();
   check("设为主要目标成功", body.includes("改为备选目标") || body.includes("重点准备"), "");
 

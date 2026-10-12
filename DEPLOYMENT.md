@@ -4,18 +4,22 @@
 
 | 形态 | 环境标识 | 数据去向 | 网络定位 | 当前状态 |
 |---|---|---|---|---|
-| **A. 公开演示环境** | `APP_ENV=demo`（`NEXT_PUBLIC_AUTH_MODE=demo`，默认） | 所有演示业务数据仅保存在当前浏览器 | Vercel（境外平台，仅用于功能展示） | 2026-10-07 已更新 [公开演示地址](https://frontend-exam-test.vercel.app)；线上 P0 25/25、断跨源 7/7、安全冒烟 2/2 通过 |
-| **B. 少量受邀用户环境** | `APP_ENV=invited`（`NEXT_PUBLIC_AUTH_MODE=invited`） | 境内服务器上的 PostgreSQL（公告快照当前落本地卷，对象存储未接入） | 中国大陆云服务，普通家庭/手机网络直连 | 🚧 前后端代码、迁移与受邀链路 E2E（服务端登录/HttpOnly 会话/画像迁移/账号隔离，29/29）均已验证；环境未落地。网络链路层已实测（2026-10-05）：中国移动家庭宽带与手机蜂窝无代理直连下本地同源全栈全部通过（[`docs/china-network-accessibility.md`](./docs/china-network-accessibility.md) 第 6.3 节）；备案域名公开访问待部署后补测 |
+| **A. 公开演示环境** | `APP_ENV=demo`（`NEXT_PUBLIC_AUTH_MODE=demo`，默认） | 所有演示业务数据仅保存在当前浏览器 | Vercel（境外平台，仅用于功能展示） | 2026-10-07 已更新 [公开演示地址](https://frontend-exam-test.vercel.app)；线上 P0 25/25、断跨源 7/7、安全冒烟 2/2 通过。境外平台，中国大陆可达性无保障，2026-10-11 从境内网络访问已出现超时 |
+| **B. 少量受邀用户环境** | `APP_ENV=invited`（`NEXT_PUBLIC_AUTH_MODE=invited`） | 阿里云服务器上的 PostgreSQL（公告快照当前落本地卷，对象存储未接入） | 域名 [kbzs.al.qich.top](https://kbzs.al.qich.top)，HTTPS 直连 | ✅ **2026-10-11 已上线**并承接 10 人真实试用：GHCR 镜像 + Docker Compose + Caddy 部署，`GET /api/health` 实测 `{"status":"ok","db":"up"}`，登录页无演示账号、不开放公开注册，`robots.txt` 全站 Disallow。仍待办：页脚 ICP 备案号、合规文件、家庭/蜂窝网络正式冒烟记录 |
 
 > 公开演示环境**不是**受邀试用环境，不得用演示环境承接真实用户试用；受邀环境不得静默回退到 localStorage Mock。两种形态的产品口径见 [`PRD-全国教师公开招聘与备考助手-v6.1.md`](./PRD-全国教师公开招聘与备考助手-v6.1.md)，网络可访问基线见 [`docs/china-network-accessibility.md`](./docs/china-network-accessibility.md)。
 
-> 2026-10-07 部署记录：公开演示登录后的机会匹配、关注、日程与分析事件已改为浏览器本地路径；Vercel 已更新并完成线上 E2E。阿里云受邀环境仅完成部署前数据库备份、独立发布目录上传和后端镜像构建；**尚未迁移数据库、启动新容器或开放受邀地址**。
+> **2026-10-11 部署记录（受邀环境已落地）**：受邀地址 [https://kbzs.al.qich.top](https://kbzs.al.qich.top) 已开放，前端为 invited 模式镜像（GitHub Actions 构建 GHCR，见 [`deploy/README.md`](./deploy/README.md)），NestJS + PostgreSQL 全栈运行，数据库迁移已执行到最新（9 个迁移，含 `20261010174000_follow_progress_tracking`）。账号由管理员预建，不开放注册；真实官方监测范围当前为杭州、宁波，其余为明确分区标注的虚构试用机会。本轮另修复两个线上阻断：受邀用户机会页崩溃、关注跟进字段缺失导致的 Prisma P2022。
+>
+> **仍待办**：① 页脚暂未展示 ICP 备案号，备案状态需核实，隐私政策/用户协议等合规文件未上线；② 家庭宽带与手机蜂窝的无代理冒烟尚未记录（2026-10-05 仅完成本地同源全栈实测）；③ 研究验证用轻量部署，不承诺高可用与备份频次，扩大试用规模前需加固。
+>
+> 2026-10-07 历史记录：公开演示登录后的机会匹配、关注、日程与分析事件已改为浏览器本地路径；Vercel 已更新并完成线上 E2E。当时阿里云受邀环境仅完成部署前准备，**该状态已被 2026-10-11 记录取代**。
 
 ---
 
-# 环境 A：公开演示环境（当前现状）
+# 环境 A：公开演示环境（Vercel，仅功能展示）
 
-> 本项目当前部署形态为**公开演示环境（APP_ENV=demo）**，不是正式生产环境。
+> 本环境为**公开演示环境（APP_ENV=demo）**，不是正式生产环境，也不承接真实用户试用（真实试用走环境 B）。
 > 所有数据仅保存在访客本机浏览器（localStorage），没有真实后端、数据库、认证、文件存储和 AI 服务。
 
 ## 1. 部署环境说明
@@ -27,7 +31,7 @@
 | 管理后台 | `/admin` 全部子路由在演示环境关闭，显示关闭说明 |
 | 搜索可见性 | `noindex,nofollow`（meta + `X-Robots-Tag` 双保险） |
 | 传输加密 | 平台自动提供 HTTPS |
-| 演示地址 | https://frontend-two-beryl-fywu4p42k8.vercel.app |
+| 演示地址 | https://frontend-exam-test.vercel.app |
 
 > **网络提示**：该演示站部署在 Vercel，属于境外平台，中国大陆普通网络的访问速度与可达性没有保障，也不作为受邀试用的依赖；保留它仅用于功能展示与评审。
 
@@ -137,9 +141,9 @@ npx vercel --prod
 
 ---
 
-# 环境 B：少量受邀用户环境（v6.1 目标形态，尚未落地）
+# 环境 B：少量受邀用户环境（已上线，研究验证轻量部署）
 
-> 适用对象：5—30 名受邀测试用户，连续试用至少 7 日。以下是**轻量部署方案与前置条件，不是生产级承诺**：不做高可用、多地域容灾、自动扩缩容；具体落地在迁移计划的模块 0A（网络基线）与模块 8（受邀账号与持久化）中执行。
+> **现状（2026-10-11）**：受邀地址 [https://kbzs.al.qich.top](https://kbzs.al.qich.top) 已上线，承接 10 名受邀测试用户连续 7 日试用。以下第 11–15 节是本环境实际采用的方案与仍需补齐的前置项；它是**研究验证用轻量部署，不是生产级承诺**：不做高可用、多地域容灾、自动扩缩容。实际操作命令以 [`deploy/README.md`](./deploy/README.md) 与 [`deploy/STANDALONE.md`](./deploy/STANDALONE.md) 为准。
 
 ## 11. 设计约束
 
@@ -149,19 +153,20 @@ npx vercel --prod
 4. AI/OCR 仅通过后端适配器接入在境内可稳定访问的服务；供应商不可用时回退为人工录入/审核，核心页面不得白屏。
 5. 不引入 Kubernetes、微服务、Redis/BullMQ 等本轮不需要的基础设施（产品边界见[迁移计划](./docs/v6.1-migration-plan.md)）。
 
-## 12. 前置事项（完成前只允许内部演示）
+## 12. 前置事项与当前完成情况（2026-10-11）
 
-| 事项 | 说明 |
-|---|---|
-| 域名 | 已实名认证的境内域名；备案期间不对公众开放 |
-| ICP 备案 | 按云服务商与通信管理局要求完成非经营性 ICP 备案，首页底部展示备案编号；是否涉及教育类前置审批或经营性许可，需向属地主管部门核验，本文不提供绕过方案 |
-| HTTPS 证书 | 备案域名签发可用证书，由反向代理统一终止 TLS；HTTP 跳转 HTTPS |
-| 云资源 | 同一境内地域的云服务器、数据库与对象存储；安全组只放行 80/443（管理与数据库端口不对公网开放） |
-| 合规文件 | 隐私政策、用户协议、产品测试版说明、报考信息免责声明、AI 辅助说明在开放试用前就位 |
+| 事项 | 说明 | 状态 |
+|---|---|---|
+| 域名 | 已实名认证的域名；备案期间不对公众开放 | ✅ 域名 `kbzs.al.qich.top` 已解析并对外提供服务 |
+| ICP 备案 | 按云服务商与通信管理局要求完成非经营性 ICP 备案，首页底部展示备案编号；是否涉及教育类前置审批或经营性许可，需向属地主管部门核验，本文不提供绕过方案 | ⚠️ **页脚未展示备案编号，备案状态需向服务器与域名负责人核实**；在核实清楚并补齐前，不应扩大公开范围 |
+| HTTPS 证书 | 备案域名签发可用证书，由反向代理统一终止 TLS；HTTP 跳转 HTTPS | ✅ Caddy 自动证书，HTTPS 实测可访问 |
+| 云资源 | 同一地域的云服务器、数据库与对象存储；安全组只放行 80/443（管理与数据库端口不对公网开放） | ✅ 阿里云服务器 + PostgreSQL（复用 `kaobian-postgres` 容器，见 [`deploy/README.md`](./deploy/README.md)）；对象存储未接，快照落本地卷 |
+| 合规文件 | 隐私政策、用户协议、产品测试版说明、报考信息免责声明、AI 辅助说明在开放试用前就位 | 🚧 页脚当前仅有「初步判断不等于保证可以报名，最终资格以招聘单位审核为准」免责声明；隐私政策、用户协议、测试版说明等待补齐 |
+| 真实网络冒烟 | 无代理家庭宽带与手机蜂窝访问首页、`/api/health`、登录与核心链路 | 🚧 2026-10-05 仅完成本地同源全栈实测；域名上线后的家庭/蜂窝冒烟记录待补（[`docs/china-network-accessibility.md`](./docs/china-network-accessibility.md) 第 6.3 节） |
 
 ## 13. 轻量部署拓扑（单域名、单机起步）
 
-> **2026-10-07 状态说明**：本仓库 [`deploy/README.md`](./deploy/README.md) 提供 Docker Compose + Caddy 方案，采用 Next 同源 `/api` 反代（`BACKEND_URL` + `INTERNAL_TOKEN`）；**本轮尚未在阿里云执行部署或迁移**。下述 Nginx 直连后端方案（§13.1）保留为备选，两者不可混用。
+> **2026-10-11 状态说明**：[kbzs.al.qich.top](https://kbzs.al.qich.top) 已按本仓库 [`deploy/README.md`](./deploy/README.md) 的 **Docker Compose + Caddy 方案**部署（`docker-compose.ghcr.yml --profile public`，GHCR 镜像，Next 同源 `/api` 反代 `BACKEND_URL` + `INTERNAL_TOKEN`，复用阿里云服务器上既有的 `kaobian-postgres` 容器与 `kaobian-net` 网络），数据库迁移已全部执行。下述 Nginx 直连后端方案（§13.1）保留为备选，两者不可混用。
 
 ```text
 受邀用户浏览器（家庭宽带 / 4G·5G）
@@ -246,13 +251,13 @@ server {
 | `OSS_*`（或同等存储变量） | 后端 | **未接入**：对象存储落地前公告快照写本地卷（见 backend/README） |
 | `AI_*` / `OCR_*` | 后端 | **未接入**：境内 AI/OCR 供应商落地后再增加；浏览器不可见 |
 
-受邀环境的真实登录、会话与数据持久化代码（模块 8）已完成：后端预建账号 + 密码哈希 + HttpOnly `sid` 会话，前端 `HttpAuthProvider` 经 `/api/auth/*` 登录与会话恢复，访客画像与暂存分析事件登录后幂等迁移。历史本地 PostgreSQL 受邀链路曾通过 29/29；**本轮未重跑受邀全链路，也未在阿里云环境验证**。invited 环境不得伪装成真实服务，也不得静默回退到 Mock。
+受邀环境的真实登录、会话与数据持久化代码（模块 8）已完成并在线上运行：后端预建账号 + 密码哈希 + HttpOnly `sid` 会话，前端 `HttpAuthProvider` 经 `/api/auth/*` 登录与会话恢复，访客画像与暂存分析事件登录后幂等迁移。历史本地 PostgreSQL 受邀链路曾通过 29/29；**2026-10-11 已在阿里云环境上线并实测通过健康检查、受邀登录页（无演示账号入口）与数据库连通性**，试用期间另修复了机会页崩溃与跟进字段迁移两个线上问题。invited 环境不得伪装成真实服务，也不得静默回退到 Mock。
 
 ## 15. 受邀环境的发布与回滚
 
-- 发布门禁（在构建机执行，任一失败不发布）：`npm test`（2026-10-07 前端 207 用例）→ `npx tsc --noEmit` → `npm run lint` → `npm run build`（postbuild 自动运行网络依赖扫描，发现 Google Fonts/境外 CDN/客户端密钥即失败，可用 `npm run check:external` 手动复跑）→ 后端 `npm run lint && npm run build && npm test`。Playwright 回归（`.qa-harness/m9-p0-flow.mjs`、`m9-blocked-runtime.mjs`）在有运行栈时执行并留存结果。
+- 发布门禁（在构建机执行，任一失败不发布）：`npm test`（2026-10-11 前端 28 文件 224 用例）→ `npx tsc --noEmit` → `npm run lint` → `npm run build`（postbuild 自动运行网络依赖扫描，发现 Google Fonts/境外 CDN/客户端密钥即失败，可用 `npm run check:external` 手动复跑）→ 后端 `npm run lint && npm run build && npm test`（2026-10-11 后端 19 文件 183 用例）。Playwright 回归（`.qa-harness/m9-p0-flow.mjs`、`m9-blocked-runtime.mjs`）在有运行栈时执行并留存结果；注意 `m9-invited-flow.mjs` 仍为 v6.1 口径。
 - 发布：构建并推送 Next.js 与 NestJS 镜像（或上传构建产物）→ 备份数据库 → 执行可重复执行的 Prisma 迁移 → 滚动重启 → 冒烟（经域名访问 `/api/health`、登录、核心页面）。
-- 回滚：Nginx 切回上一版本镜像；数据库迁移必须提供回滚方案，重要迁移前先创建恢复点；公告版本数据只追加不原地覆盖，应用回滚不影响已发布版本留档。
+- 回滚：在 `/opt/kaobian/deploy` 将 `FRONTEND_IMAGE_TAG` / `BACKEND_IMAGE_TAG` 改回上一版本 `sha-<SHA>` 后重新 `docker compose -f docker-compose.ghcr.yml --profile public up -d`（镜像标签固定同一次提交，见 [`deploy/README.md`](./deploy/README.md)）；数据库迁移必须提供回退方案，重要迁移前先创建恢复点；公告版本数据只追加不原地覆盖，应用回滚不影响已发布版本留档。
 - 每次发布后在无代理的家庭网络与手机网络做一次核心路径冒烟，结果记录为“已验证/待验证”，不得把未实测写成“国内可用”；记录格式见 [`docs/china-network-accessibility.md`](./docs/china-network-accessibility.md) 第 6.3 节。
 
 ---
@@ -261,10 +266,10 @@ server {
 
 按依赖顺序，与[迁移计划](./docs/v6.1-migration-plan.md)的模块编号对应：
 
-1. **国内网络基线（模块 0A，2026-10-04 代码侧已完成）**：已移除 `next/font/google`，字体改用跨平台系统字体栈，收紧 CSP（去掉 `img-src https:` 通配），交付 `scripts/check-external-deps.mjs` 扫描与 Vitest 守卫，后端支持 `HOST`/`TRUST_PROXY`。模块 9 增补运行时断跨源 Playwright 回归。剩余未完成项是域名、ICP 备案与境内 ECS 落地后的真实网络冒烟（状态：待验证）。
-2. **领域模型与公告流水线（模块 1、2，代码已完成）**：后端 17 个模型/5 个迁移、公告版本、证据锚点、审核记录、确定性解析器均已落地；原件目前写本地卷，对象存储未接，真实 AI/OCR 未接。
-3. **真实认证（模块 8，代码已完成）**：`src/lib/auth/HttpAuthProvider.ts` 已实现现有 `AuthService` 接口，`instance.ts` 按 `NEXT_PUBLIC_AUTH_MODE` 切换；受邀模式使用服务端 HttpOnly 会话。**真实数据库全链路联调待验收**。
-4. **画像 / 匹配 / 关注 / 日程（模块 4–6，已完成）**：demo 走 localStorage 纯函数，invited 走同源 `/api/*`；后端 matching/opportunities/schedule 模块与测试已就位。
+1. **国内网络基线（模块 0A，代码侧已完成，环境已落地）**：已移除 `next/font/google`，字体改用跨平台系统字体栈，收紧 CSP（去掉 `img-src https:` 通配），交付 `scripts/check-external-deps.mjs` 扫描与 Vitest 守卫，后端支持 `HOST`/`TRUST_PROXY`。模块 9 增补运行时断跨源 Playwright 回归。域名与境内 ECS 已于 2026-10-11 落地（[kbzs.al.qich.top](https://kbzs.al.qich.top) HTTPS 可访问）；剩余未完成项是 ICP 备案核实与上线后的家庭/蜂窝真实网络冒烟记录。
+2. **领域模型与公告流水线（模块 1、2，代码已完成）**：后端 18 个模型/9 个迁移、公告版本、证据锚点、审核记录、确定性解析器均已落地并在线上库执行；原件目前写本地卷，对象存储未接，真实 AI/OCR 未接。
+3. **真实认证（模块 8，已上线运行）**：`src/lib/auth/HttpAuthProvider.ts` 已实现现有 `AuthService` 接口，`instance.ts` 按 `NEXT_PUBLIC_AUTH_MODE` 切换；受邀模式使用服务端 HttpOnly 会话。2026-10-11 已在阿里云真实数据库上运行（健康检查 `db:up`、受邀登录页无演示账号），10 人试用期间持续验证；试用中暴露的机会页崩溃与跟进字段缺失问题已修复。
+4. **画像 / 匹配 / 关注 / 日程（模块 4–6，已完成并上线）**：demo 走 localStorage 纯函数，invited 走同源 `/api/*`；后端 matching/opportunities/schedule 模块与测试已就位。首访画像为 v7.1 两屏流程（地区意向/基础资格），年龄、户籍、社保、就业状态与用工偏好按需补问；机会页含真实/虚构数据分区提示与完整体验指引。
 5. **资料诊断 / 资源匹配 / 计划与反馈 / 重排（模块 7，已完成）**：计划/重排规则仍在前端纯函数引擎；后端 `plans/` 提供持久化接口，规则服务端化不在本轮。
 6. **通知 / 数据删除 / 指标监控（模块 6、9）**：站内事件真实生成（唯一键去重）；模块 9 已上线 P0 漏斗事件与指标口径（含访客暂存迁移、seed/live 分流）；真实删除服务端全流程未验证；短信、微信不在本轮。
 

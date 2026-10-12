@@ -49,17 +49,19 @@ await runBrowser(async (page, context) => {
   await page.evaluate(() => localStorage.clear());
   await guestOnboarding(page, BASE);
   let body = await page.locator("body").innerText();
-  check("访客初步机会可见", body.includes("最值得先看的机会"), "");
+  // v7.1：preview 展示虚构示例判断（「看看以后会怎样帮你判断」），不再以关注/登录引导
+  check("访客初步机会可见", body.includes("看看以后会怎样帮你判断"), "");
 
-  await page.getByRole("link", { name: /关注.*登录后保存/ }).first().click();
-  await page.waitForURL("**/login**", { timeout: 10000 });
+  // v7.1 M8：登录通过独立入口完成，登录后进入机会列表继续 demo 闭环
+  await page.goto(`${BASE}/login?next=/opportunities`, { waitUntil: "networkidle" });
   await page.fill("#account", ACCOUNTS.student.account);
   await page.fill("#password", ACCOUNTS.student.password);
   await page.click('button[type="submit"]');
   await page.waitForURL("**/opportunities", { timeout: 15000 });
-  await page.getByText(/有效机会\s*\d+\s*个/).waitFor({ timeout: 15000 });
+  // v7.1：机会列表以「优先查看」分区展示即时匹配结果
+  await page.getByText("优先查看", { exact: true }).waitFor({ timeout: 15000 });
   body = await page.locator("body").innerText();
-  check("登录后即时匹配可用", /有效机会\s*\d+\s*个/.test(body), body.match(/有效机会\s*\d+\s*个/)?.[0] ?? "");
+  check("登录后即时匹配可用", body.includes("优先查看"), "");
 
   // 仅统计发往产品页面的跨源（排除出口探测与政府站页签）
   const appCross = crossOrigin.filter((c) => !c.includes("myip.ipip.net"));

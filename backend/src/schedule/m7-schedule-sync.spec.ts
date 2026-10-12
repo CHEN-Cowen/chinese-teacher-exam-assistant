@@ -382,8 +382,6 @@ type MutableCatalog = {
 const importCatalog = () =>
   import('../matching/rolling-catalog.js') as unknown as Promise<MutableCatalog>;
 
-const NOW = '2026-10-15T12:00:00+08:00';
-
 function seedFollow(
   follows: FollowRow[],
   userId: string,
@@ -502,7 +500,6 @@ describe('M7 多岗位报考日程自动同步', () => {
     const service = new ScheduleService(prisma);
     await service.syncEventsForUser('u1');
 
-    const { timelineEvents } = createFakePrisma();
     // 需要用同一个 prisma 实例——重新获取不行
     // 改用 getSchedule 返回的事件列表
     const schedule = await service.getSchedule('u1');
@@ -668,7 +665,7 @@ describe('M7 多岗位报考日程自动同步', () => {
   });
 
   it('重新关注后按最新版本恢复同步，不重复', async () => {
-    const { prisma, notifications, follows } = createFakePrisma();
+    const { prisma, follows } = createFakePrisma();
     seedFollow(follows, 'u1', 'unitA', 'annA', 'annA-v1');
     const service = new ScheduleService(prisma);
 
@@ -810,7 +807,7 @@ describe('M7 多岗位报考日程自动同步', () => {
   });
 
   it('待定转明确：时间从 null 变为具体日期时展示新值', async () => {
-    const { prisma, notifications, follows } = createFakePrisma();
+    const { prisma, follows } = createFakePrisma();
     seedFollow(follows, 'u1', 'unitB', 'annB', 'annB-v1');
     const service = new ScheduleService(prisma);
 
