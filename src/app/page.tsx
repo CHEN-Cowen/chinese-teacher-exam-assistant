@@ -27,16 +27,18 @@ const SOURCE_COUNT = GUEST_COVERAGE.regions.reduce(
 );
 
 /**
- * 首页路由规则（v6.1 模块 0A 双入口混合式，V7 视觉语言重写）：
+ * 首页路由规则（v6.1 模块 0A 双入口混合式，V7 视觉语言重写，v7.1 M1 单一入口）：
  * - 已登录 → 默认进入「机会」/opportunities；
  * - 未登录且画像问答进行到一半 → 回到 /onboarding；
  * - 未登录且已看完初步结果 → /preview；
  * - 其余访客 → 价值首页（本页内容，无需登录）。
  *
- * 视觉对齐原型 .hero / .hero__grid / .hero-question / .fb：
- * - Hero 渐变背景 + 双列布局（左价值表达 + 右轻量第一问 panel）；
- * - 右侧 panel 内嵌地区快速选择 + FeedbackBar + "继续"按钮；
- * - 不引入 hash 路由 / 假接口 / 假报名；所有判断仍由 /onboarding 与 /preview 完成。
+ * v7.1 M1 信息层级（PRD §5.2）：
+ * - 首屏只有一个高强调主按钮「开始资格预筛」；
+ * - 次级文字入口「先看结果示例」锚向右侧结果示例卡，不新增路由；
+ * - 右侧由重复按钮组改为结果示例卡（匹配状态/主要依据/待确认/官方来源/核对时间），
+ *   明确标注「结果示例 · 非真实岗位」，帮助用户在填写前理解会得到什么结果；
+ * - 顶部「登录」保持次级入口；备考仍为弱化文字入口，不与主操作争夺。
  */
 export default function Home() {
   const router = useRouter();
@@ -95,8 +97,11 @@ export default function Home() {
           style={{ background: "var(--color-hero)" }}
         >
           <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,440px)] lg:gap-12">
-            {/* 左：价值表达 + 主行动 + 安全标签 */}
-            <div className="min-w-0">
+            {/* 左：价值表达 + 主行动 + 安全标签。
+                v7.1 M1 修复：窄屏撑满首屏视口并垂直居中，确保右侧示例卡
+                在移动端完全折叠到首屏线下，只能通过「先看结果示例」锚点到达；
+                桌面端（lg+）不受影响，仍为双列并排。 */}
+            <div className="min-w-0 hero-left-fold">
               <p className="text-[13px] font-semibold uppercase tracking-[0.14em] text-on-dark/85">
                 教师招聘机会发现与资格判断
               </p>
@@ -108,6 +113,7 @@ export default function Home() {
               </p>
 
               <div className="mt-5 flex max-w-sm flex-col gap-3 sm:max-w-none sm:flex-row sm:items-center">
+                {/* v7.1 M1：全页唯一高强调主按钮，testid 与 QA harness 保持一致 */}
                 <Button
                   size="lg"
                   onClick={handleStart}
@@ -119,16 +125,16 @@ export default function Home() {
                     </svg>
                   }
                 >
-                  开始匹配机会
+                  开始资格预筛
                 </Button>
-                <LinkButton
-                  href="/preview"
-                  variant="ghost"
-                  data-testid="open-learn"
-                  className="h-[52px] border-on-dark/30 text-on-dark hover:bg-on-dark/10"
+                {/* 次级文字入口：锚向右侧结果示例卡（页内锚点，不新增路由与跳转成本） */}
+                <a
+                  href="#result-example"
+                  data-testid="view-result-example"
+                  className="inline-flex h-[52px] items-center justify-center rounded-xl border border-on-dark/30 px-6 text-base font-semibold text-on-dark transition-colors hover:bg-on-dark/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-dark/60"
                 >
-                  先看看匹配示例
-                </LinkButton>
+                  先看结果示例
+                </a>
               </div>
 
               <ul className="mt-6 flex flex-wrap gap-2" aria-label="使用说明">
@@ -143,42 +149,59 @@ export default function Home() {
               </ul>
             </div>
 
-            {/* 右：轻量第一问 panel（原型 .hero-question，引导用户进入 onboarding） */}
+            {/* 右：结果示例卡（v7.1 M1：右侧不再重复主操作，改为展示"填写后会得到什么"。
+                内容为虚构示例并明确标注，避免被误认为真实岗位；tabIndex 使锚点跳转后焦点可达） */}
             <aside
-              aria-label="快速入口"
-              className="rounded-xl bg-surface p-5 text-ink shadow-3 md:p-6"
+              id="result-example"
+              tabIndex={-1}
+              aria-label="结果示例，非真实岗位"
+              data-testid="result-example-card"
+              className="rounded-xl bg-surface p-5 text-ink shadow-3 focus:outline-none md:p-6"
             >
-              <p className="text-xs font-semibold tracking-wide text-brand">
-                30 秒开始
-              </p>
-              <h2 className="mt-1.5 text-lg font-bold leading-snug text-ink">
-                告诉我们能去哪里当老师
+              <span className="inline-flex rounded-pill bg-warn-soft px-2.5 py-1 text-xs font-semibold text-warn">
+                结果示例 · 非真实岗位
+              </span>
+              <h2 className="mt-2.5 text-lg font-bold leading-snug text-ink">
+                填写后，你会看到这样的结果
               </h2>
-              <p className="mt-1.5 text-sm leading-6 text-ink-muted">
-                选择你能接受的地区，只看相关的招聘机会。
-              </p>
 
-              <div className="mt-4 grid gap-2.5">
-                <Button
-                  size="lg"
-                  onClick={handleStart}
-                  data-testid="hero-question-start"
-                  className="w-full"
-                >
-                  开始匹配机会
-                </Button>
-                <LinkButton
-                  href="/preview"
-                  variant="ghost"
-                  size="sm"
-                  className="justify-center text-ink-muted"
-                >
-                  先看看匹配示例
-                </LinkButton>
+              {/* 匹配状态（示例）：沿用资格结论卡的 ok 档视觉语言 */}
+              <div className="mt-4 rounded-lg border border-ok-line bg-ok-bg p-4 text-ok-ink">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="inline-flex items-center rounded-full border border-ok-line bg-ok-bg px-2.5 py-0.5 text-xs font-semibold">
+                    初步符合
+                  </span>
+                  <span className="text-xs font-medium">示例：杭州某公办初中 · 语文教师</span>
+                </div>
               </div>
 
-              <p className="mt-4 border-t border-line pt-3 text-xs leading-5 text-ink-muted">
-                无需注册即可完成初筛；结论附官方公告依据，可回看原文核对。
+              <dl className="mt-3 grid gap-2.5 text-sm">
+                <div>
+                  <dt className="text-xs font-medium text-ink-muted">主要依据</dt>
+                  <dd className="mt-0.5 leading-relaxed text-ink">
+                    公告写明要求本科及以上学历、汉语言文学类专业，与所填信息一致。
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-medium text-ink-muted">待确认事项</dt>
+                  <dd className="mt-0.5 leading-relaxed text-ink">
+                    公告未写明是否限户籍，建议向招聘单位确认后再报名。
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-medium text-ink-muted">官方来源</dt>
+                  <dd className="mt-0.5 leading-relaxed text-ink">
+                    官方公告发布页；真实结果中可点开原文逐条核对。
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-medium text-ink-muted">最后核对时间</dt>
+                  <dd className="mt-0.5 leading-relaxed text-ink">2026年10月6日</dd>
+                </div>
+              </dl>
+
+              <p className="mt-3 border-t border-line pt-3 text-xs leading-5 text-ink-muted">
+                示例为虚构数据，仅用于说明判断方式；你的结果将按官方公告逐条计算，最终以招聘单位审核为准。
               </p>
             </aside>
           </div>

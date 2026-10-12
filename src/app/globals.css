@@ -160,6 +160,22 @@
     "Liberation Mono", "Courier New", monospace;
 }
 
+/*
+ * v7.1 M1：首页 hero 左列在窄屏（<lg）撑满首屏视口并垂直居中，
+ * 确保右侧结果示例卡完全折叠到首屏线下，只能通过「先看结果示例」锚点到达。
+ * 桌面端（≥lg）不受影响，仍为双列并排。
+ * 用原生 @media 而非 Tailwind max-lg: 变体，避免 v4 任意值+变体组合在
+ * PostCSS 编译中被丢弃的已知问题。
+ */
+@media (max-width: 1023.98px) {
+  .hero-left-fold {
+    min-height: calc(100vh - 80px);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+}
+
 body {
   background: var(--color-canvas);
   color: var(--color-ink);

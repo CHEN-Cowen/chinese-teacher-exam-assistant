@@ -241,8 +241,8 @@ export const EVENT_DICTIONARY: EventDictionaryEntry[] = [
   // —— v6.1 模块 0A 页面体验优化补缺口事件（不含个人信息） ——
   {
     type: "home_start_match_clicked",
-    label: "首页开始匹配",
-    trigger: "首页点击「开始匹配」主按钮",
+    label: "首页开始资格预筛",
+    trigger: "首页点击「开始资格预筛」唯一主按钮（v7.1 M1 单一入口）",
     properties: "无；不含画像正文",
     core: false,
   },

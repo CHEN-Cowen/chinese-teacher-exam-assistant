@@ -70,7 +70,7 @@ export type AnalyticsEventType =
   | "feedback_submit_failed" // 反馈保存失败
   | "critical_write_failed" // 关键数据写入失败
   // —— v6.1 模块 0A 页面体验优化补缺口事件（不含个人信息） ——
-  | "home_start_match_clicked" // 首页点击"开始匹配"
+  | "home_start_match_clicked" // 首页点击「开始资格预筛」唯一主按钮
   | "learn_opened" // 打开 30 秒说明路径
   | "learn_start_match_clicked" // 从 30 秒说明路径点击"开始匹配"
   | "profile_resumed" // 从首页/草稿恢复上次进度进入问答
