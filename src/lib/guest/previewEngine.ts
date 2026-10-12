@@ -19,6 +19,7 @@ import type { UserRecruitmentProfile } from "@/lib/profile/types";
 import {
   buildOpportunitiesView,
   type OpportunitiesView,
+  type OpportunityRow,
 } from "@/lib/ia/opportunities-view";
 import {
   V61_NOW,
@@ -29,6 +30,7 @@ import {
   draftToProfile,
   isSubjectOpen,
   subjectLabel,
+  type EmploymentNaturePreference,
   type GuestProfileDraft,
   type ProfileLimitation,
 } from "./guestSession";
@@ -65,6 +67,14 @@ export interface GuestPreviewReady {
   limitations: ProfileLimitation[];
   /** 整页唯一高强调行动；无可解释示例时为 null（页面转空态） */
   primaryAction: GuestPrimaryAction | null;
+  /** 用工形式偏好（v7.1 M3）：undefined/undecided = 未选择，不筛选 */
+  naturePreference: EmploymentNaturePreference | undefined;
+  /**
+   * 「只看事业编」时被偏好筛除的机会（非事业编）。
+   * 只是偏好筛选：这些岗位绝不是资格不符合，页面必须放在“暂不推荐”
+   * 并说明可随时切换，不得计入「明确不符合」或从页面无声消失。
+   */
+  natureOutOfPreference: OpportunityRow[];
 }
 
 export interface GuestPreviewNotOpen {
@@ -138,6 +148,70 @@ function buildPrimaryAction(view: OpportunitiesView): GuestPrimaryAction | null 
 }
 
 /**
+ * v7.1 M3 用工偏好与资格分层：偏好筛选只发生在访客结果视图这一层，
+ * matching/domain.ts 的资格判定完全不受影响——被筛除的岗位从这里原样
+ * 返回给页面放进“暂不推荐”，绝不会被改判为 not_eligible。
+ * 只在「只看事业编」时筛选；official_open/undecided/未选择都不筛选。
+ */
+function applyNaturePreference(
+  view: OpportunitiesView,
+  pref: EmploymentNaturePreference | undefined,
+): { view: OpportunitiesView; filtered: OpportunityRow[] } {
+  if (pref !== "public_only") return { view, filtered: [] };
+  const isPublic = (row: OpportunityRow) =>
+    row.natureCode === "public_institution_staff";
+  const filtered: OpportunityRow[] = [];
+
+  let priority = view.priority;
+  if (priority && !isPublic(priority)) {
+    filtered.push(priority);
+    priority = null;
+  }
+  const preliminary = view.preliminary.filter((row) => {
+    if (isPublic(row)) return true;
+    filtered.push(row);
+    return false;
+  });
+  const needInfoGroups = view.needInfoGroups
+    .map((group) => {
+      const rows = group.rows.filter((row) => {
+        if (isPublic(row)) return true;
+        filtered.push(row);
+        return false;
+      });
+      return { ...group, rows, count: rows.length };
+    })
+    .filter((group) => group.rows.length > 0);
+  const manualReview = view.manualReview.filter((row) => {
+    if (isPublic(row)) return true;
+    filtered.push(row);
+    return false;
+  });
+  // 访客画像地区必填，needInfo 分组不会混入地区 UNKNOWN 的非有效候选，
+  // 因此有效数 = 剩余 preliminary + needInfo + manualReview。
+  const validCount =
+    preliminary.length +
+    manualReview.length +
+    needInfoGroups.reduce((sum, group) => sum + group.rows.length, 0);
+  if (priority === null && filtered.length > 0) {
+    // 原优先机会被筛掉时，按原排序从剩余有效机会中取第一个（页面避免误入空态）
+    priority =
+      preliminary[0] ?? needInfoGroups[0]?.rows[0] ?? manualReview[0] ?? null;
+  }
+  return {
+    view: {
+      ...view,
+      priority,
+      preliminary,
+      needInfoGroups,
+      manualReview,
+      validCount,
+    },
+    filtered,
+  };
+}
+
+/**
  * 生成访客初步机会结果。纯函数：同一草稿 + 同一批公告 + 同一参考时间必得同一结果
  * （测试依赖该性质，页面传入固定 V61_NOW，不使用 new Date()）。
  */
@@ -154,7 +228,11 @@ export function buildGuestPreview(
   const profile = draftToProfile(draft);
   if (!profile) return { kind: "incomplete" };
 
-  const view = buildOpportunitiesView(announcements, profile, nowIso);
+  const baseView = buildOpportunitiesView(announcements, profile, nowIso);
+  const { view, filtered } = applyNaturePreference(
+    baseView,
+    draft.employmentNaturePreference,
+  );
 
   return {
     kind: "ready",
@@ -163,5 +241,7 @@ export function buildGuestPreview(
     followUps: buildFollowUps(view),
     limitations: buildProfileLimitations(draft),
     primaryAction: buildPrimaryAction(view),
+    naturePreference: draft.employmentNaturePreference,
+    natureOutOfPreference: filtered,
   };
 }

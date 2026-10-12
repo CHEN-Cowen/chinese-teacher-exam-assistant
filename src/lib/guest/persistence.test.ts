@@ -77,6 +77,37 @@ describe("访客画像：刷新恢复", () => {
     expect(session.draft.acceptedEmploymentNatures).toEqual([]);
   });
 
+  it("结果页用工形式偏好随草稿保存与恢复（v7.1 M3 round-trip）", () => {
+    guestSessionService.save({
+      draft: { ...FULL_DRAFT, employmentNaturePreference: "public_only" },
+      step: TOTAL_PROFILE_STEPS,
+    });
+    const restored = guestSessionService.load()!;
+    expect(restored.draft.employmentNaturePreference).toBe("public_only");
+
+    // 切换偏好后覆盖保存，读取到新值
+    guestSessionService.save({ draft: { employmentNaturePreference: "undecided" } });
+    expect(guestSessionService.load()!.draft.employmentNaturePreference).toBe("undecided");
+  });
+
+  it("旧会话数据没有用工偏好字段：读取正常且不视为已选择（v7.1 M3 兼容）", () => {
+    // 手工写入一份不含 employmentNaturePreference 的历史会话（M2 时期结构）
+    const legacy: GuestProfileSession = {
+      draft: FULL_DRAFT,
+      step: TOTAL_PROFILE_STEPS,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    };
+    saveToStorageStrict(STORAGE_KEYS.GUEST_PROFILE_V61, legacy);
+
+    const restored = guestSessionService.load()!;
+    expect(restored.draft.employmentNaturePreference).toBeUndefined();
+    // 未选择偏好 = 不筛选，画像其余字段不受影响
+    expect(restored.step).toBe(TOTAL_PROFILE_STEPS);
+    expect(restored.draft.regions).toHaveLength(2);
+  });
+
   it("分步保存时前序答案不被覆盖（返回修改后继续）", () => {
     guestSessionService.save({ draft: { regions: FULL_DRAFT.regions }, step: 1 });
     guestSessionService.save({

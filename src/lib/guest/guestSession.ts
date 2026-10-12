@@ -71,6 +71,12 @@ export interface GuestProfileDraft {
    * 旧草稿保留原值，按机会补问后再回填。
    */
   acceptedEmploymentNatures: EmploymentNatureCode[];
+  /**
+   * v7.1 M3：结果页用工形式偏好（三选一，只影响筛选与展示）。
+   * 缺省 = 未选择（不筛选）；旧草稿无此字段，读取正常。
+   * 不写入服务端画像，不进入资格判定。
+   */
+  employmentNaturePreference?: EmploymentNaturePreference;
   /** 5. 意向报考学科；语文以外的学科记为“尚未开放”，不进入匹配 */
   intendedSubject?: SubjectCode;
   /** 非语文用户已在本机留下开注意向（仅本地标记，不发送任何通知） */
@@ -120,6 +126,77 @@ export const REGION_LEVEL_OPTIONS: {
   { value: "required", label: "只考虑", hint: "只推荐这个地区的岗位" },
   { value: "preferred", label: "优先考虑", hint: "这个地区的岗位优先展示" },
   { value: "consider", label: "也可以考虑", hint: "有合适岗位时可以推荐" },
+];
+
+/**
+ * v7.1 M3 用工形式偏好（结果页三选一，只影响筛选与展示）：
+ * - public_only：只看事业编；
+ * - official_open：也接受其他官方用工形式；
+ * - undecided：暂不确定，先都看看（不筛选）。
+ * 偏好绝不进入资格判定：matching/domain.ts 不读取该字段，
+ * 被筛掉的岗位只进“暂不推荐”分组，绝不变为「明确不符合」。
+ */
+export type EmploymentNaturePreference =
+  | "public_only"
+  | "official_open"
+  | "undecided";
+
+/** 结果页三档高层选项（PRD 5.4 M3 文案；不默认替用户选择，未选择时不高亮任何项） */
+export const NATURE_PREFERENCE_OPTIONS: {
+  value: EmploymentNaturePreference;
+  label: string;
+  hint: string;
+}[] = [
+  {
+    value: "public_only",
+    label: "只看事业编",
+    hint: "只显示事业编制岗位；其他形式收进下方“暂不推荐”列表，随时可切回",
+  },
+  {
+    value: "official_open",
+    label: "也接受其他官方用工形式",
+    hint: "事业编和其他官方用工形式的机会都会显示",
+  },
+  {
+    value: "undecided",
+    label: "暂不确定，先都看看",
+    hint: "先不按用工形式筛选，看全部机会",
+  },
+];
+
+/**
+ * 各用工形式的一句审慎解释（v7.1 M3）。
+ * 刻意不比较“稳定性高低”：不同地区制度含义不同，一切以官方公告与当地政策为准。
+ */
+export const OFFICIAL_NATURE_INFO: {
+  code: EmploymentNatureCode;
+  description: string;
+}[] = [
+  {
+    code: "public_institution_staff",
+    description:
+      "纳入机构编制管理的事业单位岗位，通常所说的“事业编制”。岗位的具体保障与要求以公告和当地政策为准。",
+  },
+  {
+    code: "record_filing",
+    description:
+      "部分地区公办学校的一种聘用方式，一般需经人社或教育部门备案。不同地区的录用和管理方式可能不同，以当地官方公告为准。",
+  },
+  {
+    code: "post_quota",
+    description:
+      "部分地区实行人员总额管理的岗位，录用和管理按当地总额管理规定执行。各地做法不同，以官方公告和主管部门解释为准。",
+  },
+  {
+    code: "headcount_control",
+    description:
+      "部分地区在核定人员规模内聘用的岗位。编制占用、待遇和晋升安排因地区而异，以当地官方公告为准。",
+  },
+  {
+    code: "other",
+    description:
+      "公告中标注的其他官方用工形式。具体性质建议查阅公告原文，或直接向招聘单位确认。",
+  },
 ];
 
 export const PROVINCE_OPTIONS: { code: string; name: string }[] = [

@@ -1,13 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { AUTH_MODE, useCurrentUser } from "@/lib/auth";
 import {
   CREDENTIAL_LEVEL_OPTIONS,
   guestSessionService,
+  NATURE_PREFERENCE_OPTIONS,
+  OFFICIAL_NATURE_INFO,
   subjectLabel,
+  type EmploymentNaturePreference,
   type GuestProfileDraft,
 } from "@/lib/guest/guestSession";
 import { buildGuestPreview, type GuestPreview } from "@/lib/guest/previewEngine";
@@ -25,17 +28,19 @@ import { LoadingPage } from "@/components/ui/Loading";
 import { QualifyConclusionCard, type QualifyLevel } from "@/components/ui/QualifyConclusionCard";
 import { track, trackOncePerUser } from "@/lib/analytics/eventService";
 import { USER_COPY } from "@/lib/ux/userCopy";
-import { stageLabel } from "@/lib/ia/labels";
+import { natureShortLabel, stageLabel } from "@/lib/ia/labels";
 import type { GuestPreviewReady } from "@/lib/guest/previewEngine";
 import type { ProfileLimitation } from "@/lib/guest/guestSession";
 
 /**
  * v6.1 访客初步机会结果页：
- * 未登录完成五组画像后，立即看到按匹配程度排序的教师公开招聘机会。
+ * 未登录完成基础画像后，立即看到按匹配程度排序的教师公开招聘机会。
  *
  * - 优先展示“初步符合”，其余机会按需要补充的条件分组，并说明为什么要补、影响几个机会；
  * - 每条机会都能展开看到逐项条件依据与官方来源；
  * - 未填写户籍/年龄等条件只显示“补充信息后判断”，绝不判为不符合；
+ * - v7.1 M3：用工形式偏好三选一（只看事业编/也接受其他官方形式/暂不确定），
+ *   只影响筛选与展示，不形成资格结论；展开可见各形式审慎解释；
  * - 未登录可完整查看，只有“关注/保存”一个主行动触发登录；
  * - 不生成 7 天备考计划；非语文学科显示“尚未开放 + 留下意向”终态。
  */
@@ -43,18 +48,39 @@ export default function PreviewPage() {
   const router = useRouter();
   const { status } = useCurrentUser();
 
-  const [state] = useState<{ preview: GuestPreview | null; intentionLeft: boolean }>(() => {
-    if (typeof window === "undefined") return { preview: null, intentionLeft: false };
+  // 基础输入（草稿/公告/参考时间）只在进入页面时取一次；
+  // 用工偏好变化只重算 preview（纯函数），不重复生成公告时间线。
+  const [base] = useState<{
+    draft: GuestProfileDraft;
+    announcements: ReturnType<typeof getRollingDemoAnnouncements>;
+    nowIso: string;
+  } | null>(() => {
+    if (typeof window === "undefined") return null;
     const session = guestSessionService.load();
-    if (!session) return { preview: null, intentionLeft: false };
+    if (!session) return null;
     const now = new Date();
     return {
-      preview: buildGuestPreview(session.draft, getRollingDemoAnnouncements(now), now.toISOString()),
-      intentionLeft: session.draft.intentionLeft === true,
+      draft: session.draft,
+      announcements: getRollingDemoAnnouncements(now),
+      nowIso: now.toISOString(),
     };
   });
-  const [intentionLeft, setIntentionLeft] = useState(state.intentionLeft);
+  const [naturePref, setNaturePref] = useState<EmploymentNaturePreference | undefined>(
+    () => base?.draft.employmentNaturePreference,
+  );
+  // 偏好写入失败提示：本次会话内仍生效，但不持久化
+  const [prefSaveError, setPrefSaveError] = useState(false);
+  const [intentionLeft, setIntentionLeft] = useState(base?.draft.intentionLeft === true);
   const [intentionError, setIntentionError] = useState<string | null>(null);
+
+  const preview: GuestPreview | null = useMemo(() => {
+    if (!base) return null;
+    return buildGuestPreview(
+      { ...base.draft, employmentNaturePreference: naturePref },
+      base.announcements,
+      base.nowIso,
+    );
+  }, [base, naturePref]);
 
   useEffect(() => {
     if (status === "loading") return;
@@ -63,18 +89,30 @@ export default function PreviewPage() {
       router.replace("/opportunities");
       return;
     }
-    if (!state.preview || state.preview.kind === "incomplete") {
+    if (!preview || preview.kind === "incomplete") {
       router.replace("/onboarding");
     }
-  }, [status, router, state.preview]);
+  }, [status, router, preview]);
+
+  /** 选择用工偏好：立即重算结果并持久化；写入失败不阻断（本次会话仍生效） */
+  const selectNaturePref = (value: EmploymentNaturePreference) => {
+    setNaturePref(value);
+    setPrefSaveError(false);
+    try {
+      guestSessionService.save({ draft: { employmentNaturePreference: value } });
+    } catch {
+      setPrefSaveError(true);
+    }
+    track("nature_preference_changed", "opportunity", { props: { value } });
+  };
 
   if (status === "loading") return <LoadingPage />;
-  if (!state.preview || state.preview.kind === "incomplete") return <LoadingPage />;
+  if (!preview || preview.kind === "incomplete") return <LoadingPage />;
 
-  if (state.preview.kind === "subject_not_open") {
+  if (preview.kind === "subject_not_open") {
     return (
       <NotOpenSubject
-        subjectLabel={state.preview.subjectLabel}
+        subjectLabel={preview.subjectLabel}
         intentionLeft={intentionLeft}
         error={intentionError}
         onLeaveIntention={() => {
@@ -90,7 +128,14 @@ export default function PreviewPage() {
     );
   }
 
-  return <ReadyPreview preview={state.preview} />;
+  return (
+    <ReadyPreview
+      preview={preview}
+      naturePref={naturePref}
+      onSelectNaturePref={selectNaturePref}
+      prefSaveError={prefSaveError}
+    />
+  );
 }
 
 /* ================== 学科尚未开放终态 ================== */
@@ -166,7 +211,17 @@ function formatCoverageLine(): string {
   return `${coverageProvinceLine(GUEST_COVERAGE)} · ${day}核对 · 当前在报 ${GUEST_COVERAGE.openOpportunityCount} 个`;
 }
 
-function ReadyPreview({ preview }: { preview: GuestPreviewReady }) {
+function ReadyPreview({
+  preview,
+  naturePref,
+  onSelectNaturePref,
+  prefSaveError,
+}: {
+  preview: GuestPreviewReady;
+  naturePref: EmploymentNaturePreference | undefined;
+  onSelectNaturePref: (value: EmploymentNaturePreference) => void;
+  prefSaveError: boolean;
+}) {
   const { view, followUps, limitations, primaryAction } = preview;
 
   // P0 漏斗②：访客看到至少一个有效（初步符合）机会；同用户只记一次
@@ -198,6 +253,7 @@ function ReadyPreview({ preview }: { preview: GuestPreviewReady }) {
   };
 
   const archivedCount =
+    preview.natureOutOfPreference.length +
     view.regionOutOfScope.length +
     view.notEligible.length +
     view.closedBuckets.reduce((sum, bucket) => sum + bucket.rows.length, 0);
@@ -206,6 +262,27 @@ function ReadyPreview({ preview }: { preview: GuestPreviewReady }) {
   const archiveSections = archivedCount > 0 ? (
     <Disclosure title="查看暂不推荐的示例" count={archivedCount}>
       <div className="space-y-6">
+        {preview.natureOutOfPreference.length > 0 && (
+          <section className="space-y-3">
+            <LayerHeading
+              title="不符合当前用工形式偏好"
+              count={preview.natureOutOfPreference.length}
+            />
+            <p className="text-xs leading-5 text-ink-muted">
+              这些岗位的用工形式不在你选择的「只看事业编」范围内，所以没有进入上面的推荐；
+              这只是偏好筛选，不代表资格不符合，可随时在上方切换偏好后重新查看。
+            </p>
+            {preview.natureOutOfPreference.map((row) => (
+              <OpportunityCard
+                key={row.unitId}
+                row={row}
+                expanded={openIds.has(row.unitId)}
+                onToggle={() => toggleRow(row.unitId)}
+              />
+            ))}
+          </section>
+        )}
+
         {view.regionOutOfScope.length > 0 && (
           <section className="space-y-3">
             <LayerHeading title="地区不在你选择的范围" count={view.regionOutOfScope.length} />
@@ -360,6 +437,13 @@ function ReadyPreview({ preview }: { preview: GuestPreviewReady }) {
           <p className="text-xs leading-relaxed text-ink-muted">{formatCoverageLine()}</p>
         </Hero>
 
+        {/* v7.1 M3 用工形式偏好：三档高层选择 + 展开解释；只影响筛选，不形成资格结论 */}
+        <NaturePreferenceCard
+          value={naturePref}
+          onChange={onSelectNaturePref}
+          saveError={prefSaveError}
+        />
+
         {/* 示例判断：只解释产品会怎样帮助，不提供保存或报名动作。 */}
         <section id="demo-opportunity" className="scroll-mt-20 space-y-3">
           <div>
@@ -459,6 +543,92 @@ function ReadyPreview({ preview }: { preview: GuestPreviewReady }) {
         </p>
       </div>
     </div>
+  );
+}
+
+/**
+ * v7.1 M3 用工形式偏好卡：
+ * - 三档高层选项（PRD 5.4 文案）；未选择时不高亮任何项，不默认替用户选择；
+ * - 展开可见各用工形式的一句审慎解释，并声明地区差异与官方口径；
+ * - 偏好只影响筛选与展示，绝不形成资格结论。
+ */
+function NaturePreferenceCard({
+  value,
+  onChange,
+  saveError,
+}: {
+  value: EmploymentNaturePreference | undefined;
+  onChange: (value: EmploymentNaturePreference) => void;
+  saveError: boolean;
+}) {
+  return (
+    <section
+      data-testid="nature-preference"
+      aria-label="用工形式偏好"
+      className="rounded-xl border border-line bg-surface p-4 shadow-1 sm:p-5"
+    >
+      <h2 className="text-base font-semibold text-ink">想看哪类用工形式的岗位？</h2>
+      <p className="mt-1 text-xs leading-5 text-ink-muted">
+        偏好只影响这里的展示范围和顺序，不会被当作资格结论，随时可以改。
+      </p>
+      <div className="mt-3 grid gap-2">
+        {NATURE_PREFERENCE_OPTIONS.map((opt) => {
+          const selected = value === opt.value;
+          return (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => onChange(opt.value)}
+              aria-pressed={selected}
+              data-testid={`nature-pref-${opt.value}`}
+              className={`min-h-11 rounded-xl border px-3.5 py-2.5 text-left transition-all ${
+                selected
+                  ? "border-brand bg-brand-soft ring-1 ring-brand/10"
+                  : "border-line bg-canvas/50 hover:border-brand/30"
+              }`}
+            >
+              <span
+                className={`block text-sm font-medium ${
+                  selected ? "text-brand" : "text-ink"
+                }`}
+              >
+                {opt.label}
+              </span>
+              <span className="mt-0.5 block text-xs leading-5 text-ink-muted">
+                {opt.hint}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      {saveError && (
+        <p role="alert" className="mt-2 text-xs text-danger">
+          本机存储暂不可用，偏好本次生效但未能保存；下次进入页面需要重新选择。
+        </p>
+      )}
+      <div className="mt-3">
+        <Disclosure title="备案制、员额制这些词是什么意思？">
+          <ul className="space-y-2">
+            {OFFICIAL_NATURE_INFO.map((item) => (
+              <li
+                key={item.code}
+                className="rounded-lg border border-line bg-canvas/60 px-3 py-2"
+              >
+                <span className="text-sm font-medium text-ink">
+                  {natureShortLabel(item.code)}
+                </span>
+                <p className="mt-0.5 text-xs leading-5 text-ink-muted">
+                  {item.description}
+                </p>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs leading-5 text-ink-muted">
+            同一用工形式在不同地区的具体含义可能不同，请以官方公告和当地政策为准。
+          </p>
+        </Disclosure>
+      </div>
+    </section>
   );
 }
 

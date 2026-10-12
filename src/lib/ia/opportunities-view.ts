@@ -7,6 +7,7 @@
  */
 import type {
   AnnouncementVersion,
+  EmploymentNatureCode,
   RecruitmentAnnouncement,
 } from "@/lib/announcements/types";
 import type { UserRecruitmentProfile } from "@/lib/profile/types";
@@ -63,6 +64,8 @@ export interface OpportunityRow {
   unitName: string;
   /** 用工性质/学段 */
   natureText: string;
+  /** 用工形式稳定编码（v7.1 M3 偏好筛选用；文案变化不影响此编码） */
+  natureCode: EmploymentNatureCode;
   stageText: string;
   /** 招聘人数 */
   headcount: number;
@@ -142,6 +145,7 @@ function toRow(candidate: OpportunityCandidate, nowIso: string): OpportunityRow 
     regionText: regionLabel(unit.region),
     unitName: unit.name,
     natureText: natureShortLabel(unit.employmentNature.code),
+    natureCode: unit.employmentNature.code,
     stageText: stageLabel(unit.stage),
     headcount: unit.headcount,
     status: match.overall,

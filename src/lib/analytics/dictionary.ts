@@ -84,6 +84,14 @@ export const EVENT_DICTIONARY: EventDictionaryEntry[] = [
     properties: "步号 step、是否暂不提供 skipped；不含任何答案正文",
     core: false,
   },
+  // —— v7.1 M3 用工形式偏好（结果页三选一，只影响筛选不形成资格结论） ——
+  {
+    type: "nature_preference_changed",
+    label: "切换用工形式偏好",
+    trigger: "结果页用工形式偏好卡点选「只看事业编/也接受其他官方用工形式/暂不确定」时",
+    properties: "偏好枚举 value（public_only/official_open/undecided）；不含任何画像正文",
+    core: false,
+  },
   {
     type: "opportunity_unfollowed",
     label: "取消关注机会",
