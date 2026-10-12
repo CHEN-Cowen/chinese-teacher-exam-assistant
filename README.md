@@ -71,7 +71,8 @@
 > **2026-10-12 v7.1 M0—M10 收口**：
 > - v7.1 迭代完成：M0 浙江/江苏覆盖口径与公告数据基础、M1 首页单一入口、M2 两屏基础画像、M3 用工偏好与资格分离（降噪）、M4 四档结果卡片、M5 地图轻量入口（点击后打开外部地图，不内嵌）、M6 三种无结果态与站内订阅、M7 多岗位日程自动同步/改期/冲突/幂等提醒、M8 登录后置与访客迁移、M9 分析事件与试用看板、M10 集成收口与文档同步。
 > - M10 修复：demo 模式下详情页 `useActiveProfile` 的 `isGuest` 曾恒为 true，已登录演示账号「保存机会/设为重点准备」被反复重定向到登录页、原动作无法完成；已改为跟随认证状态并新增回归测试（`src/lib/opportunities/useActiveProfile.test.tsx`）。
-> - 本机全量回归：前端 Vitest 36 文件 319 用例、后端 22 文件 258 用例全部通过，tsc 0 错、ESLint 0 错、生产构建 + 外部依赖扫描 0 阻断；`m9-p0-flow.mjs` 25/25、`m9-blocked-runtime.mjs` 7/7、`m9-public-safety.mjs` 2/2、`m9-cn-smoke.mjs` 5/5（QA_FORCE_DIRECT=1，中国移动直连）、`prototype-v7-smoke.mjs` 通过；`m9-invited-flow.mjs` 已同步 v7.1 口径，需在受邀环境复跑。
+> - 本机全量回归：前端 Vitest 36 文件 320 用例、后端 22 文件 258 用例全部通过，tsc 0 错、ESLint 0 错、生产构建 + 外部依赖扫描 0 阻断；`m9-p0-flow.mjs` 25/25、`m9-blocked-runtime.mjs` 7/7、`m9-public-safety.mjs` 2/2、`m9-cn-smoke.mjs` 5/5（QA_FORCE_DIRECT=1，中国移动直连）、`prototype-v7-smoke.mjs` 通过；`m9-invited-flow.mjs` 已同步 v7.1 口径，需在受邀环境复跑。
+> - V7.1 最终验收修复（2026-10-12）：① 第一屏地区考虑程度问句改为 PRD 原文「你对这个地区的考虑程度是？」（[src/app/onboarding/page.tsx](./src/app/onboarding/page.tsx)）；② 「重置演示数据」曾遗漏访客关注记录（`kb_guest_follows_v1`）与订阅键（`kb_demo_subscription`），已补注册并新增回归测试（[src/lib/guest/guestFollows.test.ts](./src/lib/guest/guestFollows.test.ts)、[src/lib/mock-data.ts](./src/lib/mock-data.ts)）。
 >
 > **仍待办**：① 受邀站页脚暂未展示 ICP 备案号，正式扩大试用前按 [DEPLOYMENT.md](./DEPLOYMENT.md) 第 12 节补齐备案与合规文件，并在家庭宽带/手机蜂窝做一次无代理冒烟（记录到 [`docs/china-network-accessibility.md`](./docs/china-network-accessibility.md) 第 6.3 节）；② `m9-invited-flow.mjs` 已更新为 v7.1 口径但本机无 PostgreSQL 未复跑，需在受邀环境验证；③ Vercel demo 站为境外平台，中国大陆可达性无保障，不作为试用依赖。
 
@@ -107,7 +108,7 @@
 | 用户端产品化体验：结论优先、唯一主行动、渐进展开、统一空态/加载态、保存与开关反馈、移动端适配 | ✅ 2026-10-10 v7 视觉系统（温暖米白+深海军蓝）落地，9 件 v7 组件 + 完整状态覆盖（离线/无权限/数据过期/冲突）覆盖主要用户页面 |
 | 分析指标：27 事件（含 8 个 P0 漏斗事件）、seed/live 分流、访客暂存迁移、P0 9 阶段漏斗与 7 日有效推进率 | ✅ 模块 9 口径，见下文“分析与指标” |
 | 运行时网络基线：CSP 同源、外部依赖扫描与守卫、断跨源核心操作回归 | ✅ 代码侧 + 真实网络实测：2026-10-05 中国移动家庭宽带与手机蜂窝无代理冒烟通过（[`docs/china-network-accessibility.md`](./docs/china-network-accessibility.md) 第 6.3 节）；受邀域名 [kbzs.al.qich.top](https://kbzs.al.qich.top) 已 HTTPS 可访问（2026-10-11 健康检查通过），家庭/蜂窝网络的正式冒烟记录待补 |
-| 单元/领域测试 | ✅ 前端 Vitest 36 文件 319 用例 + 后端 Vitest 22 文件 258 用例（2026-10-12 本机复测），含网络基线守卫、模块 9 高风险回归、迁移覆盖测试与 M10 isGuest 回归 |
+| 单元/领域测试 | ✅ 前端 Vitest 36 文件 320 用例 + 后端 Vitest 22 文件 258 用例（2026-10-12 本机复测），含网络基线守卫、模块 9 高风险回归、迁移覆盖测试、M10 isGuest 回归与最终验收回归 |
 | 真实短信/微信/邮件/Web Push、自动全国爬虫、对象存储、真实 AI/OCR | ❌ 本轮明确不做/未接入 |
 
 ### 技术栈
@@ -129,7 +130,7 @@ npm run dev        # http://localhost:3000（demo 模式）
 质量检查：
 
 ```bash
-npm test                 # Vitest 全量：319 个通过（36 个测试文件，2026-10-12）
+npm test                 # Vitest 全量：320 个通过（36 个测试文件，2026-10-12）
 npm run check:external   # 扫描源码与构建产物的运行时外部依赖（postbuild 自动执行）
 npx tsc --noEmit         # 类型检查
 npm run lint             # ESLint

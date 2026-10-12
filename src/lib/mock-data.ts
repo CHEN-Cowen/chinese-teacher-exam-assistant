@@ -927,6 +927,10 @@ export const STORAGE_KEYS = {
   GUEST_SESSION: "kb_guest_session",
   // —— v6.1 首次体验：未登录访客的五组基础画像与初步机会结果（与旧键隔离，7 天过期） ——
   GUEST_PROFILE_V61: "kb_guest_profile_v61",
+  // —— v7.1 M8：未登录访客的关注/保存机会记录（登录后迁移到账号） ——
+  GUEST_FOLLOWS: "kb_guest_follows_v1",
+  // —— v7.1 M6：演示环境的新机会订阅（单条，随重置清空后按画像重建默认值） ——
+  DEMO_SUBSCRIPTION: "kb_demo_subscription",
   // —— v6.1 模块 5：登录后按机会补问的条件事实（年龄/户籍/社保/经历/特有条件答案），随画像提交后端重算 ——
   PROFILE_SUPPLEMENT_V61: "kb_profile_supplement_v61",
   // —— 模块 7：主要目标考试内容的人工确认记录（绑定机会单元 + 公告版本，版本变更即失效） ——

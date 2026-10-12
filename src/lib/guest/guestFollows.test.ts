@@ -105,3 +105,18 @@ describe("访客关注：重复登录幂等", () => {
     expect(follows[0].status).toBe("preparing");
   });
 });
+
+describe("访客关注：重置演示数据", () => {
+  it("clearAllStorage 清空访客关注与演示订阅（v7.1 回归：设置页承诺清空全部数据）", async () => {
+    upsertGuestFollow("unit-1", { status: "considering" });
+    localStorage.setItem("kb_demo_subscription", JSON.stringify({ regions: [] }));
+    localStorage.setItem("kb_demo_opportunities_v1_unit-1", "{}");
+
+    const { clearAllStorage } = await import("@/lib/storage");
+    clearAllStorage();
+
+    expect(localStorage.getItem(GUEST_FOLLOWS_KEY)).toBeNull();
+    expect(localStorage.getItem("kb_demo_subscription")).toBeNull();
+    expect(localStorage.getItem("kb_demo_opportunities_v1_unit-1")).toBeNull();
+  });
+});

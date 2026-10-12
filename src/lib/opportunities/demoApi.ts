@@ -161,7 +161,7 @@ function candidates(profile: UserRecruitmentProfile, now: string): OpportunityCa
 
 // ==================== 演示环境订阅（v7.1 M6，localStorage 持久化） ====================
 
-const DEMO_SUBSCRIPTION_KEY = "demo-opportunity-subscription";
+const DEMO_SUBSCRIPTION_KEY = "kb_demo_subscription";
 
 interface DemoSubscriptionRow {
   regions: SubscriptionDTO["regions"];

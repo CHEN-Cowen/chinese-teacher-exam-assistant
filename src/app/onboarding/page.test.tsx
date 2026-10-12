@@ -126,6 +126,8 @@ describe("第一屏：地区意向（v7.1 M2）", () => {
       addBtn!.click();
     });
     const html = page.html();
+    // v7.1 PRD §5.2：添加地区后必须询问「你对这个地区的考虑程度是？」
+    expect(html).toContain("你对这个地区的考虑程度是？");
     expect(html).toContain("只考虑");
     expect(html).toContain("优先考虑");
     expect(html).toContain("也可以考虑");

@@ -550,7 +550,7 @@ function StepRegions({
                 </label>
               </div>
               <fieldset className="m-0 border-0 p-0">
-                <legend className="text-xs font-medium text-ink-muted">接受程度</legend>
+                <legend className="text-xs font-medium text-ink-muted">你对这个地区的考虑程度是？</legend>
                 <div className="mt-1.5 grid grid-cols-3 gap-2" role="group">
                   {REGION_LEVEL_OPTIONS.map((opt) => {
                     const selected = region.level === opt.value;
