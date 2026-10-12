@@ -279,40 +279,17 @@ describe("buildGuestPreview：暂不确定/暂不提供（模块 4）", () => {
     expect(followUp?.reason).toContain("暂未提供");
   });
 
-  it("跳过地区：无初步符合、主行动为空，所有岗位并入「补充地区后判断」，南京学历硬不符仍保留在明确不符合", () => {
+  it("未选地区（含旧草稿 skippedSteps:[1]）：返回 incomplete，不生成个性化结论（v7.1 M2 消除假跳过）", () => {
     const draft = completeDraft({
       regions: [],
       graduationDate: undefined,
       employmentStatus: undefined,
+      // 旧 3 步草稿可能带有 step 1 跳过标记；新模型不允许第一屏跳过
       skippedSteps: [1],
     });
-    const r = ready(draft);
-
-    expect(r.limitations.map((l) => l.step)).toContain(1);
-    expect(r.view.priority).toBeNull();
-    expect(r.primaryAction).toBeNull();
-    expect(r.view.validCount).toBe(0);
-
-    const regionGroup = r.view.needInfoGroups.find((g) => g.dimension === "region");
-    expect(regionGroup).toBeDefined();
-    // 杭州/鄞州/合肥仅有 region UNKNOWN，进入地区补充分组（苏州因专业歧义整体归人工确认，不在此列）
-    expect(regionGroup!.count).toBeGreaterThanOrEqual(3);
-    expect(
-      regionGroup!.rows.some((row) => row.unitId === "unit-hangzhou-01"),
-    ).toBe(true);
-    // 已截止的温州不混入地区补充分组
-    expect(
-      regionGroup!.rows.some((row) => row.unitId === "unit-wenzhou-01"),
-    ).toBe(false);
-
-    // 南京是硕士学历硬不符（overall=not_eligible），不能因缺地区被洗成「补充信息」
-    expect(
-      r.view.notEligible.some((row) => row.unitId === "unit-nanjing-01"),
-    ).toBe(true);
-    // 杭州等仅缺地区的岗位绝不进明确不符合
-    expect(
-      r.view.notEligible.some((row) => row.unitId === "unit-hangzhou-01"),
-    ).toBe(false);
+    const result = buildGuestPreview(draft, V61_SEED_ANNOUNCEMENTS, V61_NOW);
+    // 未选地区不得生成「初步符合」的个性化结论：返回 incomplete，页面应回到 onboarding
+    expect(result.kind).toBe("incomplete");
   });
 
   it("跳过教师资格：岗位教师维度 UNKNOWN，画像不崩、不判不符合", () => {
@@ -331,9 +308,8 @@ describe("buildGuestPreview：暂不确定/暂不提供（模块 4）", () => {
     ).toBe("UNKNOWN");
   });
 
-  it("三阶段全部跳过：仍可生成结果页模型（空态），限制数为 2（step 3 为信息性），不抛错", () => {
+  it("仅跳过第二屏（第一屏必须有地区）：可生成结果页模型，限制数为 1（v7.1 M2 两屏模型）", () => {
     const draft = completeDraft({
-      regions: [],
       educationLevel: undefined,
       degree: undefined,
       majorFullName: undefined,
@@ -342,12 +318,15 @@ describe("buildGuestPreview：暂不确定/暂不提供（模块 4）", () => {
       teacherCert: undefined,
       intendedSubject: undefined,
       acceptedEmploymentNatures: [],
-      skippedSteps: [1, 2, 3],
+      // 第一屏不允许跳过，只跳过第二屏
+      skippedSteps: [2],
     });
     const r = ready(draft);
-    // step 1 和 step 2 无内容 → 2 条限制；step 3 在 buildProfileLimitations 中跳过
-    expect(r.limitations).toHaveLength(2);
-    expect(r.view.priority).toBeNull();
-    expect(r.primaryAction).toBeNull();
+    // step 2 无内容 → 1 条限制；step 1 有地区不产生限制
+    expect(r.limitations).toHaveLength(1);
+    expect(r.limitations[0].step).toBe(2);
+    // 有地区匹配的岗位 → priority 不为空（need_more_info 状态），但不出现初步符合
+    expect(r.view.preliminary).toHaveLength(0);
+    expect(r.view.validCount).toBeGreaterThanOrEqual(1);
   });
 });

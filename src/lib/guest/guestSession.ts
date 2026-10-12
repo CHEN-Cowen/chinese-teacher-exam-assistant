@@ -1,25 +1,25 @@
 /**
- * v6.1 首次体验（访客）画像会话（PRD 7.3）。
+ * v7.1 首次体验（访客）画像会话（PRD 7.3 / v7.1 M2 两屏基础画像）。
  *
- * 未登录用户可以分步完成五组基础画像并查看初步机会结果；
+ * 未登录用户通过两屏基础画像即可查看初步机会结果；
  * 草稿与进度保存在本机浏览器 localStorage（kb_guest_profile_v61），7 天过期。
  *
- * 五组基础画像：
- * 1. 可接受地区（必须接受 / 优先 / 可以考虑）
- * 2. 最高学历和学位
- * 3. 毕业证专业全称
- * 4. 毕业时间和当前就业状态
- * 5. 教师资格状态/学科/学段 + 对用工形式的接受程度
+ * v7.1 M2 两屏基础画像：
+ * 1. 地区意向 — 可接受地区（只考虑 / 优先考虑 / 也可以考虑）
+ * 2. 基础资格 — 最高学历、专业全称、毕业时间、教师资格状态（+学段/学科/预计时间）
+ *
+ * 从首次流程移出改为按机会补问：就业状态、户籍/生源地、社保和劳动关系、
+ * 工作经历、普通话等级、年龄、用工形式偏好、地区特有条件。
+ * 取消独立"补充信息说明"步骤；结果页直接说明"补充哪一项会影响多少机会"。
  *
  * 年龄、户籍、社保、工作经历不在这里一次收齐：它们属于条件画像，
  * 只在具体机会需要时按需补问；草稿不包含这些字段，匹配时只能得到 UNKNOWN，
- * 永远不会被自动判定为“不符合”（规则见 lib/matching/domain.ts）。
+ * 永远不会被自动判定为"不符合"（规则见 lib/matching/domain.ts）。
  *
  * 注意：这不是真实认证或跨设备保存。接入真实后端时，登录成功后再把
  * 完整草稿提交服务端持久化；本轮（模块 4）不做登录持久化。
  */
 import {
-  IN_SCOPE_EMPLOYMENT_NATURES,
   type CredentialLevel,
   type DegreeCode,
   type EmploymentNatureCode,
@@ -38,15 +38,14 @@ import { STORAGE_KEYS } from "@/lib/mock-data";
 import { loadFromStorage, saveToStorageStrict, removeFromStorage } from "@/lib/storage";
 
 /**
- * 三阶段基础画像采集（v7 调整）：
- * 1. 求职方向 — 意向地区、毕业时间、当前状态
- * 2. 资格条件 — 学历学位、专业全称、教师资格、用工形式偏好
- * 3. 补充信息 — 说明后续按需补充的条件（户籍、工作经历等），可直接进入结果
+ * v7.1 M2 两屏基础画像采集：
+ * 1. 地区意向 — 可接受地区（只考虑 / 优先考虑 / 也可以考虑）
+ * 2. 基础资格 — 最高学历、专业全称、毕业时间、教师资格状态（+学段/学科/预计时间）
  *
  * 草稿数据模型（GuestProfileDraft）不变，仅重组字段分组与步骤数。
- * 旧 5 步草稿的 session.step 值会在读取时自动归入新 3 步范围。
+ * 旧 3 步/5 步草稿的 session.step 值会在读取时自动归入新 2 步范围（见 migrateSessionStep）。
  */
-export const TOTAL_PROFILE_STEPS = 3;
+export const TOTAL_PROFILE_STEPS = 2;
 
 /** 当前唯一开放学科；其他学科在访客流程中明确分流，不生成匹配结果 */
 export const OPEN_SUBJECT = "chinese" as const;
@@ -66,7 +65,11 @@ export interface GuestProfileDraft {
   employmentStatus?: EmploymentStatus;
   /** 5. 教师资格情况 */
   teacherCert?: TeacherCertInfo;
-  /** 5. 对事业编及其他官方用工形式的接受程度（至少 1 项） */
+  /**
+   * 对事业编及其他官方用工形式的接受程度（白名单）。
+   * v7.1 M2：已移出首次流程，空数组=未提供（匹配引擎不据此判 PASS/FAIL）；
+   * 旧草稿保留原值，按机会补问后再回填。
+   */
   acceptedEmploymentNatures: EmploymentNatureCode[];
   /** 5. 意向报考学科；语文以外的学科记为“尚未开放”，不进入匹配 */
   intendedSubject?: SubjectCode;
@@ -97,7 +100,9 @@ const GUEST_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 function emptyDraft(): GuestProfileDraft {
   return {
     regions: [],
-    acceptedEmploymentNatures: [...IN_SCOPE_EMPLOYMENT_NATURES],
+    // v7.1 M2：用工形式偏好已移出首次流程，空数组=未提供；
+    // 不再默认填全集（用户从未确认的偏好不得被静默记为接受）
+    acceptedEmploymentNatures: [],
   };
 }
 
@@ -112,9 +117,9 @@ export const REGION_LEVEL_OPTIONS: {
   label: string;
   hint: string;
 }[] = [
-  { value: "required", label: "必须接受", hint: "只考虑这个地区" },
-  { value: "preferred", label: "优先", hint: "更想去，优先排序" },
-  { value: "consider", label: "可以考虑", hint: "有合适机会也愿意去" },
+  { value: "required", label: "只考虑", hint: "只推荐这个地区的岗位" },
+  { value: "preferred", label: "优先考虑", hint: "这个地区的岗位优先展示" },
+  { value: "consider", label: "也可以考虑", hint: "有合适岗位时可以推荐" },
 ];
 
 export const PROVINCE_OPTIONS: { code: string; name: string }[] = [
@@ -277,29 +282,23 @@ export function subjectLabel(code: SubjectCode | undefined): string {
 
 // ==================== 分组完成度（页面“下一步”门禁唯一口径） ====================
 
-/** 每阶段信息「用来做什么」的说明（页面逐阶段展示，避免用户盲填） */
+/** 每屏信息「用来做什么」的说明（页面逐屏展示，避免用户盲填） */
 export const STEP_PURPOSE: Record<number, string> = {
-  1: "先告诉我们你能接受去哪里、大概什么时候毕业。用来圈定地区范围，并按每条公告判断你的应届或社会人员身份。",
+  1: "告诉我们你能接受去哪里。用来圈定地区范围，只看相关地区的招聘机会。",
   2: "核对公告的学历、专业和教师资格门槛。逐条比对，名称不完整或存在解释空间时不会硬判。",
-  3: "以下信息在具体机会需要时再补充，不影响现在查看结果。缺少非必要信息时结果标为「信息不足」，不会阻止你继续。",
 };
 
-/** 「暂不确定 / 暂不提供」按钮文案与跳过后的结果限制提示 */
+/**
+ * 「暂不提供」按钮文案与跳过后的结果限制提示。
+ * v7.1 M1：第一屏不允许跳过地区（改为"先看看覆盖范围"），只有第二屏可跳过。
+ */
 export const STEP_SKIP_COPY: Record<
   number,
   { action: string; confirm: string }
 > = {
-  1: {
-    action: "还没确定地区，先跳过",
-    confirm: "未选地区时不会给出任何「初步符合」结果：所有岗位都要等你补充地区后才能判断，这不是不符合。",
-  },
   2: {
     action: "资格条件暂不提供，先跳过",
     confirm: "缺少学历、专业或教师资格信息时，相关岗位只能停留在「补充信息后判断」，不会被当作不符合。",
-  },
-  3: {
-    action: "全部稍后补充",
-    confirm: "可以直接查看筛选结果。缺少的信息会导致相关条件标为「信息不足」，补充后会重新判断。",
   },
 };
 
@@ -315,23 +314,16 @@ export function isStepSkipped(draft: GuestProfileDraft, step: number): boolean {
 export function stepHasContent(draft: GuestProfileDraft, step: number): boolean {
   switch (step) {
     case 1:
-      // 求职方向：意向地区、毕业时间、当前状态
-      return (
-        draft.regions.length > 0 ||
-        !!draft.graduationDate ||
-        draft.employmentStatus !== undefined
-      );
+      // 地区意向：选了至少一个地区
+      return draft.regions.length > 0;
     case 2:
-      // 资格条件：学历学位、专业、教师资格、用工形式
+      // 基础资格：学历、专业、毕业时间、教师资格任一项
       return (
-        (draft.educationLevel !== undefined && draft.degree !== undefined) ||
+        draft.educationLevel !== undefined ||
         (draft.majorFullName ?? "").trim().length > 0 ||
-        !!draft.teacherCert?.status ||
-        draft.acceptedEmploymentNatures.length > 0
+        !!draft.graduationDate ||
+        !!draft.teacherCert?.status
       );
-    case 3:
-      // 补充信息：无强制字段，始终返回 false（允许直接跳过到结果）
-      return false;
     default:
       return false;
   }
@@ -339,31 +331,33 @@ export function stepHasContent(draft: GuestProfileDraft, step: number): boolean 
 
 /**
  * 用户补填内容后自动取消对应步骤的「跳过」标记；
- * 同时清理 1..5 之外的脏值。保存草稿前调用。
+ * 同时清理越界脏值与旧流程残留的 step 1 跳过标记。
+ * v7.1 M2：第一屏不允许跳过地区（改为"先看看覆盖范围"），
+ * 旧草稿中 step 1 的跳过标记在规整时自动移除。
  */
 export function pruneSkippedSteps(draft: GuestProfileDraft): GuestProfileDraft {
   const before = draft.skippedSteps ?? [];
-  // 去重 + 限定 1..TOTAL + 已有实质内容的步骤自动取消跳过
+  // 去重 + 限定 2..TOTAL（step 1 不再允许跳过）+ 已有实质内容的步骤自动取消跳过
   const seen = new Set<number>();
   const skipped = before.filter((step) => {
     if (seen.has(step)) return false;
     seen.add(step);
-    return step >= 1 && step <= TOTAL_PROFILE_STEPS && !stepHasContent(draft, step);
+    return step >= 2 && step <= TOTAL_PROFILE_STEPS && !stepHasContent(draft, step);
   });
   if (before.length === skipped.length) return draft;
   return { ...draft, skippedSteps: skipped.length > 0 ? skipped : undefined };
 }
 
 export function isStepComplete(draft: GuestProfileDraft, step: number): boolean {
-  if (isStepSkipped(draft, step)) return true;
   switch (step) {
     case 1:
-      // 求职方向：至少需要意向地区（最低门槛）；毕业时间和状态可稍后补充
+      // 地区意向：不允许跳过，必须选择至少一个地区（v7.1 M2 消除"假跳过"）
       return draft.regions.length > 0;
     case 2: {
-      // 资格条件：被跳过时已放行；否则检查关键字段
+      // 基础资格：被跳过时已放行
+      if (isStepSkipped(draft, step)) return true;
+      // 如果开始了教师资格填写，需要补齐 cert 字段（防止半填状态进入结果）
       const cert = draft.teacherCert;
-      // teacherCert 未选状态时不算完成（除非整步跳过）
       if (cert && cert.status) {
         if (cert.status === "none") {
           return draft.intendedSubject !== undefined;
@@ -371,18 +365,9 @@ export function isStepComplete(draft: GuestProfileDraft, step: number): boolean 
         if (!cert.subject || !cert.stage) return false;
         if (cert.status === "in_progress" && !cert.expectedDate) return false;
       }
-      // 非跳过时，学历学位和专业至少有一项才允许继续
-      // 但允许只填部分（匹配引擎对缺字段判 UNKNOWN）
-      return (
-        draft.educationLevel !== undefined ||
-        draft.degree !== undefined ||
-        (draft.majorFullName ?? "").trim().length > 0 ||
-        !!cert?.status
-      );
+      // 未跳过且无内容时不算完成（需至少一项或显式跳过）
+      return stepHasContent(draft, step);
     }
-    case 3:
-      // 补充信息：始终允许通过（无强制字段）
-      return true;
     default:
       return false;
   }
@@ -411,17 +396,13 @@ export interface ProfileLimitation {
 
 const LIMITATION_COPY: Record<number, { label: string; impact: string }> = {
   1: {
-    label: "能接受的地区与毕业时间",
+    label: "能接受的地区",
     impact:
-      "没有地区意向时不会给出任何「初步符合」结果。缺少毕业时间时，区分应届与社会人员的岗位暂时无法判断。",
+      "没有地区意向时不会给出任何「初步符合」结果：所有岗位都要等你补充地区后才能判断，这不是不符合。",
   },
   2: {
     label: "学历、专业与教师资格",
     impact: "涉及学历、专业或教师资格门槛的岗位只能停留在「补充信息后判断」，不会被当作不符合。",
-  },
-  3: {
-    label: "补充信息",
-    impact: "户籍、工作经历等信息在具体机会需要时再补充，不影响当前查看结果。",
   },
 };
 
@@ -432,9 +413,6 @@ const LIMITATION_COPY: Record<number, { label: string; impact: string }> = {
 export function buildProfileLimitations(draft: GuestProfileDraft): ProfileLimitation[] {
   const limitations: ProfileLimitation[] = [];
   for (let step = 1; step <= TOTAL_PROFILE_STEPS; step += 1) {
-    // 第 3 阶段（补充信息）无强制字段，始终「无内容」，
-    // 但其限制说明是信息性的（「不影响当前查看结果」），不是真正的结果限制
-    if (step === 3) continue;
     if (stepHasContent(draft, step)) continue;
     const copy = LIMITATION_COPY[step];
     if (copy) limitations.push({ step, ...copy });
@@ -469,10 +447,22 @@ export function hasMinimumPreviewProfile(draft: GuestProfileDraft): boolean {
   return draft.regions.length > 0;
 }
 
+/**
+ * v7.1 M2 迁移：旧 3 步/5 步草稿的 session.step 值归入新 2 步范围。
+ * - old step 0 → 0（未开始）
+ * - old step 1 → 1（完成地区意向）
+ * - old step 2 → 2（完成基础资格）
+ * - old step 3+ → 2（旧"补充信息"步骤已取消，视为完成）
+ */
+export function migrateSessionStep(step: number): number {
+  return Math.min(step, TOTAL_PROFILE_STEPS);
+}
+
 // ==================== 会话存储服务 ====================
 
 export const guestSessionService = {
-  /** 读取访客画像会话；不存在或已过期时返回 null（过期会同时清除） */
+  /** 读取访客画像会话；不存在或已过期时返回 null（过期会同时清除）。
+   *  v7.1 M2：加载时自动迁移旧 3 步/5 步草稿的 step 值到 2 步范围。 */
   load(): GuestProfileSession | null {
     const session = loadFromStorage<GuestProfileSession | null>(
       STORAGE_KEYS.GUEST_PROFILE_V61,
@@ -482,6 +472,18 @@ export const guestSessionService = {
     if (isExpired(session)) {
       removeFromStorage(STORAGE_KEYS.GUEST_PROFILE_V61);
       return null;
+    }
+    // 迁移旧 step 值；同时规整跳过标记（移除旧 step 1/3 的残留）
+    const migratedStep = migrateSessionStep(session.step);
+    const migratedDraft = pruneSkippedSteps(session.draft);
+    if (migratedStep !== session.step || migratedDraft !== session.draft) {
+      const next = { ...session, step: migratedStep, draft: migratedDraft };
+      try {
+        saveToStorageStrict(STORAGE_KEYS.GUEST_PROFILE_V61, next);
+      } catch {
+        // 存储不可用时返回迁移后的值（不阻塞读取）
+      }
+      return next;
     }
     return session;
   },

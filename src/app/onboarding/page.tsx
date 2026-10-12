@@ -10,8 +10,6 @@ import { useCurrentUser, AUTH_MODE } from "@/lib/auth";
 import {
   CITY_OPTIONS,
   CREDENTIAL_LEVEL_OPTIONS,
-  DEGREE_OPTIONS,
-  EMPLOYMENT_STATUS_OPTIONS,
   PROVINCE_OPTIONS,
   REGION_LEVEL_OPTIONS,
   STAGE_OPTIONS,
@@ -29,43 +27,41 @@ import {
   stepHasContent,
   type GuestProfileDraft,
 } from "@/lib/guest/guestSession";
+import { GUEST_COVERAGE } from "@/lib/guest/coverage";
 import { profileApi } from "@/lib/profile/profileApi";
 import { track, trackOncePerUser } from "@/lib/analytics/eventService";
-import type { EmploymentNatureCode, SubjectCode } from "@/lib/announcements/types";
+import type { SubjectCode } from "@/lib/announcements/types";
 import type {
   RegionPreference,
   RegionPreferenceLevel,
   TeacherCertInfo,
 } from "@/lib/profile/types";
-import { NATURE_SHORT_LABELS } from "@/lib/ia/labels";
 
 /**
- * v7 三阶段基础画像采集：
- * 1. 求职方向 — 意向地区、毕业时间、当前状态
- * 2. 资格条件 — 学历学位、专业全称、教师资格、用工形式偏好
- * 3. 补充信息 — 说明后续按需补充的条件，可直接进入结果
+ * v7.1 M2 两屏基础画像采集：
+ * 1. 地区意向 — 可接受地区（只考虑 / 优先考虑 / 也可以考虑）
+ * 2. 基础资格 — 最高学历、专业全称、毕业时间、教师资格状态（+学段/学科/预计时间）
  *
  * - 未登录可完成，草稿自动保存在本机浏览器，刷新可恢复；
  * - 随时返回修改，已填内容保留；
- * - 每阶段都可「暂不确定 / 暂不提供」：允许继续，但相关维度引擎只能判 UNKNOWN，
+ * - 第一屏不允许跳过地区（消除"假跳过"），但可查看覆盖范围；
+ * - 第二屏可「暂不提供」：允许继续，但相关维度引擎只能判 UNKNOWN，
  *   结果页明确标注限制，绝不把缺失信息当作「不符合」；
  * - 本机存储写入失败时页面输入不丢失，明确提示重试；
- * - 年龄/户籍/社保/工作经历不在此收齐，结果页按需说明补问原因；
+ * - 年龄/户籍/社保/工作经历/就业状态/用工偏好不在此收齐，结果页按需说明补问原因；
  * - 意向学科非语文时明确提示尚未开放，可留下意向，不生成虚假匹配；
  * - 完成后进入 /preview 查看初步机会，关注时才要求登录。
  */
 
 const STEP_TITLES = [
-  "你能接受去哪些地区？什么时候毕业？",
+  "你想优先查看哪些地区的教师招聘？",
   "你的学历、专业和教师资格情况？",
-  "还有哪些信息可以稍后补充？",
 ];
 
-const STEP_LABELS = ["求职方向", "资格条件", "补充信息"];
+const STEP_LABELS = ["地区意向", "基础资格"];
 
 const STEP_FEEDBACK: Record<number, string> = {
-  1: "已记住你的地区意向和毕业信息，接下来核对资格条件",
-  2: "资格条件已记录，马上就能看到初步结果",
+  1: "已记住你的地区意向，接下来核对基础资格",
 };
 
 function OnboardingForm() {
@@ -154,31 +150,11 @@ function OnboardingForm() {
     }
   };
 
-  /** 进入下一组：保存草稿与完成进度。
+  /** 进入下一屏：保存草稿与完成进度。
+   *  v7.1 M2：两屏流程，第一屏必须选地区才能进入第二屏。
    *  invited 模式下若草稿已完整且没有「暂不提供」项，同步持久化到服务端（跨浏览器恢复）。 */
   const goNext = () => {
     const finishedStep = view;
-    if (finishedStep >= TOTAL_PROFILE_STEPS && !hasMinimumPreviewProfile(draft)) {
-      const nextDraft = pruneSkippedSteps({
-        ...draft,
-        skippedSteps: (draft.skippedSteps ?? []).filter((step) => step !== 1),
-      });
-      setDraft(nextDraft);
-      try {
-        guestSessionService.save({ draft: nextDraft, step: 0 });
-        setSaveError(false);
-      } catch {
-        setSaveError(true);
-        return;
-      }
-      setRecentFeedback({
-        variant: "note",
-        key: Date.now(),
-        message: "只需先选择一个能接受的地区，其余信息可以稍后再补。",
-      });
-      setView(1);
-      return;
-    }
     if (!persist(finishedStep)) return; // 保存失败：停在本步，输入不丢
     // 画像各步漏斗（模块 7）：完成（未跳过）的每步记一次
     track("profile_step_completed", "profile", {
@@ -210,7 +186,7 @@ function OnboardingForm() {
     setView((v) => Math.max(v - 1, 1));
   };
 
-  /** 当前组标记为「暂不确定 / 暂不提供」并进入下一组（最后一步直接看结果） */
+  /** 第二屏标记为「暂不提供」并进入结果页（v7.1 M2：仅第二屏可跳过） */
   const skipCurrentStep = () => {
     const nextDraft: GuestProfileDraft = {
       ...draft,
@@ -222,46 +198,16 @@ function OnboardingForm() {
       guestSessionService.save({ draft: nextDraft, step: view });
     } catch {
       setSaveError(true);
-      return; // 存储失败不前进；跳过意图已在页面状态中，可重试
+      return;
     }
-    // 画像各步漏斗（模块 7）：「暂不提供」同样计完成，以 skipped=1 区分
     track("profile_step_completed", "profile", {
       props: { step: view, skipped: 1 },
     });
-    if (view >= TOTAL_PROFILE_STEPS) {
-      if (!hasMinimumPreviewProfile(nextDraft)) {
-        const regionDraft = pruneSkippedSteps({
-          ...nextDraft,
-          skippedSteps: (nextDraft.skippedSteps ?? []).filter((step) => step !== 1),
-        });
-        setDraft(regionDraft);
-        try {
-          guestSessionService.save({ draft: regionDraft, step: 0 });
-          setSaveError(false);
-        } catch {
-          setSaveError(true);
-          return;
-        }
-        setRecentFeedback({
-          variant: "note",
-          key: Date.now(),
-          message: "只需先选择一个能接受的地区，其余信息可以稍后再补。",
-        });
-        setView(1);
-        return;
-      }
-      trackOncePerUser("profile_completed", "profile", {
-        props: { stepCount: TOTAL_PROFILE_STEPS, skipped: true },
-      });
-      router.push("/preview");
-    } else {
-      setRecentFeedback({
-        variant: "note",
-        key: Date.now(),
-        message: `已跳过${STEP_LABELS[view - 1]}阶段，结果中会明确标出影响`,
-      });
-      setView(view + 1);
-    }
+    // 跳过第二屏后直接进入结果页（第一屏已选地区，最低门槛已满足）
+    trackOncePerUser("profile_completed", "profile", {
+      props: { stepCount: TOTAL_PROFILE_STEPS, skipped: true },
+    });
+    router.push("/preview");
   };
 
   /** 撤销本阶段的「暂不提供」，留在本阶段填写 */
@@ -276,7 +222,6 @@ function OnboardingForm() {
   const canContinue = isStepComplete(draft, view);
   const skippedHere = isStepSkipped(draft, view);
   const hasContentHere = stepHasContent(draft, view);
-  const needsRegion = !hasMinimumPreviewProfile(draft);
 
   return (
     <div className="min-h-screen bg-canvas">
@@ -361,15 +306,17 @@ function OnboardingForm() {
           {/* 短提示：每阶段先说一句"这些信息用来做什么" */}
           <p className="mt-2 text-sm leading-6 text-ink-muted">{STEP_PURPOSE[view]}</p>
 
-          {/* "为什么问这个？"长解释按需展开（模块 0A 第七节） */}
-          <div className="mt-2">
-            <Disclosure
-              trigger="为什么问这个？"
-              contentClassName="text-sm leading-relaxed text-ink-muted"
-            >
-              {STEP_SKIP_COPY[view].confirm}
-            </Disclosure>
-          </div>
+          {/* "为什么问这个？"长解释按需展开（仅第二屏，第一屏用覆盖范围入口替代） */}
+          {view === 2 && (
+            <div className="mt-2">
+              <Disclosure
+                trigger="为什么问这个？"
+                contentClassName="text-sm leading-relaxed text-ink-muted"
+              >
+                {STEP_SKIP_COPY[view].confirm}
+              </Disclosure>
+            </div>
+          )}
 
           {/* 已选择暂不提供：明确结果限制，一键返回补填 */}
           {skippedHere && (
@@ -393,16 +340,14 @@ function OnboardingForm() {
           {view === 1 && (
             <>
               <StepRegions value={draft.regions} onChange={(regions) => updateDraft({ regions })} />
-              <div className="mt-5 border-t border-line pt-4">
-                <p className="mb-1 text-xs font-semibold text-ink-muted">毕业时间与当前状态</p>
-                <p className="mb-3 text-xs leading-5 text-ink-muted/70">
-                  用来按每条公告的口径判断你是否属于应届或社会人员
-                </p>
-                <StepGraduation
-                  graduationDate={draft.graduationDate ?? ""}
-                  employmentStatus={draft.employmentStatus}
-                  onChange={(patch) => updateDraft(patch)}
-                />
+              {/* v7.1 M2：第一屏"还没想好"入口 → 展开覆盖概览，不跳过、不生成个性化结论 */}
+              <div className="mt-5">
+                <Disclosure
+                  trigger="还没想好，先看看当前覆盖范围"
+                  contentClassName="text-sm leading-relaxed text-ink-muted"
+                >
+                  <StepCoverageOverview />
+                </Disclosure>
               </div>
             </>
           )}
@@ -410,7 +355,6 @@ function OnboardingForm() {
             <>
               <StepEducation
                 educationLevel={draft.educationLevel}
-                degree={draft.degree}
                 onChange={(patch) => updateDraft(patch)}
               />
               <div className="mt-5 border-t border-line pt-4">
@@ -420,20 +364,15 @@ function OnboardingForm() {
                 />
               </div>
               <div className="mt-5 border-t border-line pt-4">
+                <StepGraduation
+                  graduationDate={draft.graduationDate ?? ""}
+                  onChange={(patch) => updateDraft(patch)}
+                />
+              </div>
+              <div className="mt-5 border-t border-line pt-4">
                 <StepCert draft={draft} onChange={updateDraft} />
               </div>
             </>
-          )}
-          {view === 3 && <StepSupplementary draft={draft} />}
-
-          {/* 最后一步只提示唯一最低门槛，其余空缺在结果中按 UNKNOWN 处理。 */}
-          {view === TOTAL_PROFILE_STEPS && needsRegion && (
-            <div className="mt-5 rounded-lg border border-warn/30 bg-warn-soft px-3 py-3">
-              <p className="text-sm font-medium text-warn">查看结果前，只需再补充一个地区</p>
-              <p className="mt-1 text-xs leading-relaxed text-warn">
-                我们需要知道你能接受哪里，才不会推荐你明确不去的岗位。学历、专业等信息仍可稍后补充。
-              </p>
-            </div>
           )}
 
           {/* 写入失败：不跳转、不丢输入，提示重试 */}
@@ -457,21 +396,22 @@ function OnboardingForm() {
 
           <div className="mt-7 border-t border-line pt-5">
             <Button onClick={goNext} disabled={!canContinue} size="lg" fullWidth>
-              {view >= TOTAL_PROFILE_STEPS
-                ? needsRegion
-                  ? "先补充地区，再看结果"
-                  : "查看筛选结果"
-                : "下一步"}
+              {view >= TOTAL_PROFILE_STEPS ? "查看筛选结果" : "下一步"}
             </Button>
-            {!canContinue && (
+            {!canContinue && view === 1 && (
               <p className="mt-2 text-center text-xs text-ink-muted">
-                选完本页即可继续，也可以暂时跳过
+                请至少选择一个地区，或展开&ldquo;先看看当前覆盖范围&rdquo;了解已收录地区
+              </p>
+            )}
+            {!canContinue && view === 2 && (
+              <p className="mt-2 text-center text-xs text-ink-muted">
+                填一项即可继续，也可以暂时跳过
               </p>
             )}
           </div>
 
-          {/* 暂不提供：低强调文字操作（模块 0A 第六节），仅在本阶段无实质内容时出现 */}
-          {!skippedHere && !hasContentHere && (
+          {/* 暂不提供：仅第二屏无实质内容时出现（v7.1 M2：第一屏不允许跳过地区） */}
+          {view === 2 && !skippedHere && !hasContentHere && (
             <button
               type="button"
               onClick={skipCurrentStep}
@@ -706,29 +646,19 @@ function OptionList<T extends string>({
 
 function StepEducation({
   educationLevel,
-  degree,
   onChange,
 }: {
   educationLevel: GuestProfileDraft["educationLevel"];
-  degree: GuestProfileDraft["degree"];
   onChange: (patch: Partial<GuestProfileDraft>) => void;
 }) {
   return (
-    <div className="mt-4 space-y-5">
+    <div className="mt-4">
       <fieldset className="m-0 border-0 p-0">
         <legend className="mb-2 text-sm font-medium text-ink">最高学历</legend>
         <OptionList
           options={CREDENTIAL_LEVEL_OPTIONS}
           value={educationLevel}
           onSelect={(v) => onChange({ educationLevel: v })}
-        />
-      </fieldset>
-      <fieldset className="m-0 border-0 p-0">
-        <legend className="mb-2 text-sm font-medium text-ink">最高学位</legend>
-        <OptionList
-          options={DEGREE_OPTIONS}
-          value={degree}
-          onSelect={(v) => onChange({ degree: v })}
         />
       </fieldset>
     </div>
@@ -765,59 +695,39 @@ function StepMajor({
   );
 }
 
-/* ================== 第 4 组：毕业时间与就业状态 ================== */
+/* ================== 第二屏：毕业时间 ================== */
 
 function StepGraduation({
   graduationDate,
-  employmentStatus,
   onChange,
 }: {
   graduationDate: string;
-  employmentStatus: GuestProfileDraft["employmentStatus"];
   onChange: (patch: Partial<GuestProfileDraft>) => void;
 }) {
   // 存储 YYYY-MM-DD；input[type=month] 使用 YYYY-MM
   const monthValue = graduationDate.slice(0, 7);
   return (
-    <div className="mt-4 space-y-5">
-      <div>
-        <label htmlFor="graduation-month" className="mb-2 block text-sm font-medium text-ink">
-          毕业（或预计毕业）时间
-        </label>
-        <input
-          id="graduation-month"
-          type="month"
-          value={monthValue}
-          onChange={(e) =>
-            onChange({ graduationDate: e.target.value ? `${e.target.value}-15` : undefined })
-          }
-          className="h-12 w-full rounded-xl border border-line bg-surface px-3.5 text-base text-ink transition-colors hover:border-brand/30 focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/10 sm:text-sm"
-        />
-        <p className="mt-2 text-xs leading-5 text-ink-muted">
-          是否属于应届生会按每条公告单独判断
-        </p>
-      </div>
-      <fieldset className="m-0 border-0 p-0">
-        <legend className="mb-2 text-sm font-medium text-ink">当前状态</legend>
-        <OptionList
-          options={EMPLOYMENT_STATUS_OPTIONS}
-          value={employmentStatus}
-          onSelect={(v) => onChange({ employmentStatus: v })}
-        />
-      </fieldset>
+    <div className="mt-4">
+      <label htmlFor="graduation-month" className="mb-2 block text-sm font-medium text-ink">
+        毕业（或预计毕业）时间
+      </label>
+      <input
+        id="graduation-month"
+        type="month"
+        value={monthValue}
+        onChange={(e) =>
+          onChange({ graduationDate: e.target.value ? `${e.target.value}-15` : undefined })
+        }
+        className="h-12 w-full rounded-xl border border-line bg-surface px-3.5 text-base text-ink transition-colors hover:border-brand/30 focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/10 sm:text-sm"
+      />
+      <p className="mt-2 text-xs leading-5 text-ink-muted">
+        是否属于应届生会按每条公告单独判断
+      </p>
     </div>
   );
 }
 
-/* ================== 第 5 组：教师资格 + 用工形式 ================== */
-
-const NATURE_OPTIONS: { value: EmploymentNatureCode; label: string }[] = [
-  { value: "public_institution_staff", label: NATURE_SHORT_LABELS.public_institution_staff },
-  { value: "record_filing", label: NATURE_SHORT_LABELS.record_filing },
-  { value: "post_quota", label: NATURE_SHORT_LABELS.post_quota },
-  { value: "headcount_control", label: NATURE_SHORT_LABELS.headcount_control },
-  { value: "other", label: NATURE_SHORT_LABELS.other },
-];
+/* ================== 第二屏：教师资格 ================== */
 
 function StepCert({
   draft,
@@ -869,17 +779,6 @@ function StepCert({
     } else {
       updateCert({ subject });
     }
-  };
-
-  const toggleNature = (code: EmploymentNatureCode) => {
-    const set = new Set(draft.acceptedEmploymentNatures);
-    if (set.has(code)) set.delete(code);
-    else set.add(code);
-    onChange({
-      acceptedEmploymentNatures: NATURE_OPTIONS.filter((n) => set.has(n.value)).map(
-        (n) => n.value,
-      ),
-    });
   };
 
   return (
@@ -956,97 +855,35 @@ function StepCert({
           不会为你生成不相关的匹配结果。
         </div>
       )}
-
-      <fieldset className="m-0 border-0 p-0">
-        <legend className="mb-2 text-sm font-medium text-ink">
-          能接受哪些官方用工形式？（至少选一项）
-        </legend>
-        <div className="grid grid-cols-2 gap-2" role="group">
-          {NATURE_OPTIONS.map((opt) => {
-            const checked = draft.acceptedEmploymentNatures.includes(opt.value);
-            return (
-              <label
-                key={opt.value}
-                className={`flex min-h-12 cursor-pointer items-center gap-2.5 rounded-xl border p-3 text-sm font-medium transition-all ${
-                  checked
-                    ? "border-brand bg-brand-soft text-brand ring-1 ring-brand/10"
-                    : "border-line bg-surface text-ink hover:border-brand/30 hover:bg-brand-soft/30"
-                }`}
-              >
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  onChange={() => toggleNature(opt.value)}
-                  className="h-4 w-4 rounded border-line text-brand focus:ring-brand"
-                />
-                {opt.label}
-              </label>
-            );
-          })}
-        </div>
-      </fieldset>
     </div>
   );
 }
 
-/* ================== 第 3 阶段：补充信息 ================== */
+/* ================== 第一屏：覆盖概览 ================== */
 
-function StepSupplementary({ draft }: { draft: GuestProfileDraft }) {
-  const filledItems: { label: string; status: string }[] = [
-    { label: "意向地区", status: draft.regions.length > 0 ? `已选 ${draft.regions.length} 个` : "未填" },
-    { label: "学历学位", status: draft.educationLevel ? "已填" : "未填" },
-    { label: "专业全称", status: (draft.majorFullName ?? "").trim() ? "已填" : "未填" },
-    { label: "毕业时间", status: draft.graduationDate ? "已填" : "未填" },
-    { label: "教师资格", status: draft.teacherCert?.status ? "已填" : "未填" },
-    { label: "用工形式偏好", status: draft.acceptedEmploymentNatures.length > 0 ? "已选" : "未选" },
-  ];
-
-  const laterItems = [
-    { label: "户籍或生源地", desc: "部分公告要求本地户籍或生源，需要时在机会详情中补问。" },
-    { label: "工作经历", desc: "部分岗位要求教学或相关工作经历，按需补充。" },
-    { label: "普通话等级", desc: "语文教师通常要求普通话二甲或以上，需要时补填。" },
-    { label: "年龄", desc: "部分公告有年龄上限，需要时根据身份证计算。" },
-    { label: "社保与编制状态", desc: "在职人员可能需要提供社保记录或单位同意报考证明。" },
-  ];
-
+/** v7.1 M2：地区未确定时展示当前覆盖范围，不生成个性化结论 */
+function StepCoverageOverview() {
   return (
-    <div className="mt-4 space-y-5">
-      <fieldset className="m-0 border-0 p-0">
-        <legend className="mb-2 text-sm font-medium text-ink">已填写信息</legend>
-        <ul className="grid grid-cols-2 gap-2">
-          {filledItems.map((item) => (
-            <li
-              key={item.label}
-              className="flex items-center justify-between rounded-lg border border-line bg-canvas/60 px-3 py-2 text-sm"
-            >
-              <span className="text-ink-muted">{item.label}</span>
-              <span className={item.status === "未填" || item.status === "未选" ? "text-ink-muted/60" : "font-medium text-ink"}>
-                {item.status}
-              </span>
-            </li>
-          ))}
-        </ul>
-      </fieldset>
-
-      <div className="rounded-xl border border-line bg-canvas/40 p-4">
-        <p className="text-sm font-medium text-ink" role="heading" aria-level={3}>以下信息在具体机会需要时再补充</p>
-        <p className="mt-1 text-xs leading-5 text-ink-muted">
-          不填这些不会阻止你查看结果。缺少非必要信息时，相关条件会标为「信息不足」，补充后会重新判断。
-        </p>
-        <ul className="mt-3 space-y-2.5">
-          {laterItems.map((item) => (
-            <li key={item.label} className="flex items-start gap-2 text-sm">
-              <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-surface-2 text-xs text-ink-muted">
-                ·
-              </span>
-              <div>
-                <span className="font-medium text-ink">{item.label}</span>
-                <span className="ml-1.5 text-ink-muted">{item.desc}</span>
-              </div>
-            </li>
-          ))}
-        </ul>
-      </div>
+    <div className="space-y-3">
+      <p className="text-sm leading-6 text-ink">
+        目前已收录{GUEST_COVERAGE.regions.length}个省份的官方招聘公告监测：
+      </p>
+      <ul className="grid gap-2 sm:grid-cols-2">
+        {GUEST_COVERAGE.regions.map((r) => (
+          <li
+            key={r.code}
+            className="rounded-lg border border-line bg-canvas/60 px-3 py-2 text-sm"
+          >
+            <span className="font-medium text-ink">{r.label}</span>
+            <span className="ml-1.5 text-ink-muted">
+              {r.sources.length}个公告来源
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="text-xs leading-5 text-ink-muted">
+        选择地区后，只会展示该地区相关的招聘机会。未收录的地区暂无法匹配，持续扩展中。
+      </p>
     </div>
   );
 }

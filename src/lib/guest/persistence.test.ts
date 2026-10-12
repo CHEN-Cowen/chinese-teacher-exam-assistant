@@ -70,6 +70,13 @@ describe("访客画像：刷新恢复", () => {
     expect(guestSessionService.isInProgress()).toBe(false);
   });
 
+  it("新草稿不再默认接受全部用工形式（v7.1 M2 移出首次流程）", () => {
+    guestSessionService.save({ draft: { regions: FULL_DRAFT.regions }, step: 1 });
+    const session = guestSessionService.load()!;
+    // 空数组=未提供；用户从未确认的偏好不得被静默记为接受
+    expect(session.draft.acceptedEmploymentNatures).toEqual([]);
+  });
+
   it("分步保存时前序答案不被覆盖（返回修改后继续）", () => {
     guestSessionService.save({ draft: { regions: FULL_DRAFT.regions }, step: 1 });
     guestSessionService.save({
@@ -82,7 +89,9 @@ describe("访客画像：刷新恢复", () => {
     expect(session.draft.regions).toHaveLength(2);
     expect(session.draft.educationLevel).toBe("master");
     expect(session.draft.degree).toBe("master");
-    expect(guestSessionService.isInProgress()).toBe(true);
+    // v7.1 M2 两屏模型：完成 step 2 即全部完成
+    expect(guestSessionService.isComplete()).toBe(true);
+    expect(guestSessionService.isInProgress()).toBe(false);
   });
 
   it("返回上一组时只保存草稿不回退已完成进度", () => {
@@ -122,9 +131,10 @@ describe("访客画像：刷新恢复", () => {
     const draft: GuestProfileDraft = {
       ...FULL_DRAFT,
       majorFullName: undefined,
-      // step 2（资格条件）标记为跳过
+      // step 2（基础资格）标记为跳过：清掉所有计入 stepHasContent 的字段
       educationLevel: undefined,
       degree: undefined,
+      graduationDate: undefined,
       teacherCert: undefined,
       acceptedEmploymentNatures: [],
       skippedSteps: [2],
@@ -137,13 +147,14 @@ describe("访客画像：刷新恢复", () => {
   });
 
   it("补填内容后的保存会自动清掉对应跳过标记", () => {
-    // 清空 step 2 的字段并标记为跳过
+    // 清空 step 2 的字段并标记为跳过（graduationDate 也需清掉，否则 stepHasContent 为 true）
     guestSessionService.save({
       draft: {
         ...FULL_DRAFT,
         educationLevel: undefined,
         degree: undefined,
         majorFullName: undefined,
+        graduationDate: undefined,
         teacherCert: undefined,
         acceptedEmploymentNatures: [],
         skippedSteps: [2],
