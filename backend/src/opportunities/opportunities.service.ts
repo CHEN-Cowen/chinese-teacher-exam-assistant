@@ -7,6 +7,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service.js';
 import { ProfileService } from '../profile/profile.service.js';
+import { ScheduleService } from '../schedule/schedule.service.js';
 import { REAL_ANNOUNCEMENTS } from '../matching/real-catalog.js';
 import { getRollingCatalogAnnouncements } from '../matching/rolling-catalog.js';
 import { buildCandidates, currentVersion } from '../matching/engine.js';
@@ -85,6 +86,7 @@ export class OpportunitiesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly profileService: ProfileService,
+    private readonly scheduleService: ScheduleService,
   ) {}
 
   /** 画像来源：请求体优先；未携带时读取服务端持久画像（受邀模式跨浏览器恢复） */
@@ -419,6 +421,7 @@ export class OpportunitiesService {
   /**
    * 关注一个报考单元。收藏 ≠ 准备报名：初始状态恒为 considering。
    * 重复关注幂等返回已有记录（状态不被重置）。
+   * M7：关注成功后立即同步官方已明确节点，并返回 syncedEventCount。
    */
   async follow(userId: string, unitId: string): Promise<FollowDTO> {
     const target = this.findCatalogUnit(unitId);
@@ -426,7 +429,11 @@ export class OpportunitiesService {
       where: { userId_unitId: { userId, unitId } },
     });
     if (existing) {
-      return this.toDTO(this.fromRow(existing));
+      const dto = this.toDTO(this.fromRow(existing));
+      // M7：重复关注也触发同步（幂等），反馈当前已同步节点数
+      const syncResult = await this.scheduleService.syncEventsForUser(userId);
+      dto.syncedEventCount = syncResult.syncedEventCount;
+      return dto;
     }
     const atIso = new Date().toISOString();
     const row = await this.prisma.followedOpportunity.create({
@@ -445,7 +452,11 @@ export class OpportunitiesService {
         materialStatuses: this.initialMaterialStatuses(unitId) as Prisma.InputJsonValue,
       },
     });
-    return this.toDTO(this.fromRow(row));
+    // M7：关注成功后立即同步官方已明确节点
+    const syncResult = await this.scheduleService.syncEventsForUser(userId);
+    const dto = this.toDTO(this.fromRow(row));
+    dto.syncedEventCount = syncResult.syncedEventCount;
+    return dto;
   }
 
   /** 登录后合并访客本地关注：服务端已有记录时以服务端为准（不覆盖）。 */

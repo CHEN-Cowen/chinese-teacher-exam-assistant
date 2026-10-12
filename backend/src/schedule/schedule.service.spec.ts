@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import { ScheduleService } from './schedule.service.js';
 import type { PrismaService } from '../prisma.service.js';
+import { Prisma } from '@prisma/client';
 
 // 用可控的公告目录替代真实 catalog，避免依赖场景数据
 // （schedule.service 运行时读滚动时间轴 rolling-catalog，mock 直接拦截该模块）
@@ -77,6 +78,7 @@ type NotificationRow = {
   title: string;
   body: string;
   eventKey: string | null;
+  reminderStage: string | null;
   relatedUnitId: string | null;
   readAt: Date | null;
   createdAt: Date;
@@ -170,8 +172,35 @@ function createFakePrisma() {
           timelineEvents.filter((e) => e.userId === where.userId && e.status === where.status),
       },
       notificationRecord: {
-        create: async ({ data }: { data: Omit<NotificationRow, 'id' | 'createdAt'> }) => {
-          const row: NotificationRow = { ...data, id: nextId(), createdAt: new Date() };
+        create: async ({ data }: { data: Partial<NotificationRow> }) => {
+          // 模拟唯一约束 (userId, eventKey, reminderStage)：三者都有值时检查重复
+          if (data.eventKey && data.reminderStage) {
+            const dup = notifications.find(
+              (n) =>
+                n.userId === data.userId &&
+                n.eventKey === data.eventKey &&
+                n.reminderStage === data.reminderStage,
+            );
+            if (dup) {
+              // 抛出 P2002 唯一约束冲突
+              throw new Prisma.PrismaClientKnownRequestError(
+                'Unique constraint failed',
+                { code: 'P2002', clientVersion: '6.19.3' },
+              );
+            }
+          }
+          const row: NotificationRow = {
+            id: nextId(),
+            userId: data.userId!,
+            severity: data.severity!,
+            title: data.title!,
+            body: data.body!,
+            eventKey: data.eventKey ?? null,
+            reminderStage: data.reminderStage ?? null,
+            relatedUnitId: data.relatedUnitId ?? null,
+            readAt: null,
+            createdAt: new Date(),
+          };
           notifications.push(row);
           return row;
         },

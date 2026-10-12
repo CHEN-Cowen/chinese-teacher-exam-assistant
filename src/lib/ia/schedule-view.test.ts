@@ -11,6 +11,7 @@ function makeEvent(overrides: Partial<TimelineEventDTO>): TimelineEventDTO {
     eventKey: "unit-1-registration_end",
     kind: "registration_end",
     kindLabel: "报名截止",
+    title: "报名截止",
     dateIso: "2026-10-20",
     dateText: "10月20日 周二",
     pending: false,

@@ -385,10 +385,17 @@ model NotificationRecord {
   body          String
   /** 关联的时间线事件键（可选，非事件类通知留空） */
   eventKey      String?  @map("event_key")
+  /**
+   * 提醒阶段（M7）：d-7/d-3/d-1/d-0/published/changed/created。
+   * 同一用户+eventKey+reminderStage 只产生一次通知（幂等键）。
+   * 非时间倒计时通知（如版本变更）留空。
+   */
+  reminderStage String?  @map("reminder_stage")
   relatedUnitId String?  @map("related_unit_id")
   readAt        DateTime? @map("read_at")
   createdAt     DateTime @default(now()) @map("created_at")
 
+  @@unique([userId, eventKey, reminderStage])
   @@index([userId, readAt])
   @@index([userId, severity])
   @@map("notification_records")

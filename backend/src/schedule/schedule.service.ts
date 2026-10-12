@@ -33,9 +33,12 @@ import {
 import { regionLabel } from './labels.js';
 import {
   daysUntil,
+  dueReminderStages,
   generateEvents,
   isPast,
   KIND_LABELS,
+  reminderDedupKey,
+  REMINDER_STAGES,
   severityOfChange,
   urgencyOf,
   type NotificationSeverity,
@@ -53,6 +56,8 @@ export interface TimelineEventDTO {
   eventKey: string;
   kind: TimelineEventKind;
   kindLabel: string;
+  /** 事件标题（pending_notice 时为具体待定事项描述） */
+  title: string;
   dateIso: string | null;
   dateText: string;
   pending: boolean;
@@ -105,11 +110,22 @@ export const SYNC_VERSION = 'kb-schedule-sync-1.1.0';
 const KIND_ORDER: TimelineEventKind[] = [
   'registration_start',
   'registration_end',
+  'preliminary_review',
+  'review_result',
   'payment',
+  'amendment_deadline',
   'admit_ticket',
+  'admit_ticket_end',
   'written_exam',
   'score',
+  'score_review',
+  'qualification_review',
+  'interview_confirm',
   'interview',
+  'medical_exam',
+  'inspection',
+  'position_selection',
+  'publication',
   'pending_notice',
 ];
 
@@ -126,10 +142,11 @@ export class ScheduleService {
    * - 公告级别变更（取消/来源失效/资格条件变化）→ 由 changes.domain 检测，幂等通知；
    * - 当前公告版本中不再存在的 eventKey → 标记 superseded（保留记录，不删除）；
    * - 已静音的机会仍同步事件（日程可见），但不产生通知。
+   * - M7：同步后检查时间倒计时提醒（提前 7/3/1 天等），按幂等键去重。
    *
-   * 返回本次产生的通知数量。
+   * 返回本次同步结果（事件数 + 通知数）。
    */
-  async syncEventsForUser(userId: string): Promise<number> {
+  async syncEventsForUser(userId: string): Promise<{ syncedEventCount: number; notificationCount: number }> {
     const follows = await this.prisma.followedOpportunity.findMany({
       where: {
         userId,
@@ -323,7 +340,30 @@ export class ScheduleService {
       });
     }
 
-    return notificationCount;
+    // === M7：时间倒计时提醒（提前 7/3/1 天等），按幂等键去重 ===
+    const activeEvents = await this.prisma.timelineEvent.findMany({
+      where: { userId, status: 'active' },
+    });
+    for (const ev of activeEvents) {
+      if (follows.find((f) => f.unitId === ev.unitId)?.remindersMuted) continue;
+      const stages = dueReminderStages(
+        ev.kind as TimelineEventKind,
+        ev.dateIso,
+        nowIso,
+      );
+      for (const stage of stages) {
+        const dedupKey = reminderDedupKey(ev.eventKey, stage);
+        notificationCount += await this.createReminderNotification(
+          userId,
+          ev,
+          stage,
+          dedupKey,
+        );
+      }
+    }
+
+    const syncedEventCount = activeEvents.length;
+    return { syncedEventCount, notificationCount };
   }
 
   // ==================== 日程查询 ====================
@@ -550,6 +590,7 @@ export class ScheduleService {
       eventKey: row.eventKey,
       kind,
       kindLabel: KIND_LABELS[kind],
+      title: row.title,
       dateIso: row.dateIso,
       dateText: row.dateIso ? this.formatDate(row.dateIso) : '待官方通知',
       pending: row.dateIso === null,
@@ -618,6 +659,57 @@ export class ScheduleService {
         relatedUnitId,
       },
     });
+  }
+
+  /**
+   * M7：创建时间倒计时提醒通知（幂等）。
+   * 唯一约束 (userId, eventKey, reminderStage) 保证同一提醒阶段只产生一次通知。
+   * 唯一冲突时静默跳过（P2002）—— 幂等吞掉。
+   */
+  private async createReminderNotification(
+    userId: string,
+    event: { eventKey: string; kind: string; title: string; dateIso: string | null; unitId: string },
+    stage: string,
+    dedupKey: string,
+  ): Promise<number> {
+    const kind = event.kind as TimelineEventKind;
+    const severity: NotificationSeverity =
+      kind === 'registration_end' || kind === 'payment' || kind === 'amendment_deadline' || kind === 'admit_ticket_end' || kind === 'qualification_review'
+        ? 'must_handle'
+        : 'suggest_handle';
+    const dateText = event.dateIso ? this.formatDate(event.dateIso) : '待官方通知';
+    const stageLabel = this.stageLabel(stage);
+    const title = `${event.title}·${stageLabel}`;
+    const body = `${event.title}：${dateText}。${stage === 'published' ? '官方已发布。' : `距此节点${stageLabel}。`}请及时安排。`;
+    try {
+      await this.prisma.notificationRecord.create({
+        data: {
+          userId,
+          severity,
+          title,
+          body,
+          eventKey: dedupKey,
+          reminderStage: stage,
+          relatedUnitId: event.unitId,
+        },
+      });
+      return 1;
+    } catch (e) {
+      // P2002 = 唯一约束冲突：同一提醒阶段已通知过，幂等跳过
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+        return 0;
+      }
+      throw e;
+    }
+  }
+
+  /** 提醒阶段的人可读标签 */
+  private stageLabel(stage: string): string {
+    if (stage === 'd-0') return '今天';
+    if (stage === 'published') return '已发布';
+    const n = parseInt(stage.slice(2), 10);
+    if (!Number.isNaN(n)) return `还有 ${n} 天`;
+    return stage;
   }
 
   private notificationBody(

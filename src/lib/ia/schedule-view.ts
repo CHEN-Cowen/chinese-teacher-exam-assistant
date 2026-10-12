@@ -50,11 +50,22 @@ export interface ScheduleView {
 const KIND_ORDER: TimelineEventKind[] = [
   "registration_start",
   "registration_end",
+  "preliminary_review",
+  "review_result",
   "payment",
+  "amendment_deadline",
   "admit_ticket",
+  "admit_ticket_end",
   "written_exam",
   "score",
+  "score_review",
+  "qualification_review",
+  "interview_confirm",
   "interview",
+  "medical_exam",
+  "inspection",
+  "position_selection",
+  "publication",
   "pending_notice",
 ];
 

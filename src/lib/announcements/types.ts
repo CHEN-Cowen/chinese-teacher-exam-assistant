@@ -238,11 +238,33 @@ export interface AnnouncementTimeline {
   registrationStart: string;
   /** 报名截止 ISO 日期（必填） */
   registrationEnd: string;
+  /** 资格初审（M7） */
+  preliminaryReviewDate?: string;
+  /** 审核结果公布（M7） */
+  reviewResultDate?: string;
   paymentDeadline?: string;
+  /** 改报截止（M7） */
+  amendmentDeadline?: string;
   admitTicketStart?: string;
+  /** 准考证打印截止（M7） */
+  admitTicketEnd?: string;
   writtenExamDate?: string;
   scoreDate?: string;
+  /** 成绩复核（M7） */
+  scoreReviewDate?: string;
+  /** 资格复审（M7） */
+  qualificationReviewDate?: string;
+  /** 面试确认（M7） */
+  interviewConfirmDate?: string;
   interviewDate?: string;
+  /** 体检（M7） */
+  medicalExamDate?: string;
+  /** 考察（M7） */
+  inspectionDate?: string;
+  /** 选岗（M7） */
+  positionSelectionDate?: string;
+  /** 拟聘用公示（M7） */
+  publicationDate?: string;
   /** 时间未定时显示“待官方通知”，不写推测日期；true 表示官方明确待定 */
   pendingItems?: string[];
 }

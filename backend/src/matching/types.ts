@@ -206,14 +206,28 @@ export interface AnnouncementTimeline {
    * 报名起止日期 YYYY-MM-DD。
    * 官方公告只给「初定 X 月，具体时间另行通知」而未给具体日期时必须留空，
    * 并在 pendingItems 中登记待明确事项——绝不臆造具体日期。
+   *
+   * M7 扩展节点：资格初审、审核结果、改报截止、准考证截止、成绩复核、
+   * 资格复审、面试确认、体检、考察、选岗、拟聘用公示。
    */
   registrationStart?: string;
   registrationEnd?: string;
+  preliminaryReviewDate?: string;
+  reviewResultDate?: string;
   paymentDeadline?: string;
+  amendmentDeadline?: string;
   admitTicketStart?: string;
+  admitTicketEnd?: string;
   writtenExamDate?: string;
   scoreDate?: string;
+  scoreReviewDate?: string;
+  qualificationReviewDate?: string;
+  interviewConfirmDate?: string;
   interviewDate?: string;
+  medicalExamDate?: string;
+  inspectionDate?: string;
+  positionSelectionDate?: string;
+  publicationDate?: string;
   pendingItems?: string[];
 }
 

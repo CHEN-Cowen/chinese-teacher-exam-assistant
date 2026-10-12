@@ -11,6 +11,7 @@
  * 每个场景打印一行可读报告（[回放] 前缀），并附硬断言。
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { Prisma } from '@prisma/client';
 import { ScheduleService } from '../schedule/schedule.service.js';
 import { evaluateOpportunity } from '../matching/engine.js';
 import type { PrismaService } from '../prisma.service.js';
@@ -265,6 +266,7 @@ type NotificationRow = {
   title: string;
   body: string;
   eventKey: string | null;
+  reminderStage: string | null;
   relatedUnitId: string | null;
   readAt: Date | null;
   createdAt: Date;
@@ -345,8 +347,34 @@ function createFakePrisma() {
           timelineEvents.filter((e) => e.userId === where.userId && e.status === where.status),
       },
       notificationRecord: {
-        create: async ({ data }: { data: Omit<NotificationRow, 'id' | 'createdAt'> }) => {
-          const row: NotificationRow = { ...data, id: nextId(), createdAt: new Date() };
+        create: async ({ data }: { data: Partial<NotificationRow> }) => {
+          // 模拟唯一约束 (userId, eventKey, reminderStage)
+          if (data.eventKey && data.reminderStage) {
+            const dup = notifications.find(
+              (n) =>
+                n.userId === data.userId &&
+                n.eventKey === data.eventKey &&
+                n.reminderStage === data.reminderStage,
+            );
+            if (dup) {
+              throw new Prisma.PrismaClientKnownRequestError(
+                'Unique constraint failed',
+                { code: 'P2002', clientVersion: '6.19.3' },
+              );
+            }
+          }
+          const row: NotificationRow = {
+            id: nextId(),
+            userId: data.userId!,
+            severity: data.severity!,
+            title: data.title!,
+            body: data.body!,
+            eventKey: data.eventKey ?? null,
+            reminderStage: data.reminderStage ?? null,
+            relatedUnitId: data.relatedUnitId ?? null,
+            readAt: null,
+            createdAt: new Date(),
+          };
           notifications.push(row);
           return row;
         },
@@ -682,10 +710,12 @@ describe('回放⑤ 只通知受影响用户', () => {
     await service.syncEventsForUser('u5');
     await service.syncEventsForUser('u6');
 
-    // 稳定公告的关注者：零变更通知（首次同步的 info 新事件通知之外无新增）
+    // 稳定公告的关注者：零变更通知（其他公告的变更不波及此用户）
     const stableAfter = notifications.filter((n) => n.userId === 'u5');
     expect(stableAfter.length).toBe(stableBaseline);
-    expect(stableAfter.every((n) => n.severity === 'info')).toBe(true);
+    // 变更通知（reminderStage=null 的非提醒通知）全部为 info
+    const stableChangeNotes = stableAfter.filter((n) => n.reminderStage === null);
+    expect(stableChangeNotes.every((n) => n.severity === 'info')).toBe(true);
 
     // 受影响用户：收到延期相关 must_handle
     const affected = notifications.filter(
@@ -694,7 +724,7 @@ describe('回放⑤ 只通知受影响用户', () => {
     expect(affected.length).toBeGreaterThan(0);
 
     log(
-      `[回放] ⑤影响面：稳定公告关注者新增通知=0；受影响关注者 must_handle=${affected.length} 条`,
+      `[回放] ⑤影响面：稳定公告关注者新增变更通知=0；受影响关注者 must_handle=${affected.length} 条`,
     );
   });
 });

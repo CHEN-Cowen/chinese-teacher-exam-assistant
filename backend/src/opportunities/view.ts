@@ -81,6 +81,8 @@ export interface FollowDTO {
   materialStatuses: Record<string, MaterialStatus> | null;
   /** 用户自行记录的官方咨询结论：{ [dimensionKey]: note }，不参与匹配 */
   consultationNotes: Record<string, string> | null;
+  /** M7：关注后自动同步的报考节点数（仅 follow 响应中有值） */
+  syncedEventCount?: number;
 }
 
 export interface DimensionDTO {

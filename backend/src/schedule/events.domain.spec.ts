@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   daysUntil,
+  dueReminderStages,
   generateEvents,
   isPast,
+  reminderDedupKey,
+  REMINDER_STAGES,
   severityOfChange,
   urgencyOf,
   KIND_LABELS,
@@ -107,7 +110,46 @@ describe('daysUntil / isPast', () => {
 
 describe('KIND_LABELS', () => {
   it('所有类型都有中文标签', () => {
-    expect(Object.keys(KIND_LABELS)).toHaveLength(8);
+    expect(Object.keys(KIND_LABELS)).toHaveLength(19);
     expect(KIND_LABELS.registration_end).toBe('报名截止');
+    expect(KIND_LABELS.preliminary_review).toBe('资格初审');
+    expect(KIND_LABELS.qualification_review).toBe('资格复审');
+    expect(KIND_LABELS.publication).toBe('拟聘用公示');
+  });
+});
+
+describe('M7 提醒阶段（REMINDER_STAGES + dueReminderStages + reminderDedupKey）', () => {
+  it('报名截止有 7/3/1 天三档提醒', () => {
+    expect(REMINDER_STAGES.registration_end).toEqual(['d-7', 'd-3', 'd-1']);
+  });
+
+  it('成绩查询有 published 阶段', () => {
+    expect(REMINDER_STAGES.score).toEqual(['published']);
+  });
+
+  it('距报名截止 5 天时仅触发 d-7（d-3 需 ≤3 天）', () => {
+    const stages = dueReminderStages('registration_end', '2026-10-15', '2026-10-10T00:00:00Z');
+    expect(stages).toContain('d-7');
+    expect(stages).not.toContain('d-3');
+    expect(stages).not.toContain('d-1');
+  });
+
+  it('距报名截止 1 天时触发全部三档', () => {
+    const stages = dueReminderStages('registration_end', '2026-10-11', '2026-10-10T00:00:00Z');
+    expect(stages).toEqual(['d-7', 'd-3', 'd-1']);
+  });
+
+  it('时间未定时不触发任何提醒', () => {
+    expect(dueReminderStages('registration_end', null, '2026-10-10T00:00:00Z')).toEqual([]);
+  });
+
+  it('无提醒配置的节点不触发', () => {
+    expect(dueReminderStages('preliminary_review', '2026-10-15', '2026-10-10T00:00:00Z')).toEqual([]);
+  });
+
+  it('提醒幂等键格式稳定', () => {
+    expect(reminderDedupKey('unit-1-registration_end', 'd-7')).toBe(
+      'unit-1-registration_end#d-7',
+    );
   });
 });

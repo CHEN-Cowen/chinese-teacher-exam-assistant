@@ -6,11 +6,22 @@
 export type TimelineEventKind =
   | "registration_start"
   | "registration_end"
+  | "preliminary_review"
+  | "review_result"
   | "payment"
+  | "amendment_deadline"
   | "admit_ticket"
+  | "admit_ticket_end"
   | "written_exam"
   | "score"
+  | "score_review"
+  | "qualification_review"
+  | "interview_confirm"
   | "interview"
+  | "medical_exam"
+  | "inspection"
+  | "position_selection"
+  | "publication"
   | "pending_notice";
 
 /** 通知强度三档（docs IA 第 5 节） */
@@ -25,6 +36,8 @@ export interface TimelineEventDTO {
   eventKey: string;
   kind: TimelineEventKind;
   kindLabel: string;
+  /** 事件标题（pending_notice 时为具体待定事项描述） */
+  title: string;
   /** ISO 日期；待官方通知时为 null */
   dateIso: string | null;
   dateText: string;
