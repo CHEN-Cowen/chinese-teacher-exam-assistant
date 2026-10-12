@@ -523,6 +523,52 @@ export interface GoalsResponse {
   primaryTargetUnitId: string | null;
 }
 
+// ==================== 新机会订阅（v7.1 M6） ====================
+
+/** 订阅地区引用（与画像地区同一 JSON 结构，去掉 level 等匹配专用字段） */
+export interface SubscriptionRegionDTO {
+  code: string;
+  province: string;
+  city?: string;
+  district?: string;
+}
+
+/** 新机会订阅（每用户一条；enabled=false 关闭后停止新提醒，历史通知保留） */
+export interface SubscriptionDTO {
+  regions: SubscriptionRegionDTO[];
+  subject: string;
+  naturePreference: 'public_only' | 'official_open' | 'undecided';
+  /** 必要资格条件快照（透明展示用）：{ degree?, graduationDate?, cert? } */
+  qualification: {
+    degree?: string;
+    graduationDate?: string;
+    certSubject?: string;
+    certStage?: string;
+  } | null;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** 订阅同步结果（幂等；newNotices 为本次新产生的站内提醒数） */
+export interface SubscriptionSyncDTO {
+  enabled: boolean;
+  /** 订阅不存在时为 false（前端据此引导开启） */
+  subscribed: boolean;
+  newNotices: number;
+  backfilled: number;
+}
+
+/** 资格条件快照：只取必要枚举与日期，不存证件号等敏感信息 */
+export function buildQualificationSnapshot(profile: UserRecruitmentProfile) {
+  return {
+    degree: profile.degree,
+    graduationDate: profile.graduationDate,
+    certSubject: profile.teacherCert?.subject,
+    certStage: profile.teacherCert?.stage,
+  };
+}
+
 /**
  * 从活跃关注记录（considering/preparing/registered）装配备考目标视图。
  * 已放弃/已关闭的机会不再作为备考目标；目录中找不到的单元跳过。

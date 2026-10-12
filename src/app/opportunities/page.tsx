@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Hero } from "@/components/ia/Hero";
 import { Disclosure } from "@/components/ia/Layer";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -15,10 +15,14 @@ import {
   formatEvaluatedAt,
   listCardNextStepLabel,
 } from "@/lib/opportunities/list-view";
+import { buildNoResultState } from "@/lib/opportunities/no-result";
+import { opportunitiesApi } from "@/lib/opportunities/api";
 import { OpportunityListItem } from "@/components/opportunities/OpportunityListItem";
 import { CoverageBanner } from "@/components/opportunities/CoverageBanner";
 import { DatasetScopeNotice } from "@/components/opportunities/DatasetScopeNotice";
 import { TrialJourneyGuide } from "@/components/opportunities/TrialJourneyGuide";
+import { NoResultFeedback } from "@/components/opportunities/NoResultFeedback";
+import { SubscriptionCard } from "@/components/opportunities/SubscriptionCard";
 import { StatusMessage, StatusMessageRegion } from "@/components/ui/StatusMessage";
 import { Callout } from "@/components/ui/Callout";
 import { useOnlineStatus } from "@/lib/useOnlineStatus";
@@ -59,6 +63,25 @@ export default function OpportunitiesPage() {
   } = useOpportunities();
   const online = useOnlineStatus();
 
+  // v7.1 M6：进入机会页即幂等同步订阅（fire-and-forget）；有新提醒时给页面提示条
+  const [newNotices, setNewNotices] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    opportunitiesApi
+      .syncSubscription()
+      .then((result) => {
+        if (!cancelled && result.enabled && result.newNotices > 0) {
+          setNewNotices(result.newNotices);
+        }
+      })
+      .catch(() => {
+        // 同步失败不打扰用户：下次进入页面会再次幂等同步
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   if (state.status === "loading") return <LoadingPage />;
 
   if (state.status === "no-profile") {
@@ -90,6 +113,7 @@ export default function OpportunitiesPage() {
   }
 
   const view = buildListViewModel(state.data, state.profile);
+  const noResult = buildNoResultState(view);
   const evaluatedAt = view.meta.evaluatedAt;
   const suggested =
     view.priority ??
@@ -192,6 +216,15 @@ export default function OpportunitiesPage() {
           显示的是之前加载的机会列表，可能不是最新结果。恢复网络后会自动刷新。
         </Callout>
       )}
+      {newNotices > 0 && (
+        <StatusMessageRegion>
+          <StatusMessage
+            tone="success"
+            message={`有 ${newNotices} 条新机会提醒已放入站内通知中心（顶部导航铃铛）。`}
+            onDismiss={() => setNewNotices(0)}
+          />
+        </StatusMessageRegion>
+      )}
       <Hero
         meta={`机会结论 · ${formatEvaluatedAt(evaluatedAt)} 更新`}
         conclusion={heroConclusion}
@@ -246,14 +279,10 @@ export default function OpportunitiesPage() {
         </div>
       )}
 
-      {view.emptyResult && (
-        <EmptyState
-          title="当前已核对范围内没有可展示的机会"
-          description={`已核对范围见上方监测说明（${view.coverage.scopeNote || "未覆盖地区不等于没有招聘"}）。你可以修改报考信息后重新判断，或稍后回来查看新公告。`}
-          actionLabel="修改报考信息"
-          actionHref="/onboarding?from=opportunities"
-        />
+      {noResult && (
+        <NoResultFeedback state={noResult} coverage={view.coverage} />
       )}
+      {noResult && <SubscriptionCard profile={state.profile} />}
 
       {actionError && (
         <Callout variant="no" title="操作未完成">
@@ -372,6 +401,8 @@ export default function OpportunitiesPage() {
           </p>
         </Disclosure>
       ))}
+
+      {!noResult && <SubscriptionCard profile={state.profile} />}
     </div>
   );
 }

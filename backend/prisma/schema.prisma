@@ -394,6 +394,57 @@ model NotificationRecord {
   @@map("notification_records")
 }
 
+// ==================== 新机会订阅与提醒（v7.1 M6） ====================
+
+/**
+ * 新机会订阅（v7.1 M6）：每用户一条，修改走 upsert。
+ *
+ * - 默认条件来自画像：地区、语文学科、用工偏好与必要资格条件快照；
+ * - enabled=false 关闭后停止新提醒（已产生的历史通知按治理规则保留）；
+ * - qualification 仅存条件快照（学历/毕业时间等枚举），用于订阅页透明展示；
+ *   提醒判定始终以同步时刻的当前画像匹配结果为准，避免快照过期误判。
+ */
+model OpportunitySubscription {
+  id               String   @id @default(uuid())
+  userId           String   @unique @map("user_id")
+  /** 订阅地区：[{code, province, city?, district?}] */
+  regions          Json
+  /** 订阅学科（当前监测范围仅 chinese） */
+  subject          String   @default("chinese")
+  /** 用工偏好：public_only / official_open / undecided */
+  naturePreference String   @default("undecided") @map("nature_preference")
+  /** 必要资格条件快照（透明展示用，不参与判定） */
+  qualification    Json?
+  enabled          Boolean  @default(true)
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@map("opportunity_subscriptions")
+}
+
+/**
+ * 新机会提醒幂等日志（v7.1 M6）。
+ *
+ * - dedupKey = `${announcementId}:${versionId}`：同一用户和公告在同一发布版本下
+ *   只提醒一次（新版本发布视为新信息，允许再次提醒）；
+ * - 首次同步对当时已存在的匹配公告做基线回填（notified=false），不产生通知风暴；
+ * - 账号隔离靠 userId 维度：日志只按当前用户读写，用户 A 的基线不影响用户 B。
+ */
+model OpportunityNoticeLog {
+  id             String   @id @default(uuid())
+  userId         String   @map("user_id")
+  announcementId String   @map("announcement_id")
+  versionId      String   @map("version_id")
+  dedupKey       String   @map("dedup_key")
+  /** true=已产生站内通知；false=首次同步基线回填（未通知） */
+  notified       Boolean  @default(false)
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@unique([userId, dedupKey])
+  @@index([userId, notified])
+  @@map("opportunity_notice_logs")
+}
+
 // ==================== 学习计划服务端持久化（模块 8） ====================
 
 /**

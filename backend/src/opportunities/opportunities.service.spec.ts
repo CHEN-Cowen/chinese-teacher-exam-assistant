@@ -202,17 +202,70 @@ function createFakePrisma() {
     },
   };
 
+  // v7.1 M6：订阅与提醒幂等日志（内存版）
+  const subscriptions = new Map<string, Record<string, unknown>>();
+  const noticeLogs: Array<Record<string, unknown>> = [];
+  const opportunitySubscription = {
+    findUnique: async ({ where }: { where: { userId: string } }) =>
+      subscriptions.get(where.userId) ?? null,
+    upsert: async ({
+      where,
+      create,
+      update,
+    }: {
+      where: { userId: string };
+      create: Record<string, unknown>;
+      update: Record<string, unknown>;
+    }) => {
+      const existing = subscriptions.get(where.userId);
+      if (existing) {
+        Object.assign(existing, update);
+        return existing;
+      }
+      const row = {
+        id: `sub-${++seq}`,
+        ...create,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      subscriptions.set(where.userId, row);
+      return row;
+    },
+  };
+  const opportunityNoticeLog = {
+    findMany: async ({ where }: { where: { userId: string } }) =>
+      noticeLogs.filter((r) => r.userId === where.userId),
+    createMany: async ({ data }: { data: Array<Record<string, unknown>> }) => {
+      let count = 0;
+      for (const item of data) {
+        const dup = noticeLogs.some(
+          (r) =>
+            r.userId === item.userId &&
+            r.dedupKey === item.dedupKey,
+        );
+        if (dup) continue; // skipDuplicates
+        noticeLogs.push({ id: `log-${++seq}`, createdAt: new Date(), ...item });
+        count += 1;
+      }
+      return { count };
+    },
+  };
+
   return {
     prisma: {
       followedOpportunity,
       opportunityCorrection,
       notificationRecord,
+      opportunitySubscription,
+      opportunityNoticeLog,
       user,
       $transaction: async (ops: Array<Promise<unknown>>) => Promise.all(ops),
     } as never,
     rows,
     corrections,
     notifications,
+    subscriptions,
+    noticeLogs,
   };
 }
 
@@ -741,5 +794,105 @@ describe('OpportunitiesService：纠错处理闭环（P0-F / 模块 8）', () =>
     await expect(
       service.listCorrectionsForStaff('not-a-status'),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+});
+
+describe('OpportunitiesService：新机会订阅（v7.1 M6）', () => {
+  let fake: ReturnType<typeof createFakePrisma>;
+  let service: OpportunitiesService;
+
+  beforeEach(() => {
+    fake = createFakePrisma();
+    service = new OpportunitiesService(fake.prisma, fakeProfileService);
+  });
+
+  it('订阅增改：未传字段用默认值补齐，可修改偏好与关闭', async () => {
+    const created = await service.upsertSubscription('user-1', {
+      regions: [{ code: '330100', province: '浙江省', city: '杭州市' }],
+      naturePreference: 'official_open',
+    });
+    expect(created.subject).toBe('chinese');
+    expect(created.enabled).toBe(true);
+    expect(created.naturePreference).toBe('official_open');
+
+    const updated = await service.upsertSubscription('user-1', {
+      naturePreference: 'public_only',
+      enabled: false,
+    });
+    expect(updated.naturePreference).toBe('public_only');
+    expect(updated.enabled).toBe(false);
+    // 地区未被覆盖，保持原值
+    expect(updated.regions[0]).toMatchObject({ code: '330100' });
+    expect(fake.subscriptions.size).toBe(1);
+  });
+
+  it('未开启订阅时同步不产生任何通知', async () => {
+    const result = await service.syncSubscription('user-1');
+    expect(result.subscribed).toBe(false);
+    expect(result.newNotices).toBe(0);
+    expect(fake.notifications).toHaveLength(0);
+  });
+
+  it('关闭订阅后停止新提醒；重新开启后恢复', async () => {
+    await service.upsertSubscription('user-1', {
+      regions: [{ code: '330100', province: '浙江省', city: '杭州市' }],
+      enabled: false,
+    });
+    const closed = await service.syncSubscription('user-1');
+    expect(closed.enabled).toBe(false);
+    expect(fake.notifications).toHaveLength(0);
+
+    await service.upsertSubscription('user-1', { enabled: true });
+    const reopened = await service.syncSubscription('user-1');
+    expect(reopened.enabled).toBe(true);
+  });
+
+  it('首次同步基线回填不产生通知；重复同步幂等；改宽地区后按新条件生效', async () => {
+    await service.upsertSubscription('user-1', {
+      regions: [{ code: '330100', province: '浙江省', city: '杭州市' }],
+    });
+    const first = await service.syncSubscription('user-1');
+    expect(first.backfilled).toBeGreaterThan(0);
+    expect(first.newNotices).toBe(0);
+    expect(fake.notifications).toHaveLength(0);
+    const logsAfterFirst = fake.noticeLogs.length;
+
+    const repeat = await service.syncSubscription('user-1');
+    expect(repeat.newNotices).toBe(0);
+    expect(repeat.backfilled).toBe(0);
+    expect(fake.noticeLogs.length).toBe(logsAfterFirst);
+
+    // 修改订阅（扩大到省级）：新匹配公告产生一次站内提醒
+    await service.upsertSubscription('user-1', {
+      regions: [{ code: '330000', province: '浙江省' }],
+    });
+    const widened = await service.syncSubscription('user-1');
+    expect(widened.newNotices).toBeGreaterThan(0);
+    expect(fake.notifications).toHaveLength(widened.newNotices);
+    expect(fake.notifications[0]).toMatchObject({ severity: 'info' });
+
+    // 再次同步：同一版本不重复
+    const again = await service.syncSubscription('user-1');
+    expect(again.newNotices).toBe(0);
+    expect(fake.notifications).toHaveLength(widened.newNotices);
+  });
+
+  it('账号隔离：用户 B 首次同步独立回填，不受用户 A 日志影响', async () => {
+    await service.upsertSubscription('user-1', {
+      regions: [{ code: '330000', province: '浙江省' }],
+    });
+    await service.syncSubscription('user-1');
+    const aLogs = fake.noticeLogs.length;
+    expect(aLogs).toBeGreaterThan(0);
+
+    await service.upsertSubscription('user-2', {
+      regions: [{ code: '330000', province: '浙江省' }],
+    });
+    const b = await service.syncSubscription('user-2');
+    expect(b.backfilled).toBe(aLogs);
+    expect(b.newNotices).toBe(0);
+    // B 的回填不产生通知，A 的状态未被影响
+    expect(fake.notifications).toHaveLength(0);
+    expect(fake.noticeLogs.filter((r) => r.userId === 'user-2')).toHaveLength(aLogs);
   });
 });

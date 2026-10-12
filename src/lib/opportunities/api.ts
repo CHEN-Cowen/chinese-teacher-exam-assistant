@@ -16,6 +16,9 @@ import type {
   OpportunityCorrectionDTO,
   StaffOpportunityCorrectionDTO,
   StudyTargetRole,
+  SubscriptionDTO,
+  SubscriptionSyncDTO,
+  SubscriptionUpdateInput,
   UnitDetailResponse,
 } from "./api-types";
 
@@ -41,6 +44,27 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 export const opportunitiesApi = {
+  /** 当前用户的新机会订阅（v7.1 M6；未开启过返回 null） */
+  getSubscription(): Promise<SubscriptionDTO | null> {
+    if (AUTH_MODE === "demo") return demoOpportunitiesApi.getSubscription();
+    return request<SubscriptionDTO | null>("/subscription");
+  },
+
+  /** 创建/修改订阅（部分更新，未传字段保留现值；enabled=false 关闭） */
+  upsertSubscription(input: SubscriptionUpdateInput): Promise<SubscriptionDTO> {
+    if (AUTH_MODE === "demo") return demoOpportunitiesApi.upsertSubscription(input);
+    return request<SubscriptionDTO>("/subscription", {
+      method: "PUT",
+      body: JSON.stringify(input),
+    });
+  },
+
+  /** 订阅同步（幂等）：已人工核对的匹配新公告产生一次站内提醒 */
+  syncSubscription(): Promise<SubscriptionSyncDTO> {
+    if (AUTH_MODE === "demo") return demoOpportunitiesApi.syncSubscription();
+    return request<SubscriptionSyncDTO>("/subscription/sync", { method: "POST" });
+  },
+
   /** 机会列表（按当前画像即时计算，四档分组 + 关注状态 + 版本信息）。
    *  invited 模式下不发送画像，由后端读取已持久化的画像（跨浏览器一致）。 */
   match(profile: UserRecruitmentProfile): Promise<MatchResponse> {

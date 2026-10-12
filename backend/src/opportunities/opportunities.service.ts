@@ -42,13 +42,22 @@ import {
 import {
   buildGoals,
   buildMatchResponse,
+  buildQualificationSnapshot,
   buildUnitDetail,
   type CatalogSnapshot,
   type FollowDTO,
   type GoalsResponse,
   type MatchResponse,
+  type SubscriptionDTO,
+  type SubscriptionSyncDTO,
   type UnitDetailResponse,
 } from './view.js';
+import {
+  deriveSubscriptionCriteria,
+  planOpportunityNotices,
+  type NaturePreferenceCode,
+  type SubscriptionCriteria,
+} from './subscription.domain.js';
 
 /**
  * 当前已发布公告目录 = 演示场景（catalog.ts 滚动时间轴）+
@@ -131,6 +140,227 @@ export class OpportunitiesService {
   ): Promise<MatchResponse> {
     const follows = await this.listFollowRecords(userId);
     return buildMatchResponse(candidates, profile, follows, new Date());
+  }
+
+  // ==================== 新机会订阅（v7.1 M6） ====================
+
+  private toSubscriptionDTO(row: {
+    regions: unknown;
+    subject: string;
+    naturePreference: string;
+    qualification: unknown;
+    enabled: boolean;
+    createdAt: Date;
+    updatedAt: Date;
+  }): SubscriptionDTO {
+    return {
+      regions: row.regions as SubscriptionDTO['regions'],
+      subject: row.subject,
+      naturePreference: row.naturePreference as SubscriptionDTO['naturePreference'],
+      qualification:
+        (row.qualification as SubscriptionDTO['qualification']) ?? null,
+      enabled: row.enabled,
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
+    };
+  }
+
+  /** 当前用户的订阅（未开启过返回 null，前端用画像默认值引导开启） */
+  async getSubscription(userId: string): Promise<SubscriptionDTO | null> {
+    const row = await this.prisma.opportunitySubscription.findUnique({
+      where: { userId },
+    });
+    return row ? this.toSubscriptionDTO(row) : null;
+  }
+
+  /**
+   * 创建/修改订阅（每用户一条 upsert）。
+   * 未传字段用画像默认值补齐；enabled=false 关闭后停止新提醒，历史通知保留。
+   */
+  async upsertSubscription(
+    userId: string,
+    input: {
+      regions?: unknown;
+      subject?: unknown;
+      naturePreference?: unknown;
+      enabled?: unknown;
+    },
+  ): Promise<SubscriptionDTO> {
+    const profile = await this.safeProfile(userId);
+    const existing = await this.prisma.opportunitySubscription.findUnique({
+      where: { userId },
+    });
+    const defaults = profile
+      ? deriveSubscriptionCriteria(profile)
+      : {
+          regions: [],
+          subject: 'chinese',
+          naturePreference: 'undecided' as NaturePreferenceCode,
+        };
+    // 更新时未传字段保留现值（不能被默认值覆盖）；创建时用画像默认值补齐
+    const regionsFallback = existing
+      ? ((existing.regions as SubscriptionCriteria['regions']) ?? defaults.regions)
+      : defaults.regions;
+    const regions = this.validatedSubscriptionRegions(
+      input.regions,
+      regionsFallback,
+    );
+    const naturePreference = this.asNaturePreference(
+      input.naturePreference,
+      existing
+        ? (existing.naturePreference as NaturePreferenceCode)
+        : defaults.naturePreference,
+    );
+    const snapshot = profile ? buildQualificationSnapshot(profile) : null;
+    // 资格快照只在画像可用时刷新；画像缺失时保留现值（创建则留空列）
+    const base = {
+      regions: regions as unknown as Prisma.InputJsonValue,
+      subject: 'chinese',
+      naturePreference,
+      enabled:
+        typeof input.enabled === 'boolean'
+          ? input.enabled
+          : (existing?.enabled ?? true),
+    };
+    const withSnapshot = {
+      ...base,
+      ...(snapshot
+        ? { qualification: snapshot as unknown as Prisma.InputJsonValue }
+        : {}),
+    };
+    const row = await this.prisma.opportunitySubscription.upsert({
+      where: { userId },
+      create: { userId, ...withSnapshot },
+      update: withSnapshot,
+    });
+    return this.toSubscriptionDTO(row);
+  }
+
+  /**
+   * 订阅同步（幂等）：按订阅条件筛选当前公告目录，新匹配公告产生一次站内提醒。
+   * - 未开启订阅：直接返回，不产生任何通知；
+   * - 首次同步：对既有匹配公告做基线回填（不通知），避免开启即通知风暴；
+   * - 重复同步：dedupKey 命中日志的全部跳过；
+   * - 新版本发布：新 dedupKey 允许再次提醒（每版本一次）。
+   */
+  async syncSubscription(userId: string): Promise<SubscriptionSyncDTO> {
+    const row = await this.prisma.opportunitySubscription.findUnique({
+      where: { userId },
+    });
+    if (!row || !row.enabled) {
+      return { enabled: false, subscribed: row !== null, newNotices: 0, backfilled: 0 };
+    }
+    const criteria: SubscriptionCriteria = {
+      regions: row.regions as SubscriptionCriteria['regions'],
+      subject: row.subject,
+      naturePreference: row.naturePreference as NaturePreferenceCode,
+    };
+
+    // “没有已知明确不符合项”：以当前画像的即时匹配结果为准
+    const profile = await this.safeProfile(userId);
+    const ineligibleUnitIds = new Set<string>();
+    if (profile) {
+      const candidates = buildCandidates(
+        getPublishedAnnouncements(),
+        profile,
+        new Date().toISOString(),
+      );
+      for (const c of candidates) {
+        if (c.match.overall === 'not_eligible') ineligibleUnitIds.add(c.unit.id);
+      }
+    }
+
+    const existing = await this.prisma.opportunityNoticeLog.findMany({
+      where: { userId },
+      select: { dedupKey: true },
+    });
+    const existingKeys = new Set(existing.map((r) => r.dedupKey));
+    const plan = planOpportunityNotices({
+      announcements: getPublishedAnnouncements(),
+      criteria,
+      ineligibleUnitIds,
+      existingKeys,
+      now: new Date(),
+    });
+    if (plan.keys.length === 0) {
+      return { enabled: true, subscribed: true, newNotices: 0, backfilled: 0 };
+    }
+
+    for (const notice of plan.notices) {
+      await this.prisma.notificationRecord.create({
+        data: {
+          userId,
+          severity: 'info',
+          title: `新机会提醒：${notice.publisher}`,
+          body: [
+            `${notice.regionLabel} ${notice.unitName}`,
+            `招 ${notice.headcount} 人，报名截止 ${notice.registrationEnd}`,
+            '已通过人工核对且符合你的订阅条件，详情见机会页。',
+          ].join('；'),
+          relatedUnitId: notice.unitId,
+        },
+      });
+    }
+    await this.prisma.opportunityNoticeLog.createMany({
+      data: plan.keys.map((k) => ({
+        userId,
+        announcementId: k.announcementId,
+        versionId: k.versionId,
+        dedupKey: k.dedupKey,
+        notified: k.notified,
+      })),
+      skipDuplicates: true,
+    });
+    return {
+      enabled: true,
+      subscribed: true,
+      newNotices: plan.notices.length,
+      backfilled: plan.backfillCount,
+    };
+  }
+
+  /** 画像读取失败/未保存时返回 null（同步与订阅默认值不因此中断） */
+  private async safeProfile(userId: string): Promise<UserRecruitmentProfile | null> {
+    try {
+      const persisted = await this.profileService.getProfile(userId);
+      return persisted ? this.validateProfile(persisted) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private validatedSubscriptionRegions(
+    input: unknown,
+    fallback: SubscriptionCriteria['regions'],
+  ): SubscriptionCriteria['regions'] {
+    if (!Array.isArray(input)) return fallback;
+    const result: SubscriptionCriteria['regions'] = [];
+    for (const raw of input) {
+      if (typeof raw !== 'object' || raw === null) continue;
+      const r = raw as Record<string, unknown>;
+      if (typeof r.code !== 'string' || typeof r.province !== 'string') continue;
+      result.push({
+        code: r.code,
+        province: r.province,
+        ...(typeof r.city === 'string' ? { city: r.city } : {}),
+        ...(typeof r.district === 'string' ? { district: r.district } : {}),
+      });
+    }
+    return result.length > 0 ? result : fallback;
+  }
+
+  private asNaturePreference(
+    input: unknown,
+    fallback: NaturePreferenceCode,
+  ): NaturePreferenceCode {
+    if (
+      input === 'public_only' ||
+      input === 'official_open' ||
+      input === 'undecided'
+    ) {
+      return input;
+    }
+    return fallback;
   }
 
   // ==================== 关注关系 ====================

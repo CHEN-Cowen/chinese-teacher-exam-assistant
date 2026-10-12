@@ -23,6 +23,9 @@ import type {
   MaterialStatus,
   OpportunityCorrectionDTO,
   StudyTargetRole,
+  SubscriptionDTO,
+  SubscriptionSyncDTO,
+  SubscriptionUpdateInput,
   UnitDetailResponse,
   UnitMatchDTO,
 } from "./api-types";
@@ -156,7 +159,119 @@ function candidates(profile: UserRecruitmentProfile, now: string): OpportunityCa
   return sortCandidates(buildCandidates(getRollingDemoAnnouncements(new Date(now)), profile, now), profile);
 }
 
+// ==================== 演示环境订阅（v7.1 M6，localStorage 持久化） ====================
+
+const DEMO_SUBSCRIPTION_KEY = "demo-opportunity-subscription";
+
+interface DemoSubscriptionRow {
+  regions: SubscriptionDTO["regions"];
+  naturePreference: SubscriptionDTO["naturePreference"];
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+function deriveDemoDefault(profile: UserRecruitmentProfile): DemoSubscriptionRow {
+  const accepted = profile.acceptedEmploymentNatures ?? [];
+  const naturePreference: SubscriptionDTO["naturePreference"] =
+    accepted.length === 0
+      ? "undecided"
+      : accepted.length === 1 && accepted[0] === "public_institution_staff"
+        ? "public_only"
+        : "official_open";
+  const now = new Date().toISOString();
+  return {
+    regions: profile.regions.map((r) => ({
+      code: r.code,
+      province: r.province,
+      ...(r.city ? { city: r.city } : {}),
+      ...(r.district ? { district: r.district } : {}),
+    })),
+    naturePreference,
+    enabled: true,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function loadDemoSubscription(profile: UserRecruitmentProfile): SubscriptionDTO {
+  try {
+    const raw = window.localStorage.getItem(DEMO_SUBSCRIPTION_KEY);
+    const row: DemoSubscriptionRow = raw
+      ? (JSON.parse(raw) as DemoSubscriptionRow)
+      : deriveDemoDefault(profile);
+    return {
+      regions: row.regions,
+      subject: "chinese",
+      naturePreference: row.naturePreference,
+      qualification: {
+        degree: profile.degree,
+        graduationDate: profile.graduationDate,
+        certSubject: profile.teacherCert?.subject,
+        certStage: profile.teacherCert?.stage,
+      },
+      enabled: row.enabled,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
+  } catch {
+    // localStorage 不可用时退化为内存默认值（不阻塞页面）
+    const fallback = deriveDemoDefault(profile);
+    return {
+      regions: fallback.regions,
+      subject: "chinese",
+      naturePreference: fallback.naturePreference,
+      qualification: null,
+      enabled: fallback.enabled,
+      createdAt: fallback.createdAt,
+      updatedAt: fallback.updatedAt,
+    };
+  }
+}
+
 export const demoOpportunitiesApi = {
+  /** 演示环境订阅：localStorage 持久化；未开启过返回 null（与后端口径一致） */
+  async getSubscription(): Promise<SubscriptionDTO | null> {
+    try {
+      if (!window.localStorage.getItem(DEMO_SUBSCRIPTION_KEY)) return null;
+    } catch {
+      return null;
+    }
+    // demo 匹配需要画像；此处用种子画像派生默认值
+    const { V61_SEED_PROFILE } = await import("@/lib/seed/v61-opportunities");
+    return loadDemoSubscription(V61_SEED_PROFILE);
+  },
+
+  async upsertSubscription(input: SubscriptionUpdateInput): Promise<SubscriptionDTO> {
+    const { V61_SEED_PROFILE } = await import("@/lib/seed/v61-opportunities");
+    const current = loadDemoSubscription(V61_SEED_PROFILE);
+    const row: DemoSubscriptionRow = {
+      regions: input.regions ?? current.regions,
+      naturePreference: input.naturePreference ?? current.naturePreference,
+      enabled: input.enabled ?? current.enabled,
+      createdAt: current.createdAt,
+      updatedAt: new Date().toISOString(),
+    };
+    try {
+      window.localStorage.setItem(DEMO_SUBSCRIPTION_KEY, JSON.stringify(row));
+    } catch {
+      // 持久化失败不阻塞：本次会话内仍生效
+    }
+    return loadDemoSubscription(V61_SEED_PROFILE);
+  },
+
+  /** 演示环境无真实公告流入，同步恒为幂等空操作 */
+  async syncSubscription(): Promise<SubscriptionSyncDTO> {
+    const { V61_SEED_PROFILE } = await import("@/lib/seed/v61-opportunities");
+    const subscription = loadDemoSubscription(V61_SEED_PROFILE);
+    return {
+      enabled: subscription.enabled,
+      subscribed: true,
+      newNotices: 0,
+      backfilled: 0,
+    };
+  },
+
   async match(profile: UserRecruitmentProfile): Promise<MatchResponse> {
     const now = new Date().toISOString();
     const data = load();

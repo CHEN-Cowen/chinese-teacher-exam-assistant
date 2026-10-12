@@ -377,3 +377,43 @@ export interface StaffOpportunityCorrectionDTO
 
 /** POST 请求体：前端只提交画像与补问答案，判定在后端完成 */
 export type ProfilePayload = { profile: UserRecruitmentProfile };
+
+// ==================== 新机会订阅（v7.1 M6） ====================
+
+export interface SubscriptionRegionDTO {
+  code: string;
+  province: string;
+  city?: string;
+  district?: string;
+}
+
+/** 新机会订阅（每用户一条；enabled=false 关闭后停止新提醒，历史通知保留） */
+export interface SubscriptionDTO {
+  regions: SubscriptionRegionDTO[];
+  subject: string;
+  naturePreference: "public_only" | "official_open" | "undecided";
+  qualification: {
+    degree?: string;
+    graduationDate?: string;
+    certSubject?: string;
+    certStage?: string;
+  } | null;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** PUT /opportunities/subscription 请求体：部分更新，未传字段保留现值 */
+export interface SubscriptionUpdateInput {
+  regions?: SubscriptionRegionDTO[];
+  naturePreference?: SubscriptionDTO["naturePreference"];
+  enabled?: boolean;
+}
+
+/** POST /opportunities/subscription/sync 响应（幂等） */
+export interface SubscriptionSyncDTO {
+  enabled: boolean;
+  subscribed: boolean;
+  newNotices: number;
+  backfilled: number;
+}

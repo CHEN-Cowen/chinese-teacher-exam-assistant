@@ -28,6 +28,33 @@ interface AuthenticatedRequest {
 export class OpportunitiesController {
   constructor(private readonly service: OpportunitiesService) {}
 
+  /** 当前用户的新机会订阅（v7.1 M6；未开启过返回 null） */
+  @Get('subscription')
+  getSubscription(@Req() req: AuthenticatedRequest) {
+    return this.service.getSubscription(req.user!.id);
+  }
+
+  /** 创建/修改订阅（每用户一条；enabled=false 关闭后停止新提醒，历史通知保留） */
+  @Put('subscription')
+  upsertSubscription(
+    @Body()
+    body: {
+      regions?: unknown;
+      subject?: unknown;
+      naturePreference?: unknown;
+      enabled?: unknown;
+    },
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.service.upsertSubscription(req.user!.id, body);
+  }
+
+  /** 订阅同步（幂等）：已人工核对的匹配新公告产生一次站内提醒 */
+  @Post('subscription/sync')
+  syncSubscription(@Req() req: AuthenticatedRequest) {
+    return this.service.syncSubscription(req.user!.id);
+  }
+
   /** 机会列表：默认“初步符合”，其余结果在分组字段中二级展示 */
   @Post('match')
   match(
