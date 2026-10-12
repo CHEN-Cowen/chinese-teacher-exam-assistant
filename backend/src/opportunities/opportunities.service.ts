@@ -7,8 +7,8 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service.js';
 import { ProfileService } from '../profile/profile.service.js';
-import { CATALOG_ANNOUNCEMENTS } from '../matching/catalog.js';
 import { REAL_ANNOUNCEMENTS } from '../matching/real-catalog.js';
+import { getRollingCatalogAnnouncements } from '../matching/rolling-catalog.js';
 import { buildCandidates, currentVersion } from '../matching/engine.js';
 import type {
   CredentialLevel,
@@ -51,14 +51,16 @@ import {
 } from './view.js';
 
 /**
- * 当前已发布公告目录 = 演示场景（catalog.ts，example.gov.cn）+
+ * 当前已发布公告目录 = 演示场景（catalog.ts 滚动时间轴）+
  * 真实监测台账（real-catalog.ts，杭州/宁波，人工维护）。
  * 两者通过 dataset 字段区分；真实记录未人工复核不进主要推荐。
  */
-const PUBLISHED_ANNOUNCEMENTS = [
-  ...CATALOG_ANNOUNCEMENTS,
-  ...REAL_ANNOUNCEMENTS,
-] as const;
+function getPublishedAnnouncements() {
+  return [
+    ...getRollingCatalogAnnouncements(),
+    ...REAL_ANNOUNCEMENTS,
+  ];
+}
 
 /**
  * 机会发现服务（PRD 7.4/7.5/7.7/7.10）。
@@ -96,7 +98,7 @@ export class OpportunitiesService {
   async match(profile: unknown, userId: string): Promise<MatchResponse> {
     const valid = await this.resolveProfile(profile, userId);
     const candidates = buildCandidates(
-      PUBLISHED_ANNOUNCEMENTS,
+      getPublishedAnnouncements(),
       valid,
       new Date().toISOString(),
     );
@@ -110,7 +112,7 @@ export class OpportunitiesService {
   ): Promise<UnitDetailResponse> {
     const valid = await this.resolveProfile(profile, userId);
     const candidates = buildCandidates(
-      PUBLISHED_ANNOUNCEMENTS,
+      getPublishedAnnouncements(),
       valid,
       new Date().toISOString(),
     );
@@ -148,7 +150,7 @@ export class OpportunitiesService {
   /** 当前目录的全部公告/版本/单元聚合快照（goals 视图装配用） */
   private buildCatalogSnapshot(): CatalogSnapshot[] {
     const snapshots: CatalogSnapshot[] = [];
-    for (const announcement of PUBLISHED_ANNOUNCEMENTS) {
+    for (const announcement of getPublishedAnnouncements()) {
       // 模块 7.5 合规过滤：用户端不返回 AI 初核待人工复核记录
       if (announcement.dataset === 'real') continue;
       const version = currentVersion(announcement);
@@ -617,7 +619,7 @@ export class OpportunitiesService {
     announcementId: string;
     versionId: string;
   } {
-    for (const announcement of PUBLISHED_ANNOUNCEMENTS) {
+    for (const announcement of getPublishedAnnouncements()) {
       // 模块 7.5 合规过滤：普通用户端不允许关注/查看 AI 初核待人工复核记录
       if (announcement.dataset === 'real') continue;
       const version = currentVersion(announcement);
@@ -629,7 +631,7 @@ export class OpportunitiesService {
 
   /** 新保存机会立即建立材料进度；旧关注记录读取时也得到同样的默认状态。 */
   private initialMaterialStatuses(unitId: string): Record<string, MaterialStatus> {
-    for (const announcement of PUBLISHED_ANNOUNCEMENTS) {
+    for (const announcement of getPublishedAnnouncements()) {
       if (announcement.dataset === 'real') continue;
       for (const version of announcement.versions) {
         const unit = version.units.find((candidate) => candidate.id === unitId);
@@ -647,7 +649,7 @@ export class OpportunitiesService {
     unitName: string;
     announcementTitle: string;
   } | null {
-    for (const announcement of PUBLISHED_ANNOUNCEMENTS) {
+    for (const announcement of getPublishedAnnouncements()) {
       for (const version of announcement.versions) {
         const unit = version.units.find((u) => u.id === unitId);
         if (unit) {
@@ -744,7 +746,7 @@ export class OpportunitiesService {
   }
 
   private toDTO(follow: FollowRecord): FollowDTO {
-    const announcement = PUBLISHED_ANNOUNCEMENTS.find(
+    const announcement = getPublishedAnnouncements().find(
       (a) => a.id === follow.announcementId,
     );
     const currentVersionId = announcement

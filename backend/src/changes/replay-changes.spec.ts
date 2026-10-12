@@ -229,6 +229,17 @@ vi.mock('../matching/catalog.js', () => {
   };
 });
 
+// schedule.service 运行时读滚动时间轴 rolling-catalog：透传上面可控目录（不平移日期），
+// 保证测试对数组的 push/splice 修改直接可见
+vi.mock('../matching/rolling-catalog.js', async () => {
+  const catalogMod = (await import('../matching/catalog.js')) as unknown as {
+    CATALOG_ANNOUNCEMENTS: unknown[];
+  };
+  return {
+    getRollingCatalogAnnouncements: () => catalogMod.CATALOG_ANNOUNCEMENTS,
+  };
+});
+
 // ---------- 内存 Prisma ----------
 
 type TimelineRow = {

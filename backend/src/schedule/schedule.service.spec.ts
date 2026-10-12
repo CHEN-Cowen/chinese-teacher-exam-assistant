@@ -3,8 +3,9 @@ import { ScheduleService } from './schedule.service.js';
 import type { PrismaService } from '../prisma.service.js';
 
 // 用可控的公告目录替代真实 catalog，避免依赖场景数据
+// （schedule.service 运行时读滚动时间轴 rolling-catalog，mock 直接拦截该模块）
 
-vi.mock('../matching/catalog.js', () => {
+vi.mock('../matching/rolling-catalog.js', () => {
   const timeline = {
     registrationStart: '2026-03-01',
     registrationEnd: '2026-03-15',
@@ -47,7 +48,10 @@ vi.mock('../matching/catalog.js', () => {
     status: 'active',
     versions: [version],
   };
-  return { CATALOG_ANNOUNCEMENTS: [announcement] };
+  return {
+    CATALOG_ANNOUNCEMENTS: [announcement],
+    getRollingCatalogAnnouncements: () => [announcement],
+  };
 });
 
 type TimelineRow = {
@@ -192,13 +196,27 @@ function createFakePrisma() {
 }
 
 describe('ScheduleService', () => {
+  // mock 的 rolling-catalog 在运行时带有可变 CATALOG_ANNOUNCEMENTS（见上方 vi.mock），
+  // 但静态类型上没有该导出，这里用结构类型收窄以便恢复/篡改测试数据
+  type MutableCatalog = {
+    CATALOG_ANNOUNCEMENTS: Array<{
+      versions: Array<{
+        id: string;
+        versionNumber: number;
+        timeline: { registrationEnd?: string };
+      }>;
+    }>;
+  };
+  const importCatalog = () =>
+    import('../matching/rolling-catalog.js') as unknown as Promise<MutableCatalog>;
+
   // 恢复被测试篡改的 catalog（公告时间变更测试会修改版本号与时间）
   afterEach(async () => {
-    const { CATALOG_ANNOUNCEMENTS } = await import('../matching/catalog.js');
-    const ann = CATALOG_ANNOUNCEMENTS[0];
-    ann.versions[0].id = 'ann-test-v1';
-    ann.versions[0].versionNumber = 1;
-    ann.versions[0].timeline.registrationEnd = '2026-03-15';
+    const { CATALOG_ANNOUNCEMENTS } = await importCatalog();
+    const ann = CATALOG_ANNOUNCEMENTS[0]!;
+    ann.versions[0]!.id = 'ann-test-v1';
+    ann.versions[0]!.versionNumber = 1;
+    ann.versions[0]!.timeline.registrationEnd = '2026-03-15';
   });
 
   const seedFollow = (
@@ -262,11 +280,11 @@ describe('ScheduleService', () => {
     // 然后让 sync 检测到 versionId 不同（catalog 的 versionId 仍是 v1）
     // —— 这不会触发变更。改为：通过修改 catalog 模拟。
     // 此处采用直接 mutate 公告对象（因为 mock 返回的是数组引用）
-    const { CATALOG_ANNOUNCEMENTS } = await import('../matching/catalog.js');
-    const ann = CATALOG_ANNOUNCEMENTS[0];
-    ann.versions[0].timeline.registrationEnd = '2026-03-10';
-    ann.versions[0].id = 'ann-test-v2';
-    ann.versions[0].versionNumber = 2;
+    const { CATALOG_ANNOUNCEMENTS } = await importCatalog();
+    const ann = CATALOG_ANNOUNCEMENTS[0]!;
+    ann.versions[0]!.timeline.registrationEnd = '2026-03-10';
+    ann.versions[0]!.id = 'ann-test-v2';
+    ann.versions[0]!.versionNumber = 2;
 
     await service.syncEventsForUser(userId);
     const updated = timelineEvents.find((e) => e.kind === 'registration_end');

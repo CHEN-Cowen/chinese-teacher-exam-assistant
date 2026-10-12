@@ -10,7 +10,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service.js';
-import { CATALOG_ANNOUNCEMENTS } from '../matching/catalog.js';
+import { getRollingCatalogAnnouncements } from '../matching/rolling-catalog.js';
 import { currentVersion } from '../matching/engine.js';
 import type {
   ApplicationUnit,
@@ -143,7 +143,7 @@ export class ScheduleService {
     let notificationCount = 0;
 
     for (const follow of follows) {
-      const announcement = CATALOG_ANNOUNCEMENTS.find(
+      const announcement = getRollingCatalogAnnouncements().find(
         (a) => a.id === follow.announcementId,
       );
       if (!announcement) continue;
@@ -346,7 +346,7 @@ export class ScheduleService {
     const unitMeta = new Map<string, { name: string; regionText: string; registerUrl?: string; registrationEnd?: string; materialsCount: number; doneCount: number; status: string }>();
     const unitTrust: Record<string, UnitTrust> = {};
     for (const f of follows) {
-      const ann = CATALOG_ANNOUNCEMENTS.find((a) => a.id === f.announcementId);
+      const ann = getRollingCatalogAnnouncements().find((a) => a.id === f.announcementId);
       if (!ann) continue;
       const version = currentVersion(ann);
       const followVersion = ann.versions.find((v) => v.id === f.versionId);
