@@ -44,6 +44,14 @@ export interface TrialCohortReport {
   primaryTarget: TrialMetric;
   northStar: TrialNorthStar;
   datasetSplit: { real: number; demo: number; unknown: number };
+  // —— v7.1 M9 新增 ——
+  homeUnderstanding: TrialMetric;
+  noResultReasons: { reasonCode: string; count: number }[];
+  subscriptionUsage: TrialMetric;
+  subscriptionClosedCount: number;
+  mapUsage: TrialMetric;
+  scheduleSyncHealth: { success: number; failure: number; rate: number | null; failureReasons: { reasonCode: string; count: number }[] };
+  scheduleConflictRate: TrialMetric;
 }
 
 export interface SupplySnapshot {

@@ -142,6 +142,71 @@ function CohortReport({ report }: { report: TrialCohortReport }) {
         </div>
       </Card>
 
+      {/* v7.1 M9 首次体验与行为指标：回答 7 个核心问题 */}
+      <Card>
+        <CardHeader
+          title="首次体验与行为（M9）"
+          description="首页理解 / 无结果原因 / 订阅 / 地图 / 日程同步与冲突；10 人样本展示人数与次数，不伪装成稳定总体比例"
+        />
+        <div className="divide-y divide-slate-100 border-t border-slate-100">
+          <MetricRow
+            label="首页是否理解（主按钮点击 ÷ 画像首步到达）"
+            metric={report.homeUnderstanding}
+            hint="近似：到达首页的用户中点击了唯一开始按钮的比例"
+          />
+          {/* 无结果原因分布：展示次数而非比例 */}
+          <div className="px-4 py-2.5">
+            <p className="text-sm text-slate-700">无结果原因曝光（按 reasonCode 分组计数）</p>
+            <p className="mt-0.5 text-[11px] text-slate-400">10 人样本展示具体次数，不折算为比例</p>
+            {report.noResultReasons.length === 0 ? (
+              <p className="mt-1 text-[11px] text-slate-400">暂无无结果曝光事件</p>
+            ) : (
+              <ul className="mt-1 space-y-0.5">
+                {report.noResultReasons.map((r) => (
+                  <li key={r.reasonCode} className="text-xs tabular-nums text-slate-600">
+                    {r.reasonCode} · <span className="font-semibold">{r.count}</span> 次
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <MetricRow
+            label="订阅使用（创建订阅 ÷ 获得有效机会）"
+            metric={report.subscriptionUsage}
+            hint={`关闭订阅 ${report.subscriptionClosedCount} 人`}
+          />
+          <MetricRow
+            label="地图使用（地图入口点击 ÷ 查看匹配依据）"
+            metric={report.mapUsage}
+            hint="地图入口点击前零地图请求，不内嵌 SDK"
+          />
+          {/* 日程同步健康度 */}
+          <div className="px-4 py-2.5">
+            <p className="text-sm text-slate-700">日程自动同步健康度</p>
+            <p className="mt-0.5 text-[11px] text-slate-400">
+              成功 {report.scheduleSyncHealth.success} / 失败 {report.scheduleSyncHealth.failure}
+              {report.scheduleSyncHealth.rate !== null
+                ? ` · 成功率 ${Math.round(report.scheduleSyncHealth.rate * 100)}%`
+                : " · —"}
+            </p>
+            {report.scheduleSyncHealth.failureReasons.length > 0 && (
+              <ul className="mt-1 space-y-0.5">
+                {report.scheduleSyncHealth.failureReasons.map((r) => (
+                  <li key={r.reasonCode} className="text-[11px] tabular-nums text-red-600">
+                    {r.reasonCode} · {r.count} 次
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <MetricRow
+            label="时间冲突曝光率（看到冲突提醒 ÷ 关注用户）"
+            metric={report.scheduleConflictRate}
+            hint="冲突来自多岗位报考日程时间重叠"
+          />
+        </div>
+      </Card>
+
       {/* 机会数据集分列 */}
       <Card>
         <CardHeader title="机会数据集分列" description="按服务端目录解析的机会归属分列，演示机会不冒充真实机会" />

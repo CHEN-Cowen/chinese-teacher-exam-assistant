@@ -345,6 +345,14 @@ function OnboardingForm() {
                 <Disclosure
                   trigger="还没想好，先看看当前覆盖范围"
                   contentClassName="text-sm leading-relaxed text-ink-muted"
+                  onOpenChange={(open) => {
+                    if (open) {
+                      // v7.1 M9：「还没想好地区」选择，记 undecided，不记地区正文
+                      track("region_preference_selected", "profile", {
+                        props: { level: "undecided" },
+                      });
+                    }
+                  }}
                 >
                   <StepCoverageOverview />
                 </Disclosure>
@@ -550,9 +558,18 @@ function StepRegions({
                       <button
                         key={opt.value}
                         type="button"
-                        onClick={() =>
-                          updateRow(index, regionFromSelect(provinceCode, cityCode, opt.value))
-                        }
+                        onClick={() => {
+                          // v7.1 M9：地区考虑程度选择（determined/considering），不记地区正文
+                          const level =
+                            opt.value === "required" ? "determined" : "considering";
+                          track("region_preference_selected", "profile", {
+                            props: { level },
+                          });
+                          updateRow(
+                            index,
+                            regionFromSelect(provinceCode, cityCode, opt.value),
+                          );
+                        }}
                         title={opt.hint}
                         aria-pressed={selected}
                         className={`min-h-11 rounded-xl border px-2 py-2 text-sm font-medium transition-all ${

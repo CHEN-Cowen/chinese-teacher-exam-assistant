@@ -735,7 +735,14 @@ function SummaryCard() {
           {summary || "部分信息暂未填写"}
         </p>
       </div>
-      <Link href="/onboarding?from=preview" className="shrink-0 text-xs font-medium text-brand hover:underline">
+      <Link
+        href="/onboarding?from=preview"
+        onClick={() => {
+          // v7.1 M9：修改地区或资格信息，不记答案正文
+          track("preview_summary_edited", "profile");
+        }}
+        className="shrink-0 text-xs font-medium text-brand hover:underline"
+      >
         修改
       </Link>
     </div>

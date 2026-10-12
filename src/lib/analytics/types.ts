@@ -25,7 +25,9 @@ export type AnalyticsModule =
   | "storage"
   | "home"
   | "learn"
-  | "schedule";
+  | "schedule"
+  | "subscription"
+  | "notification";
 
 /**
  * 事件类型。
@@ -81,7 +83,26 @@ export type AnalyticsEventType =
   | "nature_preference_changed" // 切换用工形式偏好（public_only/official_open/undecided）
   | "schedule_action_started" // 日程页点击下一项行动
   // —— v7.1 M5 地图轻量入口（只记岗位 ID、入口与地点类别枚举，不记地址/搜索文本） ——
-  | "map_entry_clicked";
+  | "map_entry_clicked"
+  // —— v7.1 M9 分析事件与试用看板：为首次体验/地图/订阅/自动日程建立可解释、最少采集、可去重的行为数据 ——
+  // 地区考虑程度三档（含「还没想好地区」），不记地区正文
+  | "region_preference_selected" // level: determined/considering/undecided
+  // 无结果三态曝光（未覆盖/无在报/资格不符），只记 reasonCode 枚举
+  | "no_result_reason_viewed" // reasonCode, kind
+  // 订阅创建/修改/关闭，只记 action 枚举，不记订阅条件正文
+  | "subscription_changed" // action: created/modified/closed
+  // 新机会提醒曝光（站内幂等），只记通知 ID 片段
+  | "opportunity_notification_viewed" // notificationId
+  // 新机会提醒点击跳转，只记通知 ID 片段
+  | "opportunity_notification_clicked" // notificationId
+  // 日程自动同步成功/失败，只记状态枚举与错误码，不记公告正文
+  | "schedule_sync_completed" // status: success/failure, nodeCount, reasonCode
+  // 日程节点查看（展开某节点），只记节点类型枚举
+  | "schedule_node_viewed" // nodeKind
+  // 时间冲突曝光，只记冲突数与涉及节点类型枚举
+  | "schedule_conflict_viewed" // conflictCount, nodeKind
+  // 公告改期通知查看，只记节点类型枚举，不记改期前后日期正文
+  | "announcement_reschedule_viewed"; // nodeKind
 
 /**
  * 统一分析事件。

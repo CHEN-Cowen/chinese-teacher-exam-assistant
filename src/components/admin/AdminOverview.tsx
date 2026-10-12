@@ -42,6 +42,8 @@ export const MODULE_LABELS: Record<AnalyticsModule, string> = {
   home: "首页",
   learn: "30 秒说明",
   schedule: "日程",
+  subscription: "订阅",
+  notification: "通知",
 };
 
 function pct(m: MetricValue): string {

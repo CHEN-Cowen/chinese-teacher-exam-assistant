@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { useSchedule } from "@/lib/schedule/useSchedule";
 import { buildScheduleView } from "@/lib/ia/schedule-view";
 import { Hero } from "@/components/ia/Hero";
@@ -10,6 +11,42 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { LoadingPage } from "@/components/ui/Loading";
 import { Callout } from "@/components/ui/Callout";
 import { useOnlineStatus } from "@/lib/useOnlineStatus";
+import { track, trackView } from "@/lib/analytics/eventService";
+import type { ScheduleGroup } from "@/lib/ia/schedule-view";
+import type { TimelineEventDTO } from "@/lib/schedule/types";
+
+/**
+ * v7.1 M9：日程页行为追踪组件（隐藏渲染）。
+ * - 时间冲突曝光：有冲突时 trackView 幂等记一次
+ * - 公告改期通知查看：有 changedFromPrevious 的事件 trackView 每条记一次
+ */
+function ScheduleAnalytics({
+  conflicts,
+  events,
+}: {
+  conflicts: { dateIso: string; items: { event: TimelineEventDTO }[] }[];
+  events: TimelineEventDTO[];
+}) {
+  useEffect(() => {
+    if (conflicts.length > 0) {
+      trackView("schedule_conflicts", "schedule_conflict_viewed", "schedule", {
+        props: { conflictCount: conflicts.length },
+      });
+    }
+  }, [conflicts.length]);
+
+  useEffect(() => {
+    for (const e of events) {
+      if (e.changedFromPrevious) {
+        trackView(`reschedule_${e.id}`, "announcement_reschedule_viewed", "schedule", {
+          props: { nodeKind: e.kind },
+        });
+      }
+    }
+  }, [events]);
+
+  return null;
+}
 
 export default function SchedulePage() {
   const { state, reload, toggleMute } = useSchedule();
@@ -45,11 +82,21 @@ export default function SchedulePage() {
     );
   }
 
+  // v7.1 M9：日程节点查看——分组展开时记 nodeKind（下一未过期节点的类型）
+  const handleGroupToggle = (group: ScheduleGroup, open: boolean) => {
+    if (!open) return;
+    const nextEvent = group.events.find((e) => !e.past);
+    track("schedule_node_viewed", "schedule", {
+      props: { nodeKind: (nextEvent ?? group.events[0]).kind },
+    });
+  };
+
   // 首屏只突出一个当前最重要的动作：优先行动链 nextAction，其次最近时间线节点
   const nextAction = state.data.nextAction;
 
   return (
     <div className="mx-auto max-w-2xl space-y-7 pb-2">
+      <ScheduleAnalytics conflicts={view.conflicts} events={state.data.events} />
       {!online && (
         <Callout variant="ask" title="当前离线">
           显示的是之前加载的日程，可能不是最新安排。恢复网络后会自动刷新。
@@ -128,6 +175,7 @@ export default function SchedulePage() {
           groups={view.groups}
           mutedUnitIds={state.data.mutedUnitIds}
           onToggleMute={toggleMute}
+          onGroupToggle={handleGroupToggle}
         />
       </section>
     </div>

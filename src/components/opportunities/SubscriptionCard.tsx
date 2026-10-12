@@ -12,6 +12,7 @@ import type {
 import { stageLabel, subjectLabel } from "@/lib/ia/labels";
 import type { UserRecruitmentProfile } from "@/lib/profile/types";
 import { useCurrentUser } from "@/lib/auth";
+import { track } from "@/lib/analytics/eventService";
 
 type NaturePreference = SubscriptionDTO["naturePreference"];
 
@@ -93,7 +94,7 @@ export function SubscriptionCard({
         if (!cancelled && !row && pendingSubscribe && authStatus === "authenticated") {
           window.sessionStorage.removeItem("kb_pending_subscribe");
           setSub(null);
-          void run(() => upsert({}));
+          void run(() => upsert({}), "created");
         }
       })
       .catch(() => {
@@ -125,12 +126,19 @@ export function SubscriptionCard({
     return fromProfile.map(regionDtoLabel).join("、");
   }, [profile]);
 
-  async function run(action: () => Promise<SubscriptionDTO>): Promise<void> {
+  async function run(
+    action: () => Promise<SubscriptionDTO>,
+    trackAction?: "created" | "modified" | "closed",
+  ): Promise<void> {
     setBusy(true);
     setError(null);
     try {
       setSub(await action());
       setEditing(false);
+      // v7.1 M9：订阅创建/修改/关闭（只记 action 枚举，不记订阅条件正文）
+      if (trackAction) {
+        track("subscription_changed", "subscription", { props: { action: trackAction } });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "操作未完成，请重试");
     } finally {
@@ -195,7 +203,7 @@ export function SubscriptionCard({
                   router.push("/login?next=/opportunities&reason=subscribe");
                   return;
                 }
-                run(() => upsert({}));
+                run(() => upsert({}), "created");
               }}
               data-testid="subscription-enable"
             >
@@ -259,7 +267,7 @@ export function SubscriptionCard({
                     size="sm"
                     variant="ghost"
                     loading={busy}
-                    onClick={() => run(() => upsert({ enabled: false }))}
+                    onClick={() => run(() => upsert({ enabled: false }), "closed")}
                     data-testid="subscription-disable"
                   >
                     关闭订阅
@@ -269,7 +277,7 @@ export function SubscriptionCard({
                     size="sm"
                     variant="secondary"
                     loading={busy}
-                    onClick={() => run(() => upsert({ enabled: true }))}
+                    onClick={() => run(() => upsert({ enabled: true }), "created")}
                     data-testid="subscription-reenable"
                   >
                     重新开启
@@ -342,11 +350,13 @@ export function SubscriptionCard({
                   size="sm"
                   loading={busy}
                   onClick={() =>
-                    run(() =>
-                      upsert({
-                        regions: draftRegions,
-                        naturePreference: draftNature,
-                      }),
+                    run(
+                      () =>
+                        upsert({
+                          regions: draftRegions,
+                          naturePreference: draftNature,
+                        }),
+                      "modified",
                     )
                   }
                   data-testid="subscription-save"

@@ -10,6 +10,7 @@ import { NotificationItem } from "@/types";
 import { NOTIFICATION_TYPE_META } from "./badges";
 import { formatDateTime } from "@/lib/utils";
 import { cn } from "@/lib/utils";
+import { track, trackView } from "@/lib/analytics/eventService";
 
 /**
  * 站内通知中心（铃铛 + 下拉面板）。
@@ -53,6 +54,16 @@ export function NotificationCenter() {
     ...local.items.map<UnifiedNotification>((item) => ({ source: "local", item })),
     ...backend.items.map<UnifiedNotification>((item) => ({ source: "backend", item })),
   ].sort((a, b) => b.item.createdAt.localeCompare(a.item.createdAt));
+
+  // v7.1 M9：新机会提醒曝光——面板展开时对后端通知 trackView 幂等记一次
+  useEffect(() => {
+    if (!open) return;
+    for (const n of backend.items) {
+      trackView(`notif_${n.id}`, "opportunity_notification_viewed", "notification", {
+        props: { notificationId: n.id.slice(0, 12) },
+      });
+    }
+  }, [open, backend.items]);
 
   const unreadCount = local.unreadCount + backend.unreadCount;
 
@@ -208,6 +219,10 @@ function BackendNotificationRow({
       <Link
         href={href}
         onClick={() => {
+          // v7.1 M9：新机会提醒点击跳转，记通知ID片段不记机会正文
+          track("opportunity_notification_clicked", "notification", {
+            props: { notificationId: item.id.slice(0, 12) },
+          });
           onRead();
           onOpen();
         }}

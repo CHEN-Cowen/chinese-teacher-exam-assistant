@@ -15,6 +15,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   computeTrialDashboard,
+  sanitizeProps,
+  dedupKeyFor,
+  TRIAL_EVENT_TYPES,
   type TrialEventRecord,
 } from './trial.domain.js';
 
@@ -239,5 +242,223 @@ describe('受邀试用看板 · 手算对账', () => {
     const { cohorts } = computeTrialDashboard(events, NOW);
     expect(cohorts.invited.northStar.observing).toBe(0);
     expect(cohorts.invited.northStar.denominator).toBe(1);
+  });
+});
+
+// ==================== v7.1 M9 分析事件与试用看板测试 ====================
+
+describe('M9 分析事件 · 白名单与隐私脱敏', () => {
+  it('TRIAL_EVENT_TYPES 包含全部 22 类事件（11 旧 + 11 新）', () => {
+    expect(TRIAL_EVENT_TYPES).toHaveLength(22);
+    // M9 新增 11 类
+    const m9Types = [
+      'home_start_match_clicked',
+      'region_preference_selected',
+      'no_result_reason_viewed',
+      'subscription_changed',
+      'opportunity_notification_viewed',
+      'opportunity_notification_clicked',
+      'map_entry_clicked',
+      'schedule_sync_completed',
+      'schedule_node_viewed',
+      'schedule_conflict_viewed',
+      'announcement_reschedule_viewed',
+    ];
+    for (const t of m9Types) {
+      expect(TRIAL_EVENT_TYPES).toContain(t);
+    }
+  });
+
+  it('sanitizeProps 拒绝敏感键名（身份证/地址/原文等）', () => {
+    expect(sanitizeProps({ idCard: '110101199001011234' }).ok).toBe(false);
+    expect(sanitizeProps({ address: '浙江省杭州市' }).ok).toBe(false);
+    expect(sanitizeProps({ body: '公告正文' }).ok).toBe(false);
+    expect(sanitizeProps({ answer: '我的答案' }).ok).toBe(false);
+    expect(sanitizeProps({ name: '张三' }).ok).toBe(false);
+    expect(sanitizeProps({ originalText: '原文内容' }).ok).toBe(false);
+  });
+
+  it('sanitizeProps 接受 M9 枚举/数量类维度', () => {
+    expect(sanitizeProps({ level: 'determined' }).ok).toBe(true);
+    expect(sanitizeProps({ reasonCode: 'no_coverage', kind: 'uncovered' }).ok).toBe(true);
+    expect(sanitizeProps({ action: 'created', status: 'success', nodeCount: 5 }).ok).toBe(true);
+    expect(sanitizeProps({ nodeKind: 'written_exam', conflictCount: 2 }).ok).toBe(true);
+    expect(sanitizeProps({ notificationId: 'abc123def456' }).ok).toBe(true);
+  });
+
+  it('sanitizeProps 拒绝超长值（>64 字符，防资格原文混入）', () => {
+    const longValue = 'a'.repeat(65);
+    expect(sanitizeProps({ reasonCode: longValue }).ok).toBe(false);
+  });
+
+  it('sanitizeProps 拒绝嵌套对象与数组', () => {
+    expect(sanitizeProps({ detail: { nested: true } }).ok).toBe(false);
+    expect(sanitizeProps({ list: [1, 2, 3] }).ok).toBe(false);
+  });
+
+  it('sanitizeProps 拒绝超过 8 个属性的 props', () => {
+    const tooMany: Record<string, string> = {};
+    for (let i = 0; i < 9; i++) tooMany[`k${i}`] = 'v';
+    expect(sanitizeProps(tooMany).ok).toBe(false);
+  });
+});
+
+describe('M9 分析事件 · 去重范围', () => {
+  it('region_preference_selected 按用户幂等（dedupKey=once:region_preference_selected）', () => {
+    expect(dedupKeyFor('region_preference_selected', null, null)).toBe('once:region_preference_selected');
+  });
+
+  it('schedule_sync_completed 不去重（null，成功/失败都可多次记录）', () => {
+    expect(dedupKeyFor('schedule_sync_completed', null, null)).toBe(null);
+  });
+
+  it('schedule_conflict_viewed 按用户幂等', () => {
+    expect(dedupKeyFor('schedule_conflict_viewed', null, null)).toBe('once:schedule_conflict_viewed');
+  });
+
+  it('opportunity_notification_viewed 按用户幂等', () => {
+    expect(dedupKeyFor('opportunity_notification_viewed', null, null)).toBe('once:opportunity_notification_viewed');
+  });
+
+  it('subscription_changed 不去重（创建/修改/关闭都可多次发生）', () => {
+    expect(dedupKeyFor('subscription_changed', null, null)).toBe(null);
+  });
+});
+
+describe('M9 分析事件 · 看板指标口径', () => {
+  it('首页理解 = home_start_match_clicked 用户 ÷ 画像首步完成人数', () => {
+    const events: TrialEventRecord[] = [
+      ev({ userId: 'u-h1', type: 'profile_step_completed', daysAgo: 5, unitId: null, dataset: null, props: { step: 1 } }),
+      ev({ userId: 'u-h1', type: 'home_start_match_clicked', daysAgo: 5, unitId: null, dataset: null }),
+      ev({ userId: 'u-h2', type: 'profile_step_completed', daysAgo: 5, unitId: null, dataset: null, props: { step: 1 } }),
+      // u-h2 完成画像首步但没点首页按钮（计入分母不计分子）
+    ];
+    const { cohorts } = computeTrialDashboard(events, NOW);
+    expect(cohorts.invited.homeUnderstanding).toEqual({ numerator: 1, denominator: 2, rate: 0.5 });
+  });
+
+  it('无结果原因分布：按 reasonCode 分组计数（展示次数不伪装成比例）', () => {
+    const events: TrialEventRecord[] = [
+      ev({ userId: 'u-n1', type: 'no_result_reason_viewed', daysAgo: 3, unitId: null, dataset: null, props: { reasonCode: 'no_coverage', kind: 'uncovered' } }),
+      ev({ userId: 'u-n1', type: 'no_result_reason_viewed', daysAgo: 3, unitId: null, dataset: null, props: { reasonCode: 'not_eligible', kind: 'not_eligible' } }),
+      ev({ userId: 'u-n2', type: 'no_result_reason_viewed', daysAgo: 3, unitId: null, dataset: null, props: { reasonCode: 'no_coverage', kind: 'uncovered' } }),
+    ];
+    const { cohorts } = computeTrialDashboard(events, NOW);
+    const reasons = cohorts.invited.noResultReasons;
+    expect(reasons).toHaveLength(2);
+    expect(reasons.find((r) => r.reasonCode === 'no_coverage')?.count).toBe(2);
+    expect(reasons.find((r) => r.reasonCode === 'not_eligible')?.count).toBe(1);
+    // 按次数降序
+    expect(reasons[0].count).toBeGreaterThanOrEqual(reasons[1].count);
+  });
+
+  it('订阅使用 = 创建订阅用户 ÷ 获得有效机会用户；关闭单列去重人数', () => {
+    const events: TrialEventRecord[] = [
+      ev({ userId: 'u-s1', type: 'opportunity_revealed', daysAgo: 8, props: { validCount: 1 } }),
+      ev({ userId: 'u-s1', type: 'subscription_changed', daysAgo: 7, unitId: null, dataset: null, props: { action: 'created' } }),
+      ev({ userId: 'u-s1', type: 'subscription_changed', daysAgo: 6, unitId: null, dataset: null, props: { action: 'closed' } }),
+      ev({ userId: 'u-s2', type: 'opportunity_revealed', daysAgo: 8, props: { validCount: 1 } }),
+      // u-s2 只修改未创建
+      ev({ userId: 'u-s2', type: 'subscription_changed', daysAgo: 6, unitId: null, dataset: null, props: { action: 'modified' } }),
+    ];
+    const { cohorts } = computeTrialDashboard(events, NOW);
+    expect(cohorts.invited.subscriptionUsage).toEqual({ numerator: 1, denominator: 2, rate: 0.5 });
+    expect(cohorts.invited.subscriptionClosedCount).toBe(1);
+  });
+
+  it('地图使用 = map_entry_clicked 用户 ÷ match_basis_viewed 用户', () => {
+    const events: TrialEventRecord[] = [
+      ev({ userId: 'u-m1', type: 'opportunity_revealed', daysAgo: 8, props: { validCount: 1 } }),
+      ev({ userId: 'u-m1', type: 'match_basis_viewed', daysAgo: 8 }),
+      ev({ userId: 'u-m1', type: 'map_entry_clicked', daysAgo: 7 }),
+      ev({ userId: 'u-m2', type: 'opportunity_revealed', daysAgo: 8, props: { validCount: 1 } }),
+      ev({ userId: 'u-m2', type: 'match_basis_viewed', daysAgo: 8 }),
+    ];
+    const { cohorts } = computeTrialDashboard(events, NOW);
+    expect(cohorts.invited.mapUsage).toEqual({ numerator: 1, denominator: 2, rate: 0.5 });
+  });
+
+  it('日程同步健康度 = success/(success+failure)；失败原因分布', () => {
+    const events: TrialEventRecord[] = [
+      ev({ userId: 'u-sy1', type: 'schedule_sync_completed', daysAgo: 1, unitId: null, dataset: null, props: { status: 'success', nodeCount: 3 } }),
+      ev({ userId: 'u-sy1', type: 'schedule_sync_completed', daysAgo: 1, unitId: null, dataset: null, props: { status: 'success', nodeCount: 3 } }),
+      ev({ userId: 'u-sy2', type: 'schedule_sync_completed', daysAgo: 1, unitId: null, dataset: null, props: { status: 'failure', reasonCode: 'network_error' } }),
+      ev({ userId: 'u-sy3', type: 'schedule_sync_completed', daysAgo: 1, unitId: null, dataset: null, props: { status: 'failure', reasonCode: 'session_expired' } }),
+    ];
+    const { cohorts } = computeTrialDashboard(events, NOW);
+    const h = cohorts.invited.scheduleSyncHealth;
+    expect(h.success).toBe(2);
+    expect(h.failure).toBe(2);
+    expect(h.rate).toBe(0.5);
+    expect(h.failureReasons).toHaveLength(2);
+    expect(h.failureReasons.find((r) => r.reasonCode === 'network_error')?.count).toBe(1);
+    expect(h.failureReasons.find((r) => r.reasonCode === 'session_expired')?.count).toBe(1);
+  });
+
+  it('时间冲突曝光率 = schedule_conflict_viewed 用户 ÷ 关注用户', () => {
+    const events: TrialEventRecord[] = [
+      ev({ userId: 'u-c1', type: 'opportunity_revealed', daysAgo: 8, props: { validCount: 1 } }),
+      ev({ userId: 'u-c1', type: 'opportunity_followed', daysAgo: 7 }),
+      ev({ userId: 'u-c1', type: 'schedule_conflict_viewed', daysAgo: 6, unitId: null, dataset: null, props: { conflictCount: 2, nodeKind: 'written_exam' } }),
+      ev({ userId: 'u-c2', type: 'opportunity_revealed', daysAgo: 8, props: { validCount: 1 } }),
+      ev({ userId: 'u-c2', type: 'opportunity_followed', daysAgo: 7 }),
+    ];
+    const { cohorts } = computeTrialDashboard(events, NOW);
+    expect(cohorts.invited.scheduleConflictRate).toEqual({ numerator: 1, denominator: 2, rate: 0.5 });
+  });
+
+  it('空样本：M9 指标全部为 null/空（绝不显示 0% 或 NaN）', () => {
+    const { cohorts } = computeTrialDashboard([], NOW);
+    const r = cohorts.invited;
+    expect(r.homeUnderstanding.rate).toBeNull();
+    expect(r.noResultReasons).toEqual([]);
+    expect(r.subscriptionUsage.rate).toBeNull();
+    expect(r.subscriptionClosedCount).toBe(0);
+    expect(r.mapUsage.rate).toBeNull();
+    expect(r.scheduleSyncHealth.rate).toBeNull();
+    expect(r.scheduleSyncHealth.success).toBe(0);
+    expect(r.scheduleSyncHealth.failure).toBe(0);
+    expect(r.scheduleSyncHealth.failureReasons).toEqual([]);
+    expect(r.scheduleConflictRate.rate).toBeNull();
+  });
+
+  it('分群隔离：M9 事件在 seed/live × 员工/真实 × invited/demo 之间互不混算', () => {
+    const events: TrialEventRecord[] = [
+      // 受邀真实
+      ev({ userId: 'u-real', type: 'home_start_match_clicked', daysAgo: 3, unitId: null, dataset: null }),
+      ev({ userId: 'u-real', type: 'profile_step_completed', daysAgo: 3, unitId: null, dataset: null, props: { step: 1 } }),
+      ev({ userId: 'u-real', type: 'opportunity_revealed', daysAgo: 3, props: { validCount: 1 } }),
+      ev({ userId: 'u-real', type: 'opportunity_followed', daysAgo: 2 }),
+      ev({ userId: 'u-real', type: 'schedule_conflict_viewed', daysAgo: 1, unitId: null, dataset: null, props: { conflictCount: 1, nodeKind: 'written_exam' } }),
+      // seed 种子
+      ev({ userId: 'seed-u', type: 'home_start_match_clicked', daysAgo: 3, unitId: null, dataset: null, source: 'seed', authMode: 'demo' }),
+      ev({ userId: 'seed-u', type: 'profile_step_completed', daysAgo: 3, unitId: null, dataset: null, source: 'seed', authMode: 'demo', props: { step: 1 } }),
+    ];
+    const { cohorts } = computeTrialDashboard(events, NOW);
+
+    // 受邀真实：首页理解 1/1，冲突曝光 1/1
+    expect(cohorts.invited.homeUnderstanding).toEqual({ numerator: 1, denominator: 1, rate: 1 });
+    expect(cohorts.invited.scheduleConflictRate).toEqual({ numerator: 1, denominator: 1, rate: 1 });
+    // seed：首页理解 1/1，但冲突曝光 0/0=null
+    expect(cohorts.seed.homeUnderstanding).toEqual({ numerator: 1, denominator: 1, rate: 1 });
+    expect(cohorts.seed.scheduleConflictRate.rate).toBeNull();
+  });
+
+  it('刷新重复同步不重复计关键漏斗：schedule_sync_completed 不去重但 schedule_conflict_viewed 按用户幂等', () => {
+    const events: TrialEventRecord[] = [
+      ev({ userId: 'u-d1', type: 'opportunity_revealed', daysAgo: 5, props: { validCount: 1 } }),
+      ev({ userId: 'u-d1', type: 'opportunity_followed', daysAgo: 4 }),
+      // 两次刷新同步都记 success（不去重）
+      ev({ userId: 'u-d1', type: 'schedule_sync_completed', daysAgo: 1, unitId: null, dataset: null, props: { status: 'success', nodeCount: 3 } }),
+      ev({ userId: 'u-d1', type: 'schedule_sync_completed', daysAgo: 0, unitId: null, dataset: null, props: { status: 'success', nodeCount: 3 } }),
+      // 冲突曝光两次（去重后只算 1 个用户）
+      ev({ userId: 'u-d1', type: 'schedule_conflict_viewed', daysAgo: 1, unitId: null, dataset: null, props: { conflictCount: 1, nodeKind: 'written_exam' } }),
+      ev({ userId: 'u-d1', type: 'schedule_conflict_viewed', daysAgo: 0, unitId: null, dataset: null, props: { conflictCount: 1, nodeKind: 'written_exam' } }),
+    ];
+    const { cohorts } = computeTrialDashboard(events, NOW);
+    // 同步成功次数 = 2（不去重，反映真实刷新次数）
+    expect(cohorts.invited.scheduleSyncHealth.success).toBe(2);
+    // 冲突曝光去重用户 = 1（不因刷新重复计）
+    expect(cohorts.invited.scheduleConflictRate.numerator).toBe(1);
   });
 });

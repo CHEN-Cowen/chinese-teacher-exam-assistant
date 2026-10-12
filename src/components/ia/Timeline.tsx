@@ -127,14 +127,20 @@ export function TimelineGroup({
   group,
   muted,
   onToggleMute,
+  onGroupToggle,
 }: {
   group: ScheduleGroup;
   muted?: boolean;
   onToggleMute?: (unitId: string, muted: boolean) => void;
+  /** v7.1 M9：分组展开/收起回调（用于日程节点查看追踪） */
+  onGroupToggle?: (group: ScheduleGroup, open: boolean) => void;
 }) {
   const nextEvent = group.events.find((event) => !event.past);
   return (
-    <details className="group rounded-2xl border border-line bg-surface">
+    <details
+      className="group rounded-2xl border border-line bg-surface"
+      onToggle={(e) => onGroupToggle?.(group, e.currentTarget.open)}
+    >
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-4 [&::-webkit-details-marker]:hidden">
         <span className="min-w-0">
           <span className="block text-xs text-ink-muted">{group.regionText}</span>
@@ -196,10 +202,12 @@ export function Timeline({
   groups,
   mutedUnitIds = [],
   onToggleMute,
+  onGroupToggle,
 }: {
   groups: ScheduleGroup[];
   mutedUnitIds?: string[];
   onToggleMute?: (unitId: string, muted: boolean) => void;
+  onGroupToggle?: (group: ScheduleGroup, open: boolean) => void;
 }) {
   return (
     <div className="space-y-3">
@@ -209,6 +217,7 @@ export function Timeline({
           group={group}
           muted={mutedUnitIds.includes(group.unitId)}
           onToggleMute={onToggleMute}
+          onGroupToggle={onGroupToggle}
         />
       ))}
     </div>

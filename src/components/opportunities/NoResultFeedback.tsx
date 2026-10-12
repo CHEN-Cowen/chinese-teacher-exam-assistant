@@ -1,7 +1,11 @@
+"use client";
+
+import { useEffect } from "react";
 import Link from "next/link";
 import type { CoverageDTO } from "@/lib/opportunities/api-types";
 import { coverageProvinceLine } from "@/lib/opportunities/coverage-view";
 import type { NoResultState } from "@/lib/opportunities/no-result";
+import { trackView } from "@/lib/analytics/eventService";
 
 /** "YYYY-MM-DD..." → "YYYY年M月D日"；无法解析时原样返回 */
 function formatDay(iso: string): string {
@@ -23,6 +27,13 @@ export function NoResultFeedback({
   state: NoResultState;
   coverage: CoverageDTO;
 }) {
+  // v7.1 M9：无结果原因曝光（会话级去重，每原因只记一次；只记 reasonCode 枚举，不记机会正文）
+  useEffect(() => {
+    trackView(state.kind, "no_result_reason_viewed", "opportunity", {
+      props: { reasonCode: state.kind, kind: state.kind },
+    });
+  }, [state.kind]);
+
   const officialSources = coverage.regions.flatMap((region) =>
     region.sources.map((source) => ({
       key: `${region.code}-${source.id}`,

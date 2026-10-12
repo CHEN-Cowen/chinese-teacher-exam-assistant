@@ -33,6 +33,18 @@ export const TRIAL_EVENT_TYPES = [
   'primary_target_set',
   'material_status_changed',
   'register_entry_opened',
+  // —— v7.1 M9 分析事件：首页/地区偏好/无结果/订阅/提醒/地图/日程同步/节点/冲突/改期 ——
+  'home_start_match_clicked',
+  'region_preference_selected',
+  'no_result_reason_viewed',
+  'subscription_changed',
+  'opportunity_notification_viewed',
+  'opportunity_notification_clicked',
+  'map_entry_clicked',
+  'schedule_sync_completed',
+  'schedule_node_viewed',
+  'schedule_conflict_viewed',
+  'announcement_reschedule_viewed',
 ] as const;
 
 export type TrialEventType = (typeof TRIAL_EVENT_TYPES)[number];
@@ -51,6 +63,10 @@ export const TRIAL_MODULES = [
   'correction',
   'privacy',
   'storage',
+  'home',
+  'schedule',
+  'subscription',
+  'notification',
 ] as const;
 
 export type TrialModule = (typeof TRIAL_MODULES)[number];
@@ -74,6 +90,19 @@ const DEDUP_SCOPES: Record<TrialEventType, 'user' | 'user_unit' | 'user_step' | 
   primary_target_set: null,
   material_status_changed: null,
   register_entry_opened: 'user_unit',
+  // M9：首页主按钮、地图入口、地区偏好、提醒曝光/点击、冲突曝光按用户幂等；
+  // 订阅变更、无结果曝光、同步结果、节点查看、改期查看为状态/查看类，不去重。
+  home_start_match_clicked: 'user',
+  region_preference_selected: 'user',
+  no_result_reason_viewed: null,
+  subscription_changed: null,
+  opportunity_notification_viewed: 'user',
+  opportunity_notification_clicked: 'user',
+  map_entry_clicked: 'user_unit',
+  schedule_sync_completed: null,
+  schedule_node_viewed: null,
+  schedule_conflict_viewed: 'user',
+  announcement_reschedule_viewed: null,
 };
 
 export function dedupKeyFor(
@@ -222,6 +251,20 @@ export interface TrialCohortReport {
   northStar: TrialNorthStar;
   /** 有机会事件的用户按机会数据集分列（真实台账 / 演示台账） */
   datasetSplit: { real: number; demo: number; unknown: number };
+  // —— v7.1 M9 新增：首页理解 / 无结果分布 / 订阅 / 地图 / 日程同步与冲突 ——
+  /** 首页主按钮点击 ÷ 画像首步完成人数（近似首页到达） */
+  homeUnderstanding: TrialMetric;
+  /** 无结果三态各自曝光次数（按 reasonCode 分组；10 人样本展示次数不伪装成比例） */
+  noResultReasons: { reasonCode: string; count: number }[];
+  /** 创建订阅用户 ÷ 获得有效机会用户；closedCount=关闭订阅的去重用户 */
+  subscriptionUsage: TrialMetric;
+  subscriptionClosedCount: number;
+  /** 地图入口点击用户 ÷ 查看匹配依据用户 */
+  mapUsage: TrialMetric;
+  /** 日程同步成功次数 ÷（成功+失败）次数；另列失败原因分布 */
+  scheduleSyncHealth: { success: number; failure: number; rate: number | null; failureReasons: { reasonCode: string; count: number }[] };
+  /** 时间冲突曝光用户 ÷ 关注用户 */
+  scheduleConflictRate: TrialMetric;
 }
 
 export interface TrialDashboard {
@@ -299,6 +342,14 @@ function emptyReport(): TrialCohortReport {
     primaryTarget: metric(0, 0),
     northStar: { denominator: 0, numerator: 0, rate: null, observing: 0 },
     datasetSplit: { real: 0, demo: 0, unknown: 0 },
+    // M9 默认值
+    homeUnderstanding: metric(0, 0),
+    noResultReasons: [],
+    subscriptionUsage: metric(0, 0),
+    subscriptionClosedCount: 0,
+    mapUsage: metric(0, 0),
+    scheduleSyncHealth: { success: 0, failure: 0, rate: null, failureReasons: [] },
+    scheduleConflictRate: metric(0, 0),
   };
 }
 
@@ -431,6 +482,65 @@ function computeCohort(
     demo: dsDemo.size,
     unknown: dsUnknown.size,
   };
+
+  // —— v7.1 M9 新增指标 ——
+  // 首页理解：主按钮点击用户 ÷ 画像首步完成人数（近似首页到达）
+  const homeClickers = distinctUsers((e) => e.type === 'home_start_match_clicked');
+  const firstStep = stepUsers.get(1)?.size ?? 0;
+  report.homeUnderstanding = metric(homeClickers, firstStep);
+
+  // 无结果原因分布：按 reasonCode 分组计数（展示次数，10 人样本不伪装成比例）
+  const reasonCounts = new Map<string, number>();
+  for (const e of events) {
+    if (e.type !== 'no_result_reason_viewed') continue;
+    const code = propStr(e, 'reasonCode') ?? 'unknown';
+    reasonCounts.set(code, (reasonCounts.get(code) ?? 0) + 1);
+  }
+  report.noResultReasons = [...reasonCounts.entries()]
+    .map(([reasonCode, count]) => ({ reasonCode, count }))
+    .sort((a, b) => b.count - a.count);
+
+  // 订阅使用：创建订阅用户 ÷ 获得有效机会用户；关闭订阅去重用户数
+  const subscriptionCreators = distinctUsers(
+    (e) => e.type === 'subscription_changed' && propStr(e, 'action') === 'created',
+  );
+  report.subscriptionUsage = metric(subscriptionCreators, revealedUsers);
+  report.subscriptionClosedCount = distinctUsers(
+    (e) => e.type === 'subscription_changed' && propStr(e, 'action') === 'closed',
+  );
+
+  // 地图使用：地图入口点击用户 ÷ 查看匹配依据用户
+  const mapClickers = distinctUsers((e) => e.type === 'map_entry_clicked');
+  const basisUsers = distinctUsers((e) => e.type === 'match_basis_viewed');
+  report.mapUsage = metric(mapClickers, basisUsers);
+
+  // 日程同步健康度：success/(success+failure)；失败原因分布
+  let syncSuccess = 0;
+  let syncFailure = 0;
+  const failureReasons = new Map<string, number>();
+  for (const e of events) {
+    if (e.type !== 'schedule_sync_completed') continue;
+    if (propStr(e, 'status') === 'failure') {
+      syncFailure += 1;
+      const code = propStr(e, 'reasonCode') ?? 'unknown';
+      failureReasons.set(code, (failureReasons.get(code) ?? 0) + 1);
+    } else {
+      syncSuccess += 1;
+    }
+  }
+  const syncTotal = syncSuccess + syncFailure;
+  report.scheduleSyncHealth = {
+    success: syncSuccess,
+    failure: syncFailure,
+    rate: syncTotal > 0 ? syncSuccess / syncTotal : null,
+    failureReasons: [...failureReasons.entries()]
+      .map(([reasonCode, count]) => ({ reasonCode, count }))
+      .sort((a, b) => b.count - a.count),
+  };
+
+  // 时间冲突曝光率：看到冲突提醒的用户 ÷ 关注用户
+  const conflictViewers = distinctUsers((e) => e.type === 'schedule_conflict_viewed');
+  report.scheduleConflictRate = metric(conflictViewers, followedUsers);
 
   return report;
 }

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { scheduleApi } from "./api";
 import { opportunitiesApi } from "@/lib/opportunities/api";
+import { track, classifyErrorCode } from "@/lib/analytics/eventService";
 import type { ScheduleResponse } from "./types";
 
 export type ScheduleLoadState =
@@ -37,6 +38,10 @@ export function useSchedule(): UseScheduleResult {
     fetchSchedule()
       .then((data) => {
         if (!cancelled) setState({ status: "ready", data });
+        // v7.1 M9：日程自动同步成功，记节点数不记公告正文
+        track("schedule_sync_completed", "schedule", {
+          props: { status: "success", nodeCount: data.events.length },
+        });
       })
       .catch((err) => {
         if (!cancelled) {
@@ -45,6 +50,10 @@ export function useSchedule(): UseScheduleResult {
             error: err instanceof Error ? err.message : "加载失败",
           });
         }
+        // v7.1 M9：日程自动同步失败，记错误码不记原始报错
+        track("schedule_sync_completed", "schedule", {
+          props: { status: "failure", reasonCode: classifyErrorCode(err) },
+        });
       });
     return () => {
       cancelled = true;
@@ -57,10 +66,16 @@ export function useSchedule(): UseScheduleResult {
     try {
       const data = await fetchSchedule();
       setState({ status: "ready", data });
+      track("schedule_sync_completed", "schedule", {
+        props: { status: "success", nodeCount: data.events.length },
+      });
     } catch (err) {
       setState({
         status: "error",
         error: err instanceof Error ? err.message : "加载失败",
+      });
+      track("schedule_sync_completed", "schedule", {
+        props: { status: "failure", reasonCode: classifyErrorCode(err) },
       });
     }
   }, [fetchSchedule]);
