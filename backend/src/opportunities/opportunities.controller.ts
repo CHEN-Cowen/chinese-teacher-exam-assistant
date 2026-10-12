@@ -20,22 +20,26 @@ interface AuthenticatedRequest {
 }
 
 /**
- * 机会发现与可解释资格匹配 API（模块 5）。
- * 全部为登录后接口；匹配与详情用 POST 携带当前画像，按请求即时计算。
+ * 机会发现与可解释资格匹配 API（模块 5 / v7.1 M8）。
+ * 匹配与详情对未登录用户开放（访客预筛价值优先）；其余接口需登录。
+ * 身份由 resolveAuthenticatedUser 统一决定：
+ * - invited 模式：服务端会话 cookie；
+ * - demo 模式：x-user-id / x-user-role 请求头。
  */
 @Controller('opportunities')
-@UseGuards(UserGuard)
 export class OpportunitiesController {
   constructor(private readonly service: OpportunitiesService) {}
 
   /** 当前用户的新机会订阅（v7.1 M6；未开启过返回 null） */
   @Get('subscription')
+  @UseGuards(UserGuard)
   getSubscription(@Req() req: AuthenticatedRequest) {
     return this.service.getSubscription(req.user!.id);
   }
 
   /** 创建/修改订阅（每用户一条；enabled=false 关闭后停止新提醒，历史通知保留） */
   @Put('subscription')
+  @UseGuards(UserGuard)
   upsertSubscription(
     @Body()
     body: {
@@ -51,37 +55,48 @@ export class OpportunitiesController {
 
   /** 订阅同步（幂等）：已人工核对的匹配新公告产生一次站内提醒 */
   @Post('subscription/sync')
+  @UseGuards(UserGuard)
   syncSubscription(@Req() req: AuthenticatedRequest) {
     return this.service.syncSubscription(req.user!.id);
   }
 
-  /** 机会列表：默认“初步符合”，其余结果在分组字段中二级展示 */
+  /**
+   * 机会列表（v7.1 M8：访客可访问）。
+   * 未登录用户在请求体携带访客画像；已登录用户画像由服务端读取。
+   * 登录用户的关注状态会附加到结果中（访客无关注记录）。
+   */
   @Post('match')
   match(
     @Body() body: { profile?: unknown },
     @Req() req: AuthenticatedRequest,
   ) {
-    return this.service.match(body.profile, req.user!.id);
+    return this.service.match(body.profile, req.user?.id);
   }
 
-  /** 机会详情：三层结构所需的全部数据（结论/逐条件/证据与版本） */
+  /**
+   * 机会详情（v7.1 M8：访客可访问）。
+   * 未登录用户在请求体携带访客画像；已登录用户画像由服务端读取。
+   * 登录用户的关注状态会附加到结果中（访客无关注记录）。
+   */
   @Post('units/:unitId/detail')
   detail(
     @Param('unitId') unitId: string,
     @Body() body: { profile?: unknown },
     @Req() req: AuthenticatedRequest,
   ) {
-    return this.service.unitDetail(body.profile, req.user!.id, unitId);
+    return this.service.unitDetail(body.profile, req.user?.id, unitId);
   }
 
   /** 当前用户的全部关注记录（含主要目标与版本过时标记） */
   @Get('follows')
+  @UseGuards(UserGuard)
   listFollows(@Req() req: AuthenticatedRequest) {
     return this.service.listFollows(req.user!.id);
   }
 
   /** 登录后合并访客在本机暂存的关注记录（服务端已有则跳过） */
   @Post('follows/merge')
+  @UseGuards(UserGuard)
   mergeGuestFollows(
     @Body()
     body: {
@@ -99,12 +114,14 @@ export class OpportunitiesController {
 
   /** 备考目标列表（模块 7）：活跃关注聚合公告版本，供 /study 页与主要目标选择 */
   @Get('goals')
+  @UseGuards(UserGuard)
   listGoals(@Req() req: AuthenticatedRequest) {
     return this.service.listGoals(req.user!.id);
   }
 
-  /** 关注（初始恒为“考虑中”，收藏不自动等于准备报名） */
+  /** 关注（初始恒为"考虑中"，收藏不自动等于准备报名） */
   @Post('units/:unitId/follow')
+  @UseGuards(UserGuard)
   follow(
     @Param('unitId') unitId: string,
     @Req() req: AuthenticatedRequest,
@@ -115,6 +132,7 @@ export class OpportunitiesController {
   /** 状态流转：preparing / registered / abandoned / closed / considering。
    *  带 version 乐观锁：与服务端不一致时返回 409 + 当前状态。 */
   @Patch('units/:unitId/follow')
+  @UseGuards(UserGuard)
   transition(
     @Param('unitId') unitId: string,
     @Body()
@@ -135,6 +153,7 @@ export class OpportunitiesController {
 
   /** 设置某报名材料项的完成状态（带 version 乐观锁） */
   @Patch('units/:unitId/materials')
+  @UseGuards(UserGuard)
   setMaterialStatus(
     @Param('unitId') unitId: string,
     @Body()
@@ -152,6 +171,7 @@ export class OpportunitiesController {
 
   /** 记录用户自行填写的官方咨询结论（不参与匹配判断，带 version 乐观锁） */
   @Patch('units/:unitId/consultation')
+  @UseGuards(UserGuard)
   saveConsultationNote(
     @Param('unitId') unitId: string,
     @Body()
@@ -169,6 +189,7 @@ export class OpportunitiesController {
 
   /** 取消关注（仅删除该单元记录） */
   @Delete('units/:unitId/follow')
+  @UseGuards(UserGuard)
   unfollow(
     @Param('unitId') unitId: string,
     @Req() req: AuthenticatedRequest,
@@ -178,6 +199,7 @@ export class OpportunitiesController {
 
   /** 设置主要/备选备考目标（主要目标全局唯一） */
   @Put('units/:unitId/role')
+  @UseGuards(UserGuard)
   setRole(
     @Param('unitId') unitId: string,
     @Body() body: { role?: unknown },
@@ -188,6 +210,7 @@ export class OpportunitiesController {
 
   /** 开启/关闭单个机会的站内提醒（不影响日程展示，只控制通知生成） */
   @Patch('units/:unitId/reminders')
+  @UseGuards(UserGuard)
   setRemindersMuted(
     @Param('unitId') unitId: string,
     @Body() body: { muted?: unknown },
@@ -199,6 +222,7 @@ export class OpportunitiesController {
 
   /** 详情第三层：提交证据/条件/版本纠错留痕 */
   @Post('units/:unitId/corrections')
+  @UseGuards(UserGuard)
   submitCorrection(
     @Param('unitId') unitId: string,
     @Body()
@@ -210,6 +234,7 @@ export class OpportunitiesController {
 
   /** 当前用户提交过的纠错与员工处理状态（我的页） */
   @Get('corrections/mine')
+  @UseGuards(UserGuard)
   listMyCorrections(@Req() req: AuthenticatedRequest) {
     return this.service.listMyCorrections(req.user!.id);
   }

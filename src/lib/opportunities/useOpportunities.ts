@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { AUTH_MODE } from "@/lib/auth";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { AUTH_MODE, useCurrentUser } from "@/lib/auth";
 import {
   buildActiveProfile,
   type ActiveProfileReason,
@@ -17,6 +17,8 @@ import type {
   UnitMatchDTO,
 } from "./api-types";
 import { USER_COPY } from "@/lib/ux/userCopy";
+import { upsertGuestFollow } from "@/lib/guest/guestFollows";
+import { useRouter } from "next/navigation";
 
 /** invited 模式占位画像：后端会忽略请求体，读取已持久化画像 */
 const INVITED_PLACEHOLDER_PROFILE = {} as UserRecruitmentProfile;
@@ -62,11 +64,14 @@ function computeInitialState():
 }
 
 /**
- * 机会列表数据：登录后只读后端匹配结果（按请求即时计算）。
+ * 机会列表数据（v7.1 M8：访客可免登录查看匹配结果）。
  * - demo：画像来自本机基础画像草稿 + 补充事实；
- * - invited：画像由后端读取已持久化数据，前端不依赖本地草稿。
+ * - invited + 已登录：画像由后端读取已持久化数据；
+ * - invited + 未登录：使用本机访客画像，通过请求体发送给后端。
  */
 export function useOpportunities(): OpportunitiesApi {
+  const { status: authStatus } = useCurrentUser();
+  const router = useRouter();
   const [state, setState] = useState<OpportunitiesLoadState>(computeInitialState);
   const [followBusyId, setFollowBusyId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -75,77 +80,79 @@ export function useOpportunities(): OpportunitiesApi {
     message: string;
   } | null>(null);
 
+  /** invited 模式下是否是访客（未登录） */
+  const isGuest = AUTH_MODE === "invited" && authStatus !== "authenticated";
+
+  const loadProfile = useCallback(async (): Promise<UserRecruitmentProfile | null> => {
+    if (AUTH_MODE === "invited" && authStatus === "authenticated") {
+      return profileApi.getProfile();
+    }
+    // 未登录 invited 或 demo：使用本机访客画像
+    const active = buildActiveProfile();
+    return active.ready ? active.profile : null;
+  }, [authStatus]);
+
   const reload = useCallback(async (silent = false) => {
     if (!silent) setState({ status: "loading" });
     try {
-      let profile: UserRecruitmentProfile;
-      if (AUTH_MODE === "invited") {
-        const persistedProfile = await profileApi.getProfile();
-        if (!persistedProfile) {
-          setState({ status: "no-profile", reason: "incomplete" });
-          return;
-        }
-        profile = persistedProfile;
-      } else {
-        const active = buildActiveProfile();
-        if (!active.ready) {
-          setState({ status: "no-profile", reason: active.reason });
-          return;
-        }
-        profile = active.profile;
+      const profile = await loadProfile();
+      if (!profile) {
+        setState({ status: "no-profile", reason: "incomplete" });
+        return;
       }
-      const data = await opportunitiesApi.match(profile);
+      const data = await opportunitiesApi.match(profile, { sendProfile: isGuest });
       recordRevealed(data);
       setState({ status: "ready", data, profile });
     } catch (error) {
       const msg = error instanceof Error ? error.message : "机会加载失败";
-      // 后端提示未保存画像：展示无画像引导
       if (msg.includes("尚未保存画像")) {
         setState({ status: "no-profile", reason: "incomplete" });
       } else {
         setState({ status: "error", error: msg });
       }
     }
-  }, []);
+  }, [loadProfile, isGuest]);
 
-  // 初次加载：setState 均在异步回调中
+  // 初次加载与认证状态变化时重载
+  // v7.1 M8：invited 模式下等待会话恢复完成后再加载
   useEffect(() => {
+    if (AUTH_MODE === "invited" && authStatus === "loading") return;
     let cancelled = false;
     (async () => {
-      const profile =
-        AUTH_MODE === "invited"
-          ? await profileApi.getProfile()
-          : (() => {
-              const active = buildActiveProfile();
-              return active.ready ? active.profile : null;
-            })();
+      const profile = await loadProfile();
       if (cancelled) return;
       if (profile === null) {
         setState({ status: "no-profile", reason: "incomplete" });
         return;
       }
-      const data = await opportunitiesApi.match(profile);
+      const data = await opportunitiesApi.match(profile, { sendProfile: isGuest });
       if (!cancelled) {
         recordRevealed(data);
         setState({ status: "ready", data, profile });
       }
     })().catch((error) => {
-        if (!cancelled) {
-          const msg = error instanceof Error ? error.message : "机会加载失败";
-          if (msg.includes("尚未保存画像")) {
-            setState({ status: "no-profile", reason: "incomplete" });
-          } else {
-            setState({ status: "error", error: msg });
-          }
+      if (!cancelled) {
+        const msg = error instanceof Error ? error.message : "机会加载失败";
+        if (msg.includes("尚未保存画像")) {
+          setState({ status: "no-profile", reason: "incomplete" });
+        } else {
+          setState({ status: "error", error: msg });
         }
-      });
+      }
+    });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [authStatus, loadProfile, isGuest]);
 
   const toggleFollow = useCallback(
     async (unit: UnitMatchDTO) => {
+      // v7.1 M8：未登录用户保存机会时先暂存到本机，再跳登录
+      if (isGuest && !unit.follow) {
+        upsertGuestFollow(unit.unit.id, { status: "considering" });
+        router.push(`/login?next=/opportunities/${unit.unit.id}&reason=save`);
+        return;
+      }
       setFollowBusyId(unit.unit.id);
       setActionError(null);
       setActionFeedback(null);
@@ -164,7 +171,7 @@ export function useOpportunities(): OpportunitiesApi {
         setFollowBusyId(null);
       }
     },
-    [reload],
+    [isGuest, reload, router],
   );
 
   return {
@@ -179,23 +186,36 @@ export function useOpportunities(): OpportunitiesApi {
 }
 
 export type ActiveProfileLoadState =
+  | { status: "loading" }
   | { status: "no-profile"; reason: ActiveProfileReason }
-  | { status: "ready"; profile: UserRecruitmentProfile };
+  | { status: "ready"; profile: UserRecruitmentProfile; isGuest: boolean };
 
-/** 供详情页复用的画像读取。
+/**
+ * 供详情页复用的画像读取（v7.1 M8：响应认证状态）。
  * - demo：本地草稿 + 补充事实；
- * - invited：占位 ready，由后端读取已持久化画像。 */
+ * - invited + 已登录：占位 ready，由后端读取已持久化画像（isGuest=false）；
+ * - invited + 未登录：使用本机访客画像（isGuest=true），通过请求体发送。
+ */
 export function useActiveProfile(): ActiveProfileLoadState {
-  const [state] = useState<ActiveProfileLoadState>(() => {
+  const { status: authStatus } = useCurrentUser();
+  return useMemo<ActiveProfileLoadState>(() => {
     if (AUTH_MODE === "invited") {
-      return { status: "ready", profile: INVITED_PLACEHOLDER_PROFILE };
+      if (authStatus === "loading") return { status: "loading" };
+      if (authStatus === "authenticated") {
+        return { status: "ready", profile: INVITED_PLACEHOLDER_PROFILE, isGuest: false };
+      }
+      // 未登录：使用本机访客画像
+      const active = buildActiveProfile();
+      return active.ready
+        ? { status: "ready", profile: active.profile, isGuest: true }
+        : { status: "no-profile", reason: active.reason };
     }
+    // demo 模式：本地草稿 + 补充事实
     const active = buildActiveProfile();
     return active.ready
-      ? { status: "ready", profile: active.profile }
+      ? { status: "ready", profile: active.profile, isGuest: true }
       : { status: "no-profile", reason: active.reason };
-  });
-  return state;
+  }, [authStatus]);
 }
 
 export type { FollowStatus, StudyTargetRole };

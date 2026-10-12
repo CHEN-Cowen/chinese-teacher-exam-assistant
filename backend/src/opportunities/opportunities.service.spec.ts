@@ -386,6 +386,42 @@ describe('OpportunitiesService：匹配响应', () => {
       service.unitDetail(PROFILE, 'user-1', 'not-exist'),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
+
+  it('v7.1 M8：访客（无 userId）携带画像可匹配，关注列表为空', async () => {
+    const fake = createFakePrisma();
+    const service = new OpportunitiesService(fake.prisma, fakeProfileService, fakeScheduleService);
+    const response = await service.match(PROFILE, undefined);
+
+    // 匹配结果与登录用户一致（7 个演示单元）
+    const all = [
+      ...response.groups.preliminary,
+      ...response.groups.needInfo.flatMap((g) => g.units),
+      ...response.groups.manualReview,
+      ...response.groups.notEligible,
+      ...response.groups.closed,
+    ];
+    expect(all).toHaveLength(7);
+    // 访客无关注记录
+    expect(all.every((u) => u.follow === null)).toBe(true);
+  });
+
+  it('v7.1 M8：访客（无 userId）携带画像可查详情，follow 为 null', async () => {
+    const service = new OpportunitiesService(createFakePrisma().prisma, fakeProfileService, fakeScheduleService);
+    const detail = await service.unitDetail(
+      PROFILE,
+      undefined,
+      'unit-hangzhou-01',
+    );
+    expect(detail.unit.announcement.title).toContain('杭州');
+    expect(detail.unit.follow).toBeNull();
+  });
+
+  it('v7.1 M8：访客未携带画像且无 userId 时抛 400', async () => {
+    const service = new OpportunitiesService(createFakePrisma().prisma, fakeProfileService, fakeScheduleService);
+    await expect(
+      service.match(undefined, undefined),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
 });
 
 describe('OpportunitiesService：关注与状态流转', () => {

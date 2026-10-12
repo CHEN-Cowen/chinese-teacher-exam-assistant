@@ -40,6 +40,8 @@ import {
 } from "@/lib/profile/activeProfile";
 import type { UserRecruitmentProfile } from "@/lib/profile/types";
 import { ConditionRows } from "@/components/opportunities/ConditionRows";
+import { useCurrentUser } from "@/lib/auth";
+import { upsertGuestFollow } from "@/lib/guest/guestFollows";
 import { FollowControls } from "@/components/opportunities/FollowControls";
 import { SupplementForm } from "@/components/opportunities/SupplementForm";
 import {
@@ -70,6 +72,9 @@ export default function OpportunityDetailPage() {
   const unitId = params?.unitId ?? "";
   const router = useRouter();
   const profileState = useActiveProfile();
+  const { status: authStatus } = useCurrentUser();
+  // v7.1 M8：访客（未登录）在请求体携带画像
+  const isGuest = profileState.status === "ready" && profileState.isGuest;
 
   const [detail, setDetail] = useState<UnitDetailResponse | null>(null);
   const [loading, setLoading] = useState(
@@ -97,7 +102,9 @@ export default function OpportunityDetailPage() {
       setError(null);
       setForbidden(false);
       try {
-        const response = await opportunitiesApi.unitDetail(unitId, profile);
+        const response = await opportunitiesApi.unitDetail(unitId, profile, {
+          sendProfile: isGuest,
+        });
         setDetail(response);
         // P0 漏斗③：打开详情即看到逐项官方依据（同一会话每机会只记一次）
         trackView(unitId, "match_basis_viewed", "opportunity", {
@@ -113,7 +120,7 @@ export default function OpportunityDetailPage() {
         setLoading(false);
       }
     },
-    [unitId],
+    [unitId, isGuest],
   );
 
   // 首次加载：setState 均在异步回调中，避免渲染级联
@@ -121,7 +128,7 @@ export default function OpportunityDetailPage() {
     if (profileState.status !== "ready") return;
     let cancelled = false;
     opportunitiesApi
-      .unitDetail(unitId, profileState.profile)
+      .unitDetail(unitId, profileState.profile, { sendProfile: isGuest })
       .then((response) => {
         if (!cancelled) {
           setDetail(response);
@@ -144,7 +151,12 @@ export default function OpportunityDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [unitId, profileState]);
+  }, [unitId, profileState, isGuest]);
+
+  // v7.1 M8：invited 模式下等待会话恢复完成
+  if (profileState.status === "loading" || (authStatus === "loading" && !loading && !detail)) {
+    return <LoadingPage />;
+  }
 
   if (loading) return <LoadingPage />;
 
@@ -307,8 +319,15 @@ export default function OpportunityDetailPage() {
     }
   }
 
-  /** 关注成功后埋点（失败由 runAction 捕获，不会产生事件） */
-  const followUnit = () =>
+  /** 关注成功后埋点（失败由 runAction 捕获，不会产生事件）。
+   *  v7.1 M8：未登录用户先暂存到本机再跳登录。 */
+  const followUnit = () => {
+    // v7.1 M8：访客保存触发登录
+    if (isGuest) {
+      upsertGuestFollow(unitId, { status: "considering" });
+      router.push(`/login?next=/opportunities/${unitId}&reason=save`);
+      return;
+    }
     runAction(async () => {
       await opportunitiesApi.follow(unitId);
       // P0 漏斗④：关注机会
@@ -317,6 +336,7 @@ export default function OpportunityDetailPage() {
         props: { from: detail?.unit.overall ?? "unknown" },
       });
     });
+  };
 
   const handleTransition = (
     status: FollowStatus,
@@ -346,7 +366,12 @@ export default function OpportunityDetailPage() {
                 : "已标记为结束。",
     });
 
-  const handleSetRole = (role: StudyTargetRole) =>
+  const handleSetRole = (role: StudyTargetRole) => {
+    // v7.1 M8：访客设置主要目标触发登录
+    if (isGuest && role === "primary") {
+      router.push(`/login?next=/opportunities/${unitId}&reason=set_primary`);
+      return;
+    }
     runAction(async () => {
       await opportunitiesApi.setRole(unitId, role);
       // P0 漏斗⑦：设为主要目标
@@ -359,6 +384,7 @@ export default function OpportunityDetailPage() {
           ? "已设为重点准备的机会，接下来可以开始安排备考。"
           : "已改为备选机会，原有记录会继续保留。",
     });
+  };
 
   /** 标记某报名材料项完成状态（带乐观锁）；材料完成进度进看板「材料完成」（模块 7） */
   const handleMaterialStatus = (itemId: string, status: MaterialStatus) =>

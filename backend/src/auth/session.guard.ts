@@ -6,15 +6,30 @@ import {
 import { AuthService, getAuthMode } from './auth.service.js';
 import type { AuthenticatedRequest } from './identity.js';
 
-/** 无需登录即可访问的路径（invited 模式下跳过会话校验） */
+/** 无需登录即可访问的精确路径（invited 模式下跳过会话校验） */
 const PUBLIC_PATHS = new Set([
   '/health',
   '/auth/login',
   '/auth/session',
-  // 引导首个管理员的前提是系统尚无任何账号、无人持有会话，必须匿名可达；
+  // 引导首个管理员的前提是系统尚无任何账号；无人持有会话，必须匿名可达；
   // 安全性由控制器内 ADMIN_BOOTSTRAP_TOKEN 校验 + 已有管理员时接口自动关闭保证
   '/admin/bootstrap-admin',
 ]);
+
+/**
+ * 无需登录即可访问的路径正则（v7.1 M8）。
+ * 匹配与详情是访客预筛的核心价值——用户先体验结果再决定是否登录；
+ * 其余接口（关注/订阅/目标/纠错）仍需登录。
+ */
+const PUBLIC_PATTERNS: RegExp[] = [
+  /^\/opportunities\/match$/,
+  /^\/opportunities\/units\/[^/]+\/detail$/,
+];
+
+function isPublicPath(path: string): boolean {
+  if (PUBLIC_PATHS.has(path)) return true;
+  return PUBLIC_PATTERNS.some((re) => re.test(path));
+}
 
 /**
  * 全局会话守卫（模块 8）。
@@ -51,7 +66,7 @@ export class SessionAuthGuard implements CanActivate {
     }
 
     const path = req.route?.path ?? req.path;
-    if (PUBLIC_PATHS.has(path)) return true;
+    if (isPublicPath(path)) return true;
     return false;
   }
 }

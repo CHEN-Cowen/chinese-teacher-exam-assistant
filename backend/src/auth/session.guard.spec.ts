@@ -46,6 +46,26 @@ describe('SessionAuthGuard（invited 模式）', () => {
     }
   });
 
+  it('v7.1 M8：无会话时放行机会匹配与详情路径（访客预筛价值优先）', async () => {
+    const guard = new SessionAuthGuard(authService);
+    await expect(guard.canActivate(mockContext('/opportunities/match'))).resolves.toBe(true);
+    await expect(
+      guard.canActivate(mockContext('/opportunities/units/abc-123/detail')),
+    ).resolves.toBe(true);
+  });
+
+  it('v7.1 M8：无会话时仍拦截需登录的机会接口（关注/订阅/目标/纠错）', async () => {
+    const guard = new SessionAuthGuard(authService);
+    await expect(guard.canActivate(mockContext('/opportunities/follows'))).resolves.toBe(false);
+    await expect(
+      guard.canActivate(mockContext('/opportunities/units/u-1/follow')),
+    ).resolves.toBe(false);
+    await expect(guard.canActivate(mockContext('/opportunities/subscription'))).resolves.toBe(false);
+    await expect(
+      guard.canActivate(mockContext('/opportunities/units/u-1/role')),
+    ).resolves.toBe(false);
+  });
+
   it('无会话访问受保护路径返回 false（Nest 转为 403）', async () => {
     const guard = new SessionAuthGuard(authService);
     await expect(guard.canActivate(mockContext('/profile'))).resolves.toBe(false);

@@ -157,11 +157,11 @@ function LoginForm() {
             </div>
           )}
 
-          {AUTH_MODE === "invited" && continuingTrial && hasGuestProfile && (
+          {/* v7.1 M8：触发登录的提示文案——保存/订阅/设主要目标/跨设备同步 */}
+          {AUTH_MODE === "invited" && (reason === "save" || reason === "subscribe" || reason === "set_primary" || (continuingTrial && hasGuestProfile)) && (
             <div className="mb-4 rounded-lg border border-brand/25 bg-brand-soft/50 p-3">
               <p className="text-xs leading-5 text-ink-muted">
-                <strong className="text-ink">无需重新填写：</strong>
-                当前设备上的报考信息会在登录后同步到受邀账号，并直接用于生成机会判断。
+                登录后会同步你刚才填写的信息，无需重新填写。
               </p>
             </div>
           )}

@@ -89,13 +89,19 @@ export class OpportunitiesService {
     private readonly scheduleService: ScheduleService,
   ) {}
 
-  /** 画像来源：请求体优先；未携带时读取服务端持久画像（受邀模式跨浏览器恢复） */
+  /**
+   * 画像来源：请求体优先；未携带时读取服务端持久画像（受邀模式跨浏览器恢复）。
+   * v7.1 M8：userId 可选——访客（未登录）必须在请求体携带画像。
+   */
   private async resolveProfile(
     profile: unknown,
-    userId: string,
+    userId?: string,
   ): Promise<UserRecruitmentProfile> {
     if (profile !== undefined && profile !== null) {
       return this.validateProfile(profile);
+    }
+    if (!userId) {
+      throw new BadRequestException('尚未保存画像，请先完成基础画像');
     }
     const persisted = await this.profileService.getProfile(userId);
     if (persisted === null) {
@@ -106,7 +112,8 @@ export class OpportunitiesService {
 
   // ==================== 匹配：列表 / 详情 ====================
 
-  async match(profile: unknown, userId: string): Promise<MatchResponse> {
+  /** 机会列表（v7.1 M8：userId 可选，访客无关注记录） */
+  async match(profile: unknown, userId?: string): Promise<MatchResponse> {
     const valid = await this.resolveProfile(profile, userId);
     const candidates = buildCandidates(
       getPublishedAnnouncements(),
@@ -116,9 +123,10 @@ export class OpportunitiesService {
     return this.assemble(candidates, valid, userId);
   }
 
+  /** 机会详情（v7.1 M8：userId 可选，访客无关注记录） */
   async unitDetail(
     profile: unknown,
-    userId: string,
+    userId: string | undefined,
     unitId: string,
   ): Promise<UnitDetailResponse> {
     const valid = await this.resolveProfile(profile, userId);
@@ -138,7 +146,7 @@ export class OpportunitiesService {
   private async assemble(
     candidates: ReturnType<typeof buildCandidates>,
     profile: UserRecruitmentProfile,
-    userId: string,
+    userId?: string,
   ): Promise<MatchResponse> {
     const follows = await this.listFollowRecords(userId);
     return buildMatchResponse(candidates, profile, follows, new Date());
@@ -941,7 +949,9 @@ export class OpportunitiesService {
     };
   }
 
-  private async listFollowRecords(userId: string): Promise<FollowRecord[]> {
+  /** v7.1 M8：userId 可选——访客无关注记录，返回空数组 */
+  private async listFollowRecords(userId?: string): Promise<FollowRecord[]> {
+    if (!userId) return [];
     const rows = await this.prisma.followedOpportunity.findMany({
       where: { userId },
       orderBy: { followedAt: 'asc' },

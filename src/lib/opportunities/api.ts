@@ -66,25 +66,33 @@ export const opportunitiesApi = {
   },
 
   /** 机会列表（按当前画像即时计算，四档分组 + 关注状态 + 版本信息）。
-   *  invited 模式下不发送画像，由后端读取已持久化的画像（跨浏览器一致）。 */
-  match(profile: UserRecruitmentProfile): Promise<MatchResponse> {
+   *  invited 模式下默认不发送画像（由后端读取已持久化的画像）；
+   *  v7.1 M8：访客（未登录）通过 sendProfile=true 在请求体携带访客画像。 */
+  match(
+    profile: UserRecruitmentProfile,
+    options?: { sendProfile?: boolean },
+  ): Promise<MatchResponse> {
     if (AUTH_MODE === "demo") return demoOpportunitiesApi.match(profile);
+    const sendProfile = options?.sendProfile ?? AUTH_MODE !== "invited";
     return request<MatchResponse>("/match", {
       method: "POST",
-      body: AUTH_MODE === "invited" ? JSON.stringify({}) : JSON.stringify({ profile }),
+      body: JSON.stringify(sendProfile ? { profile } : {}),
     });
   },
 
   /** 机会详情（三层结构所需的逐条件、证据、版本链数据）。
-   *  invited 模式下不发送画像，由后端读取已持久化的画像。 */
+   *  invited 模式下默认不发送画像（由后端读取已持久化的画像）；
+   *  v7.1 M8：访客（未登录）通过 sendProfile=true 在请求体携带访客画像。 */
   unitDetail(
     unitId: string,
     profile: UserRecruitmentProfile,
+    options?: { sendProfile?: boolean },
   ): Promise<UnitDetailResponse> {
     if (AUTH_MODE === "demo") return demoOpportunitiesApi.unitDetail(unitId, profile);
+    const sendProfile = options?.sendProfile ?? AUTH_MODE !== "invited";
     return request<UnitDetailResponse>(`/units/${encodeURIComponent(unitId)}/detail`, {
       method: "POST",
-      body: AUTH_MODE === "invited" ? JSON.stringify({}) : JSON.stringify({ profile }),
+      body: JSON.stringify(sendProfile ? { profile } : {}),
     });
   },
 

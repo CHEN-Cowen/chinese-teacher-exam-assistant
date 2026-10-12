@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { opportunitiesApi } from "@/lib/opportunities/api";
 import type {
@@ -10,6 +11,7 @@ import type {
 } from "@/lib/opportunities/api-types";
 import { stageLabel, subjectLabel } from "@/lib/ia/labels";
 import type { UserRecruitmentProfile } from "@/lib/profile/types";
+import { useCurrentUser } from "@/lib/auth";
 
 type NaturePreference = SubscriptionDTO["naturePreference"];
 
@@ -66,6 +68,8 @@ export function SubscriptionCard({
 }: {
   profile: UserRecruitmentProfile;
 }) {
+  const router = useRouter();
+  const { status: authStatus } = useCurrentUser();
   const [sub, setSub] = useState<SubscriptionDTO | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -73,6 +77,11 @@ export function SubscriptionCard({
   const [editing, setEditing] = useState(false);
   const [draftRegions, setDraftRegions] = useState<SubscriptionRegionDTO[]>([]);
   const [draftNature, setDraftNature] = useState<NaturePreference>("undecided");
+  // v7.1 M8：登录后继续订阅动作
+  const [pendingSubscribe] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.sessionStorage.getItem("kb_pending_subscribe") === "1";
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -80,6 +89,12 @@ export function SubscriptionCard({
       .getSubscription()
       .then((row) => {
         if (!cancelled) setSub(row);
+        // v7.1 M8：登录后继续订阅动作——读取到无订阅且有待定标记时自动开启
+        if (!cancelled && !row && pendingSubscribe && authStatus === "authenticated") {
+          window.sessionStorage.removeItem("kb_pending_subscribe");
+          setSub(null);
+          void run(() => upsert({}));
+        }
       })
       .catch(() => {
         // 读取失败保持未订阅视图，不阻塞机会页
@@ -90,7 +105,7 @@ export function SubscriptionCard({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [authStatus, pendingSubscribe]);
 
   /** 可勾选地区 = 订阅当前地区 ∪ 画像地区（均来自用户已填信息，不猜测新地区） */
   const regionOptions = useMemo(() => {
@@ -173,7 +188,15 @@ export function SubscriptionCard({
             <Button
               size="sm"
               loading={busy}
-              onClick={() => run(() => upsert({}))}
+              onClick={() => {
+                // v7.1 M8：未登录用户开启订阅触发登录
+                if (authStatus !== "authenticated") {
+                  window.sessionStorage.setItem("kb_pending_subscribe", "1");
+                  router.push("/login?next=/opportunities&reason=subscribe");
+                  return;
+                }
+                run(() => upsert({}));
+              }}
               data-testid="subscription-enable"
             >
               开启订阅
