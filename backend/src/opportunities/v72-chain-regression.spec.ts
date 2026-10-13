@@ -7,6 +7,11 @@
  * - it.fails「失败测试」：断言 v7.2 目标行为，当前必然失败，
  *   对应工作包（WP3/WP5）完成后转绿——这是工作包 0 完成门要求的
  *   「新需求有失败测试或明确验收脚本」，不是缺陷，不允许删除或改断言放水。
+ *
+ * 落地进度：
+ * - 链路③ 的目标用例已随 WP3 落地转绿（FF_DB_CATALOG=on 时读 DB 已发布版本）；
+ *   链路③ 的「现状固化」用例仍保留，固化缺省（关）时的静态目录现状。
+ * - 链路④ 目标用例仍为 it.fails，待 WP5 落地后同样反转。
  */
 import { describe, expect, it } from 'vitest';
 import type { UserRecruitmentProfile } from '../matching/types.js';
@@ -146,11 +151,22 @@ describe('链路③：后台发布 → DB 已发布版本 → 用户匹配结果
   });
 
   // WP3 目标行为（R-WP3-01/05）：PublishedCatalogRepository 读 DB，
-  // 发布无需重部署即进入用户匹配。当前失败；WP3 完成后去掉 .fails 转绿。
-  it.fails('目标行为（WP3）：DB 已发布单元出现在匹配结果中，且无需改静态目录', async () => {
-    const { service } = createService();
-    const res = await service.match(PROFILE);
-    expect(JSON.stringify(res)).toContain('fx-unit-db-priority');
+  // 发布无需重部署即进入用户匹配。已随 WP3 落地转绿。
+  it('目标行为（WP3）：DB 已发布单元出现在匹配结果中，且无需改静态目录', async () => {
+    const { service, dbReads } = createService();
+    const prev = process.env.FF_DB_CATALOG;
+    try {
+      process.env.FF_DB_CATALOG = 'on';
+      const res = await service.match(PROFILE);
+      expect(JSON.stringify(res)).toContain('fx-unit-db-priority');
+      expect(dbReads()).toBeGreaterThan(0);
+    } finally {
+      if (prev === undefined) {
+        delete process.env.FF_DB_CATALOG;
+      } else {
+        process.env.FF_DB_CATALOG = prev;
+      }
+    }
   });
 });
 

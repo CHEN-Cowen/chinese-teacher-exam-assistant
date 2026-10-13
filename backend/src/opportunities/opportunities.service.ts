@@ -1,8 +1,10 @@
 import {
   BadRequestException,
   ConflictException,
+  Inject,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service.js';
@@ -11,6 +13,8 @@ import { ScheduleService } from '../schedule/schedule.service.js';
 import { REAL_ANNOUNCEMENTS } from '../matching/real-catalog.js';
 import { getRollingCatalogAnnouncements } from '../matching/rolling-catalog.js';
 import { buildCandidates, currentVersion } from '../matching/engine.js';
+import { PublishedCatalogRepository } from '../catalog/published-catalog.repository.js';
+import { isDbCatalogEnabled } from '../catalog/feature-flag.js';
 import type {
   CredentialLevel,
   DegreeCode,
@@ -18,6 +22,7 @@ import type {
   EmploymentNaturePreference,
   EmploymentStatus,
   MaterialStatus,
+  RecruitmentAnnouncement,
   RegionPreferenceLevel,
   TeacherCertStatus,
   UserRecruitmentProfile,
@@ -62,33 +67,40 @@ import {
 } from './subscription.domain.js';
 
 /**
- * 当前已发布公告目录 = 演示场景（catalog.ts 滚动时间轴）+
- * 真实监测台账（real-catalog.ts，杭州/宁波，人工维护）。
- * 两者通过 dataset 字段区分；真实记录未人工复核不进主要推荐。
- */
-function getPublishedAnnouncements() {
-  return [
-    ...getRollingCatalogAnnouncements(),
-    ...REAL_ANNOUNCEMENTS,
-  ];
-}
-
-/**
- * 机会发现服务（PRD 7.4/7.5/7.7/7.10）。
- *
- * - 匹配为“按请求即时计算”：每次请求用当前画像 + 已发布公告目录现算，
- *   受邀用户量级很小，不引入批量队列与缓存；
- * - 画像由前端随请求提交（基础画像 + 补问事实），服务端不做规则缓存，
- *   用户修改画像后的下一次请求即为新结果；
- * - 关注关系与纠错留痕持久化在 PostgreSQL。
+ * 目录来源（v7.2 工作包 3）：
+ * - `ff_db_catalog` 开：只读数据库 `PublishedAnnouncementVersion(status=published)`
+ *   —— 生产唯一事实源，静态演示/台账目录一律不参与；
+ * - 关：沿用 v7.1 现状（catalog.ts 滚动时间轴 + real-catalog.ts 真实台账），
+ *   仅用于 Demo 与测试。
  */
 @Injectable()
 export class OpportunitiesService {
+  private readonly catalogRepository: PublishedCatalogRepository;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly profileService: ProfileService,
     private readonly scheduleService: ScheduleService,
-  ) {}
+    @Optional()
+    @Inject(PublishedCatalogRepository)
+    catalogRepository?: PublishedCatalogRepository,
+  ) {
+    this.catalogRepository =
+      catalogRepository ?? new PublishedCatalogRepository(prisma);
+  }
+
+  /** 按请求加载一次目录：flag 开走数据库，关走静态（Demo/测试） */
+  private async loadCatalog(
+    now: Date = new Date(),
+  ): Promise<readonly RecruitmentAnnouncement[]> {
+    if (isDbCatalogEnabled()) {
+      return this.catalogRepository.listPublished(now);
+    }
+    return [
+      ...getRollingCatalogAnnouncements(),
+      ...REAL_ANNOUNCEMENTS,
+    ];
+  }
 
   /**
    * 画像来源：请求体优先；未携带时读取服务端持久画像（受邀模式跨浏览器恢复）。
@@ -116,8 +128,9 @@ export class OpportunitiesService {
   /** 机会列表（v7.1 M8：userId 可选，访客无关注记录） */
   async match(profile: unknown, userId?: string): Promise<MatchResponse> {
     const valid = await this.resolveProfile(profile, userId);
+    const catalog = await this.loadCatalog();
     const candidates = buildCandidates(
-      getPublishedAnnouncements(),
+      catalog,
       valid,
       new Date().toISOString(),
     );
@@ -131,8 +144,9 @@ export class OpportunitiesService {
     unitId: string,
   ): Promise<UnitDetailResponse> {
     const valid = await this.resolveProfile(profile, userId);
+    const catalog = await this.loadCatalog();
     const candidates = buildCandidates(
-      getPublishedAnnouncements(),
+      catalog,
       valid,
       new Date().toISOString(),
     );
@@ -266,13 +280,14 @@ export class OpportunitiesService {
       subject: row.subject,
       naturePreference: row.naturePreference as NaturePreferenceCode,
     };
+    const catalog = await this.loadCatalog();
 
     // “没有已知明确不符合项”：以当前画像的即时匹配结果为准
     const profile = await this.safeProfile(userId);
     const ineligibleUnitIds = new Set<string>();
     if (profile) {
       const candidates = buildCandidates(
-        getPublishedAnnouncements(),
+        catalog,
         profile,
         new Date().toISOString(),
       );
@@ -287,7 +302,7 @@ export class OpportunitiesService {
     });
     const existingKeys = new Set(existing.map((r) => r.dedupKey));
     const plan = planOpportunityNotices({
-      announcements: getPublishedAnnouncements(),
+      announcements: catalog,
       criteria,
       ineligibleUnitIds,
       existingKeys,
@@ -378,20 +393,23 @@ export class OpportunitiesService {
 
   async listFollows(userId: string): Promise<FollowDTO[]> {
     const follows = await this.listFollowRecords(userId);
-    return follows.map((follow) => this.toDTO(follow));
+    const catalog = await this.loadCatalog();
+    return follows.map((follow) => this.toDTO(follow, catalog));
   }
 
   /** 备考目标列表（模块 7）：活跃关注 + 公告版本聚合，供主要目标选择与 /study 页使用 */
   async listGoals(userId: string): Promise<GoalsResponse> {
     const follows = await this.listFollowRecords(userId);
-    const catalog = this.buildCatalogSnapshot();
-    return buildGoals(follows, catalog);
+    const catalog = await this.loadCatalog();
+    return buildGoals(follows, this.buildCatalogSnapshot(catalog));
   }
 
   /** 当前目录的全部公告/版本/单元聚合快照（goals 视图装配用） */
-  private buildCatalogSnapshot(): CatalogSnapshot[] {
+  private buildCatalogSnapshot(
+    catalog: readonly RecruitmentAnnouncement[],
+  ): CatalogSnapshot[] {
     const snapshots: CatalogSnapshot[] = [];
-    for (const announcement of getPublishedAnnouncements()) {
+    for (const announcement of catalog) {
       // 模块 7.5 合规过滤：用户端不返回 AI 初核待人工复核记录
       if (announcement.dataset === 'real') continue;
       const version = currentVersion(announcement);
@@ -433,12 +451,13 @@ export class OpportunitiesService {
    * M7：关注成功后立即同步官方已明确节点，并返回 syncedEventCount。
    */
   async follow(userId: string, unitId: string): Promise<FollowDTO> {
-    const target = this.findCatalogUnit(unitId);
+    const catalog = await this.loadCatalog();
+    const target = this.findCatalogUnit(unitId, catalog);
     const existing = await this.prisma.followedOpportunity.findUnique({
       where: { userId_unitId: { userId, unitId } },
     });
     if (existing) {
-      const dto = this.toDTO(this.fromRow(existing));
+      const dto = this.toDTO(this.fromRow(existing, catalog), catalog);
       // M7：重复关注也触发同步（幂等），反馈当前已同步节点数
       const syncResult = await this.scheduleService.syncEventsForUser(userId);
       dto.syncedEventCount = syncResult.syncedEventCount;
@@ -458,12 +477,15 @@ export class OpportunitiesService {
           { status: 'considering', at: atIso },
         ] satisfies Prisma.InputJsonValue,
         abandonReason: null,
-        materialStatuses: this.initialMaterialStatuses(unitId) as Prisma.InputJsonValue,
+        materialStatuses: this.initialMaterialStatuses(
+          unitId,
+          catalog,
+        ) as Prisma.InputJsonValue,
       },
     });
     // M7：关注成功后立即同步官方已明确节点
     const syncResult = await this.scheduleService.syncEventsForUser(userId);
-    const dto = this.toDTO(this.fromRow(row));
+    const dto = this.toDTO(this.fromRow(row, catalog), catalog);
     dto.syncedEventCount = syncResult.syncedEventCount;
     return dto;
   }
@@ -479,6 +501,7 @@ export class OpportunitiesService {
     }>,
   ): Promise<{ merged: number; skipped: number }> {
     if (!Array.isArray(items)) return { merged: 0, skipped: 0 };
+    const catalog = await this.loadCatalog();
     let merged = 0;
     let skipped = 0;
     for (const item of items) {
@@ -488,7 +511,7 @@ export class OpportunitiesService {
       }
       let target: { announcementId: string; versionId: string };
       try {
-        target = this.findCatalogUnit(item.unitId);
+        target = this.findCatalogUnit(item.unitId, catalog);
       } catch {
         skipped++;
         continue;
@@ -518,7 +541,10 @@ export class OpportunitiesService {
           materialStatuses:
             item.materialStatuses && typeof item.materialStatuses === 'object'
               ? (item.materialStatuses as Prisma.InputJsonValue)
-              : (this.initialMaterialStatuses(item.unitId) as Prisma.InputJsonValue),
+              : (this.initialMaterialStatuses(
+                  item.unitId,
+                  catalog,
+                ) as Prisma.InputJsonValue),
           consultationNotes:
             item.consultationNotes && typeof item.consultationNotes === 'object'
               ? (item.consultationNotes as Prisma.InputJsonValue)
@@ -541,15 +567,16 @@ export class OpportunitiesService {
     expectedVersion?: number,
   ): Promise<FollowDTO> {
     const next = this.asFollowStatus(nextInput);
+    const catalog = await this.loadCatalog();
     const row = await this.prisma.followedOpportunity.findUnique({
       where: { userId_unitId: { userId, unitId } },
     });
     if (!row) throw new NotFoundException('尚未关注该机会');
-    const current = this.fromRow(row);
+    const current = this.fromRow(row, catalog);
     if (expectedVersion !== undefined && expectedVersion !== current.version) {
       throw new ConflictException({
         error: 'VERSION_CONFLICT',
-        current: this.toDTO(current),
+        current: this.toDTO(current, catalog),
       });
     }
     if (!canTransition(current.status, next)) {
@@ -573,14 +600,18 @@ export class OpportunitiesService {
         version: updated.version,
       },
     });
-    return this.toDTO(this.fromRow(saved));
+    return this.toDTO(this.fromRow(saved, catalog), catalog);
   }
 
-  private assertVersion(current: FollowRecord, expectedVersion?: number) {
+  private assertVersion(
+    current: FollowRecord,
+    catalog: readonly RecruitmentAnnouncement[],
+    expectedVersion?: number,
+  ) {
     if (expectedVersion !== undefined && expectedVersion !== current.version) {
       throw new ConflictException({
         error: 'VERSION_CONFLICT',
-        current: this.toDTO(current),
+        current: this.toDTO(current, catalog),
       });
     }
   }
@@ -595,14 +626,15 @@ export class OpportunitiesService {
   ): Promise<FollowDTO> {
     const itemId = typeof itemIdInput === 'string' ? itemIdInput : '';
     const status = this.asMaterialStatus(statusInput);
+    const catalog = await this.loadCatalog();
     const row = await this.prisma.followedOpportunity.findUnique({
       where: { userId_unitId: { userId, unitId } },
     });
     if (!row) throw new NotFoundException('尚未关注该机会');
-    const current = this.fromRow(row);
-    this.assertVersion(current, expectedVersion);
+    const current = this.fromRow(row, catalog);
+    this.assertVersion(current, catalog, expectedVersion);
     const updated = applyMaterialStatus(current, itemId, status);
-    if (updated === current) return this.toDTO(current);
+    if (updated === current) return this.toDTO(current, catalog);
     const saved = await this.prisma.followedOpportunity.update({
       where: { userId_unitId: { userId, unitId } },
       data: {
@@ -610,7 +642,7 @@ export class OpportunitiesService {
         version: updated.version,
       },
     });
-    return this.toDTO(this.fromRow(saved));
+    return this.toDTO(this.fromRow(saved, catalog), catalog);
   }
 
   /** 记录用户自行填写的官方咨询结论。不参与匹配；带乐观锁。 */
@@ -625,14 +657,15 @@ export class OpportunitiesService {
       typeof dimensionKeyInput === 'string' ? dimensionKeyInput : '';
     const note = typeof noteInput === 'string' ? noteInput : '';
     if (!dimensionKey) throw new BadRequestException('缺少维度标识');
+    const catalog = await this.loadCatalog();
     const row = await this.prisma.followedOpportunity.findUnique({
       where: { userId_unitId: { userId, unitId } },
     });
     if (!row) throw new NotFoundException('尚未关注该机会');
-    const current = this.fromRow(row);
-    this.assertVersion(current, expectedVersion);
+    const current = this.fromRow(row, catalog);
+    this.assertVersion(current, catalog, expectedVersion);
     const updated = applyConsultationNote(current, dimensionKey, note);
-    if (updated === current) return this.toDTO(current);
+    if (updated === current) return this.toDTO(current, catalog);
     const saved = await this.prisma.followedOpportunity.update({
       where: { userId_unitId: { userId, unitId } },
       data: {
@@ -640,7 +673,7 @@ export class OpportunitiesService {
         version: updated.version,
       },
     });
-    return this.toDTO(this.fromRow(saved));
+    return this.toDTO(this.fromRow(saved, catalog), catalog);
   }
 
   /** 取消关注（删除记录，不影响其他机会） */
@@ -661,6 +694,7 @@ export class OpportunitiesService {
     roleInput: unknown,
   ): Promise<FollowDTO> {
     const role = this.asRole(roleInput);
+    const catalog = await this.loadCatalog();
     const target = await this.prisma.followedOpportunity.findUnique({
       where: { userId_unitId: { userId, unitId } },
     });
@@ -686,7 +720,7 @@ export class OpportunitiesService {
     const row = await this.prisma.followedOpportunity.findUniqueOrThrow({
       where: { userId_unitId: { userId, unitId } },
     });
-    return this.toDTO(this.fromRow(row));
+    return this.toDTO(this.fromRow(row, catalog), catalog);
   }
 
   /** 开启/关闭单个机会的站内提醒（日程仍可见，只是不产生通知） */
@@ -695,6 +729,7 @@ export class OpportunitiesService {
     unitId: string,
     muted: boolean,
   ): Promise<FollowDTO> {
+    const catalog = await this.loadCatalog();
     const row = await this.prisma.followedOpportunity.findUnique({
       where: { userId_unitId: { userId, unitId } },
     });
@@ -703,7 +738,7 @@ export class OpportunitiesService {
       where: { userId_unitId: { userId, unitId } },
       data: { remindersMuted: muted },
     });
-    return this.toDTO(this.fromRow(updated));
+    return this.toDTO(this.fromRow(updated, catalog), catalog);
   }
 
   // ==================== 纠错提交（证据层，PRD 7.10） ====================
@@ -713,7 +748,8 @@ export class OpportunitiesService {
     unitId: string,
     body: { fieldPath?: unknown; content?: unknown; contact?: unknown },
   ): Promise<{ id: string; status: string }> {
-    const target = this.findCatalogUnit(unitId);
+    const catalog = await this.loadCatalog();
+    const target = this.findCatalogUnit(unitId, catalog);
     const fieldPath = typeof body.fieldPath === 'string' ? body.fieldPath.trim() : '';
     const content = typeof body.content === 'string' ? body.content.trim() : '';
     if (!fieldPath) {
@@ -746,12 +782,13 @@ export class OpportunitiesService {
 
   /** 用户查看自己提交过的纠错及员工处理状态 */
   async listMyCorrections(userId: string): Promise<CorrectionDTO[]> {
+    const catalog = await this.loadCatalog();
     const rows = await this.prisma.opportunityCorrection.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },
       take: 100,
     });
-    return rows.map((row) => this.toCorrectionDTO(row));
+    return rows.map((row) => this.toCorrectionDTO(row, catalog));
   }
 
   /** 员工跨用户纠错队列；status 为空时返回全部 */
@@ -775,10 +812,11 @@ export class OpportunitiesService {
       select: { id: true, email: true, name: true },
     });
     const submitterMap = new Map(submitters.map((u) => [u.id, u]));
+    const catalog = await this.loadCatalog();
     return rows.map((row) => {
       const submitterRow = submitterMap.get(row.userId) ?? null;
       return {
-        ...this.toCorrectionDTO(row),
+        ...this.toCorrectionDTO(row, catalog),
         submitter: submitterRow
           ? {
               id: submitterRow.id,
@@ -802,6 +840,7 @@ export class OpportunitiesService {
     correctionId: string,
     body: { status?: unknown; reviewNote?: unknown },
   ): Promise<CorrectionDTO> {
+    const catalog = await this.loadCatalog();
     const row = await this.prisma.opportunityCorrection.findUnique({
       where: { id: correctionId },
     });
@@ -828,7 +867,7 @@ export class OpportunitiesService {
     });
 
     if (isTerminalStatus(result.status)) {
-      const meta = this.findCatalogUnitMeta(row.unitId);
+      const meta = this.findCatalogUnitMeta(row.unitId, catalog);
       const unitName = meta?.unitName ?? '该机会';
       const noteLine = result.note ? `处理说明：${result.note}` : '';
       if (result.status === 'resolved') {
@@ -860,16 +899,19 @@ export class OpportunitiesService {
       }
     }
 
-    return this.toCorrectionDTO(updated);
+    return this.toCorrectionDTO(updated, catalog);
   }
 
   // ==================== 内部工具 ====================
 
-  private findCatalogUnit(unitId: string): {
+  private findCatalogUnit(
+    unitId: string,
+    catalog: readonly RecruitmentAnnouncement[],
+  ): {
     announcementId: string;
     versionId: string;
   } {
-    for (const announcement of getPublishedAnnouncements()) {
+    for (const announcement of catalog) {
       // 模块 7.5 合规过滤：普通用户端不允许关注/查看 AI 初核待人工复核记录
       if (announcement.dataset === 'real') continue;
       const version = currentVersion(announcement);
@@ -880,8 +922,11 @@ export class OpportunitiesService {
   }
 
   /** 新保存机会立即建立材料进度；旧关注记录读取时也得到同样的默认状态。 */
-  private initialMaterialStatuses(unitId: string): Record<string, MaterialStatus> {
-    for (const announcement of getPublishedAnnouncements()) {
+  private initialMaterialStatuses(
+    unitId: string,
+    catalog: readonly RecruitmentAnnouncement[],
+  ): Record<string, MaterialStatus> {
+    for (const announcement of catalog) {
       if (announcement.dataset === 'real') continue;
       for (const version of announcement.versions) {
         const unit = version.units.find((candidate) => candidate.id === unitId);
@@ -895,11 +940,14 @@ export class OpportunitiesService {
   }
 
   /** 纠错展示用：跨全部版本查找单元名与公告标题（旧版本单元也要能显示） */
-  private findCatalogUnitMeta(unitId: string): {
+  private findCatalogUnitMeta(
+    unitId: string,
+    catalog: readonly RecruitmentAnnouncement[],
+  ): {
     unitName: string;
     announcementTitle: string;
   } | null {
-    for (const announcement of getPublishedAnnouncements()) {
+    for (const announcement of catalog) {
       for (const version of announcement.versions) {
         const unit = version.units.find((u) => u.id === unitId);
         if (unit) {
@@ -929,8 +977,9 @@ export class OpportunitiesService {
       reviewedAt: Date | null;
       createdAt: Date;
     },
+    catalog: readonly RecruitmentAnnouncement[],
   ): CorrectionDTO {
-    const meta = this.findCatalogUnitMeta(row.unitId);
+    const meta = this.findCatalogUnitMeta(row.unitId, catalog);
     return {
       id: row.id,
       unitId: row.unitId,
@@ -953,29 +1002,33 @@ export class OpportunitiesService {
   /** v7.1 M8：userId 可选——访客无关注记录，返回空数组 */
   private async listFollowRecords(userId?: string): Promise<FollowRecord[]> {
     if (!userId) return [];
+    const catalog = await this.loadCatalog();
     const rows = await this.prisma.followedOpportunity.findMany({
       where: { userId },
       orderBy: { followedAt: 'asc' },
     });
-    return rows.map((row) => this.fromRow(row));
+    return rows.map((row) => this.fromRow(row, catalog));
   }
 
-  private fromRow(row: {
-    id: string;
-    userId: string;
-    unitId: string;
-    announcementId: string;
-    versionId: string;
-    status: string;
-    role: string | null;
-    followedAt: Date;
-    statusHistory: Prisma.JsonValue;
-    abandonReason: string | null;
-    materialStatuses?: Prisma.JsonValue | null;
-    consultationNotes?: Prisma.JsonValue | null;
-    version?: number;
-    remindersMuted?: boolean;
-  }): FollowRecord {
+  private fromRow(
+    row: {
+      id: string;
+      userId: string;
+      unitId: string;
+      announcementId: string;
+      versionId: string;
+      status: string;
+      role: string | null;
+      followedAt: Date;
+      statusHistory: Prisma.JsonValue;
+      abandonReason: string | null;
+      materialStatuses?: Prisma.JsonValue | null;
+      consultationNotes?: Prisma.JsonValue | null;
+      version?: number;
+      remindersMuted?: boolean;
+    },
+    catalog: readonly RecruitmentAnnouncement[],
+  ): FollowRecord {
     return {
       id: row.id,
       userId: row.userId,
@@ -989,7 +1042,7 @@ export class OpportunitiesService {
       abandonReason: row.abandonReason,
       materialStatuses:
         (row.materialStatuses as Record<string, MaterialStatus> | null) ??
-        this.initialMaterialStatuses(row.unitId),
+        this.initialMaterialStatuses(row.unitId, catalog),
       consultationNotes:
         (row.consultationNotes as Record<string, string> | null) ?? null,
       version: row.version ?? 0,
@@ -997,8 +1050,11 @@ export class OpportunitiesService {
     };
   }
 
-  private toDTO(follow: FollowRecord): FollowDTO {
-    const announcement = getPublishedAnnouncements().find(
+  private toDTO(
+    follow: FollowRecord,
+    catalog: readonly RecruitmentAnnouncement[],
+  ): FollowDTO {
+    const announcement = catalog.find(
       (a) => a.id === follow.announcementId,
     );
     const currentVersionId = announcement
