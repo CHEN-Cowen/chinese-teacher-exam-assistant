@@ -6,12 +6,19 @@
  */
 import { Module } from '@nestjs/common';
 import { SourcingCoreModule } from './sourcing-core.module.js';
+import { DocumentProcessingModule } from '../document-processing/document-processing.module.js';
 import { CrawlProcessor } from './jobs/crawl.worker.js';
 import { DocumentFetchService } from './jobs/document-fetch.service.js';
 import { SourceDiscoverService } from './jobs/source-discover.service.js';
+import { AnnouncementExtractService } from '../announcements/jobs/announcement-extract.service.js';
 
 @Module({
-  imports: [SourcingCoreModule],
-  providers: [CrawlProcessor, SourceDiscoverService, DocumentFetchService],
+  imports: [SourcingCoreModule, DocumentProcessingModule],
+  providers: [
+    CrawlProcessor,
+    SourceDiscoverService,
+    DocumentFetchService,
+    AnnouncementExtractService,
+  ],
 })
 export class SourcingWorkerModule {}

@@ -332,6 +332,137 @@ export class FakePrisma {
   findRun(runId: string) {
     return this.runs.find((r) => r.id === runId) ?? null;
   }
+
+  /** ---------- documentParseRun / extractionRun / evidenceAnchor（v7.2 附件解析） ---------- */
+
+  parseRuns: Array<Record<string, unknown> & { id: string }> = [];
+  extractionRuns: Array<Record<string, unknown> & { id: string }> = [];
+  evidenceAnchors: Array<Record<string, unknown> & { id: string; runId: string }> = [];
+  private modelSeq = 0;
+
+  private nextModelId(prefix: string): string {
+    this.modelSeq += 1;
+    return `${prefix}-${this.modelSeq}`;
+  }
+
+  private sortDesc<T extends { createdAt?: Date }>(rows: T[]): T[] {
+    return [...rows].sort(
+      (a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0),
+    );
+  }
+
+  readonly documentParseRun = {
+    findUnique: async ({
+      where,
+    }: {
+      where: { id?: string; snapshotId_parserVersion?: { snapshotId: string; parserVersion: string } };
+    }) => {
+      if (where.id) return this.parseRuns.find((r) => r.id === where.id) ?? null;
+      const key = where.snapshotId_parserVersion;
+      if (!key) return null;
+      return (
+        this.parseRuns.find(
+          (r) =>
+            r.snapshotId === key.snapshotId && r.parserVersion === key.parserVersion,
+        ) ?? null
+      );
+    },
+    findMany: async ({
+      where,
+      take,
+    }: {
+      where: { snapshotId: string; status?: string };
+      take?: number;
+    }) => {
+      let rows = this.parseRuns.filter((r) => r.snapshotId === where.snapshotId);
+      if (where.status) rows = rows.filter((r) => r.status === where.status);
+      const sorted = this.sortDesc(rows as Array<Record<string, unknown> & { id: string; createdAt?: Date }>);
+      return take ? sorted.slice(0, take) : sorted;
+    },
+    create: async ({ data }: { data: Record<string, unknown> }) => {
+      const row = {
+        id: this.nextModelId('dpr'),
+        createdAt: new Date(),
+        ...data,
+      } as Record<string, unknown> & { id: string };
+      this.parseRuns.push(row);
+      return row;
+    },
+    update: async ({
+      where,
+      data,
+    }: {
+      where: { id: string };
+      data: Record<string, unknown>;
+    }) => {
+      const row = this.parseRuns.find((r) => r.id === where.id);
+      if (!row) throw new Error(`documentParseRun not found: ${where.id}`);
+      applyUpdate(row, data);
+      return row;
+    },
+  };
+
+  readonly extractionRun = {
+    findUnique: async ({
+      where,
+    }: {
+      where: { id?: string; idempotencyKey?: string };
+    }) => {
+      if (where.id) return this.extractionRuns.find((r) => r.id === where.id) ?? null;
+      if (where.idempotencyKey) {
+        return (
+          this.extractionRuns.find((r) => r.idempotencyKey === where.idempotencyKey) ??
+          null
+        );
+      }
+      return null;
+    },
+    create: async ({ data }: { data: Record<string, unknown> }) => {
+      const row = {
+        id: this.nextModelId('er'),
+        createdAt: new Date(),
+        ...data,
+      } as Record<string, unknown> & { id: string };
+      this.extractionRuns.push(row);
+      return row;
+    },
+    update: async ({
+      where,
+      data,
+    }: {
+      where: { id: string };
+      data: Record<string, unknown>;
+    }) => {
+      const row = this.extractionRuns.find((r) => r.id === where.id);
+      if (!row) throw new Error(`extractionRun not found: ${where.id}`);
+      applyUpdate(row, data);
+      return row;
+    },
+  };
+
+  readonly evidenceAnchor = {
+    deleteMany: async ({ where }: { where: { runId: string } }) => {
+      const before = this.evidenceAnchors.length;
+      this.evidenceAnchors = this.evidenceAnchors.filter((a) => a.runId !== where.runId);
+      return { count: before - this.evidenceAnchors.length };
+    },
+    createMany: async ({
+      data,
+    }: {
+      data: Array<Record<string, unknown> & { runId: string }>;
+    }) => {
+      for (const row of data) {
+        this.evidenceAnchors.push({
+          id: this.nextModelId('ea'),
+          createdAt: new Date(),
+          ...row,
+        });
+      }
+      return { count: data.length };
+    },
+    findMany: async ({ where }: { where: { runId: string } }) =>
+      this.evidenceAnchors.filter((a) => a.runId === where.runId),
+  };
 }
 
 /** ---------- 内存队列 ---------- */
@@ -369,12 +500,21 @@ export class FakeCrawlTaskQueue implements CrawlTaskQueue {
 
 export class FakeObjectStore implements ObjectStore {
   readonly files = new Map<string, string>();
+  readonly binaries = new Map<string, Buffer>();
   readonly writes: string[] = [];
 
   async put(input: { content: string; contentHash: string }): Promise<string> {
+    return this.putBinary({
+      content: Buffer.from(input.content, 'utf8'),
+      contentHash: input.contentHash,
+    });
+  }
+
+  async putBinary(input: { content: Buffer; contentHash: string }): Promise<string> {
     const key = snapshotStorageKey(input.contentHash);
-    if (!this.files.has(key)) {
-      this.files.set(key, input.content);
+    if (!this.binaries.has(key)) {
+      this.binaries.set(key, input.content);
+      this.files.set(key, input.content.toString('utf8'));
       this.writes.push(key);
     }
     return key;
@@ -382,6 +522,12 @@ export class FakeObjectStore implements ObjectStore {
 
   async get(storageKey: string): Promise<string> {
     const value = this.files.get(storageKey);
+    if (value === undefined) throw new Error(`object not found: ${storageKey}`);
+    return value;
+  }
+
+  async getBinary(storageKey: string): Promise<Buffer> {
+    const value = this.binaries.get(storageKey);
     if (value === undefined) throw new Error(`object not found: ${storageKey}`);
     return value;
   }

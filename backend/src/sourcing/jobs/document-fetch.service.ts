@@ -21,6 +21,7 @@ import type { ObjectStore } from '../storage/object-store.js';
 import { OBJECT_STORE } from '../storage/storage.tokens.js';
 import { SafeFetcherFactory } from '../fetch/safe-fetcher-factory.js';
 import { SafeFetchError } from '../fetch/safe-fetcher.js';
+import { detectFormat } from '../../document-processing/format-detector.js';
 import {
   interventionFromBody,
   interventionFromError,
@@ -73,7 +74,10 @@ export class DocumentFetchService {
       return { status: 'failed', errorSummary: 'adapter_not_configured' };
     }
 
-    const fetcher = this.fetcherFactory.create(source);
+    const fetcher =
+      payload.kind === 'attachment'
+        ? this.fetcherFactory.createForAttachment(source)
+        : this.fetcherFactory.create(source);
     let result;
     try {
       result = await fetcher.fetch(payload.canonicalUrl);
@@ -134,16 +138,33 @@ export class DocumentFetchService {
     }
 
     // 新内容：写对象存储 + 建快照 + 绑定文档
-    const storageKey = await this.objectStore.put({
-      content: result.body,
-      mimeType: result.mimeType,
-      contentHash: result.contentHash,
-    });
+    // 附件走二进制通道并用 magic bytes 判定真实格式（不信任声明 Content-Type）；
+    // 页面（HTML）沿用文本通道。
+    const isAttachment = payload.kind === 'attachment';
+    let mimeType = result.mimeType;
+    if (isAttachment) {
+      const detected = detectFormat(result.bodyBytes);
+      mimeType =
+        detected.detectedBy === 'magic-bytes'
+          ? detected.mime
+          : result.mimeType || 'application/octet-stream';
+    }
+    const storageKey = isAttachment
+      ? await this.objectStore.putBinary({
+          content: result.bodyBytes,
+          mimeType,
+          contentHash: result.contentHash,
+        })
+      : await this.objectStore.put({
+          content: result.body,
+          mimeType,
+          contentHash: result.contentHash,
+        });
     const { snapshot, created } = await this.documentStore.upsertSnapshot({
       sourceId: source.id,
       officialUrl: result.finalUrl,
       storageKey,
-      mimeType: result.mimeType,
+      mimeType,
       contentHash: result.contentHash,
       fetchedAt: new Date(),
       httpStatus: result.status,

@@ -67,6 +67,22 @@ export class SafeFetcherFactory {
   create(source: SourceRecord): SafeFetcher {
     return new SafeFetcher({
       allowedHosts: resolveAllowedHosts(source),
+      ...this.limits(),
+    });
+  }
+
+  /** 附件抓取：跳过 HTML 内容校验、放宽 Accept（格式由 magic bytes 判定） */
+  createForAttachment(source: SourceRecord): SafeFetcher {
+    return new SafeFetcher({
+      allowedHosts: resolveAllowedHosts(source),
+      ...this.limits(),
+      expect: 'any',
+      accept: '*/*',
+    });
+  }
+
+  private limits() {
+    return {
       maxRedirects: this.config.maxRedirects,
       connectTimeoutMs: this.config.connectTimeoutMs,
       totalTimeoutMs: this.config.totalTimeoutMs,
@@ -76,6 +92,6 @@ export class SafeFetcherFactory {
         attempts: this.config.retryAttempts,
         baseDelayMs: this.config.retryBaseDelayMs,
       },
-    });
+    };
   }
 }

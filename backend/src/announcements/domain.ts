@@ -54,7 +54,15 @@ export interface EvidenceAnchorInput {
   field: string;
   locator: EvidenceLocator;
   excerpt?: string;
+  /**
+   * 富定位数据（v7.2 证据链）：快照 id、存储 key、内容哈希、来源 URL、
+   * 页码/单元格/选择器等，保证任意字段可回到原文。可空（兼容旧锚点）。
+   */
+  locatorData?: Record<string, unknown>;
 }
+
+/** 字段来源：确定性规则 / AI 候选 / OCR 候选（AI 与 OCR 只能产生候选） */
+export type FieldOrigin = 'rule' | 'ai' | 'ocr';
 
 /** 提取产出的单个候选字段 */
 export interface CandidateField {
@@ -64,6 +72,15 @@ export interface CandidateField {
   anchor?: EvidenceAnchorInput;
   /** 提取置信度 0-1，仅展示用，不替代人工审核 */
   confidence?: number;
+  /** 来源：rule（默认，确定性规则）/ ai / ocr */
+  origin?: FieldOrigin;
+  /**
+   * AI/OCR 产出且置信度不足时必须人工确认；
+   * 人工审核通过时由审核服务写入 humanConfirmedAt 后才允许发布。
+   */
+  needsHumanConfirm?: boolean;
+  /** 人工确认时间（审核通过动作时写入；AI/OCR 字段没有它不能发布） */
+  humanConfirmedAt?: string;
 }
 
 /** 一次提取的候选结果（解析器/AI 产出，未经审核） */
@@ -119,6 +136,7 @@ export const HIGH_IMPACT_FIELDS: ReadonlySet<string> = new Set([
   'major',
   'teacher_cert',
   'age',
+  'hukou',
 ]);
 
 export function isHighImpactField(field: string): boolean {
@@ -227,12 +245,46 @@ export function canPublish(status: ExtractionRunStatus): boolean {
   return status === 'approved';
 }
 
-export function assertCanPublish(status: ExtractionRunStatus): void {
+/** AI/OCR 来源字段：没有人工确认时间就不得发布（AI 不能自动发布） */
+export function findUnconfirmedAutoFields(
+  candidate: ExtractionCandidate,
+): string[] {
+  return candidate.fields
+    .filter(
+      (f) =>
+        (f.origin === 'ai' || f.origin === 'ocr') &&
+        !f.humanConfirmedAt,
+    )
+    .map((f) => f.field);
+}
+
+export function assertCanPublish(
+  status: ExtractionRunStatus,
+  candidate?: ExtractionCandidate,
+): void {
   if (!canPublish(status)) {
     throw new Error(
       `只有审核通过的任务才能发布，当前状态：${status}。未审核候选不得发布。`,
     );
   }
+  if (candidate) {
+    const unconfirmed = findUnconfirmedAutoFields(candidate);
+    if (unconfirmed.length > 0) {
+      throw new Error(
+        `AI/OCR 来源字段未经人工确认，不能发布：${unconfirmed.join('、')}`,
+      );
+    }
+  }
+}
+
+/** 审核通过时为 AI/OCR 来源字段写入人工确认时间（人工确认留痕） */
+export function markAutoFieldsConfirmed(
+  fields: CandidateField[],
+  confirmedAt: string,
+): CandidateField[] {
+  return fields.map((f) =>
+    f.origin === 'ai' || f.origin === 'ocr' ? { ...f, humanConfirmedAt: confirmedAt } : f,
+  );
 }
 
 // ==================== 版本只追加 ====================

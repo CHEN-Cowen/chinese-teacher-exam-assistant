@@ -320,10 +320,62 @@ model SourceSnapshot {
   createdAt   DateTime @default(now()) @map("created_at")
 
   extractionRuns ExtractionRun[]
+  documentParseRuns DocumentParseRun[]
 
   @@unique([sourceId, contentHash])
   @@index([contentHash])
   @@map("source_snapshots")
+}
+
+/**
+ * 文档格式解析运行（v7.2 附件解析）。
+ *
+ * 职责边界（技术方案 §8.4）：
+ * - DocumentParseRun：字节 → 标准文档（带页码/单元格/选择器证据位置）；
+ * - ExtractionRun：标准文档 → 公告与岗位候选（业务字段抽取）。
+ * 两者独立版本、独立重跑，失败互不覆盖。
+ *
+ * status：pending / parsed / pending_manual（OCR/DOCX 未启用等，待人工处理）/
+ *   unsupported_format / failed。
+ * 幂等键 = snapshotId + parserVersion：同快照同解析器版本只有一条记录；
+ * 解析器版本升级产生新记录，旧记录保留可审计。
+ */
+model DocumentParseRun {
+  id             String   @id @default(uuid())
+  snapshotId     String   @map("snapshot_id")
+  snapshot       SourceSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+  /** 所属逻辑文档（可空：旧快照可能未关联文档） */
+  documentId     String?  @map("document_id")
+  /** html / pdf / spreadsheet / docx / ocr / unknown */
+  format         String
+  parserVersion  String   @map("parser_version")
+  idempotencyKey String   @unique @map("idempotency_key")
+  status         String   @default("pending")
+  /** 标准文档 blocks（含证据定位、原始值与展示值） */
+  blocks         Json?
+  /** 表格表头候选映射（Excel 类） */
+  tableHeaders   Json?    @map("table_headers")
+  blockCount     Int      @default(0) @map("block_count")
+  warningCount   Int      @default(0) @map("warning_count")
+  warnings       Json?
+  errorSummary   String?  @map("error_summary")
+  /** 是否判定为扫描件/无有效文本层 */
+  scanned        Boolean  @default(false)
+  /** OCR 是否被判定需要 */
+  ocrRequired    Boolean  @default(false) @map("ocr_required")
+  /** not_triggered / pending_manual / disabled / completed */
+  ocrStatus      String?  @map("ocr_status")
+  /** 原始来源 URL（快照 officialUrl 冗余，便于审计直读） */
+  sourceUrl      String?  @map("source_url")
+  contentHash    String   @map("content_hash")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+  finishedAt     DateTime? @map("finished_at")
+
+  @@unique([snapshotId, parserVersion])
+  @@index([status])
+  @@index([snapshotId])
+  @@map("document_parse_runs")
 }
 
 /**

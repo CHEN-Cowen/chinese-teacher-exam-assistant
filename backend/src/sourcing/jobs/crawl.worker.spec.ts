@@ -19,21 +19,27 @@ import { CrawlProcessor } from './crawl.worker.js';
 import { CrawlScheduler } from '../crawl-scheduler.js';
 import type { CrawlRunStore, SourceRecord } from '../crawl-run-store.js';
 import type {
+  AnnouncementExtractPayload,
   DocumentFetchPayload,
+  DocumentParsePayload,
   SourceDiscoverPayload,
 } from './task-queue.js';
 
-/** 取出构造 CrawlProcessor 所需的三类依赖（内存替身） */
+/** 取出构造 CrawlProcessor 所需的依赖（内存替身） */
 function makeProcessor() {
   const discover = { handle: vi.fn(async () => ({ status: 'succeeded' })) };
   const fetch = { handle: vi.fn(async () => ({ status: 'downloaded' })) };
+  const parse = { handle: vi.fn(async () => ({ status: 'parsed' })) };
+  const extract = { handle: vi.fn(async () => ({ status: 'pending_review' })) };
   const health = { markWorkerAlive: vi.fn(async () => {}) };
   const processor = new CrawlProcessor(
     discover as never,
     fetch as never,
+    parse as never,
+    extract as never,
     health as never,
   );
-  return { processor, discover, fetch, health };
+  return { processor, discover, fetch, parse, extract, health };
 }
 
 const discoverJob = (data: SourceDiscoverPayload) =>
@@ -80,18 +86,45 @@ describe('CrawlProcessor.process（任务分派）', () => {
     expect(result).toEqual({ status: 'downloaded' });
   });
 
-  it.each(['document.parse', 'announcement.extract', 'catalog.project'])(
-    '后续工作包任务 %s → 明确记为 not_implemented（不误报成功）',
-    async (name) => {
-      const { processor, discover, fetch } = makeProcessor();
+  it('document.parse → 交给格式解析处理器，并透传其返回值', async () => {
+    const { processor, parse } = makeProcessor();
+    const data: DocumentParsePayload = {
+      snapshotId: 'snap-1',
+      documentParserVersion: 'wp4-v1',
+    };
 
-      const result = await processor.process({ name, data: {} } as unknown as Job);
+    const result = await processor.process({ name: 'document.parse', data } as unknown as Job);
 
-      expect(result).toEqual({ status: 'not_implemented', name });
-      expect(discover.handle).not.toHaveBeenCalled();
-      expect(fetch.handle).not.toHaveBeenCalled();
-    },
-  );
+    expect(parse.handle).toHaveBeenCalledWith(data);
+    expect(result).toEqual({ status: 'parsed' });
+  });
+
+  it('announcement.extract → 交给业务抽取处理器，并透传其返回值', async () => {
+    const { processor, extract } = makeProcessor();
+    const data: AnnouncementExtractPayload = {
+      snapshotId: 'snap-1',
+      parserVersion: 'rule-field-extractor@1.0.0',
+    };
+
+    const result = await processor.process({
+      name: 'announcement.extract',
+      data,
+    } as unknown as Job);
+
+    expect(extract.handle).toHaveBeenCalledWith(data);
+    expect(result).toEqual({ status: 'pending_review' });
+  });
+
+  it('catalog.project → 明确记为 not_implemented（不误报成功）', async () => {
+    const { processor } = makeProcessor();
+
+    const result = await processor.process({
+      name: 'catalog.project',
+      data: {},
+    } as unknown as Job);
+
+    expect(result).toEqual({ status: 'not_implemented', name: 'catalog.project' });
+  });
 
   it('未知任务 → 抛错（部署不一致必须显式失败，不静默丢弃）', async () => {
     const { processor } = makeProcessor();

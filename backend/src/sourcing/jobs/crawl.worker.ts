@@ -5,8 +5,8 @@
  * 抓取与解析（PRD §7.6.2 / §7.11）。
  *
  * - source.discover / document.fetch 在本版实现；
- * - document.parse / announcement.extract / catalog.project 属后续工作包，
- *   本版明确记为 not_implemented（不静默吞掉、不误报成功）；
+ * - document.parse / announcement.extract 已接入 v7.2 附件解析与证据链；
+ * - catalog.project 属后续工作包，明确记为 not_implemented（不静默吞掉、不误报成功）；
  * - Worker 崩溃后 BullMQ 会按 attempts/backoff 重投，任务本身幂等可重放；
  * - 心跳：周期性续期 Redis 心跳键，供 API 健康检查判断 Worker 是否在线。
  */
@@ -17,8 +17,12 @@ import { CRAWL_QUEUE_NAME } from '../sourcing.tokens.js';
 import { CrawlHealthService } from '../crawl-health.service.js';
 import { DocumentFetchService } from './document-fetch.service.js';
 import { SourceDiscoverService } from './source-discover.service.js';
+import { DocumentParseService } from '../../document-processing/jobs/document-parse.service.js';
+import { AnnouncementExtractService } from '../../announcements/jobs/announcement-extract.service.js';
 import type {
+  AnnouncementExtractPayload,
   DocumentFetchPayload,
+  DocumentParsePayload,
   SourceDiscoverPayload,
 } from './task-queue.js';
 
@@ -44,6 +48,8 @@ export class CrawlProcessor
   constructor(
     private readonly discoverService: SourceDiscoverService,
     private readonly fetchService: DocumentFetchService,
+    private readonly parseService: DocumentParseService,
+    private readonly extractService: AnnouncementExtractService,
     private readonly health: CrawlHealthService,
   ) {
     super();
@@ -70,7 +76,9 @@ export class CrawlProcessor
       case 'document.fetch':
         return this.fetchService.handle(job.data as DocumentFetchPayload);
       case 'document.parse':
+        return this.parseService.handle(job.data as DocumentParsePayload);
       case 'announcement.extract':
+        return this.extractService.handle(job.data as AnnouncementExtractPayload);
       case 'catalog.project':
         this.logger.warn(`任务 ${job.name} 属后续工作包，本版跳过`);
         return { status: 'not_implemented', name: job.name };

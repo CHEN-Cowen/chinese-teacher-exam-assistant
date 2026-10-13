@@ -9,6 +9,7 @@ import {
   extractionIdempotencyKey,
   findDuplicateSnapshot,
   isApprovalAction,
+  markAutoFieldsConfirmed,
   nextStatusAfterReview,
   publishVersion,
   retryFailedRun,
@@ -265,6 +266,14 @@ export class AnnouncementsService {
       assertCanApprove(run.status as never, after);
     }
 
+    // 审核通过 = 人工确认：为 AI/OCR 来源字段写入确认时间（发布门禁依据）
+    if (isApprovalAction(input.action)) {
+      after = {
+        ...after,
+        fields: markAutoFieldsConfirmed(after.fields, new Date().toISOString()),
+      };
+    }
+
     const now = new Date().toISOString();
     const record = buildReviewRecord({
       runId: input.runId,
@@ -314,8 +323,10 @@ export class AnnouncementsService {
     });
     if (!run) throw new NotFoundException('提取任务不存在');
 
-    // 只有 approved 状态可发布
-    assertCanPublish(run.status as never);
+    // 只有 approved 状态可发布；AI/OCR 字段必须已人工确认
+    assertCanPublish(run.status as never, run.candidate
+      ? (run.candidate as unknown as ExtractionCandidate)
+      : undefined);
     if (run.publishedVersion) {
       throw new ConflictException('该任务已发布，不能重复发布');
     }

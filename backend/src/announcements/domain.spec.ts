@@ -11,7 +11,9 @@ import {
   extractionIdempotencyKey,
   findDuplicateSnapshot,
   findHighImpactFieldsWithoutAnchor,
+  findUnconfirmedAutoFields,
   isApprovalAction,
+  markAutoFieldsConfirmed,
   nextStatusAfterReview,
   publishVersion,
   retryFailedRun,
@@ -331,5 +333,74 @@ describe('失败重试与幂等', () => {
     expect(() => assertTransition('pending_review', 'rejected')).not.toThrow();
     expect(() => assertTransition('pending_review', 'published')).toThrow();
     expect(() => assertTransition('pending_review', 'extracting')).toThrow();
+  });
+});
+
+// ==================== 13. AI/OCR 来源字段发布门禁（AI 不能自动发布） ====================
+
+describe('AI/OCR 发布门禁', () => {
+  const aiField: CandidateField = {
+    field: 'education',
+    value: '本科及以上',
+    anchor: anchorFor('education'),
+    origin: 'ai',
+    needsHumanConfirm: true,
+  };
+
+  it('AI 字段未经人工确认时，findUnconfirmedAutoFields 能识别', () => {
+    const result = findUnconfirmedAutoFields(candidate([aiField]));
+    expect(result).toEqual(['education']);
+  });
+
+  it('AI 字段人工确认后不再出现在未确认列表', () => {
+    const confirmed = markAutoFieldsConfirmed([aiField], '2026-10-13T08:00:00Z');
+    expect(findUnconfirmedAutoFields(candidate(confirmed))).toEqual([]);
+  });
+
+  it('markAutoFieldsConfirmed 只为 AI/OCR 字段写入确认时间，rule 字段不受影响', () => {
+    const ruleField: CandidateField = {
+      field: 'title',
+      value: '杭州市教育局招聘公告',
+    };
+    const confirmed = markAutoFieldsConfirmed([ruleField, aiField], '2026-10-13T08:00:00Z');
+    expect(confirmed[0].humanConfirmedAt).toBeUndefined();
+    expect(confirmed[1].humanConfirmedAt).toBe('2026-10-13T08:00:00Z');
+  });
+
+  it('assertCanPublish：AI 字段无人工确认时间时抛错，不能发布', () => {
+    expect(() => assertCanPublish('approved', candidate([aiField]))).toThrow(
+      /AI\/OCR 来源字段未经人工确认，不能发布：education/,
+    );
+  });
+
+  it('assertCanPublish：AI 字段确认后可发布', () => {
+    const confirmed = markAutoFieldsConfirmed([aiField], '2026-10-13T08:00:00Z');
+    expect(() => assertCanPublish('approved', candidate(confirmed))).not.toThrow();
+  });
+
+  it('assertCanPublish：rule 字段不受 AI 门禁影响，直接可发布', () => {
+    const ruleOnly = candidate(validCandidate().fields);
+    expect(() => assertCanPublish('approved', ruleOnly)).not.toThrow();
+  });
+
+  it('assertCanPublish：状态不是 approved 时先拒绝（即便候选全确认）', () => {
+    const confirmed = markAutoFieldsConfirmed([aiField], '2026-10-13T08:00:00Z');
+    expect(() => assertCanPublish('pending_review', candidate(confirmed))).toThrow(
+      /只有审核通过的任务才能发布/,
+    );
+  });
+
+  it('OCR 字段同样适用该门禁（低置信度人工确认后才可发布）', () => {
+    const ocrField: CandidateField = {
+      field: 'major',
+      value: '汉语言文学',
+      anchor: anchorFor('major'),
+      origin: 'ocr',
+      confidence: 0.6,
+      needsHumanConfirm: true,
+    };
+    expect(() => assertCanPublish('approved', candidate([ocrField]))).toThrow(
+      /AI\/OCR 来源字段未经人工确认，不能发布：major/,
+    );
   });
 });

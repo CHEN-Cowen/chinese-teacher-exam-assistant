@@ -59,7 +59,9 @@ export interface FetchResult {
     contentEncoding?: string;
   };
   body: string;
-  /** SHA-256 内容指纹（同一内容哈希相同） */
+  /** 原始响应字节：二进制附件（PDF/Excel）必须用它存储，body 仅用于文本处理 */
+  bodyBytes: Buffer;
+  /** SHA-256 内容指纹（对原始字节计算，同一内容哈希相同） */
   contentHash: string;
   mimeType: string;
   durationMs: number;
@@ -83,6 +85,8 @@ export interface SafeFetcherOptions {
   userAgent?: string;
   /** 'html'（默认）时校验 Content-Type 与 magic bytes；'any' 跳过内容类型校验 */
   expect?: 'html' | 'any';
+  /** 请求 Accept 头（默认只接受 HTML；附件抓取应放宽，如 *斜杠星* 通配） */
+  accept?: string;
   resolveDns?: (host: string) => Promise<string[]>;
   fetchImpl?: typeof fetch;
   retry?: { attempts: number; baseDelayMs: number };
@@ -130,8 +134,8 @@ function isIpLiteral(host: string): boolean {
   return /^(\d{1,3})(\.\d{1,3}){3}$/.test(host);
 }
 
-function sha256(text: string): string {
-  return createHash('sha256').update(text, 'utf8').digest('hex');
+function sha256(data: string | Buffer): string {
+  return createHash('sha256').update(data).digest('hex');
 }
 
 export class SafeFetcher {
@@ -142,6 +146,7 @@ export class SafeFetcher {
   private readonly maxBytes: number;
   private readonly userAgent: string;
   private readonly expect: 'html' | 'any';
+  private readonly accept: string;
   private readonly resolveDns: (host: string) => Promise<string[]>;
   private readonly fetchImpl: typeof fetch;
   private readonly retry: { attempts: number; baseDelayMs: number };
@@ -157,6 +162,7 @@ export class SafeFetcher {
     this.userAgent =
       options.userAgent ?? 'JiaozhaoYoujuBot/1.0 (+official-source-fetch)';
     this.expect = options.expect ?? 'html';
+    this.accept = options.accept ?? 'text/html,application/xhtml+xml';
     this.fetchImpl = options.fetchImpl ?? globalThis.fetch.bind(globalThis);
     this.resolveDns =
       options.resolveDns ??
@@ -260,6 +266,7 @@ export class SafeFetcher {
           finalUrl: currentUrl,
           headers: this.pickHeaders(response),
           body: '',
+          bodyBytes: Buffer.alloc(0),
           contentHash: sha256(''),
           mimeType: '',
           durationMs: Date.now() - startedAt,
@@ -280,7 +287,7 @@ export class SafeFetcher {
         );
       }
 
-      const { body, bytes } = await this.readBody(response, deadline);
+      const { buffer, body, bytes } = await this.readBody(response, deadline);
       const headers = this.pickHeaders(response);
       const mimeType = (headers.contentType ?? '')
         .split(';')[0]
@@ -293,7 +300,8 @@ export class SafeFetcher {
         finalUrl: currentUrl,
         headers,
         body,
-        contentHash: sha256(body),
+        bodyBytes: buffer,
+        contentHash: sha256(buffer),
         mimeType,
         durationMs: Date.now() - startedAt,
         redirects,
@@ -386,7 +394,7 @@ export class SafeFetcher {
         signal: controller.signal,
         headers: {
           'user-agent': this.userAgent,
-          accept: 'text/html,application/xhtml+xml',
+          accept: this.accept,
           ...(conditional.ifNoneMatch
             ? { 'if-none-match': conditional.ifNoneMatch }
             : {}),
@@ -416,7 +424,7 @@ export class SafeFetcher {
   private async readBody(
     response: Response,
     deadline: number,
-  ): Promise<{ body: string; bytes: number }> {
+  ): Promise<{ buffer: Buffer; body: string; bytes: number }> {
     const stream = response.body as ReadableStream<Uint8Array> | null | undefined;
     const chunks: Uint8Array[] = [];
     let total = 0;
@@ -456,10 +464,8 @@ export class SafeFetcher {
       throw new SafeFetchError('NETWORK_ERROR', '响应没有可读的响应体');
     }
 
-    const body = Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))).toString(
-      'utf8',
-    );
-    return { body, bytes: total };
+    const buffer = Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)));
+    return { buffer, body: buffer.toString('utf8'), bytes: total };
   }
 
   /** Content-Type 与 magic bytes 校验：明显非 HTML 立即失败 */
