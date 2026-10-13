@@ -8,7 +8,8 @@
 # 自动永久关闭）。
 #
 # 快速开始（不建 .env 也能跑）：
-#   mkdir -p data/snapshots && chown 1000:1000 data/snapshots   # Linux 主机必需；Docker Desktop 可跳过
+#   mkdir -p data/snapshots data/redis
+#   chown 1000:1000 data/snapshots && chown 999:999 data/redis   # Linux 主机必需；Docker Desktop 可跳过
 #   docker compose -f docker-compose.standalone.yml pull
 #   docker compose -f docker-compose.standalone.yml up -d
 #   docker compose -f docker-compose.standalone.yml logs -f migrate backend
@@ -23,6 +24,10 @@
 #               Package 为私有或镜像站不稳时改回 ghcr.io 并 docker login 官方 GHCR
 #   DB_IMAGE    postgres 镜像，默认 Docker Hub 官方 postgres:17-alpine；
 #               境内拉不动时可设 docker.nju.edu.cn/postgres:17-alpine
+#   REDIS_IMAGE redis 镜像，默认 Docker Hub 官方 redis:7-alpine；
+#               境内拉不动时可设 docker.nju.edu.cn/redis:7-alpine
+#   CRAWL_WORKER_CONCURRENCY  抓取 Worker 并发（默认 2）
+#   CRAWL_WORKER_PAUSED       置 true 可单独暂停抓取消费而不下线进程（默认 false）
 #   ADMIN_BOOTSTRAP_TOKEN  想自己掌控引导口令时再设；不设则用文件内默认值
 
 name: jiaozhao-standalone
@@ -50,6 +55,20 @@ services:
       retries: 20
     restart: unless-stopped
 
+  # 抓取任务队列（BullMQ）：仅 compose 内网可达。AOF 持久化到 ./data/redis，
+  # 单机重启后任务仍在；若不想持久化可删掉 volumes 行。
+  redis:
+    image: ${REDIS_IMAGE:-redis:7-alpine}
+    command: ["redis-server", "--appendonly", "yes", "--dir", "/data"]
+    volumes:
+      - ./data/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
   # 一次性迁移服务：成功后退出，backend 等它完成才启动
   migrate:
     image: ${REGISTRY:-ghcr.nju.edu.cn}/${GHCR_OWNER:-chen1998-create}/chinese-teacher-exam-assistant-api:${IMAGE_TAG:-latest}
@@ -66,6 +85,10 @@ services:
     environment:
       <<: *database-url
       PORT: "3000"
+      # 抓取队列（生产者）：API 只投递任务，真正的抓取/解析在 worker 服务执行
+      REDIS_URL: redis://redis:6379
+      # 定时投递器开关：置 false 可只保留手动运维触发
+      CRAWL_SCHEDULER_ENABLED: ${CRAWL_SCHEDULER_ENABLED:-true}
       # 位于 Next.js 同源反代（以及你的 nginx）之后
       TRUST_PROXY: "true"
       AUTH_MODE: invited
@@ -86,6 +109,8 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+      redis:
+        condition: service_healthy
     healthcheck:
       # 全局 InternalTokenGuard 会拦截一切未带令牌的请求（含 /health），健康检查必须带头；
       # $$ 转义后由容器内 shell 展开环境变量
@@ -94,6 +119,26 @@ services:
       timeout: 5s
       retries: 12
       start_period: 20s
+    restart: unless-stopped
+
+  # 独立抓取 Worker：与 backend 同一镜像，改用 dist/worker.js 入口。
+  # 无对外端口，只消费 Redis 队列；故障或暂停都不会影响 backend/前端（不互相 depends_on）。
+  # 可独立暂停（CRAWL_WORKER_PAUSED=true 或 docker compose stop worker）与扩缩（--scale worker=N）。
+  worker:
+    image: ${REGISTRY:-ghcr.nju.edu.cn}/${GHCR_OWNER:-chen1998-create}/chinese-teacher-exam-assistant-api:${IMAGE_TAG:-latest}
+    command: ["node", "dist/worker.js"]
+    environment:
+      <<: *database-url
+      REDIS_URL: redis://redis:6379
+      CRAWL_WORKER_CONCURRENCY: ${CRAWL_WORKER_CONCURRENCY:-2}
+      CRAWL_WORKER_PAUSED: ${CRAWL_WORKER_PAUSED:-false}
+    volumes:
+      - ./data/snapshots:/app/.data
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
     restart: unless-stopped
 
   frontend:

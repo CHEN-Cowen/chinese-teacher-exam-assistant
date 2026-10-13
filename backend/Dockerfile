@@ -26,4 +26,7 @@ COPY prisma ./prisma
 RUN mkdir -p /app/.data && chown node:node /app/.data
 EXPOSE 3000
 USER node
+# 同一镜像承载两个 entrypoint：
+# - API 进程（默认）：node dist/main.js，只投递抓取任务
+# - 抓取 Worker：以 command 覆盖为 node dist/worker.js，单独消费队列（见 deploy compose）
 CMD ["node", "dist/main.js"]

@@ -194,23 +194,110 @@ model TrialEvent {
 
 // ==================== 公告数据流水线（v6.1 数据管道文档） ====================
 
-/** 官方来源登记 */
+/**
+ * 官方来源登记（v7.2 工作包 4 扩展抓取策略与健康字段）。
+ *
+ * healthStatus：healthy / degraded（连续失败）/ structure_changed（DOM 失配）/
+ *   blocked（验证码/登录/封禁，转人工）/ paused（人工暂停）。
+ * nextCheckAt 与 lastCheckedAt 一起驱动定时投递；两者都不等于“最近一次成功发现公告”。
+ */
 model Source {
-  id             String   @id @default(uuid())
-  publisher      String
-  regionCode     String?
-  officialUrl    String
-  sourceType     String // government / institution / other
-  contactInfo    String?
-  lastSuccessAt  DateTime?
-  lastFailReason String?
-  enabled        Boolean  @default(true)
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
+  id                 String    @id @default(uuid())
+  publisher          String
+  regionCode         String?
+  officialUrl        String
+  sourceType         String // government / institution / other
+  contactInfo        String?
+  lastSuccessAt      DateTime?
+  lastFailReason     String?
+  enabled            Boolean   @default(true)
+  /** 使用的官网适配器标识（与 OfficialSiteAdapter.key 一致） */
+  adapterKey         String?   @map("adapter_key")
+  /** 栏目入口：一个来源可能有多个列表页 URL */
+  listUrls           Json?     @map("list_urls")
+  /** 允许抓取与重定向的域名 allowlist */
+  allowedHosts       Json?     @map("allowed_hosts")
+  /** 调度周期（分钟）与下次检查时间 */
+  pollEveryMinutes   Int       @default(60) @map("poll_every_minutes")
+  nextCheckAt        DateTime? @map("next_check_at")
+  /** 页码 / 最后公告日期等远端游标 */
+  cursor             Json?
+  /** 栏目页条件请求缓存 */
+  etag               String?
+  lastModified       String?   @map("last_modified")
+  healthStatus       String    @default("healthy") @map("health_status")
+  consecutiveFailures Int      @default(0) @map("consecutive_failures")
+  lastCheckedAt      DateTime? @map("last_checked_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
 
-  snapshots SourceSnapshot[]
+  snapshots       SourceSnapshot[]
+  crawlRuns       CrawlRun[]
+  sourceDocuments SourceDocument[]
 
   @@map("sources")
+}
+
+/**
+ * 抓取运行审计（v7.2 工作包 4）。
+ *
+ * 业务事实审计，不能用 BullMQ 的 Redis 任务记录替代：
+ * 每次 checkSource 生成一条，记录触发方式、起止、状态、数量与错误摘要。
+ * status：queued / running / succeeded / no_new / structure_changed / blocked /
+ *   failed / skipped_paused。
+ */
+model CrawlRun {
+  id               String    @id @default(uuid())
+  sourceId         String    @map("source_id")
+  source           Source    @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  /** schedule / admin / retry */
+  trigger          String
+  status           String    @default("queued")
+  startedAt        DateTime  @default(now()) @map("started_at")
+  finishedAt       DateTime? @map("finished_at")
+  /** 发现 / 下载 / 未变化 / 失败数量 */
+  discoveredCount  Int       @default(0) @map("discovered_count")
+  downloadedCount  Int       @default(0) @map("downloaded_count")
+  unchangedCount   Int       @default(0) @map("unchanged_count")
+  failedCount      Int       @default(0) @map("failed_count")
+  errorSummary     String?   @map("error_summary")
+  /** 本次运行使用的适配器版本标识 */
+  adapterVersion   String?   @map("adapter_version")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  @@index([sourceId, startedAt])
+  @@index([status])
+  @@map("crawl_runs")
+}
+
+/**
+ * 逻辑官方文档（v7.2 工作包 4）。
+ *
+ * 一个 canonicalUrl 对应一条逻辑文档；内容更新只生成新的 SourceSnapshot，
+ * 不制造新的文档身份。
+ * kind：announcement / attachment / supplement / delay / cancel。
+ * relationType：supplement / replacement / delay / cancelCandidate。
+ */
+model SourceDocument {
+  id               String   @id @default(uuid())
+  sourceId         String   @map("source_id")
+  source           Source   @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  canonicalUrl     String   @map("canonical_url")
+  kind             String   @default("announcement")
+  parentDocumentId String?  @map("parent_document_id")
+  relationType     String?  @map("relation_type")
+  /** 最近一次命中的内容哈希（用于同内容不重复解析） */
+  contentHash      String?  @map("content_hash")
+  latestSnapshotId String?  @map("latest_snapshot_id")
+  firstSeenAt      DateTime @default(now()) @map("first_seen_at")
+  lastSeenAt       DateTime @default(now()) @map("last_seen_at")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@unique([sourceId, canonicalUrl])
+  @@index([sourceId, kind])
+  @@map("source_documents")
 }
 
 /**

@@ -1,6 +1,6 @@
 # 教招有据：自包含单机部署（standalone）
 
-本文档对应 [`docker-compose.standalone.yml`](./docker-compose.standalone.yml)：一个文件跑起 **PostgreSQL + 数据库迁移 + NestJS 后端 + Next.js 前端**，不依赖任何既有容器或外部网络。镜像全部从 GHCR 拉取，服务器上不需要源码、不需要构建。
+本文档对应 [`docker-compose.standalone.yml`](./docker-compose.standalone.yml)：一个文件跑起 **PostgreSQL + 数据库迁移 + NestJS 后端 + 抓取 Worker + Redis + Next.js 前端**，不依赖任何既有容器或外部网络。镜像全部从 GHCR 拉取，服务器上不需要源码、不需要构建。
 
 - 适用：干净的服务器 / 本地 Docker Desktop / 快速搭建受邀模式（invited）验收环境
 - 不适用：现有阿里云服务器复用 `kaobian-postgres` 的部署（那套用 `docker-compose.ghcr.yml`，见 [README.md](./README.md)）
@@ -25,8 +25,8 @@
 浏览器 → http://主机:3000 (frontend, Next.js)
            ↓ /api/* 服务端反代，自动注入 x-internal-token
          backend:3000 (NestJS，容器内网，不暴露)
-           ↓
-         db:5432 (PostgreSQL，容器内网，不暴露)
+           ↓ 投递抓取任务                    worker (同一镜像 node dist/worker.js)
+         db:5432 (PostgreSQL，容器内网) ←──→ redis:6379 (BullMQ 队列，容器内网，均不暴露)
 ```
 
 ---
@@ -70,6 +70,12 @@ IMAGE_TAG=sha-替换为成功构建的完整提交SHA
 # REGISTRY=ghcr.io
 # postgres 默认用 Docker Hub 官方镜像，境内拉不动时：
 # DB_IMAGE=docker.nju.edu.cn/postgres:17-alpine
+# redis 默认用 Docker Hub 官方镜像，境内拉不动时：
+# REDIS_IMAGE=docker.nju.edu.cn/redis:7-alpine
+
+# 抓取 Worker 并发（默认 2）；置 true 可单独暂停抓取消费而不下线进程
+# CRAWL_WORKER_CONCURRENCY=2
+# CRAWL_WORKER_PAUSED=false
 
 # 唯一需要保密的值：首个管理员的引导口令（默认 jiaozhao-bootstrap-change-me）。
 # 该接口经公网可达，直到首个管理员创建成功后自动永久关闭——启动后立即引导即可；
@@ -87,16 +93,16 @@ IMAGE_TAG=sha-替换为成功构建的完整提交SHA
 cd /opt/jiaozhao
 # Linux 主机必需：backend 以 node（uid 1000）运行，快照目录属主必须先给对；
 # Windows/macOS 的 Docker Desktop 可跳过这一行
-mkdir -p data/snapshots && chown 1000:1000 data/snapshots
+mkdir -p data/snapshots data/redis && chown 1000:1000 data/snapshots && chown 999:999 data/redis
 docker compose -f docker-compose.standalone.yml pull
 docker compose -f docker-compose.standalone.yml up -d
 docker compose -f docker-compose.standalone.yml ps
 ```
 
-启动链是自动编排好的：`db`（健康检查通过）→ `migrate`（执行 `prisma migrate deploy`，跑完退出）→ `backend`（等迁移成功）→ `frontend`（等后端健康）。首次启动给迁移留 1—2 分钟，观察：
+启动链是自动编排好的：`db`（健康检查通过）→ `migrate`（执行 `prisma migrate deploy`，跑完退出）→ `backend`（等迁移成功）与 `worker`（等迁移成功、等 `redis` 健康）并行启动；`frontend` 等 `backend` 健康。首次启动给迁移留 1—2 分钟，观察：
 
 ```bash
-docker compose -f docker-compose.standalone.yml logs --tail=100 migrate backend frontend
+docker compose -f docker-compose.standalone.yml logs --tail=100 migrate backend worker
 ```
 
 `migrate` 容器显示 `Exited (0)` 是正常状态（一次性任务），不要当成故障。
@@ -105,7 +111,9 @@ docker compose -f docker-compose.standalone.yml logs --tail=100 migrate backend 
 
 ```bash
 curl http://localhost:3000/api/health
-# 期望：{"status":"ok","db":"up","time":"..."}（"db":"down" 说明后端连不上库，看第 7 节）
+# 期望：{"status":"ok","api":"up","db":"up","redis":"up","worker":"up",...}
+# （"db":"down" 说明后端连不上库看第 7 节；"redis"/"worker":"down" 说明抓取队列或 Worker 未就绪，
+#  不影响 API 与前端存活，按需重启 worker/redis）
 ```
 
 浏览器访问 `http://localhost:3000`（或 `http://服务器IP:3000`），能看到首页和 `/login` 即部署成功——但此时**还没有任何账号**，继续下一节。

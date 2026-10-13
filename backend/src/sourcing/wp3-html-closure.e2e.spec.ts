@@ -13,7 +13,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { HangzhouEducationAdapter } from './adapters/hangzhou-education.adapter.js';
 import { SafeFetcher } from './fetch/safe-fetcher.js';
-import type { DownloadedSnapshot } from './official-site-adapter.js';
+import type { ListPageSnapshot } from './official-site-adapter.js';
 import { PublishedCatalogRepository } from '../catalog/published-catalog.repository.js';
 import type { UserRecruitmentProfile } from '../matching/types.js';
 import { OpportunitiesService } from '../opportunities/opportunities.service.js';
@@ -62,7 +62,7 @@ const GOLDEN_DIR = resolveGoldenDir();
 const readSample = (name: string): string =>
   readFileSync(path.join(GOLDEN_DIR, name), 'utf8');
 
-function toSnapshot(url: string, body: string, mimeType: string): DownloadedSnapshot {
+function toSnapshot(url: string, body: string, mimeType: string): ListPageSnapshot {
   return { url, mimeType, content: body, fetchedAt: new Date().toISOString() };
 }
 
@@ -104,14 +104,14 @@ async function buildClosure() {
 
   const listResult = await fetcher.fetch(LIST_URL);
   expect(listResult.mimeType).toBe('text/html');
-  const items = adapter.listItems(
+  const items = adapter.discover(
     toSnapshot(listResult.finalUrl, listResult.body, listResult.mimeType),
   );
   expect(items).toHaveLength(1);
   const item = items[0];
 
-  const detailResult = await fetcher.fetch(item.detailUrl);
-  const detail = adapter.parseDetail(
+  const detailResult = await fetcher.fetch(item.url);
+  const detail = adapter.locateArticle(
     toSnapshot(detailResult.finalUrl, detailResult.body, detailResult.mimeType),
   );
 

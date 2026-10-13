@@ -11,6 +11,19 @@ x-backend: &backend
     - legacy-pg
 
 services:
+  # 抓取任务队列（BullMQ）：仅在 default 网络内可达，不对公网暴露端口。
+  redis:
+    image: ${REDIS_IMAGE:-redis:7-alpine}
+    command: ["redis-server", "--appendonly", "yes", "--dir", "/data"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
   migrate:
     <<: *backend
     command: npx prisma migrate deploy
@@ -21,6 +34,23 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    volumes:
+      - backend_snapshots:/app/.data
+    restart: unless-stopped
+
+  # 独立抓取 Worker：与 backend 同一镜像，改用 dist/worker.js 入口。
+  # 无对外端口，只消费 Redis 队列；可独立暂停（stop worker / CRAWL_WORKER_PAUSED=true）
+  # 与扩缩（--scale worker=N），其故障不影响 backend/前端。
+  worker:
+    <<: *backend
+    command: ["node", "dist/worker.js"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
     volumes:
       - backend_snapshots:/app/.data
     restart: unless-stopped
@@ -56,6 +86,7 @@ services:
 
 volumes:
   backend_snapshots:
+  redis_data:
   caddy_data:
   caddy_config:
 

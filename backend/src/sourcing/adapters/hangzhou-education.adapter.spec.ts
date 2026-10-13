@@ -10,10 +10,11 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   AdapterParseError,
-  type DownloadedSnapshot,
+  type ArticlePageSnapshot,
+  type ListPageSnapshot,
 } from '../official-site-adapter.js';
 import {
-  HANGZHOU_SOURCE_ID,
+  HANGZHOU_ADAPTER_KEY,
   HangzhouEducationAdapter,
 } from './hangzhou-education.adapter.js';
 
@@ -46,13 +47,17 @@ function readSample(name: string): string {
   return readFileSync(path.join(GOLDEN_DIR, name), 'utf8');
 }
 
-function snapshot(url: string, content: string): DownloadedSnapshot {
+function snapshot(url: string, content: string): ListPageSnapshot {
   return {
     url,
     mimeType: 'text/html',
     content,
     fetchedAt: new Date().toISOString(),
   };
+}
+
+function asArticle(snap: ListPageSnapshot): ArticlePageSnapshot {
+  return snap;
 }
 
 /** 断言回调抛出 AdapterParseError，返回该错误以便检查 code */
@@ -70,24 +75,27 @@ const adapter = new HangzhouEducationAdapter();
 
 describe('HangzhouEducationAdapter', () => {
   it('来源标识固定为 hangzhou-education', () => {
-    expect(adapter.sourceId).toBe(HANGZHOU_SOURCE_ID);
+    expect(adapter.key).toBe(HANGZHOU_ADAPTER_KEY);
+    expect(adapter.key).toBe('hangzhou-education');
   });
 
-  it('listItems：解析出 1 条，标题/日期/详情绝对 URL 正确', () => {
-    const items = adapter.listItems(snapshot(LIST_URL, readSample('list.html')));
+  it('discover：解析出 1 条，标题/日期/详情绝对 URL/形态正确', () => {
+    const items = adapter.discover(snapshot(LIST_URL, readSample('list.html')));
 
     expect(items).toHaveLength(1);
     expect(items[0].title).toBe(ANN_TITLE);
     expect(items[0].publishedAt).toBe('2026-10-09');
-    expect(items[0].detailUrl).toBe(DETAIL_URL);
-    expect(items[0].detailUrl.startsWith('https://')).toBe(true);
+    expect(items[0].url).toBe(DETAIL_URL);
+    expect(items[0].url.startsWith('https://')).toBe(true);
+    expect(items[0].kind).toBe('announcement');
   });
 
-  it('parseDetail：标题/日期/正文/附件（相对路径已解析为绝对 URL）', () => {
-    const detail = adapter.parseDetail(
-      snapshot(DETAIL_URL, readSample('detail.html')),
+  it('locateArticle：标题/日期/正文/附件（相对路径已解析为绝对 URL）', () => {
+    const detail = adapter.locateArticle(
+      asArticle(snapshot(DETAIL_URL, readSample('detail.html'))),
     );
 
+    expect(detail.canonicalUrl).toBe(DETAIL_URL);
     expect(detail.title).toBe(ANN_TITLE);
     expect(detail.publishedAt).toBe('2026-10-09');
     expect(detail.bodyText).toContain('杭州市教育局');
@@ -101,11 +109,11 @@ describe('HangzhouEducationAdapter', () => {
 
   it('DOM 失配：列表页删除 .news-list 容器 → 抛 DOM_MISMATCH', () => {
     const content = readSample('list.html').replace(
-      /<ul[^>]*class="news-list"[\s\S]*?<\/ul>/i,
+      /<ul[^>]*class="[^"]*\bnews-list\b[^"]*"[^>]*>[\s\S]*?<\/ul>/i,
       '',
     );
     const err = captureParseError(() =>
-      adapter.listItems(snapshot(LIST_URL, content)),
+      adapter.discover(snapshot(LIST_URL, content)),
     );
     expect(err).toBeInstanceOf(AdapterParseError);
     expect(err.code).toBe('DOM_MISMATCH');
@@ -113,23 +121,47 @@ describe('HangzhouEducationAdapter', () => {
 
   it('DOM 失配：列表条目缺少 .date 节点 → 抛 DOM_MISMATCH', () => {
     const content = readSample('list.html').replace(
-      /<span[^>]*class="date"[^>]*>[\s\S]*?<\/span>/i,
+      /<span[^>]*class="[^"]*\bdate\b[^"]*"[^>]*>[\s\S]*?<\/span>/i,
       '',
     );
     const err = captureParseError(() =>
-      adapter.listItems(snapshot(LIST_URL, content)),
+      adapter.discover(snapshot(LIST_URL, content)),
     );
     expect(err).toBeInstanceOf(AdapterParseError);
     expect(err.code).toBe('DOM_MISMATCH');
   });
 
-  it('DOM 失配：正文页删除 .article-content → parseDetail 抛 DOM_MISMATCH', () => {
+  it('空结果即故障：容器存在但无条目 → 抛 DOM_MISMATCH', () => {
+    const content = readSample('list.html').replace(
+      /<ul[^>]*class="[^"]*\bnews-list\b[^"]*"[^>]*>[\s\S]*?<\/ul>/i,
+      '<ul class="news-list"></ul>',
+    );
+    const err = captureParseError(() =>
+      adapter.discover(snapshot(LIST_URL, content)),
+    );
+    expect(err).toBeInstanceOf(AdapterParseError);
+    expect(err.code).toBe('DOM_MISMATCH');
+  });
+
+  it('DOM 失配：正文页删除 .article-content → locateArticle 抛 DOM_MISMATCH', () => {
     const content = readSample('detail.html').replace(
       /<div[^>]*class="[^"]*\barticle-content\b[^"]*"[^>]*>[\s\S]*?<\/div>/i,
       '',
     );
     const err = captureParseError(() =>
-      adapter.parseDetail(snapshot(DETAIL_URL, content)),
+      adapter.locateArticle(asArticle(snapshot(DETAIL_URL, content))),
+    );
+    expect(err).toBeInstanceOf(AdapterParseError);
+    expect(err.code).toBe('DOM_MISMATCH');
+  });
+
+  it('DOM 失配：正文页删除 h1.article-title → locateArticle 抛 DOM_MISMATCH', () => {
+    const content = readSample('detail.html').replace(
+      /<h1[^>]*class="[^"]*\barticle-title\b[^"]*"[^>]*>[\s\S]*?<\/h1>/i,
+      '',
+    );
+    const err = captureParseError(() =>
+      adapter.locateArticle(asArticle(snapshot(DETAIL_URL, content))),
     );
     expect(err).toBeInstanceOf(AdapterParseError);
     expect(err.code).toBe('DOM_MISMATCH');

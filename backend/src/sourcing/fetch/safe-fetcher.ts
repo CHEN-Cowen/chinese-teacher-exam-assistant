@@ -67,6 +67,12 @@ export interface FetchResult {
   bytes: number;
 }
 
+/** 条件请求头：命中 304 时不生成新快照 */
+export interface ConditionalHeaders {
+  ifNoneMatch?: string;
+  ifModifiedSince?: string;
+}
+
 export interface SafeFetcherOptions {
   /** 来源 host allowlist；host 等于或为其子域时放行 */
   allowedHosts: readonly string[];
@@ -165,7 +171,10 @@ export class SafeFetcher {
     this.log = options.log ?? (() => undefined);
   }
 
-  async fetch(input: string): Promise<FetchResult> {
+  async fetch(
+    input: string,
+    conditional: ConditionalHeaders = {},
+  ): Promise<FetchResult> {
     const startedAt = Date.now();
     const deadline = startedAt + this.totalTimeoutMs;
     const attempts = Math.max(1, this.retry.attempts);
@@ -174,7 +183,7 @@ export class SafeFetcher {
     for (let attempt = 0; attempt < attempts; attempt += 1) {
       try {
         return await this.withDeadline(
-          this.followOnce(input, deadline, startedAt),
+          this.followOnce(input, deadline, startedAt, conditional),
           deadline,
         );
       } catch (error) {
@@ -212,6 +221,7 @@ export class SafeFetcher {
     startUrl: string,
     deadline: number,
     startedAt: number,
+    conditional: ConditionalHeaders,
   ): Promise<FetchResult> {
     let currentUrl = startUrl;
     let redirects = 0;
@@ -220,7 +230,7 @@ export class SafeFetcher {
       const parsed = this.validateUrl(currentUrl);
       await this.assertHostSafe(parsed.hostname, deadline);
 
-      const response = await this.doFetch(currentUrl, deadline);
+      const response = await this.doFetch(currentUrl, deadline, conditional);
       const status = response.status;
 
       if (REDIRECT_STATUS.has(status)) {
@@ -357,7 +367,11 @@ export class SafeFetcher {
     }
   }
 
-  private async doFetch(url: string, deadline: number): Promise<Response> {
+  private async doFetch(
+    url: string,
+    deadline: number,
+    conditional: ConditionalHeaders = {},
+  ): Promise<Response> {
     const remaining = deadline - Date.now();
     if (remaining <= 0) {
       throw new SafeFetchError('TIMEOUT', '整体请求超时');
@@ -373,6 +387,12 @@ export class SafeFetcher {
         headers: {
           'user-agent': this.userAgent,
           accept: 'text/html,application/xhtml+xml',
+          ...(conditional.ifNoneMatch
+            ? { 'if-none-match': conditional.ifNoneMatch }
+            : {}),
+          ...(conditional.ifModifiedSince
+            ? { 'if-modified-since': conditional.ifModifiedSince }
+            : {}),
         },
       });
     } catch (error) {

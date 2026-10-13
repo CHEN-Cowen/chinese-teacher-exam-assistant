@@ -9,97 +9,90 @@
  *
  * 关联黄金样本：tests/fixtures/golden-sources/hangzhou/{list,detail}.html
  */
+import { load } from 'cheerio';
 import {
   AdapterParseError,
+  classifyDocumentKind,
   extractDate,
+  normalizeUrl,
   resolveUrl,
   stripTags,
-  type DownloadedSnapshot,
+  type ArticlePageSnapshot,
+  type DiscoveredDocument,
+  type ListPageSnapshot,
+  type LocatedArticle,
+  type LocatedAttachment,
   type OfficialSiteAdapter,
-  type ParsedAttachment,
-  type ParsedDetail,
-  type ParsedListItem,
 } from '../official-site-adapter.js';
 
 /** 来源标识：与抓取白名单/来源登记保持一致 */
-export const HANGZHOU_SOURCE_ID = 'hangzhou-education';
+export const HANGZHOU_ADAPTER_KEY = 'hangzhou-education';
 
-const LIST_CONTAINER = /<ul[^>]*class="[^"]*\bnews-list\b[^"]*"[^>]*>([\s\S]*?)<\/ul>/i;
-const LIST_ITEM = /<li\b[^>]*>([\s\S]*?)<\/li>/gi;
-const LIST_LINK = /<a\b[^>]*\bhref="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i;
-const LIST_DATE = /<span[^>]*class="[^"]*\bdate\b[^"]*"[^>]*>([\s\S]*?)<\/span>/i;
-
-const DETAIL_TITLE = /<h1[^>]*class="[^"]*\barticle-title\b[^"]*"[^>]*>([\s\S]*?)<\/h1>/i;
-const DETAIL_DATE = /<span[^>]*class="[^"]*\bpub-date\b[^"]*"[^>]*>([\s\S]*?)<\/span>/i;
-const DETAIL_BODY = /<div[^>]*class="[^"]*\barticle-content\b[^"]*"[^>]*>([\s\S]*?)<\/div>/i;
-const DETAIL_ATTACH_BLOCK =
-  /<div[^>]*class="[^"]*\barticle-attachments\b[^"]*"[^>]*>([\s\S]*?)<\/div>/i;
-const ATTACH_LINK = /<a\b[^>]*\bhref="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+/** 列表项缺失 href/.date、容器缺失等，统一抛出此错误（不静默降级） */
+function mismatch(message: string): AdapterParseError {
+  return new AdapterParseError('DOM_MISMATCH', message);
+}
 
 export class HangzhouEducationAdapter implements OfficialSiteAdapter {
-  readonly sourceId = HANGZHOU_SOURCE_ID;
+  readonly key = HANGZHOU_ADAPTER_KEY;
 
-  listItems(snapshot: DownloadedSnapshot): ParsedListItem[] {
-    const containerMatch = snapshot.content.match(LIST_CONTAINER);
-    if (!containerMatch) {
-      throw new AdapterParseError(
-        'DOM_MISMATCH',
-        '杭州列表页未找到 .news-list 容器，页面结构可能已改版',
-      );
+  discover(input: ListPageSnapshot): DiscoveredDocument[] {
+    const $ = load(input.content);
+    const container = $('ul.news-list');
+    if (container.length === 0) {
+      throw mismatch('杭州列表页未找到 ul.news-list 容器，页面结构可能已改版');
     }
-    const items: ParsedListItem[] = [];
-    for (const itemMatch of containerMatch[1].matchAll(LIST_ITEM)) {
-      const block = itemMatch[1];
-      const link = block.match(LIST_LINK);
-      const date = block.match(LIST_DATE);
-      if (!link || !date) {
-        throw new AdapterParseError(
-          'DOM_MISMATCH',
-          '杭州列表条目缺少 href 或 .date 节点，页面结构可能已改版',
-        );
+    const items: DiscoveredDocument[] = [];
+    container.find('li').each((_index, element) => {
+      const link = $(element).find('a[href]').first();
+      const dateNode = $(element).find('span.date').first();
+      const href = link.attr('href');
+      if (link.length === 0 || !href) {
+        throw mismatch('杭州列表条目缺少 href 链接，页面结构可能已改版');
       }
+      if (dateNode.length === 0) {
+        throw mismatch('杭州列表条目缺少 .date 节点，页面结构可能已改版');
+      }
+      const title = stripTags(link.html() ?? '');
       items.push({
-        title: stripTags(link[2]),
-        publishedAt: extractDate(stripTags(date[1]), '列表条目 .date'),
-        detailUrl: resolveUrl(snapshot.url, link[1]),
+        title,
+        publishedAt: extractDate(stripTags(dateNode.html() ?? ''), '列表条目 .date'),
+        url: resolveUrl(input.url, href),
+        kind: classifyDocumentKind(title),
       });
-    }
+    });
     if (items.length === 0) {
-      throw new AdapterParseError(
-        'DOM_MISMATCH',
-        '杭州列表页 .news-list 内没有任何条目（静默 0 条视为故障）',
-      );
+      throw mismatch('杭州列表页 ul.news-list 内没有任何条目（静默 0 条视为故障）');
     }
     return items;
   }
 
-  parseDetail(snapshot: DownloadedSnapshot): ParsedDetail {
-    const title = snapshot.content.match(DETAIL_TITLE);
-    const date = snapshot.content.match(DETAIL_DATE);
-    const body = snapshot.content.match(DETAIL_BODY);
-    if (!title || !date || !body) {
-      throw new AdapterParseError(
-        'DOM_MISMATCH',
+  locateArticle(input: ArticlePageSnapshot): LocatedArticle {
+    const $ = load(input.content);
+    const titleNode = $('h1.article-title').first();
+    const dateNode = $('span.pub-date').first();
+    const bodyNode = $('div.article-content').first();
+    if (titleNode.length === 0 || dateNode.length === 0 || bodyNode.length === 0) {
+      throw mismatch(
         '杭州正文页缺少 .article-title/.pub-date/.article-content，页面结构可能已改版',
       );
     }
-    const attachments: ParsedAttachment[] = [];
-    const attachBlock = snapshot.content.match(DETAIL_ATTACH_BLOCK);
-    if (attachBlock) {
-      for (const link of attachBlock[1].matchAll(ATTACH_LINK)) {
-        const name = stripTags(link[2]);
-        if (!name) continue;
-        attachments.push({
-          name,
-          url: resolveUrl(snapshot.url, link[1]),
-        });
-      }
+    const attachments: LocatedAttachment[] = [];
+    const attachContainer = $('div.article-attachments');
+    if (attachContainer.length > 0) {
+      attachContainer.find('a[href]').each((_index, element) => {
+        const name = stripTags($(element).html() ?? '');
+        const href = $(element).attr('href');
+        if (name && href) {
+          attachments.push({ name, url: resolveUrl(input.url, href) });
+        }
+      });
     }
     return {
-      canonicalUrl: resolveUrl(snapshot.url, snapshot.url),
-      title: stripTags(title[1]),
-      publishedAt: extractDate(stripTags(date[1]), '正文页 .pub-date'),
-      bodyText: stripTags(body[1]),
+      canonicalUrl: normalizeUrl(resolveUrl(input.url, input.url)),
+      title: stripTags(titleNode.html() ?? ''),
+      publishedAt: extractDate(stripTags(dateNode.html() ?? ''), '正文页 .pub-date'),
+      bodyText: stripTags(bodyNode.html() ?? ''),
       attachments,
     };
   }

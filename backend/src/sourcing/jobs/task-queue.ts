@@ -1,0 +1,151 @@
+/**
+ * v7.2 工作包 4：抓取任务队列契约（Seam）。
+ *
+ * - 任务内容与幂等键在这里定义，与具体队列实现解耦；
+ * - 生产用 BullMQ + Redis 实现（bullmq-task-queue.ts）；
+ * - 测试用内存假实现注入，不需要真实 Redis。
+ *
+ * 幂等原则：重复投递允许发生，但重复写入不允许发生。
+ * 幂等键（技术方案 §4.2）：
+ * - 发现：sourceId + checkWindow
+ * - 下载：sourceId + canonicalUrl + remoteVersionHint
+ * - 解析：snapshotId + documentParserVersion
+ * - 业务抽取：snapshotId + parserVersion
+ * - 投影：publishedVersionId + projectorVersion
+ */
+import { createHash } from 'node:crypto';
+import type { DocumentKind } from '../official-site-adapter.js';
+
+/** 触发方式：只接受 schedule / admin / retry */
+export type CrawlTrigger = 'schedule' | 'admin' | 'retry';
+
+export const CRAWL_TRIGGERS: readonly CrawlTrigger[] = [
+  'schedule',
+  'admin',
+  'retry',
+];
+
+export function isCrawlTrigger(value: string): value is CrawlTrigger {
+  return (CRAWL_TRIGGERS as readonly string[]).includes(value);
+}
+
+/** 首版五类任务 */
+export type CrawlTaskName =
+  | 'source.discover'
+  | 'document.fetch'
+  | 'document.parse'
+  | 'announcement.extract'
+  | 'catalog.project';
+
+export interface SourceDiscoverPayload {
+  sourceId: string;
+  runId: string;
+  trigger: CrawlTrigger;
+  /** 本次检查窗口标识（幂等键的一部分），由调用方生成 */
+  checkWindow: string;
+}
+
+export interface DocumentFetchPayload {
+  sourceId: string;
+  runId: string;
+  canonicalUrl: string;
+  kind: DocumentKind;
+  /** 附件所属公告文档 id */
+  parentDocumentId?: string;
+}
+
+export interface DocumentParsePayload {
+  snapshotId: string;
+  documentParserVersion: string;
+}
+
+export interface AnnouncementExtractPayload {
+  snapshotId: string;
+  parserVersion: string;
+}
+
+export interface CatalogProjectPayload {
+  publishedVersionId: string;
+  projectorVersion: string;
+}
+
+export interface CrawlTaskPayloadByName {
+  'source.discover': SourceDiscoverPayload;
+  'document.fetch': DocumentFetchPayload;
+  'document.parse': DocumentParsePayload;
+  'announcement.extract': AnnouncementExtractPayload;
+  'catalog.project': CatalogProjectPayload;
+}
+
+export interface EnqueueResult {
+  jobId: string;
+  /** true 表示同幂等键任务已存在，本次未新建（重复投递被吸收） */
+  deduplicated: boolean;
+}
+
+export interface CrawlTaskQueue {
+  enqueue<T extends CrawlTaskName>(
+    name: T,
+    payload: CrawlTaskPayloadByName[T],
+    options: { jobId: string },
+  ): Promise<EnqueueResult>;
+}
+
+/** 队列不可用（Redis 暂时不可达）：调用方必须降级而不是让进程崩溃 */
+export class QueueUnavailableError extends Error {
+  constructor(message = '抓取队列暂时不可用（Redis 不可达）') {
+    super(message);
+    this.name = 'QueueUnavailableError';
+  }
+}
+
+function sha256(text: string): string {
+  return createHash('sha256').update(text, 'utf8').digest('hex');
+}
+
+export function discoverJobId(sourceId: string, checkWindow: string): string {
+  return `discover:${sourceId}:${checkWindow}`;
+}
+
+export function fetchJobId(
+  sourceId: string,
+  canonicalUrl: string,
+  remoteVersionHint: string,
+): string {
+  return `fetch:${sourceId}:${sha256(canonicalUrl).slice(0, 32)}:${
+    remoteVersionHint || 'noversion'
+  }`;
+}
+
+export function parseJobId(
+  snapshotId: string,
+  documentParserVersion: string,
+): string {
+  return `parse:${snapshotId}:${documentParserVersion}`;
+}
+
+export function extractJobId(snapshotId: string, parserVersion: string): string {
+  return `extract:${snapshotId}:${parserVersion}`;
+}
+
+export function projectJobId(
+  publishedVersionId: string,
+  projectorVersion: string,
+): string {
+  return `project:${publishedVersionId}:${projectorVersion}`;
+}
+
+/**
+ * 计算“检查窗口”标识：schedule 触发按周期对齐到同一窗口，避免同一时间段内
+ * 多个定时器/实例重复投递；admin/retry 立即执行，使用独立窗口（每次新键）。
+ */
+export function computeCheckWindow(
+  trigger: CrawlTrigger,
+  pollEveryMinutes: number,
+  now: Date,
+  nonce?: string,
+): string {
+  if (trigger !== 'schedule') return nonce ?? String(now.getTime());
+  const periodMs = Math.max(1, pollEveryMinutes) * 60_000;
+  return String(Math.floor(now.getTime() / periodMs));
+}
