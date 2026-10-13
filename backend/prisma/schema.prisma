@@ -467,6 +467,12 @@ model PublishedAnnouncementVersion {
   previousVersionId String?  @unique @map("previous_version_id")
   previousVersion  PublishedAnnouncementVersion? @relation("VersionChain", fields: [previousVersionId], references: [id])
   supersededAt     DateTime? @map("superseded_at")
+  /** 撤回时间（仅 status=withdrawn 时有值；撤回保留历史不删除） */
+  withdrawnAt      DateTime? @map("withdrawn_at")
+  /** 撤回原因（必填非空，供审计） */
+  withdrawReason   String?   @map("withdraw_reason")
+  /** 撤回操作人 id */
+  withdrawnBy      String?   @map("withdrawn_by")
 
   nextVersion PublishedAnnouncementVersion? @relation("VersionChain")
 

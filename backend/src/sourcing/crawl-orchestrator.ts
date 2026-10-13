@@ -25,6 +25,9 @@ import { CRAWL_TASK_QUEUE } from './sourcing.tokens.js';
 /** 本版适配器版本标识，随适配器实现升级 */
 export const SOURCE_ADAPTER_VERSION = 'wp4-v1';
 
+/** 进行中运行的判活窗口：超过 15 分钟的 queued/running 视为僵尸，不再阻塞新运行 */
+export const ACTIVE_RUN_WINDOW_MS = 15 * 60_000;
+
 export interface CrawlRunRef {
   runId: string;
   sourceId: string;
@@ -87,6 +90,24 @@ export class CrawlOrchestrator {
         status: blocked ? 'skipped_blocked' : 'skipped_paused',
         jobId: null,
         deduplicated: false,
+      };
+    }
+
+    // 重复点击受控：近 15 分钟内已有进行中运行 → 复用该运行，不新建、不投递队列；
+    // 超过窗口的 queued/running 视为僵尸（Worker 崩溃残留），允许发起新运行。
+    // schedule 触发同样适用（窗口幂等之外的双保险）。
+    const active = await this.store.findActiveRun(
+      sourceId,
+      new Date(now.getTime() - ACTIVE_RUN_WINDOW_MS),
+    );
+    if (active) {
+      return {
+        runId: active.id,
+        sourceId,
+        trigger,
+        status: 'already_running',
+        jobId: null,
+        deduplicated: true,
       };
     }
 

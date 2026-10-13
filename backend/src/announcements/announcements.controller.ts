@@ -72,6 +72,13 @@ export class AnnouncementsController {
     return this.service.getSnapshotContent(id);
   }
 
+  /** 审核详情第二层：快照的标准文档（解析产物）与来源变化 */
+  @Get('snapshots/:id/parsed')
+  @UseGuards(AdminGuard)
+  async getSnapshotParsed(@Param('id') id: string) {
+    return this.service.getSnapshotParsed(id);
+  }
+
   // ==================== 审核员：提交审核 ====================
 
   @Post('runs/:id/review')
@@ -122,6 +129,33 @@ export class AnnouncementsController {
   @Get(':announcementId/versions')
   async listVersions(@Param('announcementId') announcementId: string) {
     return this.service.listVersions(announcementId);
+  }
+
+  // ==================== 审核员：撤回已发布版本（v7.2） ====================
+  // 撤回保留历史（不删除行、不产生新版本），记录原因与操作人供审计。
+
+  @Post(':announcementId/versions/:versionId/withdraw')
+  @UseGuards(ReviewGuard)
+  async withdraw(
+    @Param('announcementId') announcementId: string,
+    @Param('versionId') versionId: string,
+    @Body() body: { reason: string },
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.service.withdraw(
+      announcementId,
+      versionId,
+      { reason: body.reason },
+      { id: req.user!.id },
+    );
+  }
+
+  // ==================== 管理员：投影状态（v7.2 审核详情用） ====================
+
+  @Get(':announcementId/projection')
+  @UseGuards(AdminGuard)
+  async getProjectionStatus(@Param('announcementId') announcementId: string) {
+    return this.service.getProjectionStatus(announcementId);
   }
 
   @Get(':announcementId/versions/diff')

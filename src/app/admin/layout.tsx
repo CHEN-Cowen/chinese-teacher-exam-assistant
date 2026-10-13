@@ -13,6 +13,7 @@ import { DEMO_BANNER_SPACER_CLASS } from "@/components/demo/DemoBanner";
 const ADMIN_NAV = [
   { href: "/admin", label: "后台概览", exact: true },
   { href: "/admin/pipeline", label: "公告流水线", exact: false },
+  { href: "/admin/sources", label: "来源管理", exact: false },
   { href: "/admin/exams", label: "考情管理", exact: false },
   { href: "/admin/reviews", label: "审核队列", exact: false },
   { href: "/admin/corrections", label: "机会纠错", exact: false },

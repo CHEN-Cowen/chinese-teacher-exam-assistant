@@ -25,4 +25,28 @@ describe('Prisma migration coverage', () => {
     expect(sql).toMatch(/"consultation_notes"\s+JSONB/);
     expect(sql).toMatch(/"version"\s+INTEGER\s+NOT NULL\s+DEFAULT\s+0/);
   });
+
+  it('v7.2 withdraw migration adds the three audit columns to published_announcement_versions', () => {
+    const entries = readdirSync(migrationsDirectory, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name);
+    const withdrawMigration = entries.find((name) =>
+      name.endsWith('_v72_withdraw_relation'),
+    );
+    expect(withdrawMigration).toBeDefined();
+
+    const sql = readFileSync(
+      new URL(`${withdrawMigration}/migration.sql`, migrationsDirectory),
+      'utf8',
+    );
+    expect(sql).toMatch(
+      /ALTER TABLE "published_announcement_versions" ADD COLUMN "withdrawn_at" TIMESTAMP\(3\);/,
+    );
+    expect(sql).toMatch(
+      /ALTER TABLE "published_announcement_versions" ADD COLUMN "withdraw_reason" TEXT;/,
+    );
+    expect(sql).toMatch(
+      /ALTER TABLE "published_announcement_versions" ADD COLUMN "withdrawn_by" TEXT;/,
+    );
+  });
 });

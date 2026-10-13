@@ -83,12 +83,21 @@ export interface EnqueueResult {
   deduplicated: boolean;
 }
 
+/** 队列积压计数（观测用）；队列不可用时调用方降级为 null */
+export interface QueueJobCounts {
+  waiting: number;
+  delayed: number;
+  active: number;
+}
+
 export interface CrawlTaskQueue {
   enqueue<T extends CrawlTaskName>(
     name: T,
     payload: CrawlTaskPayloadByName[T],
     options: { jobId: string },
   ): Promise<EnqueueResult>;
+  /** 可选：读取队列积压计数（BullMQ getJobCounts）；测试假实现可不提供 */
+  getJobCounts?(): Promise<QueueJobCounts>;
 }
 
 /** 队列不可用（Redis 暂时不可达）：调用方必须降级而不是让进程崩溃 */

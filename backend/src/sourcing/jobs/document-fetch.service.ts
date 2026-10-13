@@ -9,7 +9,7 @@
  * 5. 公告页调用 Adapter.locateArticle 校验结构并发现附件，附件再进入下载；
  * 6. 失败只累加计数，绝不覆盖已存在的旧数据。
  */
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import {
   AdapterParseError,
   type ArticlePageSnapshot,
@@ -17,6 +17,7 @@ import {
 import { AdapterRegistry } from '../adapter-registry.js';
 import { CrawlRunStore } from '../crawl-run-store.js';
 import { SourceDocumentStore } from '../source-document-store.js';
+import { SourcingMetrics } from '../observability.js';
 import type { ObjectStore } from '../storage/object-store.js';
 import { OBJECT_STORE } from '../storage/storage.tokens.js';
 import { SafeFetcherFactory } from '../fetch/safe-fetcher-factory.js';
@@ -60,6 +61,8 @@ export class DocumentFetchService {
     private readonly fetcherFactory: SafeFetcherFactory,
     private readonly registry: AdapterRegistry,
     @Inject(CRAWL_TASK_QUEUE) private readonly queue: CrawlTaskQueue,
+    // 可选指标出口：测试缺省不传则完全不产生日志
+    @Optional() private readonly metrics?: SourcingMetrics,
   ) {}
 
   async handle(payload: DocumentFetchPayload): Promise<FetchOutcome> {
@@ -183,6 +186,12 @@ export class DocumentFetchService {
       contentHash: result.contentHash,
     });
     await this.runStore.incrementRunCounters(payload.runId, { downloaded: 1 });
+    // 新快照创建：contentHash 只记前 12 字符前缀（脱敏边界）
+    this.metrics?.snapshotCreated({
+      sourceId: source.id,
+      documentId: document.id,
+      contentHashPrefix: result.contentHash.slice(0, 12),
+    });
 
     // 公告类页面：校验结构并发现附件
     if (ARTICLE_KINDS.has(payload.kind)) {

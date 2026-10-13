@@ -27,6 +27,9 @@ interface Run {
     officialUrl: string | null;
     contentHash: string;
     mimeType: string;
+    /** v7.2：快照抓取元信息（可能缺省，页面判空展示） */
+    httpStatus?: number | null;
+    fetchedAt?: string | null;
     source?: { publisher: string; officialUrl: string };
   };
   evidenceAnchors?: Array<{
@@ -54,7 +57,50 @@ interface PublishedVersion {
   publishedAt: string;
   previousVersionId: string | null;
   supersededAt: string | null;
+  /** v7.2 撤回留痕（未撤回版本为 null/缺省） */
+  withdrawnAt?: string | null;
+  withdrawReason?: string | null;
+  withdrawnBy?: string | null;
 }
+
+/** v7.2 快照标准文档解析结果（层 2） */
+interface SnapshotParsedBlock {
+  kind?: string;
+  text?: string;
+  locator?: unknown;
+  rawValue?: string;
+  displayValue?: string;
+}
+
+interface SnapshotParseRun {
+  id: string;
+  format: string;
+  parserVersion: string;
+  status: string;
+  blocks: unknown;
+  tableHeaders: unknown | null;
+  warnings: Array<{ type?: string; message?: string } | string> | null;
+  warningCount: number;
+  scanned: boolean;
+  ocrRequired: boolean;
+  ocrStatus: string | null;
+  finishedAt: string | null;
+}
+
+interface SnapshotParsedResponse {
+  parseRun: SnapshotParseRun | null;
+  change?: {
+    hasPreviousSnapshot: boolean;
+    previousFetchedAt: string | null;
+    currentFetchedAt: string | null;
+  };
+}
+
+/** v7.2 用户目录投影状态 */
+type ProjectionStatus =
+  | { status: "not_published" }
+  | { status: "projected"; unitCount: number; versionNumber: number }
+  | { status: "failed"; fieldPath?: string; message?: string; versionNumber: number };
 
 /** 从当前会话读取用户身份，注入请求头。
  * invited 模式：身份由 HttpOnly 会话 cookie 承载，绝不发送客户端可伪造的 x-user-*。 */
@@ -162,6 +208,35 @@ export const announcementsPipelineApi = {
   getSnapshotContent(snapshotId: string): Promise<{ content: string; mimeType: string }> {
     return request<{ content: string; mimeType: string }>(`/snapshots/${snapshotId}/content`);
   },
+
+  /** v7.2：快照标准文档解析结果 + 来源变化提示（审核页层 2） */
+  getSnapshotParsed(snapshotId: string): Promise<SnapshotParsedResponse> {
+    return request<SnapshotParsedResponse>(`/snapshots/${snapshotId}/parsed`);
+  },
+
+  /** v7.2：撤回已发布版本（必填原因，留痕可审计） */
+  withdrawVersion(
+    announcementId: string,
+    versionId: string,
+    reason: string
+  ): Promise<PublishedVersion> {
+    return request<PublishedVersion>(`/${announcementId}/versions/${versionId}/withdraw`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    });
+  },
+
+  /** v7.2：公告在用户目录的投影状态 */
+  getProjection(announcementId: string): Promise<ProjectionStatus> {
+    return request<ProjectionStatus>(`/${announcementId}/projection`);
+  },
 };
 
-export type { Run, PublishedVersion };
+export type {
+  Run,
+  PublishedVersion,
+  SnapshotParsedBlock,
+  SnapshotParseRun,
+  SnapshotParsedResponse,
+  ProjectionStatus,
+};

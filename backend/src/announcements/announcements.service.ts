@@ -13,11 +13,16 @@ import {
   nextStatusAfterReview,
   publishVersion,
   retryFailedRun,
+  withdrawVersion,
   type CandidateField,
   type ExtractionCandidate,
   type ReviewAction,
 } from './domain.js';
 import { parseAnnouncement } from './parser.js';
+import {
+  ProjectionError,
+  projectCatalogVersion,
+} from '../catalog/publication-projector.js';
 
 export interface SubmitSourceInput {
   publisher: string;
@@ -401,6 +406,107 @@ export class AnnouncementsService {
     });
   }
 
+  // ==================== 6.1 撤回（v7.2：保留历史 + 原因 + 审计） ====================
+
+  /**
+   * 撤回当前发布中的版本。
+   * 规则判定委托 domain.withdrawVersion：仅 published 可撤回、原因必填；
+   * 事务内只更新该行（status + 撤回三字段），不删除、不新增版本、不动旧版。
+   */
+  async withdraw(
+    announcementId: string,
+    versionId: string,
+    input: { reason: string },
+    operator: { id: string },
+  ) {
+    const row = await this.prisma.publishedAnnouncementVersion.findUnique({
+      where: { id: versionId },
+    });
+    if (!row || row.announcementId !== announcementId) {
+      throw new NotFoundException('指定版本不存在');
+    }
+
+    const now = new Date();
+    let withdrawn;
+    try {
+      withdrawn = withdrawVersion(
+        {
+          id: row.id,
+          announcementId: row.announcementId,
+          versionNumber: row.versionNumber,
+          status: row.status as never,
+          payload: row.payload as unknown as ExtractionCandidate,
+          publishedAt: row.publishedAt.toISOString(),
+          previousVersionId: row.previousVersionId ?? undefined,
+          supersededAt: row.supersededAt?.toISOString(),
+        },
+        {
+          reason: input.reason,
+          withdrawnAt: now.toISOString(),
+          withdrawnBy: operator.id,
+        },
+      );
+    } catch (e) {
+      throw new BadRequestException(
+        e instanceof Error ? e.message : '撤回校验失败',
+      );
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      return tx.publishedAnnouncementVersion.update({
+        where: { id: row.id },
+        data: {
+          status: withdrawn.status,
+          supersededAt: now,
+          withdrawnAt: now,
+          withdrawReason: withdrawn.withdrawReason!,
+          withdrawnBy: operator.id,
+        },
+      });
+    });
+  }
+
+  // ==================== 6.2 投影状态（v7.2：审核详情用，只读） ====================
+
+  /**
+   * 查询公告当前发布版本的目录投影状态：
+   * - 无 published 版本 → not_published；
+   * - 投影成功 → projected（含单元数与版本号）；
+   * - ProjectionError → failed（含 fieldPath 与 message，不回传 payload）。
+   */
+  async getProjectionStatus(announcementId: string) {
+    const row = await this.getPublishedVersion(announcementId);
+    if (!row) return { status: 'not_published' as const };
+
+    try {
+      const projected = projectCatalogVersion(
+        {
+          id: row.id,
+          announcementId: row.announcementId,
+          versionNumber: row.versionNumber,
+          status: row.status,
+          payload: row.payload,
+        },
+        new Date(),
+      );
+      return {
+        status: 'projected' as const,
+        unitCount: projected.version.units.length,
+        versionNumber: row.versionNumber,
+      };
+    } catch (e) {
+      if (e instanceof ProjectionError) {
+        return {
+          status: 'failed' as const,
+          fieldPath: e.fieldPath,
+          message: e.message,
+          versionNumber: row.versionNumber,
+        };
+      }
+      throw e;
+    }
+  }
+
   async getVersionDiff(announcementId: string, v1: number, v2: number) {
     const versions = await this.prisma.publishedAnnouncementVersion.findMany({
       where: {
@@ -471,6 +577,80 @@ export class AnnouncementsService {
     } catch {
       throw new NotFoundException('原始快照内容已丢失，请重新提交公告');
     }
+  }
+
+  // ==================== 管理员：快照标准文档与来源变化（v7.2 三层对照） ====================
+
+  /**
+   * 审核详情第二层「标准文档」数据：
+   * - parseRun：该快照最近一次 DocumentParseRun（无解析记录时为 null）；
+   * - change：同一逻辑文档（SourceDocument）是否存在更早快照（来源变化提示）。
+   */
+  async getSnapshotParsed(snapshotId: string) {
+    const snapshot = await this.prisma.sourceSnapshot.findUnique({
+      where: { id: snapshotId },
+    });
+    if (!snapshot) throw new NotFoundException('快照不存在');
+
+    const parseRun = await this.prisma.documentParseRun.findFirst({
+      where: { snapshotId },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    // 逻辑文档关联：优先取解析记录上的 documentId；
+    // 缺失时回查 latestSnapshotId 指向本快照的文档（兼容旧数据）。
+    const documentId =
+      parseRun?.documentId ??
+      (
+        await this.prisma.sourceDocument.findFirst({
+          where: { latestSnapshotId: snapshotId },
+          select: { id: true },
+        })
+      )?.id ??
+      null;
+
+    const change = {
+      hasPreviousSnapshot: false,
+      previousFetchedAt: null as string | null,
+      currentFetchedAt: snapshot.fetchedAt.toISOString(),
+    };
+
+    if (documentId) {
+      const previousRun = await this.prisma.documentParseRun.findFirst({
+        where: { documentId, snapshotId: { not: snapshotId } },
+        orderBy: { createdAt: 'desc' },
+        select: { snapshotId: true },
+      });
+      if (previousRun) {
+        const previousSnapshot = await this.prisma.sourceSnapshot.findUnique({
+          where: { id: previousRun.snapshotId },
+          select: { fetchedAt: true },
+        });
+        change.hasPreviousSnapshot = true;
+        change.previousFetchedAt =
+          previousSnapshot?.fetchedAt.toISOString() ?? null;
+      }
+    }
+
+    return {
+      parseRun: parseRun
+        ? {
+            id: parseRun.id,
+            format: parseRun.format,
+            parserVersion: parseRun.parserVersion,
+            status: parseRun.status,
+            blocks: parseRun.blocks,
+            tableHeaders: parseRun.tableHeaders,
+            warnings: parseRun.warnings,
+            warningCount: parseRun.warningCount,
+            scanned: parseRun.scanned,
+            ocrRequired: parseRun.ocrRequired,
+            ocrStatus: parseRun.ocrStatus,
+            finishedAt: parseRun.finishedAt?.toISOString() ?? null,
+          }
+        : null,
+      change,
+    };
   }
 
   // ==================== 用户端只读：获取已发布版本 ====================

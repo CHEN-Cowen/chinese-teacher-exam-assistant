@@ -11,16 +11,21 @@
  *
  * DOM 失配（AdapterParseError）→ 记为 structure_changed，绝不当作“无新公告”。
  */
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import {
   AdapterParseError,
   type DiscoveredDocument,
 } from '../official-site-adapter.js';
 import { AdapterRegistry } from '../adapter-registry.js';
-import { CrawlRunStore } from '../crawl-run-store.js';
+import {
+  CrawlRunStore,
+  SUSPECTED_ZERO_RESULTS,
+  shouldAlertZeroResults,
+} from '../crawl-run-store.js';
 import { SourceDocumentStore } from '../source-document-store.js';
 import { SafeFetcherFactory } from '../fetch/safe-fetcher-factory.js';
 import { SafeFetchError } from '../fetch/safe-fetcher.js';
+import { SourcingMetrics } from '../observability.js';
 import {
   interventionFromBody,
   interventionFromError,
@@ -38,13 +43,22 @@ export interface DiscoverOutcome {
   status:
     | 'succeeded'
     | 'no_new'
+    | 'zero_suspect'
     | 'structure_changed'
     | 'blocked'
     | 'failed';
   discoveredCount: number;
   downloadedCount: number;
   unchangedCount: number;
+  /** 本轮失败计数（部分栏目失败时成功路径也可能 >0） */
+  failedCount?: number;
   errorSummary?: string;
+}
+
+/** 本轮获取的观测信息（HTTP 状态与 304 命中，供结构化日志使用） */
+interface FetchTelemetry {
+  httpStatus?: number;
+  notModified: boolean;
 }
 
 @Injectable()
@@ -55,9 +69,36 @@ export class SourceDiscoverService {
     private readonly fetcherFactory: SafeFetcherFactory,
     private readonly registry: AdapterRegistry,
     @Inject(CRAWL_TASK_QUEUE) private readonly queue: CrawlTaskQueue,
+    // 可选指标出口：测试缺省不传则完全不产生日志
+    @Optional() private readonly metrics?: SourcingMetrics,
   ) {}
 
   async handle(payload: SourceDiscoverPayload): Promise<DiscoverOutcome> {
+    const startedAt = Date.now();
+    const telemetry: FetchTelemetry = { notModified: false };
+    const outcome = await this.execute(payload, telemetry);
+    // 来源检查完成统一出口（成功 / 异常零结果 / 失败都记录）
+    this.metrics?.sourceCheckCompleted({
+      sourceId: payload.sourceId,
+      runId: payload.runId,
+      trigger: payload.trigger,
+      durationMs: Date.now() - startedAt,
+      ...(telemetry.httpStatus !== undefined
+        ? { httpStatus: telemetry.httpStatus }
+        : {}),
+      notModified: telemetry.notModified,
+      discovered: outcome.discoveredCount,
+      downloaded: outcome.downloadedCount,
+      unchanged: outcome.unchangedCount,
+      failed: outcome.failedCount ?? 0,
+    });
+    return outcome;
+  }
+
+  private async execute(
+    payload: SourceDiscoverPayload,
+    telemetry: FetchTelemetry,
+  ): Promise<DiscoverOutcome> {
     const now = new Date();
     const source = await this.runStore.getSource(payload.sourceId);
     if (!source) {
@@ -96,6 +137,8 @@ export class SourceDiscoverService {
     let listVersionHint = prevHint;
     let newEtag = source.etag;
     let newLastModified = source.lastModified;
+    // 实际拿回 200 并交给适配器解析的栏目页数（304 不算“抓取到内容”）
+    let fetchedPages = 0;
 
     for (const listUrl of listUrls) {
       let result;
@@ -104,7 +147,12 @@ export class SourceDiscoverService {
           ifNoneMatch: source.etag ?? undefined,
           ifModifiedSince: source.lastModified ?? undefined,
         });
+        telemetry.httpStatus = result.status;
+        if (result.status === 304) telemetry.notModified = true;
       } catch (error) {
+        if (error instanceof SafeFetchError && typeof error.status === 'number') {
+          telemetry.httpStatus = error.status;
+        }
         // 验证码 / 登录 / 封禁：转人工，不计入普通失败
         const signal = interventionFromError(error);
         if (signal) {
@@ -123,6 +171,7 @@ export class SourceDiscoverService {
         continue;
       }
 
+      fetchedPages += 1;
       listVersionHint =
         result.headers.etag || result.headers.lastModified
           ? `${result.headers.etag ?? ''}|${result.headers.lastModified ?? ''}`
@@ -209,6 +258,34 @@ export class SourceDiscoverService {
       return this.failed(errors.length, summary);
     }
 
+    // 静默 0 条告警：成功抓取（确有 200 页面被解析，非纯 304）却 0 条发现时，
+    // 若该来源曾有历史发现 → 异常零结果，必须告警（计入连续失败，不得记成功）；
+    // 新来源冷启动 0 条属正常，走 no_new + recordSuccess。
+    if (discovered.size === 0 && fetchedPages > 0) {
+      const hasHistory = await this.runStore.hasHistoryDiscovery(source.id);
+      if (shouldAlertZeroResults(hasHistory, discovered.size)) {
+        await this.runStore.recordFailure(source.id, {
+          checkedAt: now,
+          nextCheckAt: this.runStore.nextCheckAt(now, source.pollEveryMinutes),
+          reason: SUSPECTED_ZERO_RESULTS,
+          countTowardsSource: true,
+        });
+        await this.runStore.finishRun(payload.runId, {
+          status: 'zero_suspect',
+          discoveredCount: 0,
+          errorSummary: SUSPECTED_ZERO_RESULTS,
+        });
+        return {
+          status: 'zero_suspect',
+          discoveredCount: 0,
+          downloadedCount: 0,
+          unchangedCount: 0,
+          failedCount: 0,
+          errorSummary: SUSPECTED_ZERO_RESULTS,
+        };
+      }
+    }
+
     // 栏目版本是否变化：决定是否需要重新检查已有文档
     const listChanged = listVersionHint !== prevHint;
 
@@ -254,6 +331,7 @@ export class SourceDiscoverService {
       discoveredCount: discovered.size,
       downloadedCount: enqueued,
       unchangedCount: unchanged,
+      failedCount: errors.length,
       errorSummary: errors.length > 0 ? errors.join('; ') : undefined,
     };
   }
@@ -264,6 +342,7 @@ export class SourceDiscoverService {
       discoveredCount: 0,
       downloadedCount: 0,
       unchangedCount: 0,
+      failedCount,
       errorSummary: summary,
     };
   }

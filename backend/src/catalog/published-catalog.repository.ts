@@ -97,10 +97,12 @@ export class PublishedCatalogRepository {
         versions.push(projected.version);
         if (!announcement) announcement = projected.announcement;
       } catch (error) {
-        const reason =
-          error instanceof ProjectionError ? error.message : String(error);
+        // 仅结构异常（ProjectionError）跳过该行：上一版数据仍在，坏版本不进用户端；
+        // 其他错误（如 DB 层异常）继续抛出，不静默。
+        if (!(error instanceof ProjectionError)) throw error;
+        // 告警只记录定位信息（版本行 id / 字段路径 / 消息），绝不记录 payload 正文
         this.logger.warn(
-          `目录投影失败，已跳过（announcement=${announcementId} version=${row.versionNumber}）：${reason}`,
+          `目录投影失败，已跳过（publishedVersionId=${row.id} announcement=${announcementId} version=${row.versionNumber} fieldPath=${error.fieldPath}）：${error.message}`,
         );
       }
     }

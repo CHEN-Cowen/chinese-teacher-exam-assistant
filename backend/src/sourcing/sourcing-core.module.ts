@@ -17,6 +17,7 @@ import {
 import { CrawlRunStore } from './crawl-run-store.js';
 import { SourceDocumentStore } from './source-document-store.js';
 import { CrawlHealthService } from './crawl-health.service.js';
+import { SourcingMetrics } from './observability.js';
 import { REDIS_CLIENT, createRedisClient } from './redis.js';
 import { SafeFetcherFactory } from './fetch/safe-fetcher-factory.js';
 import { AdapterRegistry } from './adapter-registry.js';
@@ -36,6 +37,7 @@ import { BullmqTaskQueue } from './jobs/bullmq-task-queue.js';
     CrawlRunStore,
     SourceDocumentStore,
     CrawlHealthService,
+    SourcingMetrics,
     { provide: REDIS_CLIENT, useFactory: () => createRedisClient() },
     {
       provide: OBJECT_STORE,
@@ -54,6 +56,7 @@ import { BullmqTaskQueue } from './jobs/bullmq-task-queue.js';
     CrawlRunStore,
     SourceDocumentStore,
     CrawlHealthService,
+    SourcingMetrics,
     REDIS_CLIENT,
     OBJECT_STORE,
     CRAWL_TASK_QUEUE,

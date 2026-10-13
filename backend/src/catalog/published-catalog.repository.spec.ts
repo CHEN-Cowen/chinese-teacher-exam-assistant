@@ -4,6 +4,7 @@
  * 用内存 prisma 假对象驱动；输入数据内联，不 import tests/fixtures。
  */
 import { describe, expect, it, vi } from 'vitest';
+import { Logger } from '@nestjs/common';
 import { currentVersion } from '../matching/engine.js';
 import { PublishedCatalogRepository } from './published-catalog.repository.js';
 
@@ -186,6 +187,48 @@ describe('PublishedCatalogRepository.listPublished', () => {
       'fx-ann-db-priority-v1',
     ]);
     expect(currentVersion(catalog[0]).versionNumber).toBe(1);
+  });
+
+  it('坏行跳过有告警：记录 publishedVersionId/fieldPath/message，不记录 payload 正文', async () => {
+    const warn = vi
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    try {
+      const { repo } = makeRepo([
+        makeRow({
+          id: 'fx-pav-0002',
+          versionNumber: 2,
+          payload: corruptedV2Payload(),
+        }),
+        makeRow({ id: 'fx-pav-0001', versionNumber: 1 }),
+      ]);
+
+      const catalog = await repo.listPublished(NOW);
+
+      // 其余行正常返回、上一版继续可用
+      expect(catalog).toHaveLength(1);
+      expect(currentVersion(catalog[0]).versionNumber).toBe(1);
+
+      const messages = warn.mock.calls.map((call) => String(call[0]));
+      const skipped = messages.find((message) =>
+        message.includes('publishedVersionId=fx-pav-0002'),
+      );
+      expect(skipped).toBeDefined();
+      expect(skipped).toContain('fieldPath=payload.version.units[0].headcount');
+      // 不泄露 payload 正文（单位名称只存在于 payload 中）
+      expect(skipped).not.toContain('测试市第五中学');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('非 ProjectionError（如 DB 异常）不静默：继续抛出', async () => {
+    const { repo, findMany } = makeRepo([]);
+    findMany.mockRejectedValueOnce(new Error('db connection lost'));
+
+    await expect(repo.listPublished(NOW)).rejects.toThrow(
+      'db connection lost',
+    );
   });
 
   it('全部失败则整体跳过：仅有损坏行 → 该公告不出现在目录', async () => {

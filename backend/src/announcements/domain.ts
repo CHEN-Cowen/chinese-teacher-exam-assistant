@@ -115,6 +115,12 @@ export interface PublishedVersion {
   publishedAt: string;
   previousVersionId?: string;
   supersededAt?: string;
+  /** 撤回时间（仅 withdrawn 时有值） */
+  withdrawnAt?: string;
+  /** 撤回原因（审计必填） */
+  withdrawReason?: string;
+  /** 撤回操作人 id */
+  withdrawnBy?: string;
 }
 
 // ==================== 高影响字段清单 ====================
@@ -325,6 +331,47 @@ export function publishVersion(
     : null;
 
   return { version, superseded };
+}
+
+// ==================== 版本撤回 ====================
+
+export interface WithdrawVersionInput {
+  /** 撤回原因（必填非空，供审计） */
+  reason: string;
+  /** 撤回时间（ISO 字符串） */
+  withdrawnAt: string;
+  /** 撤回操作人 id */
+  withdrawnBy?: string;
+}
+
+/**
+ * 撤回当前已发布版本：
+ * - 仅 status='published' 可撤回，否则抛错；
+ * - 原因必填非空；
+ * - 不删除历史、不产生新版本、不改写 payload；
+ * - 不复活旧版（旧版保持 superseded）；
+ * - 撤回后 status='withdrawn'，supersededAt 记为撤回时间（时间线口径统一）。
+ */
+export function withdrawVersion(
+  version: PublishedVersion,
+  input: WithdrawVersionInput,
+): PublishedVersion {
+  if (version.status !== 'published') {
+    throw new Error(
+      `只有当前发布中的版本可以撤回，当前状态：${version.status}`,
+    );
+  }
+  if (!input.reason || input.reason.trim().length === 0) {
+    throw new Error('撤回原因不能为空');
+  }
+  return {
+    ...version,
+    status: 'withdrawn',
+    supersededAt: input.withdrawnAt,
+    withdrawnAt: input.withdrawnAt,
+    withdrawReason: input.reason,
+    withdrawnBy: input.withdrawnBy,
+  };
 }
 
 // ==================== 审核留痕 ====================

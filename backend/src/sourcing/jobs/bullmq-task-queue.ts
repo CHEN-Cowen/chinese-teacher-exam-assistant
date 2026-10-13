@@ -18,6 +18,7 @@ import {
   type CrawlTaskPayloadByName,
   type CrawlTaskQueue,
   type EnqueueResult,
+  type QueueJobCounts,
 } from './task-queue.js';
 
 function intFromEnv(value: string | undefined, fallback: number): number {
@@ -68,6 +69,27 @@ export class BullmqTaskQueue implements CrawlTaskQueue {
     } catch (error) {
       throw new QueueUnavailableError(
         `投递抓取任务失败（${name}）：${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
+  /** 队列积压计数（waiting/delayed/active）；Redis 不可达时抛 QueueUnavailableError */
+  async getJobCounts(): Promise<QueueJobCounts> {
+    try {
+      const counts: Record<string, unknown> = await withTimeout(
+        this.queue.getJobCounts('waiting', 'delayed', 'active'),
+        enqueueTimeoutMs(),
+      );
+      const num = (key: string): number => {
+        const value = counts[key];
+        return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+      };
+      return { waiting: num('waiting'), delayed: num('delayed'), active: num('active') };
+    } catch (error) {
+      throw new QueueUnavailableError(
+        `读取队列计数失败：${
           error instanceof Error ? error.message : String(error)
         }`,
       );

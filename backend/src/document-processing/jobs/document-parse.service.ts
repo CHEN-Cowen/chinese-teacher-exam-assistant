@@ -7,11 +7,12 @@
  * 幂等：同 snapshotId + parserVersion 已 parsed 直接复用，不重复解析；
  * 失败/待人工只落自身记录，绝不覆盖已成功的旧标准文档，更不影响已发布版本。
  */
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { SourceDocumentStore } from '../../sourcing/source-document-store.js';
 import type { ObjectStore } from '../../sourcing/storage/object-store.js';
 import { OBJECT_STORE } from '../../sourcing/storage/storage.tokens.js';
 import { CRAWL_TASK_QUEUE } from '../../sourcing/sourcing.tokens.js';
+import { SourcingMetrics } from '../../sourcing/observability.js';
 import {
   extractJobId,
   type CrawlTaskQueue,
@@ -42,6 +43,8 @@ export class DocumentParseService {
     private readonly documentStore: SourceDocumentStore,
     @Inject(OBJECT_STORE) private readonly objectStore: ObjectStore,
     @Inject(CRAWL_TASK_QUEUE) private readonly queue: CrawlTaskQueue,
+    // 可选指标出口（v7.2 抓取可观测性）：测试缺省不传则完全不产生日志
+    @Optional() private readonly metrics?: SourcingMetrics,
   ) {}
 
   async handle(payload: DocumentParsePayload): Promise<DocumentParseOutcome> {
@@ -79,6 +82,7 @@ export class DocumentParseService {
     }
 
     // 层 3：格式解析（含安全防护）
+    const parseStartedAt = Date.now();
     try {
       const parsed = await this.parserService.parse({
         snapshotId: snapshot.id,
@@ -101,6 +105,14 @@ export class DocumentParseService {
         scanned: parsed.scanned,
         ocrRequired: parsed.ocr?.required ?? false,
         ocrStatus: parsed.ocr?.status ?? null,
+      });
+      this.metrics?.parseCompleted({
+        snapshotId: snapshot.id,
+        format: parsed.format,
+        parserVersion: payload.documentParserVersion,
+        status,
+        warningCount: parsed.warnings.length,
+        durationMs: Date.now() - parseStartedAt,
       });
 
       // 成功与待人工都投递业务抽取：pending_manual 会生成诚实的"待人工"提取记录
@@ -130,6 +142,14 @@ export class DocumentParseService {
         format: 'unknown',
         errorSummary: `${code}:${summary}`,
         ...(status === 'pending_manual' ? { warnings: [summary] } : {}),
+      });
+      this.metrics?.parseCompleted({
+        snapshotId: snapshot.id,
+        format: 'unknown',
+        parserVersion: payload.documentParserVersion,
+        status,
+        warningCount: status === 'pending_manual' ? 1 : 0,
+        durationMs: Date.now() - parseStartedAt,
       });
       // 待人工（如加密 PDF）也投递业务抽取：生成诚实的"待人工"提取记录，供人工跟进
       if (status === 'pending_manual') {

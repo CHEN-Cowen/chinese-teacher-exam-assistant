@@ -1,12 +1,16 @@
 /**
  * v7.2 工作包 4：CrawlOrchestrator 契约测试。
  *
- * 覆盖：三种触发方式、按窗口幂等、非法触发、来源不存在、来源暂停、
+ * 覆盖：三种触发方式、按窗口幂等、重复点击受控（进行中运行去重、僵尸运行豁免）、
+ * 非法触发、来源不存在、来源暂停、
  * Redis 暂时不可用（降级不崩溃、不计入来源连续失败、恢复后可重试）。
  */
 import { NotFoundException } from '@nestjs/common';
 import { describe, expect, it } from 'vitest';
-import { CrawlOrchestrator } from './crawl-orchestrator.js';
+import {
+  ACTIVE_RUN_WINDOW_MS,
+  CrawlOrchestrator,
+} from './crawl-orchestrator.js';
 import { CrawlRunStore } from './crawl-run-store.js';
 import { QueueUnavailableError } from './jobs/task-queue.js';
 import { FakeCrawlTaskQueue, FakePrisma } from './testing/crawl-testing.js';
@@ -49,10 +53,12 @@ describe('CrawlOrchestrator.checkSource', () => {
     expect(source.nextCheckAt).toEqual(new Date(NOW.getTime() + 60 * 60_000));
   });
 
-  it('admin 与 retry 是合法触发，且各自生成独立任务（nonce 不同不互相吞并）', async () => {
-    const { queue, orchestrator } = setup();
+  it('admin 与 retry 是合法触发；前一次运行结束后各自生成独立任务', async () => {
+    const { queue, store, orchestrator } = setup();
 
     const admin = await orchestrator.checkSource('src-hz', 'admin', { nonce: 'admin-1' });
+    // 进行中运行会触发去重；结束第一次运行后第二次触发才允许新建
+    await store.finishRun(admin.runId, { status: 'succeeded' });
     const retry = await orchestrator.checkSource('src-hz', 'retry', { nonce: 'retry-1' });
 
     expect(admin.jobId).not.toBe(retry.jobId);
@@ -67,9 +73,57 @@ describe('CrawlOrchestrator.checkSource', () => {
     const first = await orchestrator.checkSource('src-hz', 'schedule', { now: NOW });
     const second = await orchestrator.checkSource('src-hz', 'schedule', { now: NOW });
 
+    // 编排层去重先行：复用进行中运行，不再投递队列
+    expect(second.status).toBe('already_running');
     expect(second.deduplicated).toBe(true);
-    expect(second.jobId).toBe(first.jobId);
+    expect(second.jobId).toBeNull();
+    expect(second.runId).toBe(first.runId);
     expect(queue.count('source.discover')).toBe(1);
+  });
+
+  it('重复点击受控：近 15 分钟内已有进行中运行时不新建运行、不投递队列', async () => {
+    const { prisma, queue, orchestrator } = setup();
+
+    const first = await orchestrator.checkSource('src-hz', 'admin', { nonce: 'click-1' });
+    const second = await orchestrator.checkSource('src-hz', 'admin', { nonce: 'click-2' });
+
+    expect(second.status).toBe('already_running');
+    expect(second.deduplicated).toBe(true);
+    expect(second.jobId).toBeNull();
+    expect(second.runId).toBe(first.runId);
+    expect(queue.count('source.discover')).toBe(1);
+    expect(prisma.runs).toHaveLength(1);
+  });
+
+  it('进行中运行超过 15 分钟视为僵尸：允许发起新运行', async () => {
+    const { prisma, queue, orchestrator } = setup();
+    const zombie = await prisma.crawlRun.create({
+      data: { sourceId: 'src-hz', trigger: 'admin', status: 'running' },
+    });
+    // 把进行中运行的开始时间拨到判活窗口之外（16 分钟前）
+    const row = prisma.runs.find((r) => r.id === zombie.id)!;
+    row.startedAt = new Date(NOW.getTime() - ACTIVE_RUN_WINDOW_MS - 60_000);
+
+    const ref = await orchestrator.checkSource('src-hz', 'admin', {
+      nonce: 'after-zombie',
+      now: NOW,
+    });
+
+    expect(ref.status).toBe('queued');
+    expect(ref.runId).not.toBe(zombie.id);
+    expect(queue.count('source.discover')).toBe(1);
+  });
+
+  it('已结束的运行不阻塞新触发', async () => {
+    const { queue, store, orchestrator } = setup();
+
+    const first = await orchestrator.checkSource('src-hz', 'admin', { nonce: 'done-1' });
+    await store.finishRun(first.runId, { status: 'failed', errorSummary: 'boom' });
+    const second = await orchestrator.checkSource('src-hz', 'admin', { nonce: 'done-2' });
+
+    expect(second.status).toBe('queued');
+    expect(second.runId).not.toBe(first.runId);
+    expect(queue.count('source.discover')).toBe(2);
   });
 
   it('非法触发方式被拒绝（只接受 schedule / admin / retry）', async () => {

@@ -5,9 +5,15 @@
  * - SourceSnapshot：某一时刻的不可变字节版本（contentHash 在同一来源下唯一）；
  * - 相同来源 + 文档 + 哈希保持幂等：命中已有快照时复用，不新建、不重复解析。
  */
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service.js';
 import type { DocumentKind } from './official-site-adapter.js';
+import {
+  CANDIDATE_RELATION_TYPES,
+  CONFIRMED_RELATION_TYPES,
+  isRelationCandidate,
+  type RelationKind,
+} from '../announcements/relation.domain.js';
 
 export interface SnapshotRecord {
   id: string;
@@ -132,5 +138,57 @@ export class SourceDocumentStore {
       where: { sourceId },
       orderBy: { lastSeenAt: 'desc' },
     });
+  }
+
+  /**
+   * 人工确认公告关系（v7.2）：把候选关系（*Candidate）确认为确定值。
+   * - relationType 必须是确定关系值（supplement/delay/cancel）；
+   * - 父文档必须存在且与本文档同来源；
+   * - 文档必须确实存在。
+   */
+  async confirmRelation(
+    documentId: string,
+    input: { relationType: RelationKind; parentDocumentId: string },
+  ) {
+    if (!CONFIRMED_RELATION_TYPES.includes(input.relationType)) {
+      throw new BadRequestException(
+        `relationType 必须是确定关系值（${CONFIRMED_RELATION_TYPES.join('/')}），收到：${input.relationType}`,
+      );
+    }
+    const doc = await this.prisma.sourceDocument.findUnique({
+      where: { id: documentId },
+    });
+    if (!doc) throw new NotFoundException('文档不存在');
+
+    const parent = await this.prisma.sourceDocument.findUnique({
+      where: { id: input.parentDocumentId },
+    });
+    if (!parent || parent.sourceId !== doc.sourceId) {
+      throw new BadRequestException('父文档不存在或与本文档不属于同一来源');
+    }
+
+    return this.prisma.sourceDocument.update({
+      where: { id: documentId },
+      data: {
+        relationType: input.relationType,
+        parentDocumentId: input.parentDocumentId,
+      },
+    });
+  }
+
+  /**
+   * 待人工确认的关系队列（v7.2）：relationType 以 Candidate 结尾的文档。
+   * 不传 sourceId 时返回全部来源的候选（供审核工作台聚合）。
+   */
+  async listPendingRelations(sourceId?: string) {
+    const rows = await this.prisma.sourceDocument.findMany({
+      where: {
+        ...(sourceId ? { sourceId } : {}),
+        relationType: { in: [...CANDIDATE_RELATION_TYPES] },
+      },
+      orderBy: { lastSeenAt: 'desc' },
+    });
+    // 兜底再过滤一次（fake prisma 等不支持 in 查询时仍保证口径正确）
+    return rows.filter((row) => isRelationCandidate(row.relationType));
   }
 }

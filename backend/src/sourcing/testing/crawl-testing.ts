@@ -60,6 +60,19 @@ function applyUpdate(target: Record<string, unknown>, data: Record<string, unkno
   }
 }
 
+/** 模拟 Prisma select：只挑出 select 标记为 true 的字段 */
+function pickSelect(
+  row: Record<string, unknown>,
+  select?: Record<string, boolean>,
+): Record<string, unknown> {
+  if (!select) return row;
+  const out: Record<string, unknown> = {};
+  for (const [key, enabled] of Object.entries(select)) {
+    if (enabled) out[key] = row[key];
+  }
+  return out;
+}
+
 /** 覆盖抓取执行器用到的最小 Prisma 接口；不实现未用到的能力 */
 export class FakePrisma {
   sources: SourceRow[] = [];
@@ -248,6 +261,41 @@ export class FakePrisma {
       const rows = this.runs.filter((r) => r.sourceId === where.sourceId);
       return take ? rows.slice(-take) : rows;
     },
+    findFirst: async ({
+      where,
+      orderBy,
+      select,
+    }: {
+      where: {
+        sourceId: string;
+        status?: { in: string[] };
+        startedAt?: { gte: Date };
+        discoveredCount?: { gt: number };
+      };
+      orderBy?: { startedAt?: 'asc' | 'desc' };
+      select?: Record<string, boolean>;
+    }) => {
+      let rows = this.runs.filter((r) => r.sourceId === where.sourceId);
+      if (where.status?.in) {
+        const allowed = where.status.in;
+        rows = rows.filter((r) => allowed.includes(String(r.status)));
+      }
+      if (where.startedAt?.gte) {
+        const gte = where.startedAt.gte;
+        rows = rows.filter((r) => (r.startedAt as Date) >= gte);
+      }
+      if (where.discoveredCount?.gt !== undefined) {
+        const gt = where.discoveredCount.gt;
+        rows = rows.filter((r) => Number(r.discoveredCount ?? 0) > gt);
+      }
+      rows = [...rows].sort(
+        (a, b) =>
+          (b.startedAt as Date).getTime() - (a.startedAt as Date).getTime(),
+      );
+      void orderBy;
+      const row = rows[0] ?? null;
+      return row ? pickSelect(row, select) : null;
+    },
   };
 
   readonly sourceDocument = {
@@ -303,6 +351,17 @@ export class FakePrisma {
     },
     findMany: async ({ where }: { where: { sourceId: string } }) =>
       this.documents.filter((d) => d.sourceId === where.sourceId),
+    findFirst: async ({
+      where,
+      select,
+    }: {
+      where: { sourceId: string };
+      select?: Record<string, boolean>;
+    }) => {
+      const row =
+        this.documents.find((d) => d.sourceId === where.sourceId) ?? null;
+      return row ? pickSelect(row as Record<string, unknown>, select) : null;
+    },
   };
 
   readonly sourceSnapshot = {
@@ -367,6 +426,34 @@ export class FakePrisma {
         ) ?? null
       );
     },
+    /** 支持 snapshotId 直查与经 SourceSnapshot 关联的 sourceId 查询（listHealth 聚合用） */
+    findFirst: async ({
+      where,
+      orderBy,
+      select,
+    }: {
+      where: { snapshotId?: string; snapshot?: { sourceId?: string } };
+      orderBy?: { createdAt?: 'asc' | 'desc' };
+      select?: Record<string, boolean>;
+    }) => {
+      let rows = [...this.parseRuns];
+      if (where.snapshotId) {
+        rows = rows.filter((r) => r.snapshotId === where.snapshotId);
+      }
+      const sourceId = where.snapshot?.sourceId;
+      if (sourceId) {
+        const snapshotIds = new Set(
+          this.snapshots.filter((s) => s.sourceId === sourceId).map((s) => s.id),
+        );
+        rows = rows.filter((r) => snapshotIds.has(String(r.snapshotId)));
+      }
+      const sorted = this.sortDesc(
+        rows as Array<Record<string, unknown> & { id: string; createdAt?: Date }>,
+      );
+      void orderBy;
+      const row = sorted[0] ?? null;
+      return row ? pickSelect(row, select) : null;
+    },
     findMany: async ({
       where,
       take,
@@ -416,6 +503,23 @@ export class FakePrisma {
         );
       }
       return null;
+    },
+    /** 支持 status 过滤与经 SourceSnapshot 关联的 sourceId 过滤（待审核积压统计用） */
+    count: async ({
+      where,
+    }: {
+      where: { status?: string; snapshot?: { sourceId?: string } };
+    }) => {
+      let rows = [...this.extractionRuns];
+      if (where.status) rows = rows.filter((r) => r.status === where.status);
+      const sourceId = where.snapshot?.sourceId;
+      if (sourceId) {
+        const snapshotIds = new Set(
+          this.snapshots.filter((s) => s.sourceId === sourceId).map((s) => s.id),
+        );
+        rows = rows.filter((r) => snapshotIds.has(String(r.snapshotId)));
+      }
+      return rows.length;
     },
     create: async ({ data }: { data: Record<string, unknown> }) => {
       const row = {
