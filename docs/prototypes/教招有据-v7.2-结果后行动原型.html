@@ -1,0 +1,741 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>教招有据 v7.2：结果后行动原型</title>
+  <style>
+    html, body { margin: 0; min-height: 100%; background: #f3f5fa; }
+    body { font-family: Inter, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; }
+    .prototype-note { padding: 10px 16px; background: #172033; color: #fff; font-size: 13px; line-height: 1.5; }
+    .prototype-controls { position: sticky; top: 0; z-index: 100; display: flex; gap: 8px; padding: 10px 16px; background: rgba(255,255,255,.94); border-bottom: 1px solid #dfe4ee; backdrop-filter: blur(10px); }
+    .prototype-controls button { border: 1px solid #cfd6e3; border-radius: 999px; padding: 7px 12px; background: #fff; color: #344056; cursor: pointer; }
+    .prototype-controls button[aria-pressed="true"] { background: #3157d5; border-color: #3157d5; color: #fff; }
+    i[data-lucide]:empty { display: inline-block; width: .85em; height: .85em; border: 1.5px solid currentColor; border-radius: 50%; vertical-align: -.05em; opacity: .72; }
+  </style>
+</head>
+<body>
+  <div class="prototype-note">交接原型：用于确认信息架构、内容层级和响应式方向，不代表最终视觉稿。原型中的机构、岗位和日期均为示意。</div>
+<!-- Throwaway prototype: three connected post-result directions for 教招有据. -->
+<div id="kb-next-prototype">
+  <style>
+    #kb-next-prototype {
+      color-scheme: light dark;
+      --kb-next-page: light-dark(#f3f5f9, #0d1220);
+      --kb-next-surface: light-dark(#ffffff, #151b2d);
+      --kb-next-soft: light-dark(#f7f8fb, #1b2338);
+      --kb-next-ink: light-dark(#182033, #f2f5ff);
+      --kb-next-muted: light-dark(#697386, #aab4cc);
+      --kb-next-line: light-dark(#e0e6ef, #2d3852);
+      --kb-next-brand: light-dark(#315fd6, #86a5ff);
+      --kb-next-brand-soft: light-dark(#edf2ff, #202c52);
+      --kb-next-success: light-dark(#18794e, #6dd6a7);
+      --kb-next-success-soft: light-dark(#eaf8f1, #143b2c);
+      --kb-next-warning: light-dark(#995f08, #ffc46b);
+      --kb-next-warning-soft: light-dark(#fff5e2, #3c2a13);
+      --kb-next-danger: light-dark(#b42318, #ff928a);
+      --kb-next-shadow: light-dark(0 18px 48px rgba(35, 55, 92, .11), 0 22px 56px rgba(0, 0, 0, .34));
+      width: 100%;
+      color: var(--kb-next-ink);
+      background: transparent;
+      font-family: "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", system-ui, sans-serif;
+    }
+
+    #kb-next-prototype * { box-sizing: border-box; }
+    #kb-next-prototype button,
+    #kb-next-prototype textarea { font: inherit; }
+
+    #kb-next-prototype .kb-scenario-switcher {
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+
+    #kb-next-prototype .kb-scenario-switcher button {
+      min-height: 40px;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 0 14px;
+      border: 1px solid var(--kb-next-line);
+      border-radius: 999px;
+      color: var(--kb-next-muted);
+      background: var(--kb-next-surface);
+    }
+
+    #kb-next-prototype .kb-scenario-switcher button[aria-pressed="true"] {
+      border-color: var(--kb-next-ink);
+      color: var(--kb-next-surface);
+      background: var(--kb-next-ink);
+    }
+
+    #kb-next-prototype .kb-app {
+      min-height: 760px;
+      overflow: hidden;
+      border: 1px solid var(--kb-next-line);
+      border-radius: 20px;
+      background: var(--kb-next-page);
+      box-shadow: var(--kb-next-shadow);
+    }
+
+    #kb-next-prototype .kb-app-header {
+      height: 68px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      padding: 0 30px;
+      border-bottom: 1px solid var(--kb-next-line);
+      background: color-mix(in srgb, var(--kb-next-surface) 95%, transparent);
+    }
+
+    #kb-next-prototype .kb-brand {
+      min-width: 180px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 500;
+    }
+
+    #kb-next-prototype .kb-brand-mark {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border-radius: 10px;
+      color: #ffffff;
+      background: linear-gradient(145deg, #3972f6, #7358e8);
+    }
+
+    #kb-next-prototype .kb-nav {
+      display: flex;
+      gap: 4px;
+      padding: 4px;
+      border-radius: 12px;
+      background: var(--kb-next-soft);
+    }
+
+    #kb-next-prototype .kb-nav span {
+      padding: 8px 14px;
+      border-radius: 9px;
+      color: var(--kb-next-muted);
+      font-size: 14px;
+    }
+
+    #kb-next-prototype .kb-nav .is-current {
+      color: var(--kb-next-ink);
+      background: var(--kb-next-surface);
+      box-shadow: 0 1px 4px color-mix(in srgb, var(--kb-next-ink) 10%, transparent);
+    }
+
+    #kb-next-prototype .kb-header-side {
+      min-width: 180px;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 12px;
+      color: var(--kb-next-muted);
+      font-size: 13px;
+    }
+
+    #kb-next-prototype .kb-avatar {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      color: var(--kb-next-brand);
+      background: var(--kb-next-brand-soft);
+      font-weight: 500;
+    }
+
+    #kb-next-prototype .kb-main {
+      width: min(1180px, calc(100% - 48px));
+      margin: 0 auto;
+      padding: 32px 0 44px;
+    }
+
+    #kb-next-prototype .kb-page-head {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 28px;
+    }
+
+    #kb-next-prototype h1,
+    #kb-next-prototype h2,
+    #kb-next-prototype h3,
+    #kb-next-prototype p { margin: 0; }
+
+    #kb-next-prototype .kb-eyebrow {
+      color: var(--kb-next-brand);
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: .04em;
+    }
+
+    #kb-next-prototype h1 {
+      margin-top: 7px;
+      font-size: clamp(27px, 3vw, 38px);
+      line-height: 1.25;
+      letter-spacing: -.025em;
+      font-weight: 500;
+    }
+
+    #kb-next-prototype .kb-lead {
+      margin-top: 9px;
+      color: var(--kb-next-muted);
+      font-size: 14px;
+      line-height: 1.7;
+    }
+
+    #kb-next-prototype .kb-status-chip,
+    #kb-next-prototype .kb-warning-chip,
+    #kb-next-prototype .kb-main-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+
+    #kb-next-prototype .kb-status-chip { color: var(--kb-next-success); background: var(--kb-next-success-soft); }
+    #kb-next-prototype .kb-warning-chip { color: var(--kb-next-warning); background: var(--kb-next-warning-soft); }
+    #kb-next-prototype .kb-main-chip { color: var(--kb-next-brand); background: var(--kb-next-brand-soft); }
+
+    #kb-next-prototype .kb-primary,
+    #kb-next-prototype .kb-secondary,
+    #kb-next-prototype .kb-ghost {
+      min-height: 44px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      padding: 0 16px;
+      border-radius: 11px;
+      font-weight: 500;
+    }
+
+    #kb-next-prototype .kb-primary {
+      border: 1px solid var(--kb-next-brand);
+      color: #ffffff;
+      background: var(--kb-next-brand);
+    }
+
+    #kb-next-prototype .kb-secondary {
+      border: 1px solid var(--kb-next-line);
+      color: var(--kb-next-ink);
+      background: var(--kb-next-surface);
+    }
+
+    #kb-next-prototype .kb-ghost {
+      border: 0;
+      color: var(--kb-next-brand);
+      background: transparent;
+    }
+
+    #kb-next-prototype .kb-job-shell {
+      margin-top: 22px;
+      overflow: hidden;
+      border: 1px solid color-mix(in srgb, var(--kb-next-brand) 28%, var(--kb-next-line));
+      border-radius: 18px;
+      background: var(--kb-next-surface);
+      box-shadow: 0 14px 34px color-mix(in srgb, var(--kb-next-brand) 9%, transparent);
+    }
+
+    #kb-next-prototype .kb-job-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 17px 22px;
+      border-bottom: 1px solid var(--kb-next-line);
+    }
+
+    #kb-next-prototype .kb-trust {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--kb-next-muted);
+      font-size: 12px;
+    }
+
+    #kb-next-prototype .kb-trust i { color: var(--kb-next-success); }
+
+    #kb-next-prototype .kb-job-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(320px, .85fr);
+    }
+
+    #kb-next-prototype .kb-job-facts,
+    #kb-next-prototype .kb-job-decision { padding: 24px; }
+    #kb-next-prototype .kb-job-decision { border-left: 1px solid var(--kb-next-line); background: var(--kb-next-soft); }
+
+    #kb-next-prototype .kb-job-title { font-size: 22px; line-height: 1.4; font-weight: 500; }
+    #kb-next-prototype .kb-location { margin-top: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; color: var(--kb-next-muted); font-size: 13px; }
+    #kb-next-prototype .kb-location button { border: 0; color: var(--kb-next-brand); background: transparent; padding: 3px; }
+
+    #kb-next-prototype .kb-facts-row { margin-top: 17px; display: flex; gap: 8px; flex-wrap: wrap; }
+    #kb-next-prototype .kb-fact { padding: 7px 10px; border-radius: 9px; color: var(--kb-next-muted); background: var(--kb-next-soft); font-size: 12px; }
+    #kb-next-prototype .kb-decision-title { font-size: 15px; font-weight: 500; }
+    #kb-next-prototype .kb-decision-list { margin: 14px 0 0; padding: 0; display: grid; gap: 10px; list-style: none; }
+    #kb-next-prototype .kb-decision-list li { display: flex; align-items: flex-start; gap: 8px; color: var(--kb-next-muted); font-size: 13px; line-height: 1.55; }
+    #kb-next-prototype .kb-decision-list li.is-pass i { color: var(--kb-next-success); }
+    #kb-next-prototype .kb-decision-list li.is-warn i { color: var(--kb-next-warning); }
+    #kb-next-prototype .kb-job-actions { padding: 17px 22px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; border-top: 1px solid var(--kb-next-line); }
+
+    #kb-next-prototype .kb-next-panel {
+      margin-top: 14px;
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 14px;
+      padding: 17px 18px;
+      border: 1px solid color-mix(in srgb, var(--kb-next-success) 30%, var(--kb-next-line));
+      border-radius: 15px;
+      background: var(--kb-next-success-soft);
+    }
+
+    #kb-next-prototype .kb-next-icon {
+      width: 40px;
+      height: 40px;
+      display: grid;
+      place-items: center;
+      border-radius: 12px;
+      color: var(--kb-next-success);
+      background: var(--kb-next-surface);
+    }
+
+    #kb-next-prototype .kb-next-panel h2 { font-size: 15px; font-weight: 500; }
+    #kb-next-prototype .kb-next-panel p { margin-top: 4px; color: var(--kb-next-muted); font-size: 13px; line-height: 1.55; }
+    #kb-next-prototype .kb-mini-link { border: 0; background: transparent; color: var(--kb-next-muted); padding: 8px; font-size: 12px; }
+
+    /* Official confirmation */
+    #kb-next-prototype .kb-confirm-layout {
+      margin-top: 22px;
+      display: grid;
+      grid-template-columns: minmax(0, .9fr) minmax(380px, 1.1fr);
+      gap: 16px;
+    }
+
+    #kb-next-prototype .kb-panel {
+      padding: 22px;
+      border: 1px solid var(--kb-next-line);
+      border-radius: 17px;
+      background: var(--kb-next-surface);
+    }
+
+    #kb-next-prototype .kb-panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+    }
+
+    #kb-next-prototype .kb-panel h2 { font-size: 17px; font-weight: 500; }
+    #kb-next-prototype .kb-panel-label { margin-top: 20px; color: var(--kb-next-muted); font-size: 12px; }
+    #kb-next-prototype .kb-reason { margin-top: 7px; font-size: 14px; line-height: 1.7; }
+
+    #kb-next-prototype .kb-quote {
+      margin-top: 10px;
+      padding: 13px 14px;
+      border-left: 3px solid var(--kb-next-warning);
+      border-radius: 0 10px 10px 0;
+      color: var(--kb-next-muted);
+      background: var(--kb-next-warning-soft);
+      font-size: 13px;
+      line-height: 1.65;
+    }
+
+    #kb-next-prototype .kb-contact {
+      margin-top: 16px;
+      padding-top: 15px;
+      border-top: 1px solid var(--kb-next-line);
+      display: grid;
+      gap: 6px;
+      color: var(--kb-next-muted);
+      font-size: 12px;
+    }
+
+    #kb-next-prototype .kb-contact span { display: flex; align-items: center; gap: 7px; }
+    #kb-next-prototype .kb-question {
+      width: 100%;
+      min-height: 170px;
+      margin-top: 12px;
+      resize: vertical;
+      padding: 14px;
+      border: 1px solid var(--kb-next-line);
+      border-radius: 12px;
+      color: var(--kb-next-ink);
+      background: var(--kb-next-soft);
+      font-size: 14px;
+      line-height: 1.75;
+    }
+
+    #kb-next-prototype .kb-question-actions { margin-top: 12px; display: flex; gap: 10px; flex-wrap: wrap; }
+    #kb-next-prototype .kb-answer-box { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--kb-next-line); }
+    #kb-next-prototype .kb-answer-box p { color: var(--kb-next-muted); font-size: 13px; }
+    #kb-next-prototype .kb-answer-options { margin-top: 10px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    #kb-next-prototype .kb-answer-options button { min-height: 42px; border: 1px solid var(--kb-next-line); border-radius: 10px; color: var(--kb-next-ink); background: var(--kb-next-surface); }
+    #kb-next-prototype .kb-answer-options button[aria-pressed="true"] { border-color: var(--kb-next-brand); color: var(--kb-next-brand); background: var(--kb-next-brand-soft); }
+    #kb-next-prototype .kb-answer-result { margin-top: 10px; color: var(--kb-next-success); font-size: 12px; }
+
+    /* Comparison */
+    #kb-next-prototype .kb-compare-wrap {
+      margin-top: 22px;
+      overflow: hidden;
+      border: 1px solid var(--kb-next-line);
+      border-radius: 17px;
+      background: var(--kb-next-surface);
+    }
+
+    #kb-next-prototype .kb-compare-grid {
+      display: grid;
+      grid-template-columns: 150px repeat(3, minmax(0, 1fr));
+    }
+
+    #kb-next-prototype .kb-compare-cell {
+      min-width: 0;
+      padding: 13px 15px;
+      border-right: 1px solid var(--kb-next-line);
+      border-bottom: 1px solid var(--kb-next-line);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    #kb-next-prototype .kb-compare-cell:nth-child(4n) { border-right: 0; }
+    #kb-next-prototype .kb-compare-cell.is-last-row { border-bottom: 0; }
+    #kb-next-prototype .kb-compare-label { color: var(--kb-next-muted); background: var(--kb-next-soft); }
+
+    #kb-next-prototype .kb-compare-head {
+      min-height: 132px;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 8px;
+      background: var(--kb-next-soft);
+    }
+
+    #kb-next-prototype .kb-compare-head strong { font-size: 14px; line-height: 1.5; font-weight: 500; }
+    #kb-next-prototype .kb-compare-head span { color: var(--kb-next-muted); font-size: 12px; }
+    #kb-next-prototype .kb-compare-head button { margin-top: auto; min-height: 36px; padding: 0 11px; border: 1px solid var(--kb-next-line); border-radius: 9px; color: var(--kb-next-ink); background: var(--kb-next-surface); font-size: 12px; }
+    #kb-next-prototype .kb-compare-head button[aria-pressed="true"] { border-color: var(--kb-next-brand); color: var(--kb-next-brand); background: var(--kb-next-brand-soft); }
+    #kb-next-prototype .kb-diff { color: var(--kb-next-warning); font-weight: 500; }
+    #kb-next-prototype .kb-good { color: var(--kb-next-success); font-weight: 500; }
+
+    #kb-next-prototype .kb-compare-summary {
+      margin-top: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 14px 16px;
+      border-radius: 13px;
+      color: var(--kb-next-muted);
+      background: var(--kb-next-soft);
+      font-size: 13px;
+    }
+
+    #kb-next-prototype .kb-mobile-compare { display: none; }
+    #kb-next-prototype [hidden] { display: none !important; }
+
+    @media (max-width: 760px) {
+      #kb-next-prototype .kb-app { min-height: 780px; border-radius: 16px; }
+      #kb-next-prototype .kb-app-header { height: 62px; padding: 0 16px; }
+      #kb-next-prototype .kb-brand { min-width: 0; }
+      #kb-next-prototype .kb-nav,
+      #kb-next-prototype .kb-header-side span { display: none; }
+      #kb-next-prototype .kb-header-side { min-width: 0; }
+      #kb-next-prototype .kb-main { width: min(100% - 28px, 1180px); padding-top: 24px; }
+      #kb-next-prototype .kb-page-head { align-items: flex-start; flex-direction: column; gap: 10px; }
+      #kb-next-prototype .kb-job-grid,
+      #kb-next-prototype .kb-confirm-layout { grid-template-columns: 1fr; }
+      #kb-next-prototype .kb-job-decision { border-left: 0; border-top: 1px solid var(--kb-next-line); }
+      #kb-next-prototype .kb-job-actions { grid-template-columns: 1fr; }
+      #kb-next-prototype .kb-next-panel { grid-template-columns: auto 1fr; }
+      #kb-next-prototype .kb-next-panel .kb-primary { grid-column: 1 / -1; width: 100%; }
+      #kb-next-prototype .kb-mini-link { display: none; }
+      #kb-next-prototype .kb-answer-options { grid-template-columns: 1fr; }
+      #kb-next-prototype .kb-question-actions { display: grid; grid-template-columns: 1fr; }
+      #kb-next-prototype .kb-desktop-compare { display: none; }
+      #kb-next-prototype .kb-mobile-compare { display: grid; gap: 12px; margin-top: 20px; }
+      #kb-next-prototype .kb-mobile-job { padding: 17px; border: 1px solid var(--kb-next-line); border-radius: 14px; background: var(--kb-next-surface); }
+      #kb-next-prototype .kb-mobile-job-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+      #kb-next-prototype .kb-mobile-job h2 { font-size: 16px; line-height: 1.5; font-weight: 500; }
+      #kb-next-prototype .kb-mobile-job dl { margin: 14px 0 0; display: grid; grid-template-columns: 90px 1fr; gap: 8px; font-size: 12px; }
+      #kb-next-prototype .kb-mobile-job dt { color: var(--kb-next-muted); }
+      #kb-next-prototype .kb-mobile-job dd { margin: 0; }
+      #kb-next-prototype .kb-mobile-job button { width: 100%; margin-top: 14px; min-height: 44px; border: 1px solid var(--kb-next-line); border-radius: 10px; color: var(--kb-next-ink); background: var(--kb-next-surface); }
+      #kb-next-prototype .kb-mobile-job button[aria-pressed="true"] { border-color: var(--kb-next-brand); color: var(--kb-next-brand); background: var(--kb-next-brand-soft); }
+      #kb-next-prototype .kb-compare-summary { align-items: flex-start; flex-direction: column; }
+    }
+  </style>
+
+  <div class="kb-scenario-switcher" role="group" aria-label="体验三个后续方向">
+    <button type="button" data-scenario="save" aria-pressed="true"><i data-lucide="bookmark-check" aria-hidden="true"></i>保存后的下一步</button>
+    <button type="button" data-scenario="confirm" aria-pressed="false"><i data-lucide="message-square-text" aria-hidden="true"></i>官方确认问题</button>
+    <button type="button" data-scenario="compare" aria-pressed="false"><i data-lucide="columns-3" aria-hidden="true"></i>多岗位比较</button>
+  </div>
+
+  <div class="kb-app">
+    <header class="kb-app-header">
+      <div class="kb-brand"><span class="kb-brand-mark"><i data-lucide="clipboard-check" aria-hidden="true"></i></span>教招有据</div>
+      <nav class="kb-nav" aria-label="主导航"><span class="is-current">机会</span><span>日程</span><span>我的</span></nav>
+      <div class="kb-header-side"><span>通知</span><span class="kb-avatar">陈</span></div>
+    </header>
+
+    <main class="kb-main">
+      <section data-scenario-panel="save" aria-live="polite">
+        <div class="kb-page-head">
+          <div>
+            <div class="kb-eyebrow">优先机会</div>
+            <h1>先保存，再把收藏变成下一步</h1>
+            <p class="kb-lead">点击“保存机会”，查看系统如何根据岗位状态给出一个明确行动。</p>
+          </div>
+          <span class="kb-status-chip"><i data-lucide="circle-check" aria-hidden="true"></i>初步符合</span>
+        </div>
+
+        <article class="kb-job-shell">
+          <div class="kb-job-top">
+            <span class="kb-trust"><i data-lucide="badge-check" aria-hidden="true"></i>真实公告 · 已人工核对</span>
+            <span class="kb-warning-chip"><i data-lucide="clock-3" aria-hidden="true"></i>6 天后截止</span>
+          </div>
+          <div class="kb-job-grid">
+            <div class="kb-job-facts">
+              <h2 class="kb-job-title">杭州某公办初中 · 语文教师</h2>
+              <div class="kb-location"><i data-lucide="map-pin" aria-hidden="true"></i>杭州 · 余杭区 · 杭州某公办初中 <button type="button">地图 ↗</button></div>
+              <div class="kb-facts-row"><span class="kb-fact">事业编</span><span class="kb-fact">初中语文</span><span class="kb-fact">招 2 人</span></div>
+            </div>
+            <div class="kb-job-decision">
+              <div class="kb-decision-title">资格判断</div>
+              <ul class="kb-decision-list">
+                <li class="is-pass"><i data-lucide="check" aria-hidden="true"></i><span>学历、专业和教师资格 3 项已通过</span></li>
+                <li class="is-warn"><i data-lucide="circle-help" aria-hidden="true"></i><span>公告未明确是否限制户籍，建议报名前确认</span></li>
+              </ul>
+            </div>
+          </div>
+          <div class="kb-job-actions">
+            <button type="button" class="kb-primary"><i data-lucide="file-check-2" aria-hidden="true"></i>查看官方依据</button>
+            <button type="button" class="kb-secondary" data-save-opportunity><i data-lucide="bookmark" aria-hidden="true"></i><span>保存机会</span></button>
+          </div>
+        </article>
+
+        <div class="kb-next-panel" data-next-panel hidden>
+          <span class="kb-next-icon"><i data-lucide="calendar-check-2" aria-hidden="true"></i></span>
+          <div><h2>已保存，并加入报考日程</h2><p>下一步：先确认户籍要求；报名截止时间 10 月 18 日已同步。</p></div>
+          <button type="button" class="kb-primary" data-go-confirm>查看确认方式 <i data-lucide="arrow-right" aria-hidden="true"></i></button>
+        </div>
+      </section>
+
+      <section data-scenario-panel="confirm" aria-live="polite" hidden>
+        <div class="kb-page-head">
+          <div>
+            <div class="kb-eyebrow">建议官方确认</div>
+            <h1>把“不确定”变成一个可以执行的问题</h1>
+            <p class="kb-lead">先解释为什么需要确认，再给出可编辑、可复制的问题和官方联系方式。</p>
+          </div>
+          <span class="kb-warning-chip"><i data-lucide="circle-help" aria-hidden="true"></i>专业口径待确认</span>
+        </div>
+
+        <div class="kb-confirm-layout">
+          <article class="kb-panel">
+            <div class="kb-panel-head"><h2>为什么需要确认</h2><span class="kb-trust"><i data-lucide="badge-check" aria-hidden="true"></i>公告已核对</span></div>
+            <div class="kb-panel-label">判断原因</div>
+            <p class="kb-reason">公告要求“中国语言文学类”，但岗位表没有注明采用的专业目录版本，因此不能直接给出确定结论。</p>
+            <div class="kb-panel-label">公告原文</div>
+            <blockquote class="kb-quote">本科专业要求：中国语言文学类；具体资格条件以岗位表及资格复审为准。</blockquote>
+            <div class="kb-contact">
+              <span><i data-lucide="building-2" aria-hidden="true"></i>某区教育局人事科</span>
+              <span><i data-lucide="phone" aria-hidden="true"></i>0571-XXXXXXX · 工作日 09:00—11:30</span>
+              <span><i data-lucide="file-text" aria-hidden="true"></i>来源：公告第 6 部分 · 10 月 13 日核对</span>
+            </div>
+          </article>
+
+          <article class="kb-panel">
+            <div class="kb-panel-head"><h2>建议咨询问题</h2><span class="kb-main-chip"><i data-lucide="wand-sparkles" aria-hidden="true"></i>可编辑</span></div>
+            <textarea class="kb-question" aria-label="建议咨询问题">您好，我准备报考“初中语文教师”岗位。我的本科专业为“汉语言文学（师范）”，毕业证书上的专业名称为“汉语言文学”。请问该专业是否符合岗位要求的“中国语言文学类”？如需按特定专业目录核对，也请告知目录名称或版本，谢谢。</textarea>
+            <div class="kb-question-actions">
+              <button type="button" class="kb-primary" data-copy-question><i data-lucide="copy" aria-hidden="true"></i><span>复制问题</span></button>
+              <button type="button" class="kb-secondary" data-record-answer>已联系，记录答复</button>
+            </div>
+            <div class="kb-answer-box" data-answer-box hidden>
+              <p>招聘单位如何答复？该记录只影响你的岗位状态。</p>
+              <div class="kb-answer-options" role="group" aria-label="记录官方答复">
+                <button type="button" aria-pressed="false" data-answer="确认符合">确认符合</button>
+                <button type="button" aria-pressed="false" data-answer="确认不符合">确认不符合</button>
+                <button type="button" aria-pressed="false" data-answer="仍不明确">仍不明确</button>
+              </div>
+              <div class="kb-answer-result" data-answer-result hidden></div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section data-scenario-panel="compare" aria-live="polite" hidden>
+        <div class="kb-page-head">
+          <div>
+            <div class="kb-eyebrow">已保存的机会</div>
+            <h1>比较关键差异，不替你计算“最优岗位”</h1>
+            <p class="kb-lead">只比较地点、用工形式、截止时间、资格状态和下一步，最多同时看 3 个。</p>
+          </div>
+          <span class="kb-main-chip"><i data-lucide="bookmark-check" aria-hidden="true"></i>已保存 3 个</span>
+        </div>
+
+        <div class="kb-desktop-compare">
+          <div class="kb-compare-wrap">
+            <div class="kb-compare-grid">
+              <div class="kb-compare-cell kb-compare-label kb-compare-head">比较项目</div>
+              <div class="kb-compare-cell kb-compare-head"><strong>杭州某公办初中<br>语文教师</strong><span>杭州 · 余杭区</span><button type="button" aria-pressed="false" data-main-target="杭州岗位">设为主要目标</button></div>
+              <div class="kb-compare-cell kb-compare-head"><strong>宁波某区教育局<br>初中语文岗位组</strong><span>宁波 · 鄞州区</span><button type="button" aria-pressed="false" data-main-target="宁波岗位">设为主要目标</button></div>
+              <div class="kb-compare-cell kb-compare-head"><strong>嘉兴某学校<br>初中语文教师</strong><span>嘉兴 · 南湖区</span><button type="button" aria-pressed="false" data-main-target="嘉兴岗位">设为主要目标</button></div>
+
+              <div class="kb-compare-cell kb-compare-label">用工形式</div><div class="kb-compare-cell">事业编</div><div class="kb-compare-cell">备案制</div><div class="kb-compare-cell">合同制</div>
+              <div class="kb-compare-cell kb-compare-label">报名截止</div><div class="kb-compare-cell kb-diff">6 天后</div><div class="kb-compare-cell">12 天后</div><div class="kb-compare-cell">待官方通知</div>
+              <div class="kb-compare-cell kb-compare-label">资格状态</div><div class="kb-compare-cell kb-good">初步符合</div><div class="kb-compare-cell">补充后判断</div><div class="kb-compare-cell">建议确认</div>
+              <div class="kb-compare-cell kb-compare-label">关键问题</div><div class="kb-compare-cell">户籍待确认</div><div class="kb-compare-cell">补普通话等级</div><div class="kb-compare-cell">确认专业目录</div>
+              <div class="kb-compare-cell kb-compare-label is-last-row">下一步</div><div class="kb-compare-cell is-last-row">确认户籍要求</div><div class="kb-compare-cell is-last-row">补充普通话等级</div><div class="kb-compare-cell is-last-row">复制咨询问题</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="kb-mobile-compare">
+          <article class="kb-mobile-job"><div class="kb-mobile-job-head"><h2>杭州某公办初中 · 语文教师</h2><span class="kb-status-chip">初步符合</span></div><dl><dt>地点</dt><dd>杭州 · 余杭区</dd><dt>用工形式</dt><dd>事业编</dd><dt>截止</dt><dd class="kb-diff">6 天后</dd><dt>下一步</dt><dd>确认户籍要求</dd></dl><button type="button" aria-pressed="false" data-main-target="杭州岗位">设为主要目标</button></article>
+          <article class="kb-mobile-job"><div class="kb-mobile-job-head"><h2>宁波某区教育局 · 初中语文岗位组</h2><span class="kb-warning-chip">待补 1 项</span></div><dl><dt>地点</dt><dd>宁波 · 鄞州区</dd><dt>用工形式</dt><dd>备案制</dd><dt>截止</dt><dd>12 天后</dd><dt>下一步</dt><dd>补充普通话等级</dd></dl><button type="button" aria-pressed="false" data-main-target="宁波岗位">设为主要目标</button></article>
+        </div>
+
+        <div class="kb-compare-summary">
+          <span data-main-summary>尚未设置主要目标；你仍可以同时准备多个岗位。</span>
+          <button type="button" class="kb-primary">查看共同日程 <i data-lucide="arrow-right" aria-hidden="true"></i></button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    (() => {
+      const root = document.getElementById('kb-next-prototype');
+      const scenarioButtons = [...root.querySelectorAll('[data-scenario]')];
+      const scenarioPanels = [...root.querySelectorAll('[data-scenario-panel]')];
+      const saveButton = root.querySelector('[data-save-opportunity]');
+      const nextPanel = root.querySelector('[data-next-panel]');
+      const copyButton = root.querySelector('[data-copy-question]');
+      const recordButton = root.querySelector('[data-record-answer]');
+      const answerBox = root.querySelector('[data-answer-box]');
+      const answerButtons = [...root.querySelectorAll('[data-answer]')];
+      const answerResult = root.querySelector('[data-answer-result]');
+      const targetButtons = [...root.querySelectorAll('[data-main-target]')];
+      const mainSummary = root.querySelector('[data-main-summary]');
+      let saved = false;
+      let currentScenario = 'save';
+      let mainTarget = '';
+
+      function showScenario(name, shouldPersist = true) {
+        currentScenario = name;
+        scenarioButtons.forEach((button) => {
+          button.setAttribute('aria-pressed', String(button.getAttribute('data-scenario') === name));
+        });
+        scenarioPanels.forEach((panel) => {
+          panel.hidden = panel.getAttribute('data-scenario-panel') !== name;
+        });
+        if (shouldPersist) persist();
+      }
+
+      function renderSaved() {
+        saveButton.setAttribute('aria-pressed', String(saved));
+        saveButton.querySelector('span').textContent = saved ? '已保存' : '保存机会';
+        nextPanel.hidden = !saved;
+      }
+
+      function renderMainTarget() {
+        targetButtons.forEach((button) => {
+          const active = button.getAttribute('data-main-target') === mainTarget;
+          button.setAttribute('aria-pressed', String(active));
+          button.textContent = active ? '主要目标' : '设为主要目标';
+        });
+        mainSummary.textContent = mainTarget
+          ? `已将${mainTarget}设为主要目标；其他岗位仍保留为备选。`
+          : '尚未设置主要目标；你仍可以同时准备多个岗位。';
+      }
+
+      function persist() {
+        if (!window.openai?.setWidgetState) return;
+        window.openai.setWidgetState({
+          modelContent: { selectedScenario: currentScenario, saved, mainTarget },
+          privateContent: null
+        }).catch(() => {});
+      }
+
+      const initialState = window.openai?.widgetState?.modelContent;
+      if (initialState && ['save', 'confirm', 'compare'].includes(initialState.selectedScenario)) {
+        currentScenario = initialState.selectedScenario;
+        saved = Boolean(initialState.saved);
+        mainTarget = typeof initialState.mainTarget === 'string' ? initialState.mainTarget : '';
+      }
+
+      scenarioButtons.forEach((button) => {
+        button.addEventListener('click', () => showScenario(button.getAttribute('data-scenario')));
+      });
+
+      saveButton.addEventListener('click', () => {
+        saved = !saved;
+        renderSaved();
+        persist();
+      });
+
+      root.querySelector('[data-go-confirm]').addEventListener('click', () => showScenario('confirm'));
+
+      copyButton.addEventListener('click', () => {
+        const label = copyButton.querySelector('span');
+        label.textContent = '已复制';
+        setTimeout(() => { label.textContent = '复制问题'; }, 1600);
+      });
+
+      recordButton.addEventListener('click', () => {
+        answerBox.hidden = !answerBox.hidden;
+      });
+
+      answerButtons.forEach((button) => {
+        button.addEventListener('click', () => {
+          const answer = button.getAttribute('data-answer');
+          answerButtons.forEach((item) => item.setAttribute('aria-pressed', String(item === button)));
+          answerResult.hidden = false;
+          answerResult.textContent = `已记录“${answer}”。这是你的个人记录，不会自动变成所有用户的判断规则。`;
+        });
+      });
+
+      targetButtons.forEach((button) => {
+        button.addEventListener('click', () => {
+          const target = button.getAttribute('data-main-target');
+          mainTarget = mainTarget === target ? '' : target;
+          renderMainTarget();
+          persist();
+        });
+      });
+
+      window.addEventListener('openai:set_globals', (event) => {
+        const state = event.detail?.globals?.widgetState?.modelContent;
+        if (!state) return;
+        if (['save', 'confirm', 'compare'].includes(state.selectedScenario)) currentScenario = state.selectedScenario;
+        saved = Boolean(state.saved);
+        mainTarget = typeof state.mainTarget === 'string' ? state.mainTarget : '';
+        showScenario(currentScenario, false);
+        renderSaved();
+        renderMainTarget();
+      });
+
+      showScenario(currentScenario, false);
+      renderSaved();
+      renderMainTarget();
+    })();
+  </script>
+</div>
+
+
+
+</body>
+</html>

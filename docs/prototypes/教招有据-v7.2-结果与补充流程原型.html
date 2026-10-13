@@ -1,0 +1,875 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>教招有据 v7.2：结果与补充流程原型</title>
+  <style>
+    html, body { margin: 0; min-height: 100%; background: #f3f5fa; }
+    body { font-family: Inter, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; }
+    .prototype-note { padding: 10px 16px; background: #172033; color: #fff; font-size: 13px; line-height: 1.5; }
+    .prototype-controls { position: sticky; top: 0; z-index: 100; display: flex; gap: 8px; padding: 10px 16px; background: rgba(255,255,255,.94); border-bottom: 1px solid #dfe4ee; backdrop-filter: blur(10px); }
+    .prototype-controls button { border: 1px solid #cfd6e3; border-radius: 999px; padding: 7px 12px; background: #fff; color: #344056; cursor: pointer; }
+    .prototype-controls button[aria-pressed="true"] { background: #3157d5; border-color: #3157d5; color: #fff; }
+    i[data-lucide]:empty { display: inline-block; width: .85em; height: .85em; border: 1.5px solid currentColor; border-radius: 50%; vertical-align: -.05em; opacity: .72; }
+  </style>
+</head>
+<body>
+  <div class="prototype-note">交接原型：用于确认信息架构、内容层级和响应式方向，不代表最终视觉稿。原型中的机构、岗位和日期均为示意。</div>
+<div id="kb-prototype">
+  <style>
+    #kb-prototype {
+      color-scheme: light dark;
+      --kb-page: light-dark(#f3f5fa, #0d1220);
+      --kb-surface: light-dark(#ffffff, #151b2d);
+      --kb-surface-soft: light-dark(#f7f9fc, #1b2338);
+      --kb-ink: light-dark(#172033, #f2f5ff);
+      --kb-muted: light-dark(#667085, #aab4cc);
+      --kb-line: light-dark(#e2e7f0, #2d3852);
+      --kb-brand: light-dark(#345eea, #7c9cff);
+      --kb-brand-soft: light-dark(#edf2ff, #202c52);
+      --kb-success: light-dark(#18794e, #6dd6a7);
+      --kb-success-soft: light-dark(#eaf8f1, #143b2c);
+      --kb-warning: light-dark(#a15c00, #ffc46b);
+      --kb-warning-soft: light-dark(#fff6e5, #3d2b13);
+      --kb-danger: light-dark(#b42318, #ff8f87);
+      --kb-shadow: light-dark(0 18px 45px rgba(24, 39, 75, 0.10), 0 20px 55px rgba(0, 0, 0, 0.34));
+      color: var(--kb-ink);
+      font-family: "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", system-ui, sans-serif;
+      background: transparent;
+      width: 100%;
+    }
+
+    #kb-prototype * { box-sizing: border-box; }
+    #kb-prototype button { font: inherit; }
+
+    #kb-prototype .kb-preview-switch {
+      display: flex;
+      justify-content: center;
+      gap: 6px;
+      margin: 0 0 12px;
+    }
+
+    #kb-prototype .kb-preview-switch button {
+      border: 1px solid var(--kb-line);
+      background: var(--kb-surface);
+      color: var(--kb-muted);
+      border-radius: 999px;
+      padding: 8px 14px;
+      min-height: 40px;
+    }
+
+    #kb-prototype .kb-preview-switch button[aria-pressed="true"] {
+      background: var(--kb-ink);
+      color: var(--kb-surface);
+      border-color: var(--kb-ink);
+    }
+
+    #kb-prototype .kb-app {
+      min-height: 760px;
+      overflow: hidden;
+      border: 1px solid var(--kb-line);
+      border-radius: 20px;
+      background: var(--kb-page);
+      box-shadow: var(--kb-shadow);
+    }
+
+    #kb-prototype .kb-header {
+      height: 68px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      padding: 0 30px;
+      background: color-mix(in srgb, var(--kb-surface) 94%, transparent);
+      border-bottom: 1px solid var(--kb-line);
+    }
+
+    #kb-prototype .kb-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 180px;
+    }
+
+    #kb-prototype .kb-brand-mark {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border-radius: 10px;
+      color: #ffffff;
+      background: linear-gradient(140deg, #3972f6, #7658ef);
+    }
+
+    #kb-prototype .kb-brand-name { font-weight: 500; }
+    #kb-prototype .kb-brand-sub { color: var(--kb-muted); font-size: 12px; margin-top: 1px; }
+
+    #kb-prototype .kb-nav {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px;
+      border-radius: 12px;
+      background: var(--kb-surface-soft);
+    }
+
+    #kb-prototype .kb-nav span {
+      padding: 8px 14px;
+      border-radius: 9px;
+      color: var(--kb-muted);
+      font-size: 14px;
+    }
+
+    #kb-prototype .kb-nav .is-active {
+      background: var(--kb-surface);
+      color: var(--kb-ink);
+      box-shadow: 0 1px 4px color-mix(in srgb, var(--kb-ink) 10%, transparent);
+    }
+
+    #kb-prototype .kb-header-actions {
+      min-width: 180px;
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 12px;
+      color: var(--kb-muted);
+      font-size: 13px;
+    }
+
+    #kb-prototype .kb-avatar {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--kb-brand-soft);
+      color: var(--kb-brand);
+      font-weight: 500;
+    }
+
+    #kb-prototype .kb-main {
+      width: min(900px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 34px 0 48px;
+    }
+
+    #kb-prototype .kb-eyebrow {
+      color: var(--kb-brand);
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: .05em;
+    }
+
+    #kb-prototype h1,
+    #kb-prototype h2,
+    #kb-prototype h3,
+    #kb-prototype p { margin: 0; }
+
+    #kb-prototype h1 {
+      margin-top: 7px;
+      font-size: clamp(26px, 3vw, 36px);
+      line-height: 1.24;
+      font-weight: 500;
+      letter-spacing: -0.025em;
+    }
+
+    #kb-prototype .kb-lead {
+      margin-top: 9px;
+      color: var(--kb-muted);
+      font-size: 14px;
+      line-height: 1.75;
+    }
+
+    #kb-prototype .kb-summary-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 28px;
+      align-items: flex-end;
+    }
+
+    #kb-prototype .kb-check-time {
+      flex: 0 0 auto;
+      padding-bottom: 5px;
+      color: var(--kb-muted);
+      font-size: 12px;
+    }
+
+    #kb-prototype .kb-filter-bar {
+      margin-top: 22px;
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 12px 14px;
+      border: 1px solid var(--kb-line);
+      border-radius: 14px;
+      background: var(--kb-surface);
+    }
+
+    #kb-prototype .kb-filter-label { color: var(--kb-muted); font-size: 12px; margin-right: 2px; }
+
+    #kb-prototype .kb-filter-summary {
+      color: var(--kb-ink);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    #kb-prototype .kb-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      border-radius: 999px;
+      padding: 6px 10px;
+      background: var(--kb-surface-soft);
+      color: var(--kb-ink);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    #kb-prototype .kb-link-button {
+      margin-left: auto;
+      border: 0;
+      background: transparent;
+      color: var(--kb-brand);
+      padding: 6px 8px;
+      font-size: 12px;
+    }
+
+    #kb-prototype .kb-tabs {
+      margin-top: 22px;
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      border-bottom: 1px solid var(--kb-line);
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+
+    #kb-prototype .kb-tabs::-webkit-scrollbar { display: none; }
+
+    #kb-prototype .kb-tab {
+      position: relative;
+      border: 0;
+      background: transparent;
+      color: var(--kb-muted);
+      min-height: 44px;
+      padding: 2px 0 12px;
+      font-size: 14px;
+      white-space: nowrap;
+    }
+
+    #kb-prototype .kb-tab.is-active { color: var(--kb-ink); font-weight: 500; }
+    #kb-prototype .kb-tab.is-active::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: -1px;
+      height: 2px;
+      border-radius: 2px 2px 0 0;
+      background: var(--kb-brand);
+    }
+
+    #kb-prototype .kb-job-card {
+      margin-top: 18px;
+      padding: 24px;
+      border: 1px solid color-mix(in srgb, var(--kb-brand) 38%, var(--kb-line));
+      border-radius: 18px;
+      background: var(--kb-surface);
+      box-shadow: 0 14px 32px color-mix(in srgb, var(--kb-brand) 9%, transparent);
+    }
+
+    #kb-prototype .kb-result-panel:focus { outline: none; }
+
+    #kb-prototype .kb-panel-note {
+      margin-top: 18px;
+      padding: 12px 14px;
+      border-radius: 12px;
+      background: var(--kb-surface-soft);
+      color: var(--kb-muted);
+      font-size: 13px;
+      line-height: 1.65;
+    }
+
+    #kb-prototype .kb-trust-line {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--kb-muted);
+      font-size: 12px;
+    }
+
+    #kb-prototype .kb-trust-line i { color: var(--kb-success); }
+
+    #kb-prototype .kb-card-top,
+    #kb-prototype .kb-location,
+    #kb-prototype .kb-card-actions,
+    #kb-prototype .kb-condition-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    #kb-prototype .kb-card-top { justify-content: space-between; }
+    #kb-prototype .kb-status,
+    #kb-prototype .kb-deadline {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    #kb-prototype .kb-status { color: var(--kb-success); background: var(--kb-success-soft); }
+    #kb-prototype .kb-deadline { color: var(--kb-warning); background: var(--kb-warning-soft); }
+
+    #kb-prototype .kb-job-title {
+      margin-top: 18px;
+      font-size: 22px;
+      line-height: 1.35;
+      font-weight: 500;
+    }
+
+    #kb-prototype .kb-location {
+      margin-top: 10px;
+      color: var(--kb-muted);
+      font-size: 14px;
+    }
+
+    #kb-prototype .kb-map-action {
+      border: 0;
+      background: transparent;
+      color: var(--kb-brand);
+      padding: 2px 3px;
+      font-weight: 500;
+    }
+
+    #kb-prototype .kb-facts {
+      margin-top: 16px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    #kb-prototype .kb-fact {
+      border: 1px solid var(--kb-line);
+      border-radius: 9px;
+      padding: 7px 10px;
+      color: var(--kb-muted);
+      font-size: 12px;
+      background: var(--kb-surface-soft);
+    }
+
+    #kb-prototype .kb-condition-row {
+      margin-top: 18px;
+      padding: 14px 0;
+      border-top: 1px solid var(--kb-line);
+      border-bottom: 1px solid var(--kb-line);
+    }
+
+    #kb-prototype .kb-condition {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--kb-muted);
+      font-size: 13px;
+    }
+
+    #kb-prototype .kb-condition.pass i { color: var(--kb-success); }
+    #kb-prototype .kb-condition.ask i { color: var(--kb-warning); }
+
+    #kb-prototype .kb-alert {
+      margin-top: 14px;
+      display: flex;
+      align-items: flex-start;
+      gap: 9px;
+      color: var(--kb-warning);
+      font-size: 13px;
+      line-height: 1.65;
+    }
+
+    #kb-prototype .kb-card-actions {
+      margin-top: 19px;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    #kb-prototype .kb-primary,
+    #kb-prototype .kb-secondary {
+      height: 44px;
+      border-radius: 11px;
+      padding: 10px 16px;
+      font-weight: 500;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+    }
+
+    #kb-prototype .kb-primary {
+      border: 1px solid var(--kb-brand);
+      background: var(--kb-brand);
+      color: #ffffff;
+    }
+
+    #kb-prototype .kb-secondary {
+      border: 1px solid var(--kb-line);
+      background: var(--kb-surface);
+      color: var(--kb-ink);
+    }
+
+    #kb-prototype .kb-secondary-card {
+      margin-top: 12px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px 20px;
+      padding: 17px 20px;
+      border: 1px solid var(--kb-line);
+      border-radius: 14px;
+      background: var(--kb-surface);
+    }
+
+    #kb-prototype .kb-secondary-title { font-weight: 500; }
+    #kb-prototype .kb-secondary-meta { color: var(--kb-muted); font-size: 12px; }
+    #kb-prototype .kb-secondary-note { grid-column: 1 / -1; color: var(--kb-muted); font-size: 12px; }
+
+    #kb-prototype .kb-secondary-card .kb-card-actions {
+      grid-column: 1 / -1;
+      margin-top: 2px;
+    }
+
+    #kb-prototype .kb-outside-card {
+      margin-top: 10px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 7px 18px;
+      align-items: center;
+      padding: 15px 18px;
+      border: 1px solid var(--kb-line);
+      border-radius: 13px;
+      background: color-mix(in srgb, var(--kb-surface) 76%, var(--kb-page));
+    }
+
+    #kb-prototype .kb-outside-title { font-size: 14px; font-weight: 500; }
+    #kb-prototype .kb-outside-reason { grid-column: 1 / -1; color: var(--kb-muted); font-size: 12px; }
+    #kb-prototype .kb-outside-action {
+      border: 0;
+      background: transparent;
+      color: var(--kb-brand);
+      padding: 6px 0;
+      font-size: 12px;
+    }
+
+    #kb-prototype .kb-disclosure {
+      margin-top: 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-top: 1px solid var(--kb-line);
+      padding: 16px 2px 0;
+      color: var(--kb-muted);
+      font-size: 13px;
+    }
+
+    #kb-prototype .kb-form-shell {
+      width: min(700px, 100%);
+      margin: 0 auto;
+    }
+
+    #kb-prototype .kb-progress-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: var(--kb-muted);
+      font-size: 12px;
+    }
+
+    #kb-prototype .kb-progress-track {
+      height: 4px;
+      margin-top: 11px;
+      border-radius: 999px;
+      background: var(--kb-line);
+      overflow: hidden;
+    }
+
+    #kb-prototype .kb-progress-value { width: 100%; height: 100%; background: var(--kb-brand); }
+
+    #kb-prototype .kb-form-card {
+      margin-top: 22px;
+      padding: 28px;
+      border: 1px solid var(--kb-line);
+      border-radius: 18px;
+      background: var(--kb-surface);
+      box-shadow: 0 12px 34px color-mix(in srgb, var(--kb-ink) 6%, transparent);
+    }
+
+    #kb-prototype .kb-section-title { margin-top: 28px; font-size: 15px; font-weight: 500; }
+    #kb-prototype .kb-section-help { margin-top: 6px; color: var(--kb-muted); font-size: 12px; line-height: 1.6; }
+
+    #kb-prototype .kb-fields {
+      margin-top: 16px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    #kb-prototype .kb-field label { display: block; margin-bottom: 7px; color: var(--kb-muted); font-size: 12px; }
+
+    #kb-prototype .kb-input {
+      min-height: 46px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 0 13px;
+      border: 1px solid var(--kb-line);
+      border-radius: 11px;
+      background: var(--kb-surface-soft);
+      color: var(--kb-ink);
+      font-size: 13px;
+    }
+
+    #kb-prototype .kb-field.full { grid-column: 1 / -1; }
+
+    #kb-prototype .kb-preference-grid {
+      margin-top: 13px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+
+    #kb-prototype .kb-pref {
+      min-height: 76px;
+      text-align: left;
+      padding: 12px;
+      border: 1px solid var(--kb-line);
+      border-radius: 12px;
+      background: var(--kb-surface-soft);
+      color: var(--kb-ink);
+    }
+
+    #kb-prototype .kb-pref[aria-pressed="true"] {
+      border-color: var(--kb-brand);
+      background: var(--kb-brand-soft);
+      color: var(--kb-brand);
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--kb-brand) 24%, transparent);
+    }
+
+    #kb-prototype .kb-pref strong { display: block; font-size: 13px; font-weight: 500; }
+    #kb-prototype .kb-pref span { display: block; margin-top: 5px; color: var(--kb-muted); font-size: 11px; line-height: 1.5; }
+
+    #kb-prototype .kb-profile-summary {
+      margin-top: 20px;
+      padding: 12px 14px;
+      border-radius: 11px;
+      background: var(--kb-surface-soft);
+      color: var(--kb-muted);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    #kb-prototype .kb-form-actions {
+      margin-top: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    #kb-prototype .kb-form-actions .kb-primary { min-width: 180px; }
+    #kb-prototype [hidden] { display: none !important; }
+
+    @media (max-width: 720px) {
+      #kb-prototype .kb-app { min-height: 720px; border-radius: 16px; }
+      #kb-prototype .kb-header { height: 62px; padding: 0 16px; }
+      #kb-prototype .kb-brand { min-width: 0; }
+      #kb-prototype .kb-brand-sub, #kb-prototype .kb-nav, #kb-prototype .kb-header-actions span { display: none; }
+      #kb-prototype .kb-header-actions { min-width: 0; }
+      #kb-prototype .kb-main { width: min(100% - 28px, 900px); padding-top: 24px; }
+      #kb-prototype .kb-summary-row { align-items: flex-start; flex-direction: column; gap: 6px; }
+      #kb-prototype .kb-check-time { padding-bottom: 0; }
+      #kb-prototype .kb-filter-bar { align-items: flex-start; }
+      #kb-prototype .kb-link-button { margin-left: 0; }
+      #kb-prototype .kb-job-card { padding: 18px; }
+      #kb-prototype .kb-job-title { font-size: 19px; }
+      #kb-prototype .kb-card-actions { grid-template-columns: 1fr; }
+      #kb-prototype .kb-fields, #kb-prototype .kb-preference-grid { grid-template-columns: 1fr; }
+      #kb-prototype .kb-field.full { grid-column: auto; }
+      #kb-prototype .kb-form-card { padding: 20px; }
+      #kb-prototype .kb-form-actions { align-items: stretch; flex-direction: column-reverse; }
+      #kb-prototype .kb-form-actions .kb-primary { width: 100%; }
+    }
+  </style>
+
+  <div class="kb-preview-switch" role="group" aria-label="选择原型页面">
+    <button type="button" data-screen="results" aria-pressed="true">精简结果页</button>
+    <button type="button" data-screen="profile" aria-pressed="false">填写第 2 屏</button>
+  </div>
+
+  <div class="kb-app">
+    <header class="kb-header">
+      <div class="kb-brand">
+        <div class="kb-brand-mark"><i data-lucide="clipboard-check" aria-hidden="true"></i></div>
+        <div>
+          <div class="kb-brand-name">教招有据</div>
+          <div class="kb-brand-sub">教师招聘机会与资格判断</div>
+        </div>
+      </div>
+      <nav class="kb-nav" aria-label="主导航">
+        <span class="is-active">机会</span>
+        <span>日程</span>
+        <span>我的</span>
+      </nav>
+      <div class="kb-header-actions">
+        <span>通知</span>
+        <div class="kb-avatar" aria-label="用户头像">陈</div>
+      </div>
+    </header>
+
+    <main class="kb-main">
+      <section data-prototype-screen="results">
+        <div class="kb-summary-row">
+          <div>
+            <div class="kb-eyebrow">资格预筛结果</div>
+            <h1>1 个优先机会，2 个补充后可判断</h1>
+            <p class="kb-lead">优先机会已按资格状态与报名截止时间排序。</p>
+          </div>
+          <div class="kb-check-time">最后核对：2026 年 10 月 13 日</div>
+        </div>
+
+        <div class="kb-filter-bar" aria-label="当前筛选条件">
+          <span class="kb-filter-label">当前条件</span>
+          <span class="kb-filter-summary">杭州优先 · 本科 · 汉语言文学 · 初中语文</span>
+          <span class="kb-chip" data-nature-chip>事业编优先，也看其他</span>
+          <button type="button" class="kb-link-button" data-go-profile>修改条件</button>
+        </div>
+
+        <div class="kb-tabs" role="tablist" aria-label="结果分类">
+          <button type="button" id="kb-tab-priority" class="kb-tab is-active" role="tab" aria-selected="true" aria-controls="kb-panel-priority" tabindex="0" data-result-tab="priority">优先机会 1</button>
+          <button type="button" id="kb-tab-needs" class="kb-tab" role="tab" aria-selected="false" aria-controls="kb-panel-needs" tabindex="-1" data-result-tab="needs">补充后判断 2</button>
+          <button type="button" id="kb-tab-outside" class="kb-tab" role="tab" aria-selected="false" aria-controls="kb-panel-outside" tabindex="-1" data-result-tab="outside">偏好范围外 3</button>
+        </div>
+
+        <div id="kb-panel-priority" class="kb-result-panel" role="tabpanel" aria-labelledby="kb-tab-priority" data-result-panel="priority" tabindex="0">
+          <article class="kb-job-card">
+            <div class="kb-card-top">
+              <span class="kb-trust-line"><i data-lucide="badge-check" aria-hidden="true"></i>真实公告 · 已人工核对</span>
+              <span class="kb-deadline"><i data-lucide="clock-3" aria-hidden="true"></i>6 天后截止</span>
+            </div>
+            <h2 class="kb-job-title">杭州某公办初中 · 语文教师</h2>
+            <div class="kb-location">
+              <i data-lucide="map-pin" aria-hidden="true"></i>
+              <span>杭州 · 余杭区 · 杭州某公办初中</span>
+              <button type="button" class="kb-map-action">地图 ↗</button>
+            </div>
+            <div class="kb-facts" aria-label="岗位关键信息">
+              <span class="kb-fact">事业编</span>
+              <span class="kb-fact">初中语文</span>
+              <span class="kb-fact">招 2 人</span>
+            </div>
+            <div class="kb-condition-row" aria-label="资格判断摘要">
+              <span class="kb-status"><i data-lucide="circle-check" aria-hidden="true"></i>3 项已通过</span>
+              <span class="kb-condition ask"><i data-lucide="circle-help" aria-hidden="true"></i>户籍待确认</span>
+            </div>
+            <p class="kb-alert"><i data-lucide="triangle-alert" aria-hidden="true"></i><span>公告未明确是否限制户籍，报名前建议向招聘单位确认。</span></p>
+            <div class="kb-card-actions">
+              <button type="button" class="kb-primary"><i data-lucide="file-check-2" aria-hidden="true"></i>查看官方依据</button>
+              <button type="button" class="kb-secondary"><i data-lucide="bookmark" aria-hidden="true"></i>保存机会</button>
+            </div>
+          </article>
+        </div>
+
+        <div id="kb-panel-needs" class="kb-result-panel" role="tabpanel" aria-labelledby="kb-tab-needs" data-result-panel="needs" tabindex="0" hidden>
+          <p class="kb-panel-note">这 2 个岗位不是“不符合”，只需要补充或确认一项信息。补完后会自动进入优先机会或不符合。</p>
+          <article class="kb-secondary-card">
+            <div class="kb-secondary-title">宁波某区教育局 · 初中语文岗位组</div>
+            <div class="kb-secondary-meta">待补 1 项</div>
+            <div class="kb-secondary-note">📍 宁波 · 鄞州区　<button type="button" class="kb-map-action">地图 ↗</button>　·　备案制　·　招 5 人　·　需要补充普通话等级</div>
+            <div class="kb-card-actions">
+              <button type="button" class="kb-primary">补充普通话等级</button>
+              <button type="button" class="kb-secondary">查看官方依据</button>
+            </div>
+          </article>
+          <article class="kb-secondary-card">
+            <div class="kb-secondary-title">杭州某学校 · 高中语文教师</div>
+            <div class="kb-secondary-meta">待确认 1 项</div>
+            <div class="kb-secondary-note">📍 杭州 · 临平区　<button type="button" class="kb-map-action">地图 ↗</button>　·　事业编　·　招 1 人　·　专业目录口径需要确认</div>
+            <div class="kb-card-actions">
+              <button type="button" class="kb-primary">确认专业口径</button>
+              <button type="button" class="kb-secondary">查看官方依据</button>
+            </div>
+          </article>
+        </div>
+
+        <div id="kb-panel-outside" class="kb-result-panel" role="tabpanel" aria-labelledby="kb-tab-outside" data-result-panel="outside" tabindex="0" hidden>
+          <p class="kb-panel-note">这些岗位资格可能符合，但不在你设置的地区或用工偏好内，因此不参与优先排序。</p>
+          <article class="kb-outside-card">
+            <div class="kb-outside-title">绍兴某公办初中 · 语文教师</div>
+            <button type="button" class="kb-outside-action">查看</button>
+            <div class="kb-outside-reason">绍兴 · 越城区 · 事业编 · 超出“杭州优先”的地区范围</div>
+          </article>
+          <article class="kb-outside-card">
+            <div class="kb-outside-title">嘉兴某学校 · 初中语文教师</div>
+            <button type="button" class="kb-outside-action">查看</button>
+            <div class="kb-outside-reason">嘉兴 · 南湖区 · 合同制 · 地区及用工形式均非优先</div>
+          </article>
+          <article class="kb-outside-card">
+            <div class="kb-outside-title">湖州某教育集团 · 语文教师</div>
+            <button type="button" class="kb-outside-action">查看</button>
+            <div class="kb-outside-reason">湖州 · 吴兴区 · 储备岗 · 超出当前地区偏好</div>
+          </article>
+        </div>
+
+        <div class="kb-disclosure">
+          <span>覆盖范围、已截止岗位与判断方法</span>
+          <i data-lucide="chevron-down" aria-hidden="true"></i>
+        </div>
+      </section>
+
+      <section data-prototype-screen="profile" hidden>
+        <div class="kb-form-shell">
+          <div class="kb-progress-head">
+            <span>第 2 屏，共 2 屏</span>
+            <span>基础资格</span>
+          </div>
+          <div class="kb-progress-track" aria-hidden="true"><div class="kb-progress-value"></div></div>
+
+          <div class="kb-form-card">
+            <div class="kb-eyebrow">基础资格</div>
+            <h1>告诉我们你的报考条件</h1>
+            <p class="kb-lead">只填写影响首次判断的信息；户籍、社保等条件会按具体岗位再补问。</p>
+
+            <div class="kb-fields">
+              <div class="kb-field">
+                <label>最高学历</label>
+                <div class="kb-input"><span>本科</span><i data-lucide="chevron-down" aria-hidden="true"></i></div>
+              </div>
+              <div class="kb-field">
+                <label>毕业时间</label>
+                <div class="kb-input"><span>2025 年 6 月</span><i data-lucide="calendar" aria-hidden="true"></i></div>
+              </div>
+              <div class="kb-field full">
+                <label>专业全称</label>
+                <div class="kb-input"><span>汉语言文学</span><i data-lucide="book-open" aria-hidden="true"></i></div>
+              </div>
+              <div class="kb-field">
+                <label>教师资格状态</label>
+                <div class="kb-input"><span>已取得教师资格证</span><i data-lucide="chevron-down" aria-hidden="true"></i></div>
+              </div>
+              <div class="kb-field">
+                <label>资格证学段与学科</label>
+                <div class="kb-input"><span>初中 · 语文</span><i data-lucide="chevron-down" aria-hidden="true"></i></div>
+              </div>
+            </div>
+
+            <h2 class="kb-section-title">你想看哪类用工形式？</h2>
+            <p class="kb-section-help">这只影响结果的筛选和排序，不会被当作资格不符合。</p>
+            <div class="kb-preference-grid" role="group" aria-label="用工形式偏好">
+              <button type="button" class="kb-pref" data-nature="只看事业编" aria-pressed="false">
+                <strong>只看事业编</strong>
+                <span>隐藏其他官方用工形式</span>
+              </button>
+              <button type="button" class="kb-pref" data-nature="事业编优先，也看其他" aria-pressed="true">
+                <strong>事业编优先</strong>
+                <span>其他官方岗位仍会展示</span>
+              </button>
+              <button type="button" class="kb-pref" data-nature="暂不确定，先全部看看" aria-pressed="false">
+                <strong>暂不确定</strong>
+                <span>先查看全部官方岗位</span>
+              </button>
+            </div>
+
+            <div class="kb-profile-summary">
+              将根据：杭州优先 · 本科 · 汉语言文学 · 初中语文 · <span data-nature-summary>事业编优先，也看其他</span>，为你生成结果。
+            </div>
+
+            <div class="kb-form-actions">
+              <button type="button" class="kb-link-button">返回地区意向</button>
+              <button type="button" class="kb-primary" data-show-results>查看匹配结果</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    (() => {
+      const root = document.getElementById('kb-prototype');
+      const screenButtons = root.querySelectorAll('[data-screen]');
+      const screens = root.querySelectorAll('[data-prototype-screen]');
+      const natureButtons = root.querySelectorAll('[data-nature]');
+      const natureSummary = root.querySelector('[data-nature-summary]');
+      const natureChip = root.querySelector('[data-nature-chip]');
+      const resultTabs = [...root.querySelectorAll('[data-result-tab]')];
+      const resultPanels = root.querySelectorAll('[data-result-panel]');
+
+      function showScreen(name) {
+        screens.forEach((screen) => {
+          screen.hidden = screen.getAttribute('data-prototype-screen') !== name;
+        });
+        screenButtons.forEach((button) => {
+          button.setAttribute('aria-pressed', String(button.getAttribute('data-screen') === name));
+        });
+      }
+
+      screenButtons.forEach((button) => {
+        button.addEventListener('click', () => showScreen(button.getAttribute('data-screen')));
+      });
+
+      root.querySelectorAll('[data-go-profile]').forEach((button) => {
+        button.addEventListener('click', () => showScreen('profile'));
+      });
+
+      root.querySelectorAll('[data-show-results]').forEach((button) => {
+        button.addEventListener('click', () => showScreen('results'));
+      });
+
+      natureButtons.forEach((button) => {
+        button.addEventListener('click', () => {
+          const label = button.getAttribute('data-nature');
+          natureButtons.forEach((item) => item.setAttribute('aria-pressed', String(item === button)));
+          natureSummary.textContent = label;
+          natureChip.textContent = label;
+        });
+      });
+
+      function showResultGroup(name, moveFocus = false) {
+        resultTabs.forEach((tab) => {
+          const active = tab.getAttribute('data-result-tab') === name;
+          tab.classList.toggle('is-active', active);
+          tab.setAttribute('aria-selected', String(active));
+          tab.setAttribute('tabindex', active ? '0' : '-1');
+          if (active && moveFocus) tab.focus();
+        });
+        resultPanels.forEach((panel) => {
+          panel.hidden = panel.getAttribute('data-result-panel') !== name;
+        });
+      }
+
+      resultTabs.forEach((tab, index) => {
+        tab.addEventListener('click', () => showResultGroup(tab.getAttribute('data-result-tab')));
+        tab.addEventListener('keydown', (event) => {
+          if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+          event.preventDefault();
+          let nextIndex = index;
+          if (event.key === 'ArrowRight') nextIndex = (index + 1) % resultTabs.length;
+          if (event.key === 'ArrowLeft') nextIndex = (index - 1 + resultTabs.length) % resultTabs.length;
+          if (event.key === 'Home') nextIndex = 0;
+          if (event.key === 'End') nextIndex = resultTabs.length - 1;
+          showResultGroup(resultTabs[nextIndex].getAttribute('data-result-tab'), true);
+        });
+      });
+    })();
+  </script>
+</div>
+
+
+
+</body>
+</html>

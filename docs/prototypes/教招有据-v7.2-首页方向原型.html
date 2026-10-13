@@ -1,0 +1,606 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>教招有据 v7.2：首页方向原型</title>
+  <style>
+    html, body { margin: 0; min-height: 100%; background: #f3f5fa; }
+    body { font-family: Inter, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; }
+    .prototype-note { padding: 10px 16px; background: #172033; color: #fff; font-size: 13px; line-height: 1.5; }
+    .prototype-controls { position: sticky; top: 0; z-index: 100; display: flex; gap: 8px; padding: 10px 16px; background: rgba(255,255,255,.94); border-bottom: 1px solid #dfe4ee; backdrop-filter: blur(10px); }
+    .prototype-controls button { border: 1px solid #cfd6e3; border-radius: 999px; padding: 7px 12px; background: #fff; color: #344056; cursor: pointer; }
+    .prototype-controls button[aria-pressed="true"] { background: #3157d5; border-color: #3157d5; color: #fff; }
+    i[data-lucide]:empty { display: inline-block; width: .85em; height: .85em; border: 1.5px solid currentColor; border-radius: 50%; vertical-align: -.05em; opacity: .72; }
+  </style>
+</head>
+<body>
+  <div class="prototype-note">交接原型：用于确认信息架构、内容层级和响应式方向，不代表最终视觉稿。原型中的机构、岗位和日期均为示意。</div>
+<div id="kb-home-prototype">
+  <style>
+    #kb-home-prototype {
+      color-scheme: light dark;
+      --kb-home-page: light-dark(#f5f6fa, #0d1220);
+      --kb-home-surface: light-dark(#ffffff, #151b2d);
+      --kb-home-soft: light-dark(#f1f4f9, #1b2338);
+      --kb-home-ink: light-dark(#172033, #f2f5ff);
+      --kb-home-muted: light-dark(#667085, #aab4cc);
+      --kb-home-line: light-dark(#e1e6ef, #2d3852);
+      --kb-home-brand: light-dark(#315fd6, #86a5ff);
+      --kb-home-brand-deep: light-dark(#173a8f, #b6c6ff);
+      --kb-home-brand-soft: light-dark(#edf2ff, #202c52);
+      --kb-home-success: light-dark(#18794e, #6dd6a7);
+      --kb-home-success-soft: light-dark(#e9f8f0, #15392b);
+      --kb-home-warning: light-dark(#98600a, #ffc46b);
+      --kb-home-warning-soft: light-dark(#fff4df, #3d2b13);
+      width: 100%;
+      background: transparent;
+      color: var(--kb-home-ink);
+      font-family: "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", system-ui, sans-serif;
+    }
+
+    #kb-home-prototype * { box-sizing: border-box; }
+    #kb-home-prototype button,
+    #kb-home-prototype input { font: inherit; }
+
+    #kb-home-prototype .kb-home-stage {
+      min-height: 730px;
+      overflow: hidden;
+      border: 1px solid var(--kb-home-line);
+      border-radius: 20px;
+      background: var(--kb-home-page);
+      box-shadow: 0 18px 50px color-mix(in srgb, var(--kb-home-ink) 10%, transparent);
+    }
+
+    #kb-home-prototype .kb-home-header {
+      height: 68px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 34px;
+      border-bottom: 1px solid var(--kb-home-line);
+      background: color-mix(in srgb, var(--kb-home-surface) 94%, transparent);
+    }
+
+    #kb-home-prototype .kb-home-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 500;
+    }
+
+    #kb-home-prototype .kb-home-mark {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border-radius: 10px;
+      color: #ffffff;
+      background: linear-gradient(145deg, #3972f6, #7358e8);
+    }
+
+    #kb-home-prototype .kb-home-login {
+      border: 0;
+      background: transparent;
+      color: var(--kb-home-muted);
+      min-height: 44px;
+      padding: 0 4px;
+    }
+
+    #kb-home-prototype .kb-home-hero {
+      position: relative;
+      width: min(1120px, calc(100% - 68px));
+      margin: 0 auto;
+      min-height: 540px;
+    }
+
+    #kb-home-prototype .kb-home-eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      color: var(--kb-home-brand);
+      font-size: 13px;
+      font-weight: 500;
+      letter-spacing: .03em;
+    }
+
+    #kb-home-prototype .kb-home-title {
+      margin: 14px 0 0;
+      font-size: clamp(38px, 5.1vw, 66px);
+      line-height: 1.12;
+      letter-spacing: -.045em;
+      font-weight: 500;
+    }
+
+    #kb-home-prototype .kb-home-lead {
+      margin: 20px 0 0;
+      max-width: 580px;
+      color: var(--kb-home-muted);
+      font-size: 16px;
+      line-height: 1.8;
+    }
+
+    #kb-home-prototype .kb-home-primary,
+    #kb-home-prototype .kb-home-secondary {
+      min-height: 48px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      border-radius: 12px;
+      padding: 0 20px;
+      font-weight: 500;
+    }
+
+    #kb-home-prototype .kb-home-primary {
+      border: 1px solid var(--kb-home-brand);
+      color: #ffffff;
+      background: var(--kb-home-brand);
+      box-shadow: 0 10px 24px color-mix(in srgb, var(--kb-home-brand) 25%, transparent);
+    }
+
+    #kb-home-prototype .kb-home-secondary {
+      border: 1px solid var(--kb-home-line);
+      color: var(--kb-home-ink);
+      background: var(--kb-home-surface);
+    }
+
+    #kb-home-prototype .kb-home-proof {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px 18px;
+      color: var(--kb-home-muted);
+      font-size: 12px;
+    }
+
+    #kb-home-prototype .kb-home-proof span {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    #kb-home-prototype .kb-home-proof i { color: var(--kb-home-success); }
+
+    /* 方向一：结果先行 */
+    #kb-home-prototype .kb-result-first {
+      display: grid;
+      grid-template-columns: minmax(0, 1.04fr) minmax(370px, .96fr);
+      align-items: center;
+      gap: 54px;
+      padding: 64px 0 48px;
+    }
+
+    #kb-home-prototype .kb-result-copy { position: relative; z-index: 2; }
+
+    #kb-home-prototype .kb-result-copy .kb-home-title span { color: var(--kb-home-brand); }
+
+    #kb-home-prototype .kb-result-actions {
+      margin-top: 28px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    #kb-home-prototype .kb-time-note { color: var(--kb-home-muted); font-size: 13px; }
+    #kb-home-prototype .kb-result-copy .kb-home-proof { margin-top: 24px; }
+
+    #kb-home-prototype .kb-result-preview {
+      position: relative;
+      padding: 22px;
+      border: 1px solid color-mix(in srgb, var(--kb-home-brand) 26%, var(--kb-home-line));
+      border-radius: 24px;
+      background: color-mix(in srgb, var(--kb-home-surface) 95%, transparent);
+      box-shadow: 0 26px 62px color-mix(in srgb, var(--kb-home-brand) 18%, transparent);
+    }
+
+    #kb-home-prototype .kb-result-preview::before {
+      content: "";
+      position: absolute;
+      z-index: -1;
+      inset: -60px -56px;
+      border-radius: 50%;
+      background: radial-gradient(circle, color-mix(in srgb, var(--kb-home-brand) 22%, transparent), transparent 68%);
+    }
+
+    #kb-home-prototype .kb-preview-label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: var(--kb-home-muted);
+      font-size: 12px;
+    }
+
+    #kb-home-prototype .kb-mini-tabs {
+      margin-top: 16px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+
+    #kb-home-prototype .kb-mini-tab {
+      padding: 11px 8px;
+      border-radius: 11px;
+      background: var(--kb-home-soft);
+      color: var(--kb-home-muted);
+      text-align: center;
+      font-size: 11px;
+    }
+
+    #kb-home-prototype .kb-mini-tab strong {
+      display: block;
+      margin-bottom: 3px;
+      color: var(--kb-home-ink);
+      font-size: 18px;
+      font-weight: 500;
+    }
+
+    #kb-home-prototype .kb-mini-tab.is-active {
+      background: var(--kb-home-brand-soft);
+      color: var(--kb-home-brand);
+    }
+
+    #kb-home-prototype .kb-mini-job {
+      margin-top: 12px;
+      padding: 17px;
+      border: 1px solid var(--kb-home-line);
+      border-radius: 15px;
+      background: var(--kb-home-surface);
+    }
+
+    #kb-home-prototype .kb-mini-job-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      color: var(--kb-home-muted);
+      font-size: 11px;
+    }
+
+    #kb-home-prototype .kb-mini-status,
+    #kb-home-prototype .kb-mini-deadline {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      border-radius: 999px;
+      padding: 5px 8px;
+    }
+
+    #kb-home-prototype .kb-mini-status { color: var(--kb-home-success); background: var(--kb-home-success-soft); }
+    #kb-home-prototype .kb-mini-deadline { color: var(--kb-home-warning); background: var(--kb-home-warning-soft); }
+    #kb-home-prototype .kb-mini-job h2 { margin: 14px 0 0; font-size: 17px; line-height: 1.4; font-weight: 500; }
+
+    #kb-home-prototype .kb-mini-location,
+    #kb-home-prototype .kb-mini-check {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      margin-top: 9px;
+      color: var(--kb-home-muted);
+      font-size: 12px;
+    }
+
+    #kb-home-prototype .kb-mini-location a { color: var(--kb-home-brand); }
+    #kb-home-prototype .kb-mini-check { justify-content: space-between; padding-top: 12px; border-top: 1px solid var(--kb-home-line); }
+    #kb-home-prototype .kb-mini-check strong { color: var(--kb-home-success); font-weight: 500; }
+
+    #kb-home-prototype .kb-source-link {
+      margin-top: 13px;
+      width: 100%;
+      min-height: 42px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      border: 1px solid var(--kb-home-brand);
+      border-radius: 10px;
+      color: #ffffff;
+      background: var(--kb-home-brand);
+      font-weight: 500;
+    }
+
+    /* 方向二：直接开始 */
+    #kb-home-prototype .kb-start-first {
+      min-height: 650px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 48px 0 54px;
+    }
+
+    #kb-home-prototype .kb-start-first .kb-home-title { max-width: 800px; }
+    #kb-home-prototype .kb-start-first .kb-home-lead { max-width: 620px; }
+
+    #kb-home-prototype .kb-start-box {
+      width: min(760px, 100%);
+      margin-top: 32px;
+      padding: 12px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      border: 1px solid var(--kb-home-line);
+      border-radius: 17px;
+      background: var(--kb-home-surface);
+      box-shadow: 0 18px 44px color-mix(in srgb, var(--kb-home-brand) 13%, transparent);
+      text-align: left;
+    }
+
+    #kb-home-prototype .kb-start-field {
+      min-height: 62px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 14px;
+      border-radius: 12px;
+      background: var(--kb-home-soft);
+    }
+
+    #kb-home-prototype .kb-start-icon {
+      width: 36px;
+      height: 36px;
+      display: grid;
+      place-items: center;
+      border-radius: 10px;
+      color: var(--kb-home-brand);
+      background: var(--kb-home-brand-soft);
+    }
+
+    #kb-home-prototype .kb-start-label { color: var(--kb-home-muted); font-size: 11px; }
+    #kb-home-prototype .kb-start-value { margin-top: 2px; font-size: 15px; font-weight: 500; }
+    #kb-home-prototype .kb-start-box .kb-home-primary { min-height: 62px; }
+
+    #kb-home-prototype .kb-start-steps {
+      width: min(760px, 100%);
+      margin-top: 22px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      text-align: left;
+    }
+
+    #kb-home-prototype .kb-step {
+      padding: 14px 15px;
+      color: var(--kb-home-muted);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    #kb-home-prototype .kb-step strong { display: block; margin-bottom: 3px; color: var(--kb-home-ink); font-weight: 500; }
+    #kb-home-prototype .kb-start-first .kb-home-proof { margin-top: 20px; justify-content: center; }
+
+    /* 方向三：可信依据先行 */
+    #kb-home-prototype .kb-evidence-first {
+      display: grid;
+      grid-template-columns: minmax(360px, .88fr) minmax(0, 1.12fr);
+      align-items: center;
+      gap: 64px;
+      padding: 58px 0 48px;
+    }
+
+    #kb-home-prototype .kb-evidence-copy .kb-home-title { font-size: clamp(36px, 4.6vw, 60px); }
+    #kb-home-prototype .kb-evidence-copy .kb-home-proof { margin-top: 24px; }
+    #kb-home-prototype .kb-evidence-copy .kb-home-primary { margin-top: 28px; }
+
+    #kb-home-prototype .kb-evidence-board {
+      position: relative;
+      min-height: 470px;
+      padding: 24px;
+      border-radius: 24px;
+      background: linear-gradient(150deg, color-mix(in srgb, var(--kb-home-brand-deep) 92%, #0d224e), color-mix(in srgb, var(--kb-home-brand) 70%, #3d2f7c));
+      color: #ffffff;
+      overflow: hidden;
+      box-shadow: 0 24px 58px color-mix(in srgb, var(--kb-home-brand) 24%, transparent);
+    }
+
+    #kb-home-prototype .kb-evidence-board::after {
+      content: "";
+      position: absolute;
+      width: 260px;
+      height: 260px;
+      right: -90px;
+      bottom: -110px;
+      border-radius: 50%;
+      background: rgba(255,255,255,.13);
+    }
+
+    #kb-home-prototype .kb-evidence-kicker { color: rgba(255,255,255,.72); font-size: 12px; }
+    #kb-home-prototype .kb-evidence-board h2 { margin: 8px 0 0; font-size: 22px; line-height: 1.4; font-weight: 500; }
+
+    #kb-home-prototype .kb-source-paper {
+      position: relative;
+      z-index: 1;
+      margin-top: 22px;
+      padding: 19px;
+      border-radius: 16px;
+      background: rgba(255,255,255,.96);
+      color: #172033;
+      transform: rotate(-1deg);
+    }
+
+    #kb-home-prototype .kb-paper-head { display: flex; justify-content: space-between; gap: 14px; color: #6b7280; font-size: 11px; }
+    #kb-home-prototype .kb-paper-title { margin-top: 10px; font-size: 15px; font-weight: 500; }
+    #kb-home-prototype .kb-paper-lines { margin-top: 15px; display: grid; gap: 8px; }
+    #kb-home-prototype .kb-paper-line { height: 8px; border-radius: 4px; background: #e9edf4; }
+    #kb-home-prototype .kb-paper-line.short { width: 68%; }
+    #kb-home-prototype .kb-paper-highlight { margin-top: 12px; padding: 10px 12px; border-radius: 9px; background: #fff0b8; color: #64470a; font-size: 12px; line-height: 1.5; }
+
+    #kb-home-prototype .kb-evidence-answer {
+      position: relative;
+      z-index: 2;
+      width: 78%;
+      margin: -6px 0 0 auto;
+      padding: 14px 16px;
+      border: 1px solid rgba(255,255,255,.32);
+      border-radius: 14px;
+      background: rgba(13,24,52,.82);
+      backdrop-filter: blur(10px);
+    }
+
+    #kb-home-prototype .kb-answer-status { display: flex; align-items: center; gap: 7px; color: #9ee5be; font-size: 12px; }
+    #kb-home-prototype .kb-answer-text { margin-top: 7px; color: rgba(255,255,255,.82); font-size: 12px; line-height: 1.6; }
+
+    @media (max-width: 780px) {
+      #kb-home-prototype .kb-home-stage { min-height: 850px; border-radius: 16px; }
+      #kb-home-prototype .kb-home-header { height: 62px; padding: 0 18px; }
+      #kb-home-prototype .kb-home-hero { width: min(100% - 32px, 1120px); }
+      #kb-home-prototype .kb-result-first,
+      #kb-home-prototype .kb-evidence-first { grid-template-columns: 1fr; gap: 32px; padding-top: 42px; }
+      #kb-home-prototype .kb-home-title { font-size: clamp(36px, 11vw, 50px); }
+      #kb-home-prototype .kb-result-preview { width: 100%; }
+      #kb-home-prototype .kb-start-first { justify-content: flex-start; padding-top: 52px; }
+      #kb-home-prototype .kb-start-box { grid-template-columns: 1fr; }
+      #kb-home-prototype .kb-start-box .kb-home-primary { width: 100%; }
+      #kb-home-prototype .kb-start-steps { grid-template-columns: 1fr; gap: 2px; }
+      #kb-home-prototype .kb-evidence-board { min-height: 430px; }
+    }
+
+    @media (max-width: 440px) {
+      #kb-home-prototype .kb-mini-tabs { grid-template-columns: 1fr 1fr 1fr; }
+      #kb-home-prototype .kb-mini-tab { padding-inline: 4px; }
+      #kb-home-prototype .kb-evidence-answer { width: 92%; }
+    }
+  </style>
+
+  <div class="viz-carousel" aria-label="首页设计方向" data-previous-label="上一种" data-next-label="下一种">
+    <section data-variant="结果先行" aria-label="结果先行首页">
+      <div class="kb-home-stage">
+        <header class="kb-home-header">
+          <div class="kb-home-brand"><span class="kb-home-mark"><i data-lucide="clipboard-check" aria-hidden="true"></i></span>教招有据</div>
+          <button type="button" class="kb-home-login">登录</button>
+        </header>
+        <main class="kb-home-hero kb-result-first">
+          <div class="kb-result-copy">
+            <div class="kb-home-eyebrow"><i data-lucide="sparkles" aria-hidden="true"></i>30 秒完成资格预筛</div>
+            <h1 class="kb-home-title">哪些教师岗位，<span>你现在就能报？</span></h1>
+            <p class="kb-home-lead">填写地区、专业和教师资格，我们直接给出优先机会、待补信息和官方依据。</p>
+            <div class="kb-result-actions">
+              <button type="button" class="kb-home-primary">开始匹配岗位 <i data-lucide="arrow-right" aria-hidden="true"></i></button>
+              <span class="kb-time-note">无需登录 · 约 30 秒</span>
+            </div>
+            <div class="kb-home-proof">
+              <span><i data-lucide="badge-check" aria-hidden="true"></i>真实公告</span>
+              <span><i data-lucide="file-search" aria-hidden="true"></i>逐条可核对</span>
+              <span><i data-lucide="circle-help" aria-hidden="true"></i>不确定就明确提示</span>
+            </div>
+          </div>
+
+          <aside class="kb-result-preview" aria-label="匹配结果预览">
+            <div class="kb-preview-label"><span>结果预览 · 示例</span><span>刚刚核对</span></div>
+            <div class="kb-mini-tabs">
+              <div class="kb-mini-tab is-active"><strong>1</strong>优先机会</div>
+              <div class="kb-mini-tab"><strong>2</strong>补充后判断</div>
+              <div class="kb-mini-tab"><strong>3</strong>偏好范围外</div>
+            </div>
+            <div class="kb-mini-job">
+              <div class="kb-mini-job-top">
+                <span class="kb-mini-status"><i data-lucide="circle-check" aria-hidden="true"></i>初步符合</span>
+                <span class="kb-mini-deadline"><i data-lucide="clock-3" aria-hidden="true"></i>6 天后截止</span>
+              </div>
+              <h2>杭州某公办初中 · 语文教师</h2>
+              <div class="kb-mini-location"><i data-lucide="map-pin" aria-hidden="true"></i>杭州 · 余杭区 <a>地图 ↗</a></div>
+              <div class="kb-mini-check"><strong>3 项已通过</strong><span>户籍待确认</span></div>
+              <button type="button" class="kb-source-link"><i data-lucide="file-check-2" aria-hidden="true"></i>查看官方依据</button>
+            </div>
+          </aside>
+        </main>
+      </div>
+    </section>
+
+    <section data-variant="直接开始" aria-label="直接开始首页" hidden>
+      <div class="kb-home-stage">
+        <header class="kb-home-header">
+          <div class="kb-home-brand"><span class="kb-home-mark"><i data-lucide="clipboard-check" aria-hidden="true"></i></span>教招有据</div>
+          <button type="button" class="kb-home-login">登录</button>
+        </header>
+        <main class="kb-home-hero kb-start-first">
+          <div class="kb-home-eyebrow"><i data-lucide="search-check" aria-hidden="true"></i>不看介绍，直接开始</div>
+          <h1 class="kb-home-title">先告诉我，你想去哪里当老师？</h1>
+          <p class="kb-home-lead">从地区开始，下一步只问影响资格判断的信息。</p>
+          <div class="kb-start-box">
+            <div class="kb-start-field">
+              <span class="kb-start-icon"><i data-lucide="map-pin" aria-hidden="true"></i></span>
+              <div><div class="kb-start-label">报考地区</div><div class="kb-start-value">杭州优先，也看周边城市</div></div>
+            </div>
+            <button type="button" class="kb-home-primary">下一步 <i data-lucide="arrow-right" aria-hidden="true"></i></button>
+          </div>
+          <div class="kb-start-steps" aria-label="预筛流程">
+            <div class="kb-step"><strong>01 · 选择地区</strong>明确优先城市和可接受范围</div>
+            <div class="kb-step"><strong>02 · 填写资格</strong>学历、专业、教资与用工偏好</div>
+            <div class="kb-step"><strong>03 · 获得结果</strong>优先机会、待补信息与官方依据</div>
+          </div>
+          <div class="kb-home-proof">
+            <span><i data-lucide="badge-check" aria-hidden="true"></i>无需登录即可预筛</span>
+            <span><i data-lucide="shield-check" aria-hidden="true"></i>最终结论可回到原文</span>
+          </div>
+        </main>
+      </div>
+    </section>
+
+    <section data-variant="依据先行" aria-label="依据先行首页" hidden>
+      <div class="kb-home-stage">
+        <header class="kb-home-header">
+          <div class="kb-home-brand"><span class="kb-home-mark"><i data-lucide="clipboard-check" aria-hidden="true"></i></span>教招有据</div>
+          <button type="button" class="kb-home-login">登录</button>
+        </header>
+        <main class="kb-home-hero kb-evidence-first">
+          <div class="kb-evidence-copy">
+            <div class="kb-home-eyebrow"><i data-lucide="file-search" aria-hidden="true"></i>不是推荐，是有依据的判断</div>
+            <h1 class="kb-home-title">每一个“能不能报”，都能回到公告原文。</h1>
+            <p class="kb-home-lead">我们把教师招聘公告变成清楚的资格结论；信息不足时，不猜，直接告诉你还要确认什么。</p>
+            <button type="button" class="kb-home-primary">开始资格预筛 <i data-lucide="arrow-right" aria-hidden="true"></i></button>
+            <div class="kb-home-proof">
+              <span><i data-lucide="badge-check" aria-hidden="true"></i>真实公告</span>
+              <span><i data-lucide="refresh-cw" aria-hidden="true"></i>持续核对变更</span>
+            </div>
+          </div>
+          <aside class="kb-evidence-board" aria-label="从公告原文到资格判断的示意">
+            <div class="kb-evidence-kicker">官方公告 → 资格判断</div>
+            <h2>一句结论，也要看得到依据</h2>
+            <div class="kb-source-paper">
+              <div class="kb-paper-head"><span>杭州市某区教育局</span><span>官方发布</span></div>
+              <div class="kb-paper-title">公开招聘中小学教师公告</div>
+              <div class="kb-paper-lines" aria-hidden="true">
+                <div class="kb-paper-line"></div><div class="kb-paper-line"></div><div class="kb-paper-line short"></div>
+              </div>
+              <div class="kb-paper-highlight">岗位要求：本科及以上学历，汉语言文学类专业，持初中语文教师资格证。</div>
+            </div>
+            <div class="kb-evidence-answer">
+              <div class="kb-answer-status"><i data-lucide="circle-check" aria-hidden="true"></i>3 项条件已通过</div>
+              <div class="kb-answer-text">学历、专业、教资与你填写的信息一致；户籍条件需向招聘单位确认。</div>
+            </div>
+          </aside>
+        </main>
+      </div>
+    </section>
+  </div>
+</div>
+
+
+<script>
+(() => {
+  const carousel = document.querySelector('.viz-carousel');
+  if (!carousel) return;
+  const sections = [...carousel.querySelectorAll(':scope > [data-variant]')];
+  const controls = document.createElement('nav');
+  controls.className = 'prototype-controls';
+  controls.setAttribute('aria-label', '切换首页方案');
+  sections.forEach((section, index) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = section.dataset.variant;
+    button.setAttribute('aria-pressed', index === 0 ? 'true' : 'false');
+    button.addEventListener('click', () => {
+      sections.forEach((item) => item.hidden = item !== section);
+      [...controls.children].forEach((item) => item.setAttribute('aria-pressed', item === button ? 'true' : 'false'));
+    });
+    controls.appendChild(button);
+  });
+  carousel.before(controls);
+  sections.forEach((section, index) => section.hidden = index !== 0);
+})();
+</script>
+</body>
+</html>
