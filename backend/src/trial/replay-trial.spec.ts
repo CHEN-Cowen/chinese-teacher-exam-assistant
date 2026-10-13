@@ -248,8 +248,8 @@ describe('受邀试用看板 · 手算对账', () => {
 // ==================== v7.1 M9 分析事件与试用看板测试 ====================
 
 describe('M9 分析事件 · 白名单与隐私脱敏', () => {
-  it('TRIAL_EVENT_TYPES 包含全部 22 类事件（11 旧 + 11 新）', () => {
-    expect(TRIAL_EVENT_TYPES).toHaveLength(22);
+  it('TRIAL_EVENT_TYPES 包含全部 24 类事件（11 旧 + 11 新 + 2 个 v7.2）', () => {
+    expect(TRIAL_EVENT_TYPES).toHaveLength(24);
     // M9 新增 11 类
     const m9Types = [
       'home_start_match_clicked',
@@ -267,6 +267,9 @@ describe('M9 分析事件 · 白名单与隐私脱敏', () => {
     for (const t of m9Types) {
       expect(TRIAL_EVENT_TYPES).toContain(t);
     }
+    // v7.2 新增 2 类：保存后下一步曝光、复制官方确认问题
+    expect(TRIAL_EVENT_TYPES).toContain('next_action_opened');
+    expect(TRIAL_EVENT_TYPES).toContain('consultation_template_copied');
   });
 
   it('sanitizeProps 拒绝敏感键名（身份证/地址/原文等）', () => {
@@ -276,6 +279,9 @@ describe('M9 分析事件 · 白名单与隐私脱敏', () => {
     expect(sanitizeProps({ answer: '我的答案' }).ok).toBe(false);
     expect(sanitizeProps({ name: '张三' }).ok).toBe(false);
     expect(sanitizeProps({ originalText: '原文内容' }).ok).toBe(false);
+    // v7.2：咨询问题正文与联系方式同样拒绝
+    expect(sanitizeProps({ question: '请问专业目录口径？' }).ok).toBe(false);
+    expect(sanitizeProps({ contact: '0571-87012345' }).ok).toBe(false);
   });
 
   it('sanitizeProps 接受 M9 枚举/数量类维度', () => {

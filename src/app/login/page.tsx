@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { BrandMark } from "@/components/layout/BrandMark";
 import { AUTH_MODE, useCurrentUser, DEMO_ACCOUNTS } from "@/lib/auth";
+import { resolvePostLoginPath, safeReturnPath } from "@/lib/auth/return-to";
 import { isDemoMode } from "@/lib/demo/config";
 import { opportunitiesApi } from "@/lib/opportunities/api";
 import {
@@ -35,13 +36,8 @@ function LoginForm() {
     return expired;
   });
 
-  const safeNext = (value: string | null): string | null => {
-    if (!value) return null;
-    // 只允许站内相对路径，防止开放重定向
-    if (!value.startsWith("/") || value.startsWith("//")) return null;
-    return value;
-  };
-  const nextPath = safeNext(nextParam);
+  // v7.2：回程路径只接受站内相对路径，且绝不落到 /onboarding
+  const nextPath = safeReturnPath(nextParam);
   const returningToOpportunity = nextPath?.startsWith("/opportunities/") === true;
   const continuingTrial = nextPath === "/opportunities";
   const [hasGuestProfile] = useState(() => {
@@ -85,7 +81,7 @@ function LoginForm() {
               : "登录成功，已回到你的机会列表。",
         );
       }
-      router.replace(nextPath === "/preview" ? "/opportunities" : nextPath ?? "/opportunities");
+      router.replace(resolvePostLoginPath(nextPath));
     })();
     return () => {
       cancelled = true;

@@ -367,6 +367,21 @@ export const EVENT_DICTIONARY: EventDictionaryEntry[] = [
     properties: "nodeKind 枚举；不记改期前后日期正文",
     core: false,
   },
+  // —— v7.2 保存后的下一步 + 官方确认（只记枚举，不记任何正文） ——
+  {
+    type: "next_action_opened",
+    label: "保存后下一步曝光",
+    trigger: "保存机会后，保存区唯一主动作面板随动作 key 变化曝光",
+    properties: "tier 数字 1-5、kind 动作类型枚举；不记岗位以外的任何正文",
+    core: false,
+  },
+  {
+    type: "consultation_template_copied",
+    label: "复制官方确认问题",
+    trigger: "MANUAL_REVIEW 官方确认面板点击复制咨询问题",
+    properties: "tpl 维度短枚举（如 major）、edited 布尔；绝不记问题正文/原文/答复",
+    core: false,
+  },
 ];
 
 export type MetricCategory = "user_value" | "quality_ops" | "stock" | "trial";

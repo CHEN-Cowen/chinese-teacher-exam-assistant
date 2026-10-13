@@ -283,6 +283,16 @@ export function OpportunityListItem({
                 公告有新版本
               </span>
             )}
+            {/* v7.2：保存后的下一步只在详情页按五级规则计算，卡片只给入口 */}
+            {follow.status === "considering" && (
+              <Link
+                href={`/opportunities/${unit.unit.id}#follow`}
+                className="font-medium text-brand underline underline-offset-2 hover:text-brand-strong"
+                data-testid="saved-next-step-link"
+              >
+                去看下一步 →
+              </Link>
+            )}
           </p>
         )}
 

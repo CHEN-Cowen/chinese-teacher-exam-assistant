@@ -104,6 +104,18 @@ describe("访客关注：重复登录幂等", () => {
     expect(follows).toHaveLength(1);
     expect(follows[0].status).toBe("preparing");
   });
+
+  it("v7.2：连点保存（空 patch/considering）保持 considering，绝不自动升级，且只有一条记录", () => {
+    const first = upsertGuestFollow("unit-1", {});
+    expect(first.status).toBe("considering");
+    // 模拟用户快速连点「保存机会」
+    upsertGuestFollow("unit-1", { status: "considering" });
+    upsertGuestFollow("unit-1", { status: "considering" });
+
+    const follows = listGuestFollows();
+    expect(follows).toHaveLength(1);
+    expect(follows[0].status).toBe("considering");
+  });
 });
 
 describe("访客关注：重置演示数据", () => {

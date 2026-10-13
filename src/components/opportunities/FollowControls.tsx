@@ -1,11 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { ConfirmModal, Modal } from "@/components/ui/Modal";
 import { Textarea } from "@/components/ui/Input";
-import { StatusMessage } from "@/components/ui/StatusMessage";
 import {
   canTransition,
   FOLLOW_STATUS_LABELS,
@@ -19,21 +17,22 @@ import {
   type PrimarySwitchImpact,
 } from "@/lib/goals/domain";
 import { cn } from "@/lib/utils";
-import { USER_COPY } from "@/lib/ux/userCopy";
 
 /**
  * 关注状态与备考目标控制（详情页第一/第二层之间）。
  * 可流转按钮由状态机推导（前端只做展示门禁，后端会再次校验非法边）；
  * “已结束”为终态，不展示任何转出按钮。
  *
- * 保存从无到有：用非阻塞 StatusMessage 反馈“已保存，时间已加入日程”，
- * 提供撤销；不弹模态、不打断后续操作（模块 0A §10 / §7.7）。
+ * v7.2：considering 下保存成功的唯一主动作与「不是报名」反馈由
+ * SavedNextActionPanel 承担（含撤销），这里的状态流转按钮保持次按钮层级，
+ * 不与其竞争主按钮。
  */
 const NEXT_BUTTONS: Array<{
   status: FollowStatus;
   variant: "primary" | "outline" | "secondary" | "ghost";
 }> = [
-  { status: "preparing", variant: "primary" },
+  // considering 区的唯一主按钮是 SavedNextActionPanel 的主动作；流转只用次按钮
+  { status: "preparing", variant: "outline" },
   { status: "registered", variant: "secondary" },
   { status: "considering", variant: "outline" },
   { status: "abandoned", variant: "ghost" },
@@ -63,30 +62,11 @@ export function FollowControls({
   onSetRole,
   onUnfollow,
 }: FollowControlsProps) {
-  const router = useRouter();
   const [showAbandon, setShowAbandon] = useState(false);
   const [abandonReason, setAbandonReason] = useState("");
   const [confirmUnfollow, setConfirmUnfollow] = useState(false);
   const [primaryImpact, setPrimaryImpact] = useState<PrimarySwitchImpact | null>(null);
   const [impactLoading, setImpactLoading] = useState(false);
-  // 保存从无到有 → 非阻塞成功反馈 + 撤销（模块 0A §10/§7.7）
-  const [followJustAdded, setFollowJustAdded] = useState(false);
-  const prevFollowRef = useRef<FollowDTO | null>(follow);
-  const mountedRef = useRef(false);
-
-  useEffect(() => {
-    // 首次挂载不触发（避免用户从已关注状态进入页面时误报"已加入关注"）
-    if (!mountedRef.current) {
-      mountedRef.current = true;
-      prevFollowRef.current = follow;
-      return;
-    }
-    // 仅在 follow 从 null 变为非 null 时视为“刚刚保存成功”
-    if (!prevFollowRef.current && follow) {
-      setFollowJustAdded(true);
-    }
-    prevFollowRef.current = follow;
-  }, [follow]);
 
   /** 设为主要目标前：拉取当前主要目标并展示影响说明（模块 7） */
   const handleSetPrimaryClick = async () => {
@@ -139,25 +119,6 @@ export function FollowControls({
 
   return (
     <section className="space-y-3 rounded-xl border border-line bg-surface p-4">
-      {followJustAdded && (
-        <StatusMessage
-          tone="success"
-          message={USER_COPY.FOLLOW.ADDED}
-          action={{
-            label: "查看报考进度",
-            onClick: () => router.push("/applications"),
-          }}
-          undo={{
-            label: USER_COPY.FOLLOW.UNDO,
-            onClick: () => {
-              setFollowJustAdded(false);
-              onUnfollow();
-            },
-          }}
-          onDismiss={() => setFollowJustAdded(false)}
-        />
-      )}
-
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm font-semibold text-ink">我的跟进</span>
         <span className="inline-flex items-center rounded-full bg-canvas px-2.5 py-0.5 text-xs font-medium text-ink-muted">

@@ -45,6 +45,9 @@ export const TRIAL_EVENT_TYPES = [
   'schedule_node_viewed',
   'schedule_conflict_viewed',
   'announcement_reschedule_viewed',
+  // —— v7.2 保存后的下一步 + 官方确认（曝光/复制可重复发生，不去重） ——
+  'next_action_opened',
+  'consultation_template_copied',
 ] as const;
 
 export type TrialEventType = (typeof TRIAL_EVENT_TYPES)[number];
@@ -103,6 +106,9 @@ const DEDUP_SCOPES: Record<TrialEventType, 'user' | 'user_unit' | 'user_step' | 
   schedule_node_viewed: null,
   schedule_conflict_viewed: 'user',
   announcement_reschedule_viewed: null,
+  // v7.2：面板随机会数据重算可能多次曝光、问题可多次复制，均不去重
+  next_action_opened: null,
+  consultation_template_copied: null,
 };
 
 export function dedupKeyFor(
@@ -129,7 +135,7 @@ export type SanitizeResult =
 // 键名命中敏感词即整事件拒绝：证件/身份/自由文本类字段一律不落库。
 const PROP_KEY_RE = /^[a-zA-Z][a-zA-Z0-9_]{0,31}$/;
 const SENSITIVE_KEY_RE =
-  /(id_?card|identity|passport|cert_?(no|number)|id_?number|social_?credit|phone|mobile|email|address|birth|password|secret|token|content|body|text|note|raw|original|excerpt|description|answer|remark|comment|name)/i;
+  /(id_?card|identity|passport|cert_?(no|number)|id_?number|social_?credit|phone|mobile|email|address|birth|password|secret|token|content|body|text|note|raw|original|excerpt|description|answer|remark|comment|question|contact|name)/i;
 const MAX_PROPS = 8;
 const MAX_STRING_LEN = 64;
 

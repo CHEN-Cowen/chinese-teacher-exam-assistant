@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Hero } from "@/components/ia/Hero";
 import { Disclosure } from "@/components/ia/Layer";
 import { GateTag, MatchStatusTag } from "@/components/ia/MatchStatusTag";
 import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { LoadingPage } from "@/components/ui/Loading";
@@ -51,6 +52,11 @@ import {
 import { CorrectionModal } from "@/components/opportunities/CorrectionModal";
 import { MaterialsList } from "@/components/opportunities/MaterialsList";
 import { ConsultationPanel } from "@/components/opportunities/ConsultationPanel";
+import { SavedNextActionPanel } from "@/components/opportunities/SavedNextActionPanel";
+import {
+  selectSavedNextAction,
+  timelineCandidatesFromUnit,
+} from "@/lib/opportunities/next-action-selector";
 import { track, trackView } from "@/lib/analytics/eventService";
 import { gateStateMeta } from "@/lib/gate-states";
 import { buildMapEntry } from "@/lib/opportunities/map-link";
@@ -60,7 +66,13 @@ import { useOnlineStatus, isForbiddenError } from "@/lib/useOnlineStatus";
 
 function scrollToId(id: string) {
   const target = document.getElementById(id);
-  if (target instanceof HTMLDetailsElement) target.open = true;
+  if (target instanceof HTMLDetailsElement) {
+    target.open = true;
+  } else if (target) {
+    // 目标在折叠的 Disclosure（details）内时，先展开祖先再滚动
+    const ancestor = target.closest("details");
+    if (ancestor instanceof HTMLDetailsElement) ancestor.open = true;
+  }
   target?.scrollIntoView({
     behavior: "smooth",
     block: "start",
@@ -89,10 +101,17 @@ export default function OpportunityDetailPage() {
   const [savingFacts, setSavingFacts] = useState(false);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  /** 失败动作的重试闭包（目前仅保存动作提供：follow 无状态版本依赖，重试安全） */
+  const [actionRetry, setActionRetry] = useState<(() => void) | null>(null);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
   const [correctionOpen, setCorrectionOpen] = useState(false);
   const [correctionSubmitting, setCorrectionSubmitting] = useState(false);
   const [correctionDone, setCorrectionDone] = useState(false);
+  // v7.2：本次会话刚保存成功＝面板绿色强调态；syncedEventCount 仅 follow 响应携带
+  const [justSaved, setJustSaved] = useState(false);
+  const [syncedEventCount, setSyncedEventCount] = useState<number | undefined>(
+    undefined,
+  );
 
   // 手动重试 / 补充信息后重拉：事件处理器中调用，可以同步切 loading。
   // 返回最新响应，供「补信息导致结论变化」对比前后结论（模块 7 埋点）。
@@ -152,6 +171,18 @@ export default function OpportunityDetailPage() {
       cancelled = true;
     };
   }, [unitId, profileState, isGuest]);
+
+  // 带 hash 进入（如列表「去看下一步」→ #follow）：详情就绪后展开折叠区并滚动一次
+  const hashHandledUnitRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!detail || hashHandledUnitRef.current === unitId) return;
+    hashHandledUnitRef.current = unitId;
+    const raf = window.requestAnimationFrame(() => {
+      const hash = window.location.hash;
+      if (hash.startsWith("#")) scrollToId(hash.slice(1));
+    });
+    return () => window.cancelAnimationFrame(raf);
+  }, [detail, unitId]);
 
   // v7.1 M8：invited 模式下等待会话恢复完成
   if (profileState.status === "loading" || (authStatus === "loading" && !loading && !detail)) {
@@ -227,6 +258,21 @@ export default function OpportunityDetailPage() {
   const gateViews = failedGateViews(unit.gates);
   const closed = gateViews.length > 0;
   const action = nextAction(unit);
+  // v7.2：保存区唯一主动作（considering 时重算；闸门/其他状态由选择器内部短路）。
+  // 每次渲染取当前时钟；纯函数规则本身不读时钟，可用任意 nowIso 单测。
+  const savedNextAction =
+    unit.follow && unit.follow.status === "considering"
+      ? selectSavedNextAction(
+          {
+            gates: unit.gates,
+            follow: unit.follow,
+            dimensions: unit.dimensions,
+            materials: unit.unit.materials ?? [],
+            events: timelineCandidatesFromUnit(unit),
+          },
+          new Date().toISOString(),
+        )
+      : null;
   // 补充表单只收集画像外的事实（出生日期/户籍/社保/工作年限）与自由项；
   // 学历、专业等画像信息缺失时表单无可补字段，需引导用户去报考信息页补填。
   const askableUnknown = groups.missingInfo.filter(
@@ -292,10 +338,18 @@ export default function OpportunityDetailPage() {
 
   async function runAction(
     fn: () => Promise<unknown>,
-    options?: { redirectAfter?: boolean; successMessage?: string },
+    options?: {
+      redirectAfter?: boolean;
+      successMessage?: string;
+      /** 仅在 await 成功并刷新后调用（失败不会触发，失败显真） */
+      onSuccess?: () => void;
+      /** 失败时在错误条内提供「重试」按钮；仅无状态版本依赖的动作可传 */
+      retry?: () => void;
+    },
   ) {
     setBusy(true);
     setActionError(null);
+    setActionRetry(null);
     setActionNotice(null);
     try {
       await fn();
@@ -304,6 +358,7 @@ export default function OpportunityDetailPage() {
         return;
       }
       await refreshDetail();
+      options?.onSuccess?.();
       if (options?.successMessage) setActionNotice(options.successMessage);
     } catch (e) {
       const err = e as Error & { status?: number; body?: { error?: string; current?: unknown } };
@@ -314,6 +369,8 @@ export default function OpportunityDetailPage() {
       } else {
         setActionError(err.message || "操作失败");
       }
+      // 失败显真：不出现任何成功 UI，仅在动作允许时提供原地重试
+      setActionRetry(options?.retry ? () => options.retry! : null);
     } finally {
       setBusy(false);
     }
@@ -322,20 +379,35 @@ export default function OpportunityDetailPage() {
   /** 关注成功后埋点（失败由 runAction 捕获，不会产生事件）。
    *  v7.1 M8：未登录用户先暂存到本机再跳登录。 */
   const followUnit = () => {
-    // v7.1 M8：访客保存触发登录
+    // v7.1 M8：访客保存触发登录（先本机暂存 considering 意图，再带 next 跳登录）
     if (isGuest) {
       upsertGuestFollow(unitId, { status: "considering" });
       router.push(`/login?next=/opportunities/${unitId}&reason=save`);
       return;
     }
-    runAction(async () => {
-      await opportunitiesApi.follow(unitId);
-      // P0 漏斗④：关注机会
-      track("opportunity_followed", "opportunity", {
-        targetId: unitId,
-        props: { from: detail?.unit.overall ?? "unknown" },
-      });
-    });
+    runAction(
+      async () => {
+        const saved = await opportunitiesApi.follow(unitId);
+        // 真实后端 follow 响应携带日程同步节点数；演示数据无此字段时不显示
+        setSyncedEventCount(saved.syncedEventCount);
+        // P0 漏斗④：关注机会（保存≠报名，此处绝不调 transition）
+        track("opportunity_followed", "opportunity", {
+          targetId: unitId,
+          props: { from: detail?.unit.overall ?? "unknown" },
+        });
+      },
+      {
+        onSuccess: () => {
+          // 只有 await 成功并刷新后才展示绿色面板并展开跟进区（失败显真）
+          setJustSaved(true);
+          const followDetails = document.getElementById("follow");
+          if (followDetails instanceof HTMLDetailsElement) followDetails.open = true;
+          window.requestAnimationFrame(() => scrollToId("follow"));
+        },
+        // follow 幂等且无版本号依赖，失败后可原地重试
+        retry: () => followUnit(),
+      },
+    );
   };
 
   const handleTransition = (
@@ -615,7 +687,19 @@ export default function OpportunityDetailPage() {
 
       {actionError && (
         <Callout variant="no" title="操作未完成">
-          {actionError}
+          <p>{actionError}</p>
+          {actionRetry && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="mt-2"
+              disabled={busy}
+              data-testid="action-retry"
+              onClick={() => actionRetry()}
+            >
+              重试
+            </Button>
+          )}
         </Callout>
       )}
       {actionNotice && (
@@ -654,7 +738,35 @@ export default function OpportunityDetailPage() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m6 9 6 6 6-6" />
           </svg>
         </summary>
-        <div className="border-t border-line p-3">
+        <div className="space-y-3 border-t border-line p-3">
+          {unit.follow && unit.follow.status === "considering" && (
+            <SavedNextActionPanel
+              action={savedNextAction}
+              emphasized={justSaved}
+              syncedEventCount={syncedEventCount}
+              busy={busy}
+              onUnfollow={() =>
+                void runAction(
+                  async () => {
+                    await opportunitiesApi.unfollow(unitId);
+                    track("opportunity_unfollowed", "opportunity", {
+                      targetId: unitId,
+                    });
+                  },
+                  { redirectAfter: true },
+                )
+              }
+              onDismiss={() => setJustSaved(false)}
+              onAnchor={scrollToId}
+              onActionOpened={(next) =>
+                // 只记级别与动作类型枚举，不记岗位以外的任何正文
+                track("next_action_opened", "opportunity", {
+                  targetId: unitId,
+                  props: { tier: next.tier, kind: next.kind },
+                })
+              }
+            />
+          )}
           <FollowControls
             follow={unit.follow}
             unitName={unit.unit.name}
@@ -751,7 +863,7 @@ export default function OpportunityDetailPage() {
 
       {/* 报名材料清单（关注后可标记进度；来源可追溯到官方公告） */}
       {unit.follow && unit.unit.materials && unit.unit.materials.length > 0 && (
-        <section className="space-y-3">
+        <section id="materials" className="scroll-mt-20 space-y-3">
           <div>
             <h2 className="text-base font-semibold text-ink">报名材料清单</h2>
             <p className="mt-0.5 text-xs text-ink-muted">
@@ -788,9 +900,17 @@ export default function OpportunityDetailPage() {
                 officialUrl: unit.announcement.officialUrl,
                 contactInfo: unit.announcement.contactInfo ?? null,
               }}
+              dimensions={groups.confirmOfficial}
               notes={unit.follow.consultationNotes}
               busy={busy}
               onSaveNote={(key, note) => void handleConsultationNote(key, note)}
+              onCopied={(tpl, edited) =>
+                track("consultation_template_copied", "opportunity", {
+                  targetId: unitId,
+                  // 只记维度短枚举与是否编辑过，问题正文绝不进埋点
+                  props: { tpl, edited },
+                })
+              }
             />
           </div>
         </section>

@@ -576,6 +576,112 @@ describe('OpportunitiesService：关注与状态流转', () => {
     );
     expect(cleared.consultationNotes).toBeNull();
   });
+
+  it('v7.2：considering 态重复保存幂等——不自动升级、不重置材料/咨询/版本，并返回日程同步数', async () => {
+    const countingSchedule = {
+      syncEventsForUser: async () => ({
+        syncedEventCount: 3,
+        notificationCount: 1,
+      }),
+    } as never;
+    const svc = new OpportunitiesService(
+      fake.prisma,
+      fakeProfileService,
+      countingSchedule,
+    );
+
+    const first = await svc.follow('user-1', 'unit-hangzhou-01');
+    expect(first.status).toBe('considering');
+    expect(first.syncedEventCount).toBe(3);
+
+    await svc.setMaterialStatus(
+      'user-1',
+      'unit-hangzhou-01',
+      'id-card',
+      'done',
+    );
+    await svc.saveConsultationNote(
+      'user-1',
+      'unit-hangzhou-01',
+      'major',
+      JSON.stringify({
+        v: 1,
+        outcome: 'confirmed_match',
+        note: '电话确认符合',
+        at: '2026-10-13T09:00:00+08:00',
+      }),
+    );
+
+    // 连点保存：服务端无新写入，状态/材料/咨询/版本全部保持
+    const repeat = await svc.follow('user-1', 'unit-hangzhou-01');
+    expect(repeat.status).toBe('considering');
+    expect(repeat.materialStatuses['id-card']).toBe('done');
+    expect(String(repeat.consultationNotes?.major)).toContain(
+      'confirmed_match',
+    );
+    expect(repeat.version).toBe(2);
+    expect(repeat.syncedEventCount).toBe(3);
+    expect(fake.rows.size).toBe(1);
+  });
+
+  it('v7.2：个人咨询答复只挂在本人 follow 上，公共 gates/dimensions/overall 不变，也不影响其他用户', async () => {
+    const before = await service.unitDetail(
+      PROFILE,
+      'user-1',
+      'unit-suzhou-01',
+    );
+    const majorBefore = before.unit.dimensions.find(
+      (d) => d.dimension === 'major',
+    );
+    expect(majorBefore?.value).toBe('MANUAL_REVIEW');
+    const gatesSnapshot = JSON.stringify(before.unit.gates);
+    const overallBefore = before.unit.overall;
+
+    await service.follow('user-1', 'unit-suzhou-01');
+    const saved = await service.saveConsultationNote(
+      'user-1',
+      'unit-suzhou-01',
+      'major',
+      JSON.stringify({
+        v: 1,
+        outcome: 'confirmed_match',
+        note: '电话确认我符合该岗位专业口径',
+        at: '2026-10-13T09:00:00+08:00',
+      }),
+    );
+    expect(String(saved.consultationNotes?.major)).toContain(
+      'confirmed_match',
+    );
+
+    // 本人视角：答复挂在 follow DTO，但公共判定原样不变（不进入匹配规则）
+    const after = await service.unitDetail(
+      PROFILE,
+      'user-1',
+      'unit-suzhou-01',
+    );
+    const majorAfter = after.unit.dimensions.find(
+      (d) => d.dimension === 'major',
+    );
+    expect(majorAfter?.value).toBe('MANUAL_REVIEW');
+    expect(JSON.stringify(after.unit.gates)).toBe(gatesSnapshot);
+    expect(after.unit.overall).toBe(overallBefore);
+    expect(String(after.unit.follow?.consultationNotes?.major)).toContain(
+      'confirmed_match',
+    );
+
+    // 另一用户：看不到该答复，公共维度仍是 MANUAL_REVIEW
+    await service.follow('user-2', 'unit-suzhou-01');
+    const other = await service.unitDetail(
+      PROFILE,
+      'user-2',
+      'unit-suzhou-01',
+    );
+    expect(other.unit.follow?.consultationNotes).toBeNull();
+    const majorOther = other.unit.dimensions.find(
+      (d) => d.dimension === 'major',
+    );
+    expect(majorOther?.value).toBe('MANUAL_REVIEW');
+  });
 });
 
 describe('OpportunitiesService：主要备考目标', () => {

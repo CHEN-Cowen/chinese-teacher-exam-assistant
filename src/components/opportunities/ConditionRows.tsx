@@ -26,7 +26,11 @@ export function ConditionRows({
       {dimensions.map((dim) => {
         const meta = DIMENSION_VALUE_META[dim.value];
         return (
-          <li key={dim.requirementId} className="py-3">
+          <li
+            key={dim.requirementId}
+            id={`condition-${dim.requirementId}`}
+            className="scroll-mt-24 py-3"
+          >
             <div className="flex items-start justify-between gap-3">
               <span className="text-sm font-medium text-ink">
                 {dim.dimension === "region"

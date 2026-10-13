@@ -102,7 +102,10 @@ export type AnalyticsEventType =
   // 时间冲突曝光，只记冲突数与涉及节点类型枚举
   | "schedule_conflict_viewed" // conflictCount, nodeKind
   // 公告改期通知查看，只记节点类型枚举，不记改期前后日期正文
-  | "announcement_reschedule_viewed"; // nodeKind
+  | "announcement_reschedule_viewed" // nodeKind
+  // —— v7.2 保存后的下一步：只记动作级别/类型枚举与维度短枚举，绝不记问题正文/原文/答复 ——
+  | "next_action_opened" // 保存后唯一主动作曝光：tier(1-5)、kind 枚举
+  | "consultation_template_copied"; // 复制官方确认问题：tpl 维度短枚举、edited 是否改过
 
 /**
  * 统一分析事件。
