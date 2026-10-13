@@ -15,6 +15,7 @@ import type {
   CredentialLevel,
   DegreeCode,
   EmploymentNatureCode,
+  EmploymentNaturePreference,
   EmploymentStatus,
   MaterialStatus,
   RegionPreferenceLevel,
@@ -1165,6 +1166,19 @@ export class OpportunitiesService {
         '画像 acceptedEmploymentNatures 必须是用工性质枚举数组',
       );
     }
+    // v7.2：用工偏好三选一，只影响展示/排序/偏好范围外分类，不进入资格判定
+    const naturePrefRaw = (p as Record<string, unknown>).employmentNaturePreference;
+    if (
+      naturePrefRaw !== undefined &&
+      naturePrefRaw !== null &&
+      !(['public_only', 'official_open', 'undecided'] as string[]).includes(
+        naturePrefRaw as string,
+      )
+    ) {
+      throw new BadRequestException(
+        '画像 employmentNaturePreference 取值非法（必须为 public_only/official_open/undecided）',
+      );
+    }
 
     const optionalIso = (key: string): string | undefined => {
       const v = p[key];
@@ -1206,6 +1220,11 @@ export class OpportunitiesService {
         : undefined,
       acceptedEmploymentNatures:
         p.acceptedEmploymentNatures as EmploymentNatureCode[],
+      // v7.2：用工偏好透传（已校验），只影响展示/排序/偏好范围外分类
+      employmentNaturePreference:
+        naturePrefRaw === undefined || naturePrefRaw === null
+          ? undefined
+          : (naturePrefRaw as EmploymentNaturePreference),
       birthDate: optionalIso('birthDate'),
       hukouRegionCode:
         typeof p.hukouRegionCode === 'string' && p.hukouRegionCode

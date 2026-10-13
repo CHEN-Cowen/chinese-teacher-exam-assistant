@@ -10,6 +10,7 @@ import { useCurrentUser, AUTH_MODE } from "@/lib/auth";
 import {
   CITY_OPTIONS,
   CREDENTIAL_LEVEL_OPTIONS,
+  NATURE_PREFERENCE_OPTIONS,
   PROVINCE_OPTIONS,
   REGION_LEVEL_OPTIONS,
   STAGE_OPTIONS,
@@ -25,6 +26,7 @@ import {
   isStepSkipped,
   pruneSkippedSteps,
   stepHasContent,
+  type EmploymentNaturePreference,
   type GuestProfileDraft,
 } from "@/lib/guest/guestSession";
 import { GUEST_COVERAGE } from "@/lib/guest/coverage";
@@ -38,9 +40,9 @@ import type {
 } from "@/lib/profile/types";
 
 /**
- * v7.1 M2 两屏基础画像采集：
+ * v7.2 两屏基础画像采集（PRD 7.4.2）：
  * 1. 地区意向 — 可接受地区（只考虑 / 优先考虑 / 也可以考虑）
- * 2. 基础资格 — 最高学历、专业全称、毕业时间、教师资格状态（+学段/学科/预计时间）
+ * 2. 基础资格 — 按顺序收集学历、毕业时间、专业、教师资格、用工偏好
  *
  * - 未登录可完成，草稿自动保存在本机浏览器，刷新可恢复；
  * - 随时返回修改，已填内容保留；
@@ -48,9 +50,13 @@ import type {
  * - 第二屏可「暂不提供」：允许继续，但相关维度引擎只能判 UNKNOWN，
  *   结果页明确标注限制，绝不把缺失信息当作「不符合」；
  * - 本机存储写入失败时页面输入不丢失，明确提示重试；
- * - 年龄/户籍/社保/工作经历/就业状态/用工偏好不在此收齐，结果页按需说明补问原因；
+ * - v7.2：用工偏好三档（只看事业编 / 事业编优先也看其他官方岗位 / 暂不确定先全部看看）
+ *   在第二屏末尾收集，只影响展示、排序和偏好范围外分类，
+ *   不改变 PASS/FAIL/UNKNOWN/MANUAL_REVIEW；未选择行为等同「暂不确定」；已知偏好自动回填；
+ * - 年龄/户籍/社保/工作经历不在此收齐，结果页按需说明补问原因；
  * - 意向学科非语文时明确提示尚未开放，可留下意向，不生成虚假匹配；
- * - 完成后进入 /preview 查看初步机会，关注时才要求登录。
+ * - 完成后访客进入 /preview 预筛结果，登录用户进入 /opportunities 真实机会；
+ *   防止重复提交；敏感字段不进入日志和埋点正文。
  */
 
 const STEP_TITLES = [
@@ -94,6 +100,9 @@ function OnboardingForm() {
 
   // 本机存储写入失败提示（输入仍保留在 draft 状态中，不会丢失）
   const [saveError, setSaveError] = useState(false);
+
+  // v7.2：最终提交中标记，防止重复点击 / 重复 router.push / 重复 saveProfile
+  const [submitting, setSubmitting] = useState(false);
 
   // 完成一组后的非阻塞即时反馈（v7 FeedbackBar：done=完成，note=进行中）
   const [recentFeedback, setRecentFeedback] = useState<{
@@ -151,9 +160,11 @@ function OnboardingForm() {
   };
 
   /** 进入下一屏：保存草稿与完成进度。
-   *  v7.1 M2：两屏流程，第一屏必须选地区才能进入第二屏。
-   *  invited 模式下若草稿已完整且没有「暂不提供」项，同步持久化到服务端（跨浏览器恢复）。 */
+   *  v7.2：两屏流程，第一屏必须选地区才能进入第二屏。
+   *  invited 模式下若草稿已完整且没有「暂不提供」项，同步持久化到服务端（跨浏览器恢复），
+   *  用工偏好随画像同字段写入服务端。提交中防止重复请求。 */
   const goNext = () => {
+    if (submitting) return; // 防重复提交：保存失败可重试，但成功后不重复触发
     const finishedStep = view;
     if (!persist(finishedStep)) return; // 保存失败：停在本步，输入不丢
     // 画像各步漏斗（模块 7）：完成（未跳过）的每步记一次
@@ -165,6 +176,8 @@ function OnboardingForm() {
       if (profile) profileApi.saveProfile(profile).catch(() => undefined);
     }
     if (finishedStep >= TOTAL_PROFILE_STEPS) {
+      // v7.2：进入最终提交中状态，防止重复 router.push / 重复 saveProfile
+      setSubmitting(true);
       // P0 漏斗①：基础画像完成（访客身份先暂存，登录后归属到真实账号；同用户只记一次）
       trackOncePerUser("profile_completed", "profile", {
         props: { stepCount: TOTAL_PROFILE_STEPS },
@@ -366,19 +379,25 @@ function OnboardingForm() {
                 onChange={(patch) => updateDraft(patch)}
               />
               <div className="mt-5 border-t border-line pt-4">
-                <StepMajor
-                  major={draft.majorFullName ?? ""}
-                  onChange={(majorFullName) => updateDraft({ majorFullName })}
-                />
-              </div>
-              <div className="mt-5 border-t border-line pt-4">
                 <StepGraduation
                   graduationDate={draft.graduationDate ?? ""}
                   onChange={(patch) => updateDraft(patch)}
                 />
               </div>
               <div className="mt-5 border-t border-line pt-4">
+                <StepMajor
+                  major={draft.majorFullName ?? ""}
+                  onChange={(majorFullName) => updateDraft({ majorFullName })}
+                />
+              </div>
+              <div className="mt-5 border-t border-line pt-4">
                 <StepCert draft={draft} onChange={updateDraft} />
+              </div>
+              <div className="mt-5 border-t border-line pt-4">
+                <StepEmploymentPreference
+                  value={draft.employmentNaturePreference}
+                  onChange={(value) => updateDraft({ employmentNaturePreference: value })}
+                />
               </div>
             </>
           )}
@@ -403,7 +422,13 @@ function OnboardingForm() {
           )}
 
           <div className="mt-7 border-t border-line pt-5">
-            <Button onClick={goNext} disabled={!canContinue} size="lg" fullWidth>
+            <Button
+              onClick={goNext}
+              disabled={!canContinue || submitting}
+              loading={submitting}
+              size="lg"
+              fullWidth
+            >
               {view >= TOTAL_PROFILE_STEPS ? "查看筛选结果" : "下一步"}
             </Button>
             {!canContinue && view === 1 && (
@@ -414,6 +439,11 @@ function OnboardingForm() {
             {!canContinue && view === 2 && (
               <p className="mt-2 text-center text-xs text-ink-muted">
                 填一项即可继续，也可以暂时跳过
+              </p>
+            )}
+            {submitting && (
+              <p role="status" className="mt-2 text-center text-xs text-ink-muted">
+                正在生成你的筛选结果…
               </p>
             )}
           </div>
@@ -872,6 +902,84 @@ function StepCert({
           不会为你生成不相关的匹配结果。
         </div>
       )}
+    </div>
+  );
+}
+
+/* ================== 第二屏：用工偏好（v7.2 PRD 7.4.2） ================== */
+
+/**
+ * v7.2 用工偏好三档选择（只看事业编 / 事业编优先也看其他官方岗位 / 暂不确定先全部看看）。
+ * - 只影响展示、排序和偏好范围外分类，不改变 PASS/FAIL/UNKNOWN/MANUAL_REVIEW；
+ * - 未选择时不高亮任何项，行为等同「暂不确定」（不筛选）；
+ * - 已知偏好自动回填（draft.employmentNaturePreference）；
+ * - 不进入资格判定，不写入日志和埋点正文（track 只记动作枚举）。
+ */
+function StepEmploymentPreference({
+  value,
+  onChange,
+}: {
+  value: EmploymentNaturePreference | undefined;
+  onChange: (value: EmploymentNaturePreference) => void;
+}) {
+  return (
+    <div className="mt-4">
+      <fieldset className="m-0 border-0 p-0">
+        <legend className="mb-1 text-sm font-medium text-ink">你想看哪类用工形式？</legend>
+        <p className="mb-2 text-xs leading-5 text-ink-muted">
+          这只影响结果的筛选和排序，不会被当作资格不符合。
+        </p>
+        <div
+          className="grid gap-2"
+          role="group"
+          aria-label="用工形式偏好"
+          data-testid="employment-preference-group"
+        >
+          {NATURE_PREFERENCE_OPTIONS.map((opt) => {
+            const selected = value === opt.value;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => {
+                  // v7.2：偏好选择只记动作枚举，不记偏好正文
+                  track("nature_preference_changed", "profile", {
+                    props: { value: opt.value },
+                  });
+                  onChange(opt.value);
+                }}
+                aria-pressed={selected}
+                data-testid={`employment-preference-${opt.value}`}
+                aria-describedby={`employment-preference-${opt.value}-hint`}
+                className={`min-h-11 rounded-xl border px-3.5 py-2.5 text-left transition-all ${
+                  selected
+                    ? "border-brand bg-brand-soft ring-1 ring-brand/10"
+                    : "border-line bg-canvas/50 hover:border-brand/30"
+                }`}
+              >
+                <span
+                  className={`block text-sm font-medium ${
+                    selected ? "text-brand" : "text-ink"
+                  }`}
+                >
+                  {opt.label}
+                </span>
+                <span
+                  id={`employment-preference-${opt.value}-hint`}
+                  className="mt-0.5 block text-xs leading-5 text-ink-muted"
+                >
+                  {opt.hint}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        {value === undefined && (
+          <p className="mt-2 text-xs leading-5 text-ink-muted">
+            可以现在选，也可以稍后在结果页调整；不选默认看全部官方岗位。
+          </p>
+        )}
+      </fieldset>
     </div>
   );
 }

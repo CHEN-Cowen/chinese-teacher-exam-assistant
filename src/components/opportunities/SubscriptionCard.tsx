@@ -17,9 +17,9 @@ import { track } from "@/lib/analytics/eventService";
 type NaturePreference = SubscriptionDTO["naturePreference"];
 
 const NATURE_PREFERENCE_LABELS: Record<NaturePreference, string> = {
-  public_only: "只要事业编岗位",
-  official_open: "事业编及各类官方用工（备案制、员额制等）",
-  undecided: "用工性质尚未确定（都提醒）",
+  public_only: "只看事业编",
+  official_open: "事业编优先，也看其他官方岗位",
+  undecided: "暂不确定，先全部看看",
 };
 
 const DEGREE_LABELS: Record<string, string> = {
@@ -33,8 +33,14 @@ function regionDtoLabel(region: SubscriptionRegionDTO): string {
   return region.district ?? region.city ?? region.province;
 }
 
-/** 与后端 deriveSubscriptionCriteria / demo 派生同口径的用工偏好预览 */
+/**
+ * v7.2：与 onboarding 第二屏、/preview 调整入口同口径的用工偏好派生。
+ * 优先读取画像中显式保存的 employmentNaturePreference（v7.2 起在 onboarding 收集）；
+ * 旧画像无此字段时回退到 acceptedEmploymentNatures 白名单派生（向后兼容）。
+ * 偏好只影响订阅筛选，不进入资格判定。
+ */
 function deriveDefaultNature(profile: UserRecruitmentProfile): NaturePreference {
+  if (profile.employmentNaturePreference) return profile.employmentNaturePreference;
   const accepted = profile.acceptedEmploymentNatures ?? [];
   if (accepted.length === 0) return "undecided";
   if (

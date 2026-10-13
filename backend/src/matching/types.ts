@@ -315,6 +315,16 @@ export type EmploymentStatus =
   | 'employed_parttime'
   | 'other';
 
+/**
+ * v7.2 用工偏好（三选一，只影响展示、排序和偏好范围外分类）。
+ * 不进入资格判定（evaluateOpportunity 不读取本字段）。
+ * 旧画像无此字段时按 undefined 处理，行为等同 undecided（不筛选）。
+ */
+export type EmploymentNaturePreference =
+  | 'public_only'
+  | 'official_open'
+  | 'undecided';
+
 /** 匹配接口入参：五组基础画像 + 按需补充的条件事实（未提供即 UNKNOWN） */
 export interface UserRecruitmentProfile {
   regions: RegionPreference[];
@@ -325,6 +335,11 @@ export interface UserRecruitmentProfile {
   employmentStatus?: EmploymentStatus;
   teacherCert?: TeacherCertInfo;
   acceptedEmploymentNatures: EmploymentNatureCode[];
+  /**
+   * v7.2 用工偏好。只影响展示、排序和偏好范围外分类，不进入资格判定。
+   * 与前端 profile/types 同名同语义，访客草稿与服务端画像共用。
+   */
+  employmentNaturePreference?: EmploymentNaturePreference;
   // 条件画像：缺省只能得到 UNKNOWN，绝不转 FAIL
   birthDate?: string;
   hukouRegionCode?: string;

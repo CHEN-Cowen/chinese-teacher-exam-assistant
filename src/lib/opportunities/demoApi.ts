@@ -172,13 +172,20 @@ interface DemoSubscriptionRow {
 }
 
 function deriveDemoDefault(profile: UserRecruitmentProfile): DemoSubscriptionRow {
-  const accepted = profile.acceptedEmploymentNatures ?? [];
+  // v7.2：优先用 onboarding 第二屏收集的显式偏好；旧画像回退到白名单派生
   const naturePreference: SubscriptionDTO["naturePreference"] =
-    accepted.length === 0
-      ? "undecided"
-      : accepted.length === 1 && accepted[0] === "public_institution_staff"
-        ? "public_only"
-        : "official_open";
+    profile.employmentNaturePreference ??
+    ((): SubscriptionDTO["naturePreference"] => {
+      const accepted = profile.acceptedEmploymentNatures ?? [];
+      if (accepted.length === 0) return "undecided";
+      if (
+        accepted.length === 1 &&
+        accepted[0] === "public_institution_staff"
+      ) {
+        return "public_only";
+      }
+      return "official_open";
+    })();
   const now = new Date().toISOString();
   return {
     regions: profile.regions.map((r) => ({

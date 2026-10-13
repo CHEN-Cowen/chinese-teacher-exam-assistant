@@ -197,13 +197,17 @@ describe("第二屏：基础资格（v7.1 M2）", () => {
     expect(html).toContain("查看筛选结果");
   });
 
-  it("不出现已被移出的就业状态/用工偏好字段", async () => {
+  it("不出现已被移出的就业状态字段；v7.2 用工偏好已进入第二屏", async () => {
     const page = await renderPage();
     cleanup = page.unmount;
     const html = page.html();
-    // 就业状态、用工偏好已从首次流程移出
+    // 就业状态仍不在首次流程（按机会补问）
     expect(html).not.toContain("就业状态");
-    expect(html).not.toContain("用工形式");
+    // v7.2：用工偏好三档已进入第二屏末尾（PRD 7.4.2）
+    expect(html).toContain("你想看哪类用工形式？");
+    expect(html).toContain("只看事业编");
+    expect(html).toContain("事业编优先，也看其他官方岗位");
+    expect(html).toContain("暂不确定，先全部看看");
   });
 });
 
@@ -244,5 +248,215 @@ describe("恢复与跳转（v7.1 M2 不回归）", () => {
     const page = await renderPage();
     cleanup = page.unmount;
     expect(replaceMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("第二屏：用工偏好（v7.2 PRD 7.4.2）", () => {
+  beforeEach(() => {
+    // 第一屏已完成 + 第二屏已有学历（满足 stepHasContent，按钮可点）
+    mockSession = {
+      draft: {
+        regions: [{ code: "330000", province: "浙江省", level: "required" }],
+        educationLevel: "bachelor",
+        acceptedEmploymentNatures: [],
+      },
+      step: 1,
+    };
+  });
+
+  it("三档偏好选项文案与 PRD 7.4.2 一致", async () => {
+    const page = await renderPage();
+    cleanup = page.unmount;
+    const html = page.html();
+    expect(html).toContain("只看事业编");
+    expect(html).toContain("事业编优先，也看其他官方岗位");
+    expect(html).toContain("暂不确定，先全部看看");
+  });
+
+  it("未选择偏好时不影响继续（行为等同 undecided，不阻断）", async () => {
+    const page = await renderPage();
+    cleanup = page.unmount;
+    const buttons = Array.from(page.container.querySelectorAll("button"));
+    const nextBtn = buttons.find((b) => b.textContent?.includes("查看筛选结果"));
+    expect(nextBtn).toBeDefined();
+    // 第二屏已有一项实质内容（来自 beforeEach 的草稿不算实质；但 button 仍应可点）
+    // 用工偏好未选择不阻断流程
+    expect(nextBtn!.disabled).toBe(false);
+  });
+
+  it("已知偏好自动回填（旧画像兼容，已保存 public_only 高亮该项）", async () => {
+    mockSession = {
+      draft: {
+        regions: [{ code: "330000", province: "浙江省", level: "required" }],
+        educationLevel: "bachelor",
+        acceptedEmploymentNatures: [],
+        employmentNaturePreference: "public_only",
+      },
+      step: 1,
+    };
+    const page = await renderPage();
+    cleanup = page.unmount;
+    const publicBtn = page.container.querySelector(
+      '[data-testid="employment-preference-public_only"]',
+    ) as HTMLButtonElement;
+    expect(publicBtn).not.toBeNull();
+    expect(publicBtn.getAttribute("aria-pressed")).toBe("true");
+    // 其他两项不高亮
+    const openBtn = page.container.querySelector(
+      '[data-testid="employment-preference-official_open"]',
+    ) as HTMLButtonElement;
+    expect(openBtn.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("旧画像无 employmentNaturePreference 字段时不报错（向后兼容）", async () => {
+    mockSession = {
+      draft: {
+        regions: [{ code: "330000", province: "浙江省", level: "required" }],
+        educationLevel: "bachelor",
+        // 故意不设置 employmentNaturePreference / acceptedEmploymentNatures
+      },
+      step: 1,
+    };
+    const page = await renderPage();
+    cleanup = page.unmount;
+    // 三个偏好按钮都不高亮
+    const group = page.container.querySelector(
+      '[data-testid="employment-preference-group"]',
+    );
+    expect(group).not.toBeNull();
+    const pressed = group!.querySelectorAll('[aria-pressed="true"]');
+    expect(pressed).toHaveLength(0);
+  });
+
+  it("选择偏好只记动作枚举（不记偏好正文），写入草稿", async () => {
+    const trackMock = (await import("@/lib/analytics/eventService")).track;
+    const page = await renderPage();
+    cleanup = page.unmount;
+    const openBtn = page.container.querySelector(
+      '[data-testid="employment-preference-official_open"]',
+    ) as HTMLButtonElement;
+    await act(async () => {
+      openBtn.click();
+    });
+    expect(trackMock).toHaveBeenCalledWith(
+      "nature_preference_changed",
+      "profile",
+      { props: { value: "official_open" } },
+    );
+    // 选中后高亮
+    expect(openBtn.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("用工偏好出现在教师资格之后（PRD 7.4.2 顺序）", async () => {
+    const page = await renderPage();
+    cleanup = page.unmount;
+    const html = page.html();
+    const certIdx = html.indexOf("教师资格");
+    const prefIdx = html.indexOf("你想看哪类用工形式？");
+    expect(certIdx).toBeGreaterThan(-1);
+    expect(prefIdx).toBeGreaterThan(-1);
+    expect(prefIdx).toBeGreaterThan(certIdx);
+  });
+
+  it("偏好不改变资格判断：未选偏好也能查看筛选结果", async () => {
+    const page = await renderPage();
+    cleanup = page.unmount;
+    const html = page.html();
+    expect(html).toContain("这只影响结果的筛选和排序，不会被当作资格不符合");
+  });
+
+  it("保存失败时偏好选择保留在页面（不丢输入）", async () => {
+    const { guestSessionService } = await import("@/lib/guest/guestSession");
+    const saveMock = guestSessionService.save as ReturnType<typeof vi.fn>;
+    // goNext 调用 persist → save 抛错 → 停在本步、显示错误、输入不丢
+    saveMock.mockImplementation(() => {
+      throw new Error("storage full");
+    });
+    const page = await renderPage();
+    cleanup = page.unmount;
+    // 先选一个偏好
+    const publicBtn = page.container.querySelector(
+      '[data-testid="employment-preference-public_only"]',
+    ) as HTMLButtonElement;
+    await act(async () => {
+      publicBtn.click();
+    });
+    expect(publicBtn.getAttribute("aria-pressed")).toBe("true");
+    // 点击下一步（查看筛选结果）触发 persist 失败
+    const buttons = Array.from(page.container.querySelectorAll("button"));
+    const nextBtn = buttons.find((b) => b.textContent?.includes("查看筛选结果"));
+    await act(async () => {
+      nextBtn!.click();
+    });
+    // 没有跳转（保存失败拦截）
+    expect(pushMock).not.toHaveBeenCalled();
+    // 偏好选择仍在页面（不丢输入）
+    expect(publicBtn.getAttribute("aria-pressed")).toBe("true");
+    // 显示保存错误提示
+    const errBanner = page.container.querySelector('[data-testid="save-error"]');
+    expect(errBanner).not.toBeNull();
+  });
+
+  it("最终提交防止重复请求（submitting 标记后再次 goNext 不触发）", async () => {
+    const { guestSessionService } = await import("@/lib/guest/guestSession");
+    const saveMock = guestSessionService.save as ReturnType<typeof vi.fn>;
+    saveMock.mockReturnValue(true);
+    const page = await renderPage();
+    cleanup = page.unmount;
+    const buttons = Array.from(page.container.querySelectorAll("button"));
+    const nextBtn = buttons.find((b) => b.textContent?.includes("查看筛选结果"));
+    await act(async () => {
+      nextBtn!.click();
+    });
+    const callsBefore = pushMock.mock.calls.length;
+    await act(async () => {
+      nextBtn!.click(); // 重复点击
+    });
+    // submitting 后重复点击不应再触发新的 push
+    expect(pushMock.mock.calls.length).toBe(callsBefore);
+  });
+
+  it("键盘可达：偏好按钮为原生 button，aria-pressed 反映选中态", async () => {
+    const page = await renderPage();
+    cleanup = page.unmount;
+    const buttons = page.container.querySelectorAll(
+      '[data-testid^="employment-preference-"]:not([data-testid="employment-preference-group"])',
+    );
+    expect(buttons.length).toBe(3);
+    buttons.forEach((b) => {
+      expect(b.tagName).toBe("BUTTON");
+      expect(b.getAttribute("type")).toBe("button");
+    });
+  });
+});
+
+describe("onboarding 职责边界（v7.2 PRD 7.4.2）", () => {
+  it("第一屏只收地区意向和考虑程度，不出现学历/资格/偏好字段", async () => {
+    // 不预设第二屏草稿，默认进入第一屏
+    const page = await renderPage();
+    cleanup = page.unmount;
+    const html = page.html();
+    expect(html).toContain("你想优先查看哪些地区的教师招聘？");
+    expect(html).not.toContain("最高学历");
+    expect(html).not.toContain("教师资格");
+    expect(html).not.toContain("你想看哪类用工形式？");
+  });
+
+  it("第二屏同时出现学历/毕业时间/专业/教师资格/用工偏好（PRD 7.4.2 完整字段）", async () => {
+    mockSession = {
+      draft: {
+        regions: [{ code: "330000", province: "浙江省", level: "required" }],
+        acceptedEmploymentNatures: [],
+      },
+      step: 1,
+    };
+    const page = await renderPage();
+    cleanup = page.unmount;
+    const html = page.html();
+    expect(html).toContain("最高学历");
+    expect(html).toContain("毕业（或预计毕业）时间");
+    expect(html).toContain("专业全称");
+    expect(html).toContain("教师资格");
+    expect(html).toContain("你想看哪类用工形式？");
   });
 });

@@ -343,7 +343,7 @@ describe("buildGuestPreview：用工形式偏好（v7.1 M3，只筛选不判资�
     expect(undecided.view.preliminary).toHaveLength(baseline.view.preliminary.length);
   });
 
-  it("official_open（也接受其他官方用工形式）：同样不筛选", () => {
+  it("official_open（事业编优先，也看其他官方岗位）：同样不筛选", () => {
     const baseline = ready();
     const open = ready(completeDraft({ employmentNaturePreference: "official_open" }));
     expect(open.natureOutOfPreference).toHaveLength(0);

@@ -49,6 +49,21 @@ export type EmploymentStatus =
   | "employed_parttime" // 灵活/兼职就业
   | "other";
 
+/**
+ * v7.2 用工偏好（三选一，只影响展示、排序和偏好范围外分类）。
+ * - public_only：只看事业编；
+ * - official_open：事业编优先，也看其他官方岗位；
+ * - undecided：暂不确定，先全部看看。
+ *
+ * 不变量：偏好绝不进入资格判定（matching/domain.ts 不读取本字段），
+ * 被偏好筛除的岗位只进“偏好范围外”分组，绝不变为 PASS/FAIL/UNKNOWN/MANUAL_REVIEW。
+ * 旧画像无此字段时按 undefined 处理，行为等同 undecided（不筛选）。
+ */
+export type EmploymentNaturePreference =
+  | "public_only"
+  | "official_open"
+  | "undecided";
+
 /** 五组基础画像（必填组在采集流程中分步完成） */
 export interface BaseRecruitmentProfile {
   /** 1. 可接受就业地区 */
@@ -67,6 +82,12 @@ export interface BaseRecruitmentProfile {
   teacherCert?: TeacherCertInfo;
   /** 对事业编及其他官方用工形式的接受程度（白名单） */
   acceptedEmploymentNatures: EmploymentNatureCode[];
+  /**
+   * v7.2 用工偏好（三选一）。只影响展示、排序和偏好范围外分类，
+   * 不进入资格判定。旧画像无此字段时按 undefined 处理（行为等同 undecided）。
+   * 访客草稿与服务端画像共用同一字段，保证语义一致。
+   */
+  employmentNaturePreference?: EmploymentNaturePreference;
 }
 
 /**

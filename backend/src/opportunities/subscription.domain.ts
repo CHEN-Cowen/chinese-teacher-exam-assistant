@@ -81,13 +81,20 @@ export interface PlanOpportunityNoticesResult {
 export function deriveSubscriptionCriteria(
   profile: UserRecruitmentProfile,
 ): SubscriptionCriteria {
-  const accepted = profile.acceptedEmploymentNatures ?? [];
+  // v7.2：优先用 onboarding 第二屏收集的显式偏好；旧画像回退到白名单派生
   const naturePreference: NaturePreferenceCode =
-    accepted.length === 0
-      ? 'undecided'
-      : accepted.length === 1 && accepted[0] === 'public_institution_staff'
-        ? 'public_only'
-        : 'official_open';
+    profile.employmentNaturePreference ??
+    ((): NaturePreferenceCode => {
+      const accepted = profile.acceptedEmploymentNatures ?? [];
+      if (accepted.length === 0) return 'undecided';
+      if (
+        accepted.length === 1 &&
+        accepted[0] === 'public_institution_staff'
+      ) {
+        return 'public_only';
+      }
+      return 'official_open';
+    })();
   return {
     // 画像地区无 district 维度；匹配只依赖 code 前缀
     regions: profile.regions.map((r) => ({

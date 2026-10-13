@@ -27,6 +27,7 @@ import {
   type SubjectCode,
 } from "@/lib/announcements/types";
 import type {
+  EmploymentNaturePreference,
   EmploymentStatus,
   RegionPreference,
   RegionPreferenceLevel,
@@ -36,6 +37,13 @@ import type {
 } from "@/lib/profile/types";
 import { STORAGE_KEYS } from "@/lib/mock-data";
 import { loadFromStorage, saveToStorageStrict, removeFromStorage } from "@/lib/storage";
+
+/**
+ * v7.2 用工偏好类型重导出（定义在 profile/types，保证访客草稿与服务端画像同语义）。
+ * 三档：public_only=只看事业编 / official_open=事业编优先，也看其他官方岗位 /
+ * undecided=暂不确定，先全部看看。
+ */
+export type { EmploymentNaturePreference };
 
 /**
  * v7.1 M2 两屏基础画像采集：
@@ -72,9 +80,10 @@ export interface GuestProfileDraft {
    */
   acceptedEmploymentNatures: EmploymentNatureCode[];
   /**
-   * v7.1 M3：结果页用工形式偏好（三选一，只影响筛选与展示）。
-   * 缺省 = 未选择（不筛选）；旧草稿无此字段，读取正常。
-   * 不写入服务端画像，不进入资格判定。
+   * v7.2：用工形式偏好（三选一，只影响展示、排序和偏好范围外分类）。
+   * 在 onboarding 第二屏收集；缺省 = 未选择（行为等同 undecided，不筛选）；
+   * 旧草稿无此字段读取正常。不进入资格判定。
+   * 访客草稿与服务端画像共用同名字段，invited 模式保存时随画像同步到服务端。
    */
   employmentNaturePreference?: EmploymentNaturePreference;
   /** 5. 意向报考学科；语文以外的学科记为“尚未开放”，不进入匹配 */
@@ -129,19 +138,11 @@ export const REGION_LEVEL_OPTIONS: {
 ];
 
 /**
- * v7.1 M3 用工形式偏好（结果页三选一，只影响筛选与展示）：
- * - public_only：只看事业编；
- * - official_open：也接受其他官方用工形式；
- * - undecided：暂不确定，先都看看（不筛选）。
+ * v7.2 用工偏好三档高层选项（onboarding 第二屏 + /preview 调整入口共用）。
+ * 文案以 v7.2 PRD 7.4.2 为准；不默认替用户选择，未选择时不高亮任何项。
  * 偏好绝不进入资格判定：matching/domain.ts 不读取该字段，
- * 被筛掉的岗位只进“暂不推荐”分组，绝不变为「明确不符合」。
+ * 被筛掉的岗位只进“偏好范围外”分组，绝不变为 PASS/FAIL/UNKNOWN/MANUAL_REVIEW。
  */
-export type EmploymentNaturePreference =
-  | "public_only"
-  | "official_open"
-  | "undecided";
-
-/** 结果页三档高层选项（PRD 5.4 M3 文案；不默认替用户选择，未选择时不高亮任何项） */
 export const NATURE_PREFERENCE_OPTIONS: {
   value: EmploymentNaturePreference;
   label: string;
@@ -150,17 +151,17 @@ export const NATURE_PREFERENCE_OPTIONS: {
   {
     value: "public_only",
     label: "只看事业编",
-    hint: "只显示事业编制岗位；其他形式收进下方“暂不推荐”列表，随时可切回",
+    hint: "只展示事业编制岗位；其他官方用工形式收进“偏好范围外”，可随时切回",
   },
   {
     value: "official_open",
-    label: "也接受其他官方用工形式",
-    hint: "事业编和其他官方用工形式的机会都会显示",
+    label: "事业编优先，也看其他官方岗位",
+    hint: "事业编优先排序，其他官方用工形式的机会仍会展示",
   },
   {
     value: "undecided",
-    label: "暂不确定，先都看看",
-    hint: "先不按用工形式筛选，看全部机会",
+    label: "暂不确定，先全部看看",
+    hint: "先不按用工形式筛选，看全部官方岗位",
   },
 ];
 
@@ -516,6 +517,8 @@ export function draftToProfile(draft: GuestProfileDraft): UserRecruitmentProfile
     employmentStatus: draft.employmentStatus,
     teacherCert: draft.teacherCert,
     acceptedEmploymentNatures: draft.acceptedEmploymentNatures,
+    // v7.2：偏好随画像同步（访客草稿↔服务端画像同字段），不进入资格判定
+    employmentNaturePreference: draft.employmentNaturePreference,
   };
 }
 
