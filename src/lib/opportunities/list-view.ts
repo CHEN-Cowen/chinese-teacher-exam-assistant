@@ -21,6 +21,7 @@ import {
   primaryFailedGate,
   type ClosedBucketKey,
 } from "@/lib/gate-states";
+import { classifyOpportunity } from "./classify";
 
 export interface UncoveredRegion {
   code: string;
@@ -31,6 +32,28 @@ export interface ClosedBucketView {
   key: ClosedBucketKey;
   label: string;
   units: UnitMatchDTO[];
+}
+
+/**
+ * 工作台三标签桶（v7.2 §7.5）：每个桶带 count 和按后端顺序保留的 units。
+ * 三标签互斥，分类逻辑见 classify.ts 的 classifyOpportunity。
+ */
+export interface WorkbenchBucket {
+  count: number;
+  units: UnitMatchDTO[];
+}
+
+/**
+ * 工作台视图模型：三标签 + 留档区。
+ * - priority / supplement / outOfScope 是页面三标签的单一数据源；
+ * - excluded 保留 closed + 非地区 notEligible，按 closedBuckets 分桶进折叠区；
+ * - supplement 桶内 MANUAL_REVIEW 卡的子态由卡片组件按 unit.overall 判定。
+ */
+export interface WorkbenchViewModel {
+  priority: WorkbenchBucket;
+  supplement: WorkbenchBucket;
+  outOfScope: WorkbenchBucket;
+  excluded: UnitMatchDTO[];
 }
 
 export interface OpportunityListViewModel {
@@ -67,6 +90,12 @@ export interface OpportunityListViewModel {
   excludedCount: number;
   /** 没有任何可行动机会（四档全空）：页面展示空结果态，留档分区仍可查 */
   emptyResult: boolean;
+  /**
+   * v7.2 工作台三标签视图模型：三标签单一数据源 + 留档区。
+   * priority/supplement/outOfScope 互斥，由 classify.ts 统一分桶；
+   * excluded 供折叠区按 closedBuckets 展示。
+   */
+  workbench: WorkbenchViewModel;
 }
 
 function pickPriority(
@@ -81,15 +110,19 @@ function pickPriority(
 }
 
 /** 用户端只展示已通过人工发布门槛的真实公告；演示数据不受此限制。 */
-function isPublishedForUser(unit: UnitMatchDTO): boolean {
+export function isPublishedForUser(unit: UnitMatchDTO): boolean {
   return (
     unit.announcement.dataset === "demo" ||
     unit.announcement.reviewStatus === "human_reviewed"
   );
 }
 
-/** 主推荐比“可展示”更严格：闸门、官方链接与官方证据必须同时成立。 */
-function isActionableRecommendation(
+/**
+ * 主推荐比“可展示”更严格：闸门、官方链接与官方证据必须同时成立。
+ * v7.2：导出给 classify.ts 作为「是否进入正常机会标签」的兜底闸门，
+ * 任何未发布或证据未到 official 的单元都不应进入三标签主桶。
+ */
+export function isActionableRecommendation(
   unit: UnitMatchDTO,
   expectedOverall: UnitMatchDTO["overall"],
 ): boolean {
@@ -127,8 +160,10 @@ function isRegionCovered(prefCode: string, monitoredCodes: ReadonlySet<string>):
  * 仅地区不重叠：FAIL 维度非空且全部是地区维度。
  * 只要同时存在任何非地区 FAIL，就仍是“明确不符合”。
  * （地区维度没有 requirementId 之外的非 FAIL 也可以：UNKNOWN/MANUAL 不影响判定。）
+ *
+ * v7.2：导出给 classify.ts 用于把「偏好范围外」从「明确不符合」中分离。
  */
-function isRegionOnlyMismatch(unit: UnitMatchDTO): boolean {
+export function isRegionOnlyMismatch(unit: UnitMatchDTO): boolean {
   const fails = unit.dimensions.filter((d) => d.value === "FAIL");
   if (fails.length === 0) return false;
   return fails.every((d) => d.dimension === "region");
@@ -222,6 +257,17 @@ export function buildListViewModel(
     visibleNotEligible.length === 0 &&
     closed.length === 0;
 
+  // v7.2 工作台三标签：对所有可见单元跑 classifyOpportunity 单一事实源分桶。
+  // 收集顺序与后端分组顺序一致（preliminary → needInfo → manualReview → notEligible → closed），
+  // 保证桶内顺序稳定；isPublishedForUser 已在上述数组里兜底，real AI 初核记录不进入 workbench。
+  const workbench = buildWorkbench([
+    ...preliminary,
+    ...needInfoGroups.flatMap((group) => group.units),
+    ...manualReview,
+    ...visibleNotEligible,
+    ...closed,
+  ]);
+
   let conclusion: string;
   if (preliminary.length > 0) {
     const extras: string[] = [];
@@ -259,6 +305,43 @@ export function buildListViewModel(
     conclusion,
     excludedCount,
     emptyResult,
+    workbench,
+  };
+}
+
+/**
+ * v7.2 工作台分桶（单一事实源）：对可见单元跑 classifyOpportunity，按返回 tab 分桶。
+ * 桶内顺序保持入参顺序（与后端分组顺序一致），三标签互斥。
+ * excluded 桶含 closed（闸门失败）+ 非地区 notEligible（资格明确不符合），
+ * 供页面折叠区按 closedBuckets + 明确不符合分桶展示。
+ */
+function buildWorkbench(units: readonly UnitMatchDTO[]): WorkbenchViewModel {
+  const priority: UnitMatchDTO[] = [];
+  const supplement: UnitMatchDTO[] = [];
+  const outOfScope: UnitMatchDTO[] = [];
+  const excluded: UnitMatchDTO[] = [];
+  for (const unit of units) {
+    const result = classifyOpportunity(unit);
+    switch (result.tab) {
+      case "priority":
+        priority.push(unit);
+        break;
+      case "supplement":
+        supplement.push(unit);
+        break;
+      case "outOfScope":
+        outOfScope.push(unit);
+        break;
+      case "excluded":
+        excluded.push(unit);
+        break;
+    }
+  }
+  return {
+    priority: { count: priority.length, units: priority },
+    supplement: { count: supplement.length, units: supplement },
+    outOfScope: { count: outOfScope.length, units: outOfScope },
+    excluded,
   };
 }
 

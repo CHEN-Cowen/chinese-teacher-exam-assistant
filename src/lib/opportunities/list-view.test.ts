@@ -669,3 +669,196 @@ describe("buildListViewModel：模块 5 异常态与地区分流", () => {
     expect(listCardNextStepLabel(closed)).toContain("公告");
   });
 });
+
+describe("buildListViewModel：v7.2 工作台三标签分桶", () => {
+  it("六场景按 classifyOpportunity 分到正确桶且互斥", () => {
+    const closedWenzhou = makeUnit("unit-wenzhou-01", "preliminary_eligible", {
+      gates: [
+        { code: "subject_not_open", passed: true, reason: "" },
+        {
+          code: "registration_closed",
+          passed: false,
+          reason: "报名已于 2026-09-20 截止",
+        },
+        { code: "out_of_scope_nature", passed: true, reason: "" },
+        { code: "announcement_withdrawn", passed: true, reason: "" },
+        { code: "no_official_source", passed: true, reason: "" },
+      ],
+    });
+    const response = makeResponse({
+      hangzhou: makeUnit("unit-hangzhou-01", "preliminary_eligible"),
+      hefei: makeUnit("unit-hefei-01-v2", "preliminary_eligible"),
+      yinzhou: makeUnit("unit-yinzhou-01", "need_more_info"),
+      suzhou: makeUnit("unit-suzhou-01", "manual_review"),
+      nanjing: makeUnit("unit-nanjing-01", "not_eligible"),
+      wenzhou: closedWenzhou,
+    });
+
+    const view = buildListViewModel(response);
+    // priority 桶：杭州 + 合肥（preliminary_eligible）
+    expect(view.workbench.priority.count).toBe(2);
+    expect(view.workbench.priority.units.map((u) => u.unit.id)).toEqual([
+      "unit-hangzhou-01",
+      "unit-hefei-01-v2",
+    ]);
+    // supplement 桶：鄞州（unknown）+ 苏州（consult）
+    expect(view.workbench.supplement.count).toBe(2);
+    expect(view.workbench.supplement.units.map((u) => u.unit.id)).toEqual([
+      "unit-yinzhou-01",
+      "unit-suzhou-01",
+    ]);
+    // outOfScope 桶：南京是 not_eligible 但无 dimensions FAIL → excluded 非 outOfScope
+    expect(view.workbench.outOfScope.count).toBe(0);
+    // excluded 桶：温州（闸门失败）+ 南京（not_eligible 非地区 FAIL）
+    expect(view.workbench.excluded.map((u) => u.unit.id)).toEqual([
+      "unit-nanjing-01",
+      "unit-wenzhou-01",
+    ]);
+  });
+
+  it("仅地区 FAIL 的 not_eligible 进 outOfScope，不进 excluded", () => {
+    const regionOnly = makeUnit("unit-guangzhou-01", "not_eligible", {
+      dimensions: [
+        {
+          requirementId: "req-region",
+          dimension: "region",
+          value: "FAIL",
+          reason: "岗位在广东，画像未选广东",
+          hard: true,
+        },
+      ],
+    });
+    const response = makeResponse({} as never);
+    response.groups.notEligible = [regionOnly];
+
+    const view = buildListViewModel(response);
+    expect(view.workbench.outOfScope.count).toBe(1);
+    expect(view.workbench.outOfScope.units[0]?.unit.id).toBe(
+      "unit-guangzhou-01",
+    );
+    expect(view.workbench.excluded).toHaveLength(0);
+  });
+
+  it("非地区 FAIL 的 not_eligible 进 excluded，不进 outOfScope", () => {
+    const hardFail = makeUnit("unit-nanjing-01", "not_eligible", {
+      dimensions: [
+        {
+          requirementId: "req-edu",
+          dimension: "education",
+          value: "FAIL",
+          reason: "要求硕士",
+          hard: true,
+        },
+      ],
+    });
+    const response = makeResponse({} as never);
+    response.groups.notEligible = [hardFail];
+
+    const view = buildListViewModel(response);
+    expect(view.workbench.outOfScope.count).toBe(0);
+    expect(view.workbench.excluded.map((u) => u.unit.id)).toEqual([
+      "unit-nanjing-01",
+    ]);
+  });
+
+  it("MANUAL_REVIEW 在 supplement 桶（不进普通补表，也不进 excluded）", () => {
+    const response = makeResponse({
+      suzhou: makeUnit("unit-suzhou-01", "manual_review"),
+    });
+    const view = buildListViewModel(response);
+    expect(view.workbench.supplement.count).toBe(1);
+    expect(view.workbench.supplement.units[0]?.overall).toBe("manual_review");
+    expect(view.workbench.excluded).toHaveLength(0);
+  });
+
+  it("excluded 按 closedBuckets 分桶供折叠区展示", () => {
+    const expired = makeUnit("unit-wenzhou-01", "preliminary_eligible", {
+      gates: [
+        { code: "registration_closed", passed: false, reason: "已截止" },
+      ],
+    });
+    const sourceLost = makeUnit("unit-jiaxing-01", "preliminary_eligible", {
+      gates: [
+        {
+          code: "source_unavailable",
+          passed: false,
+          reason: "官方来源不可用",
+        },
+      ],
+    });
+    const response = makeResponse({} as never);
+    response.groups.closed = [expired, sourceLost];
+
+    const view = buildListViewModel(response);
+    expect(view.workbench.excluded.map((u) => u.unit.id)).toEqual([
+      "unit-wenzhou-01",
+      "unit-jiaxing-01",
+    ]);
+    // closedBuckets 仍可按闸门主异常态分桶
+    const keys = view.closedBuckets.map((b) => b.key);
+    expect(keys).toContain("expired");
+    expect(keys).toContain("source");
+  });
+
+  it("real AI 初核记录不进入任何 workbench 桶（前端兜底）", () => {
+    const real = makeUnit("real-yz-2026-chinese-01", "preliminary_eligible", {
+      announcement: {
+        id: "real-yz",
+        title: "real",
+        publisher: "教育局",
+        organizationType: "government_unified",
+        officialUrl: "https://example.gov.cn/a",
+        dataset: "real",
+        reviewStatus: "ai_reviewed_pending",
+        reviewedBy: null,
+        reviewedAt: null,
+      },
+      version: {
+        id: "real-yz-v1",
+        versionNumber: 1,
+        sourceKind: "original",
+        publishedAt: "2026-07-31T00:00:00+08:00",
+        timeline: { pendingItems: ["报名时间另行通知"] },
+        officialSource: {
+          id: "src",
+          locator: { kind: "url", url: "https://example.gov.cn/a" },
+          state: "ai_extracted",
+          checkedAt: "2026-10-06T11:30:00+08:00",
+        },
+      },
+      gates: [
+        {
+          code: "evidence_not_reviewed",
+          passed: false,
+          reason: "高影响字段尚未经人工复核",
+        },
+      ],
+    });
+    const response = makeResponse({} as never);
+    response.groups.closed = [real];
+
+    const view = buildListViewModel(response);
+    // real 未通过 isPublishedForUser，不进入 workbench 任何桶
+    expect(view.workbench.priority.count).toBe(0);
+    expect(view.workbench.supplement.count).toBe(0);
+    expect(view.workbench.outOfScope.count).toBe(0);
+    expect(view.workbench.excluded).toHaveLength(0);
+  });
+
+  it("三标签 count 与 units.length 一致", () => {
+    const response = makeResponse({
+      hangzhou: makeUnit("unit-hangzhou-01", "preliminary_eligible"),
+      yinzhou: makeUnit("unit-yinzhou-01", "need_more_info"),
+    });
+    const view = buildListViewModel(response);
+    expect(view.workbench.priority.count).toBe(
+      view.workbench.priority.units.length,
+    );
+    expect(view.workbench.supplement.count).toBe(
+      view.workbench.supplement.units.length,
+    );
+    expect(view.workbench.outOfScope.count).toBe(
+      view.workbench.outOfScope.units.length,
+    );
+  });
+});

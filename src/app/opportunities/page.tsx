@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { Hero } from "@/components/ia/Hero";
 import { Disclosure } from "@/components/ia/Layer";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -18,6 +18,7 @@ import {
 import { buildNoResultState } from "@/lib/opportunities/no-result";
 import { opportunitiesApi } from "@/lib/opportunities/api";
 import { OpportunityListItem } from "@/components/opportunities/OpportunityListItem";
+import { WorkbenchTabs } from "@/components/opportunities/WorkbenchTabs";
 import { CoverageBanner } from "@/components/opportunities/CoverageBanner";
 import { DatasetScopeNotice } from "@/components/opportunities/DatasetScopeNotice";
 import { TrialJourneyGuide } from "@/components/opportunities/TrialJourneyGuide";
@@ -121,41 +122,22 @@ export default function OpportunitiesPage() {
     view.needInfoGroups[0]?.units[0] ??
     view.manualReview[0] ??
     null;
-  const actionable = [
-    ...(view.priority ? [view.priority] : []),
-    ...view.otherPreliminary,
-    ...view.needInfoGroups.flatMap((group) => group.units),
-    ...view.manualReview,
-  ].filter(
-    (unit, index, units) =>
-      units.findIndex((candidate) => candidate.unit.id === unit.unit.id) === index,
-  );
-  const featured = actionable[0] ?? null;
-  const secondary = actionable.slice(1);
-  const visibleSecondary = secondary.slice(0, 3);
-  const collapsedSecondary = secondary.slice(3);
-  const hasDemo = [
-    ...actionable,
-    ...view.regionOutOfScope,
-    ...view.notEligible,
-    ...view.closed,
-  ].some((unit) => unit.announcement.dataset === "demo");
-  const allVisible = [
-    ...actionable,
-    ...view.regionOutOfScope,
-    ...view.notEligible,
-    ...view.closed,
-  ].filter(
-    (unit, index, units) =>
-      units.findIndex((candidate) => candidate.unit.id === unit.unit.id) === index,
+  // v7.2：页面叙事以 workbench 三标签为单一来源，hasDemo/trialEntry/hasSavedDemo
+  // 都从 workbench 全量单元派生，避免与三标签分桶不一致。
+  const allWorkbenchUnits = [
+    ...view.workbench.priority.units,
+    ...view.workbench.supplement.units,
+    ...view.workbench.outOfScope.units,
+    ...view.workbench.excluded,
+  ];
+  const hasDemo = allWorkbenchUnits.some(
+    (unit) => unit.announcement.dataset === "demo",
   );
   const trialEntry =
-    actionable.find((unit) => unit.announcement.dataset === "demo") ??
-    view.regionOutOfScope.find((unit) => unit.announcement.dataset === "demo") ??
-    view.notEligible.find((unit) => unit.announcement.dataset === "demo") ??
-    view.closed.find((unit) => unit.announcement.dataset === "demo") ??
-    null;
-  const hasSavedDemoOpportunity = allVisible.some(
+    allWorkbenchUnits.find(
+      (unit) => unit.announcement.dataset === "demo",
+    ) ?? null;
+  const hasSavedDemoOpportunity = allWorkbenchUnits.some(
     (unit) => unit.announcement.dataset === "demo" && unit.follow !== null,
   );
   const heroConclusion = view.priority
@@ -186,8 +168,15 @@ export default function OpportunitiesPage() {
     };
   }
 
+  // 留档区：excluded 中 closedBuckets 已按闸门主异常态分桶（截止/来源失效/撤回…）；
+  // 其余 excluded 是资格明确不符合（非地区 FAIL），单独展示一个折叠区。
+  const closedIds = new Set(view.closed.map((u) => u.unit.id));
+  const hardNotEligible = view.workbench.excluded.filter(
+    (u) => !closedIds.has(u.unit.id),
+  );
+
   return (
-    <div className="mx-auto max-w-2xl space-y-7 pb-2">
+    <div className="mx-auto max-w-[1280px] space-y-7 px-4 pb-2 sm:px-5 lg:px-6">
       {actionFeedback && (
         <StatusMessageRegion>
           <StatusMessage
@@ -290,117 +279,93 @@ export default function OpportunitiesPage() {
         </Callout>
       )}
 
-      {featured && (
-        <section
-          id="priority-opportunity"
-          aria-labelledby="priority-opportunity-heading"
-          className="scroll-mt-20 space-y-3 rounded-lg bg-surface-2 p-4"
+      {/* v7.2 工作台三标签：优先机会 / 补充后判断 / 偏好范围外。
+          useSearchParams 在生产构建需要 Suspense 边界，避免 prerender 失败。 */}
+      {!noResult && (
+        <Suspense
+          fallback={
+            <div className="rounded-xl border border-line bg-surface p-4 text-sm text-ink-muted">
+              正在加载机会标签…
+            </div>
+          }
         >
-          <h2
-            id="priority-opportunity-heading"
-            className="text-sm font-semibold text-ink"
-          >
-            {featured.unit.id === view.primaryTargetUnitId ? "重点准备的机会" : "优先查看"}
-          </h2>
-          <OpportunityListItem
-            unit={featured}
+          <WorkbenchTabs
+            workbench={view.workbench}
             evaluatedAt={evaluatedAt}
-            priority
-            followBusy={followBusyId === featured.unit.id}
+            followBusyId={followBusyId}
             onToggleFollow={toggleFollow}
           />
-        </section>
+        </Suspense>
       )}
 
-      {visibleSecondary.length > 0 && (
-        <section aria-labelledby="secondary-heading" className="space-y-3">
-          <h2 id="secondary-heading" className="text-sm font-semibold text-ink">其他值得查看</h2>
-          {visibleSecondary.map((unit) => (
-            <OpportunityListItem
-              key={unit.unit.id}
-              unit={unit}
-              evaluatedAt={evaluatedAt}
-              compact
-              followBusy={followBusyId === unit.unit.id}
-              onToggleFollow={toggleFollow}
-            />
-          ))}
-        </section>
-      )}
-
-      {collapsedSecondary.length > 0 && (
-        <Disclosure title="查看其余结果" count={collapsedSecondary.length}>
-          <div className="space-y-2">
-          {collapsedSecondary.map((unit) => (
-            <OpportunityListItem
-              key={unit.unit.id}
-              unit={unit}
-              evaluatedAt={evaluatedAt}
-              compact
-              followBusy={followBusyId === unit.unit.id}
-              onToggleFollow={toggleFollow}
-            />
-          ))}
-          </div>
-        </Disclosure>
-      )}
-
-      {/* 模块 7.5：用户端不显示 AI 初核待人工复核记录（real）。
-          list-view 已把 realMonitored 置空，此处不再渲染该分组。
-          后续若后端 API 增加 status 过滤，realMonitored 永远为空，此注释块可删除。 */}
-
-      {view.regionOutOfScope.length > 0 && (
-        <Disclosure
-          title="岗位地区不在你选择的范围（不是资格不符合）"
-          count={view.regionOutOfScope.length}
+      {/* 留档区：已截止 / 来源失效 / 明确不符合的公告不进入推荐，但历史依据仍可追溯。
+          不用惩罚性红色（danger 仅用于来源失效/撤回的高风险留档，由 GateTag 自身控制）。 */}
+      {view.closedBuckets.length > 0 && (
+        <section
+          aria-labelledby="excluded-closed-heading"
+          className="space-y-3"
         >
-          <div className="space-y-3">
-            <p className="text-xs leading-5 text-ink-muted">
-              这些岗位只是地点不在你填写的可接受地区内，学历、专业等条件并未判定为不符合。
-              调整报考地区后会重新判断。
+          <h2
+            id="excluded-closed-heading"
+            className="text-sm font-semibold text-ink-muted"
+          >
+            已截止与来源失效的留档公告
+          </h2>
+          {view.closedBuckets.map((bucket) => (
+            <Disclosure
+              key={bucket.key}
+              title={bucket.label}
+              count={bucket.units.length}
+            >
+              <div className="space-y-3">
+                {bucket.units.map((unit) => (
+                  <OpportunityListItem
+                    key={unit.unit.id}
+                    unit={unit}
+                    evaluatedAt={evaluatedAt}
+                    variant="excluded"
+                  />
+                ))}
+              </div>
+              <p className="mt-3 text-xs text-ink-muted">
+                该状态只表示当前不进入推荐，历史留档与官方依据仍可追溯；它不是资格不符合结论。
+              </p>
+            </Disclosure>
+          ))}
+        </section>
+      )}
+
+      {hardNotEligible.length > 0 && (
+        <section
+          aria-labelledby="excluded-noteligible-heading"
+          className="space-y-3"
+        >
+          <h2
+            id="excluded-noteligible-heading"
+            className="text-sm font-semibold text-ink-muted"
+          >
+            明确不符合（资格条件本身不满足）
+          </h2>
+          <Disclosure
+            title="资格条件明确不符合"
+            count={hardNotEligible.length}
+          >
+            <div className="space-y-3">
+              {hardNotEligible.map((unit) => (
+                <OpportunityListItem
+                  key={unit.unit.id}
+                  unit={unit}
+                  evaluatedAt={evaluatedAt}
+                  variant="excluded"
+                />
+              ))}
+            </div>
+            <p className="mt-3 text-xs text-ink-muted">
+              这些岗位的资格条件本身不满足，不进入推荐；官方依据仍可追溯，供你对比参考。
             </p>
-            {view.regionOutOfScope.map((unit) => (
-              <OpportunityListItem
-                key={unit.unit.id}
-                unit={unit}
-                evaluatedAt={evaluatedAt}
-                regionOutOfScope
-              />
-            ))}
-          </div>
-        </Disclosure>
+          </Disclosure>
+        </section>
       )}
-
-      {view.notEligible.length > 0 && (
-        <Disclosure title="明确不符合（资格条件本身不满足）" count={view.notEligible.length}>
-          <div className="space-y-3">
-            {view.notEligible.map((unit) => (
-              <OpportunityListItem
-                key={unit.unit.id}
-                unit={unit}
-                evaluatedAt={evaluatedAt}
-              />
-            ))}
-          </div>
-        </Disclosure>
-      )}
-
-      {view.closedBuckets.map((bucket) => (
-        <Disclosure key={bucket.key} title={bucket.label} count={bucket.units.length}>
-          <div className="space-y-3">
-            {bucket.units.map((unit) => (
-              <OpportunityListItem
-                key={unit.unit.id}
-                unit={unit}
-                evaluatedAt={evaluatedAt}
-              />
-            ))}
-          </div>
-          <p className="mt-3 text-xs text-ink-muted">
-            该状态只表示当前不进入推荐，历史留档与官方依据仍可追溯；它不是资格不符合结论。
-          </p>
-        </Disclosure>
-      ))}
 
       {!noResult && <SubscriptionCard profile={state.profile} />}
     </div>
