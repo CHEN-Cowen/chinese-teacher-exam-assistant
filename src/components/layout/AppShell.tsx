@@ -32,13 +32,14 @@ export function AppShell({ children }: { children: ReactNode }) {
     );
   }
 
-  // 价值首页 / 30 秒说明 / 快速问答 / 首次结果页：无导航外壳，未登录也可访问
-  // （v5.1 先体验后登录）
+  // 价值首页 / 30 秒说明 / 快速问答 / 首次结果页 / 访客定向补充页：无导航外壳，
+  // 未登录也可访问（v5.1 先体验后登录；v7.2 访客补充流程绝不进入登录或 onboarding）
   if (
     pathname === "/" ||
     pathname === "/learn" ||
     pathname === "/onboarding" ||
-    pathname === "/preview"
+    pathname === "/preview" ||
+    pathname.startsWith("/preview/")
   ) {
     return (
       <div className="min-h-screen bg-canvas">

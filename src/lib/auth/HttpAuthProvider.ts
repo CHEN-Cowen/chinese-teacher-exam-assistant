@@ -54,11 +54,22 @@ export class HttpAuthProvider implements AuthService {
     }
     const data = (await res.json()) as { user: User };
     this.session = this.buildSession(data.user);
-    // 登录后幂等迁移访客画像到服务端（若服务端尚无该用户画像）。
+    // v7.2 登录迁移：服务端非空优先；缺失则迁入；冲突要求用户确认，不静默覆盖。
     // 必须在通知"已登录"前完成：机会页首屏 match 依赖服务端已持久化的画像，
     // 否则与迁移请求竞态导致首次匹配为空；迁移失败不阻塞登录本身。
     try {
-      await profileApi.migrateGuestProfileIfNeeded();
+      const outcome = await profileApi.migrateGuestProfileIfNeeded();
+      if (outcome.kind === "conflict") {
+        // 两边冲突时存入 sessionStorage（含访客补充事实），由机会页 Banner 引导用户确认；
+        // 不清除访客草稿（不静默丢弃），不覆盖服务端（不静默覆盖）。
+        sessionStorage.setItem(
+          "kb_profile_migration_conflict",
+          JSON.stringify({
+            at: new Date().toISOString(),
+            ...(outcome.guestFacts ? { guestFacts: outcome.guestFacts } : {}),
+          }),
+        );
+      }
     } catch {
       // 迁移失败不阻塞登录；用户可在机会页重新完善画像
     }

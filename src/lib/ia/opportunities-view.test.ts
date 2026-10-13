@@ -164,7 +164,7 @@ describe("guestCardNextStep：每张卡一个下一步", () => {
     expect(guestCardNextStep(v.priority!).kind).toBe("login");
     const needInfo = v.needInfoGroups[0]!.rows[0]!;
     expect(guestCardNextStep(needInfo)).toMatchObject({
-      kind: "onboarding",
+      kind: "supplement",
       label: "补充信息后判断",
     });
     expect(guestCardNextStep(v.manualReview[0]!).label).toBe("查看确认要点");

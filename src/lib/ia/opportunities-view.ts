@@ -326,8 +326,17 @@ export function buildOpportunitiesView(
   };
 }
 
-/** 卡片「一个下一步」类型（具体 href 由页面/组件映射：登录落点在 previewEngine） */
-export type GuestCardNextStepKind = "login" | "onboarding" | "official" | "expand";
+/**
+ * 卡片「一个下一步」类型（具体 href 由页面/组件映射：登录落点在 previewEngine）。
+ * v7.2：need_more_info 不再走 onboarding（会导致回到基础画像重填地区/学历/专业/教资），
+ * 改为 supplement（进入定向补充页，只补缺失的子字段）。
+ * onboarding 仅用于「修改全部信息」，不再用于补充缺失信息。
+ */
+export type GuestCardNextStepKind =
+  | "login"
+  | "supplement"
+  | "official"
+  | "expand";
 
 export interface GuestCardNextStep {
   kind: GuestCardNextStepKind;
@@ -346,7 +355,8 @@ export function guestCardNextStep(row: OpportunityRow): GuestCardNextStep {
     case "preliminary_eligible":
       return { kind: "login", label: "保存这个机会" };
     case "need_more_info":
-      return { kind: "onboarding", label: "补充信息后判断" };
+      // v7.2：补充缺失信息走定向补充路由，绝不再回基础画像页重填已填字段。
+      return { kind: "supplement", label: "补充信息后判断" };
     case "manual_review":
       return { kind: "expand", label: "查看确认要点" };
     case "not_eligible": {

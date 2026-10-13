@@ -18,6 +18,8 @@ import {
 import { buildNoResultState } from "@/lib/opportunities/no-result";
 import { opportunitiesApi } from "@/lib/opportunities/api";
 import { OpportunityListItem } from "@/components/opportunities/OpportunityListItem";
+import { MigrationConflictBanner } from "@/components/opportunities/MigrationConflictBanner";
+import type { SupplementFacts } from "@/lib/profile/activeProfile";
 import { WorkbenchTabs } from "@/components/opportunities/WorkbenchTabs";
 import { CoverageBanner } from "@/components/opportunities/CoverageBanner";
 import { DatasetScopeNotice } from "@/components/opportunities/DatasetScopeNotice";
@@ -53,6 +55,24 @@ export default function OpportunitiesPage() {
     if (message) window.sessionStorage.removeItem("kb_post_login_notice");
     return message;
   });
+  // v7.2 登录迁移冲突：HttpAuthProvider 在画像冲突时写入标记，本页引导用户确认（不静默覆盖）
+  const [migrationConflict, setMigrationConflict] = useState<{
+    guestFacts?: SupplementFacts;
+  } | null>(() => {
+    if (typeof window === "undefined") return null;
+    const raw = window.sessionStorage.getItem("kb_profile_migration_conflict");
+    if (!raw) return null;
+    window.sessionStorage.removeItem("kb_profile_migration_conflict");
+    try {
+      const parsed = JSON.parse(raw) as { guestFacts?: SupplementFacts };
+      return { guestFacts: parsed.guestFacts };
+    } catch {
+      return {};
+    }
+  });
+  const [migrationResolvedNotice, setMigrationResolvedNotice] = useState<
+    string | null
+  >(null);
   const {
     state,
     reload,
@@ -197,6 +217,29 @@ export default function OpportunitiesPage() {
             tone="success"
             message={loginNotice}
             onDismiss={() => setLoginNotice(null)}
+          />
+        </StatusMessageRegion>
+      )}
+      {migrationConflict && (
+        <MigrationConflictBanner
+          guestFacts={migrationConflict.guestFacts}
+          onResolved={(choice) => {
+            setMigrationConflict(null);
+            setMigrationResolvedNotice(
+              choice === "guest"
+                ? "已使用本次填写的补充信息，机会判断已更新。"
+                : "已保留账号中保存的补充信息。",
+            );
+            reload();
+          }}
+        />
+      )}
+      {migrationResolvedNotice && (
+        <StatusMessageRegion>
+          <StatusMessage
+            tone="success"
+            message={migrationResolvedNotice}
+            onDismiss={() => setMigrationResolvedNotice(null)}
           />
         </StatusMessageRegion>
       )}

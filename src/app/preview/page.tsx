@@ -257,17 +257,18 @@ function ReadyPreview({
   };
 
   /**
-   * v7.1 M4 四档主行动（与卡片上的按钮一一对应）：
-   * 初步符合→登录并保存；待补信息→回画像补一项；建议确认/明确不符→展开看要点/原因；
-   * 异常态→打开官方公告。展开判断依据降为次级文本操作。
+   * v7.2 四档主行动（与卡片上的按钮一一对应）：
+   * 初步符合→登录并保存；待补信息→定向补充（只补缺失子字段，不回基础画像页）；
+   * 建议确认/明确不符→展开看要点/原因；异常态→打开官方公告。展开判断依据降为次级文本操作。
    */
   const handleCardNextStep = (kind: GuestCardNextStepKind, row: OpportunityRow) => {
     switch (kind) {
       case "login":
         router.push("/login?next=/opportunities");
         break;
-      case "onboarding":
-        router.push("/onboarding?from=preview");
+      case "supplement":
+        // v7.2：补充信息走定向补充路由（demo 模式），绝不回基础画像页。
+        router.push(`/preview/supplement/${row.unitId}?origin=preview&bucket=need_more_info`);
         break;
       case "official": {
         const href = safeOfficialLink(row.officialUrl) ?? row.officialUrl;

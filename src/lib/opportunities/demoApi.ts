@@ -50,6 +50,11 @@ function storageKey(): string {
 }
 
 function load(): DemoData {
+  // v7.2：访客在 /preview/supplement 按需补问时需要只读访问演示详情；
+  // 无会话时返回空数据（不写本机），写操作仍由 persist→currentUserId 抛错守住。
+  if (!authService.getSession()?.userId) {
+    return { follows: [], corrections: [] };
+  }
   return loadFromStorage<DemoData>(storageKey(), { follows: [], corrections: [] });
 }
 
