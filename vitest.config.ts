@@ -13,6 +13,8 @@ export default defineConfig({
     include: [
       "src/**/*.test.ts",
       "src/**/*.test.tsx",
+      "tests/**/*.test.ts", // 工作包 0：样本自检/隔离守护/链路回归
+      "tests/**/*.test.tsx",
       "scripts/**/*.test.mjs", // 网络基线守卫（模块 0A）
     ],
     globals: false,

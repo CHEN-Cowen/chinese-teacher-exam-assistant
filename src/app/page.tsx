@@ -13,6 +13,7 @@ import { guestSessionService } from "@/lib/guest/guestSession";
 import { GUEST_COVERAGE } from "@/lib/guest/coverage";
 import { coverageProvinceLine } from "@/lib/opportunities/coverage-view";
 import { track } from "@/lib/analytics/eventService";
+import { FLAGS } from "@/lib/flags";
 
 /** "YYYY-MM-DD..." → "YYYY年M月D日"；无法解析时原样返回 */
 function formatDate(iso: string): string {
@@ -69,6 +70,163 @@ export default function Home() {
     track("home_start_match_clicked", "home");
     router.push("/onboarding");
   };
+
+  /**
+   * v7.2 结果先行首页（ff_new_home 开启时渲染）。
+   *
+   * PRD 7.4.1 / 7.2 + UIUX方案 §5：
+   * - 主标题「哪些教师岗位，你现在就能报？」
+   * - 唯一高强调按钮「开始匹配岗位」→ /onboarding
+   * - 右侧只展示结果形状（三类标签 + 一个简化岗位 + 少量状态），不展开完整公告
+   * - 示例只做一次页面级标识（aside aria-label + "结果预览 · 示例"）
+   * - 桌面 5:7 左右布局，内容容器 max-w-1280px 居中
+   * - 移动端顺序：价值 → CTA → 说明 → 简化预览 → 信任短句
+   * - 不引入远程字体/图标，复用 globals.css 和 ui/ 组件
+   */
+  if (FLAGS.ff_new_home) {
+    const trustChips = ["真实公告", "逐条可核对", "不确定就明确提示"];
+
+    return (
+      <div className="min-h-screen bg-canvas">
+        <header className="mx-auto flex h-18 w-full max-w-[1280px] items-center justify-between px-5 md:h-20 md:px-8">
+          <BrandMark size="md" />
+          <LinkButton href="/login" variant="ghost" size="sm" className="text-ink-muted">
+            登录
+          </LinkButton>
+        </header>
+
+        <main className="mx-auto w-full max-w-[1280px] px-5 pb-12 md:px-8 md:pb-16">
+          <section
+            aria-label="产品价值与结果预览"
+            className="grid gap-8 py-4 md:gap-12 md:py-8 lg:grid-cols-12"
+          >
+            {/* 左：价值 + 主行动（桌面约 5 栏） */}
+            <div className="lg:col-span-5">
+              <p className="text-[13px] font-semibold uppercase tracking-[0.14em] text-brand-strong">
+                30 秒完成资格预筛
+              </p>
+              <h1
+                className="mt-3.5 text-[34px] font-bold leading-[1.16] tracking-[-0.01em] sm:text-[40px] md:text-[clamp(38px,4.6vw,54px)]"
+                data-testid="home-primary-title"
+              >
+                哪些教师岗位，你现在就能报？
+              </h1>
+              <p className="mt-4 max-w-[30em] text-[15px] leading-[1.65] text-ink-muted md:text-[17px]">
+                填写地区、专业和教师资格，我们直接给出优先机会、待补信息和官方依据。
+              </p>
+
+              <div className="mt-6 flex max-w-sm flex-col gap-3 sm:max-w-none sm:flex-row sm:items-center">
+                <Button
+                  size="lg"
+                  onClick={handleStart}
+                  data-testid="start-onboarding"
+                  className="w-full bg-brand text-on-dark hover:bg-brand-strong sm:w-auto sm:min-w-44"
+                  iconEnd={
+                    <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M4 10h12m-4-4 4 4-4 4" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  }
+                >
+                  开始匹配岗位
+                </Button>
+                <span className="text-[13px] text-ink-muted" data-testid="home-time-hint">
+                  无需登录 · 约 30 秒
+                </span>
+              </div>
+            </div>
+
+            {/* 右：结果预览（桌面约 7 栏）——只展示结果形状，不展开完整公告 */}
+            <aside
+              className="lg:col-span-7"
+              aria-label="结果预览，示例非真实岗位"
+              data-testid="result-preview"
+            >
+              <div className="rounded-2xl border border-line bg-surface p-5 shadow-2 md:p-6">
+                {/* 页面级示例标识（只标注一次） */}
+                <div className="flex items-center justify-between text-xs text-ink-muted">
+                  <span className="font-semibold">结果预览 · 示例</span>
+                  <span>刚刚核对</span>
+                </div>
+
+                {/* 三类结果标签 */}
+                <div className="mt-4 grid grid-cols-3 gap-2" role="presentation">
+                  <div className="rounded-lg bg-brand-soft px-2.5 py-2 text-center text-[11px] text-brand-strong">
+                    <strong className="block text-[18px] font-medium">1</strong>
+                    优先机会
+                  </div>
+                  <div className="rounded-lg bg-surface-2 px-2.5 py-2 text-center text-[11px] text-ink-muted">
+                    <strong className="block text-[18px] font-medium text-ink">2</strong>
+                    补充后判断
+                  </div>
+                  <div className="rounded-lg bg-surface-2 px-2.5 py-2 text-center text-[11px] text-ink-muted">
+                    <strong className="block text-[18px] font-medium text-ink">3</strong>
+                    偏好范围外
+                  </div>
+                </div>
+
+                {/* 简化岗位卡（示意，不展开完整公告） */}
+                <div className="mt-3 rounded-lg border border-line bg-surface p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="inline-flex items-center rounded-pill border border-ok-line bg-ok-bg px-2.5 py-1 text-xs font-semibold text-ok-ink">
+                      初步符合
+                    </span>
+                    <span className="inline-flex items-center rounded-pill border border-ask-line bg-ask-bg px-2.5 py-1 text-xs font-medium text-ask-ink">
+                      6 天后截止
+                    </span>
+                  </div>
+                  <h2 className="mt-3 text-[15px] font-bold leading-snug text-ink">
+                    杭州某公办初中 · 语文教师
+                  </h2>
+                  <p className="mt-1.5 text-xs text-ink-muted">
+                    杭州 · 余杭区
+                  </p>
+                  <div className="mt-3 flex items-center justify-between border-t border-line pt-3 text-xs">
+                    <strong className="font-medium text-ok-ink">3 项已通过</strong>
+                    <span className="text-ink-muted">户籍待确认</span>
+                  </div>
+                </div>
+
+                {/* 查看官方依据（示意动作，不可交互） */}
+                <div
+                  className="mt-3 flex h-10 items-center justify-center gap-1.5 rounded-lg bg-brand-soft text-[13px] font-semibold text-brand-strong"
+                  role="presentation"
+                  aria-hidden="true"
+                >
+                  <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M14 3H7a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V7z" />
+                    <path d="M14 3v4h4M9 13h6M9 17h4" />
+                  </svg>
+                  查看官方依据
+                </div>
+              </div>
+            </aside>
+
+            {/* 信任短句（桌面左列下方；移动端在预览之后） */}
+            <ul
+              className="flex flex-wrap gap-2 lg:col-span-5 lg:col-start-1"
+              aria-label="信任说明"
+              data-testid="home-trust-chips"
+            >
+              {trustChips.map((item) => (
+                <li
+                  key={item}
+                  className="rounded-pill border border-line bg-surface-2 px-3 py-1.5 text-[13px] text-ink-muted"
+                >
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </section>
+        </main>
+
+        <footer className="mx-auto w-full max-w-[1280px] px-5 pb-10 md:px-8">
+          <div className="border-t border-line pt-5 text-xs text-ink-muted">
+            <p>初步判断不等于保证可以报名，最终资格以招聘单位审核为准。</p>
+          </div>
+        </footer>
+      </div>
+    );
+  }
 
   // 原型 .hero__safe 三标签：明确"无注册 / 步步有反馈 / 可回看原文"
   const safeChips = ["无需登录即可初筛", "每一步都有反馈", "结论可回到官方原文核对"];
