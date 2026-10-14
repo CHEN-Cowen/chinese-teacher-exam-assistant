@@ -23,7 +23,10 @@ import {
   extractFields,
   prepareAutoCandidateFields,
 } from '../extraction/field-extractor.js';
-import type { DocumentParseStore } from '../../document-processing/document-parse-store.js';
+// 必须是值导入而非 import type：DocumentParseStore 由构造函数注入，
+// import type 会让运行时元数据退化为 Function，Worker 启动时抛
+// UnknownDependenciesException（index [1] 不可用）。
+import { DocumentParseStore } from '../../document-processing/document-parse-store.js';
 import type { DocumentParseRunRecord } from '../../document-processing/document-parse-store.js';
 import type { ParsedDocument } from '../../document-processing/parsed-document.js';
 
