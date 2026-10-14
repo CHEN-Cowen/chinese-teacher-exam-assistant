@@ -12,6 +12,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
+// v7.2：ff_post_save_next 默认关闭会隐藏「保存后的下一步」面板（FLAGS 为构建期快照，
+// 必须在模块求值前开启）；本文件锁定面板的失败显真与原地重试行为
+vi.hoisted(() => {
+  process.env.NEXT_PUBLIC_FF_POST_SAVE_NEXT = "true";
+});
+
 /** vi.mock 会被提升，模块实现通过这个持有者在 beforeEach 中注入 */
 const holders = vi.hoisted(() => ({
   follow: (() => Promise.resolve(undefined)) as (...args: unknown[]) => Promise<unknown>,
@@ -144,6 +150,8 @@ describe("v7.2 详情页：保存失败显真与原地重试", () => {
     act(() => root.unmount());
     container.remove();
     vi.restoreAllMocks();
+    // 不向同 worker 的其他测试文件泄漏 flag 环境
+    delete process.env.NEXT_PUBLIC_FF_POST_SAVE_NEXT;
   });
 
   it("follow 首次失败：不出现成功面板，显示行内错误与重试；重试成功后才出现面板", async () => {

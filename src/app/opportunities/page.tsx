@@ -21,6 +21,8 @@ import { OpportunityListItem } from "@/components/opportunities/OpportunityListI
 import { MigrationConflictBanner } from "@/components/opportunities/MigrationConflictBanner";
 import type { SupplementFacts } from "@/lib/profile/activeProfile";
 import { WorkbenchTabs } from "@/components/opportunities/WorkbenchTabs";
+import { StackedResultSections } from "@/components/opportunities/StackedResultSections";
+import { FLAGS } from "@/lib/flags";
 import { CoverageBanner } from "@/components/opportunities/CoverageBanner";
 import { DatasetScopeNotice } from "@/components/opportunities/DatasetScopeNotice";
 import { TrialJourneyGuide } from "@/components/opportunities/TrialJourneyGuide";
@@ -322,24 +324,37 @@ export default function OpportunitiesPage() {
         </Callout>
       )}
 
-      {/* v7.2 工作台三标签：优先机会 / 补充后判断 / 偏好范围外。
-          useSearchParams 在生产构建需要 Suspense 边界，避免 prerender 失败。 */}
-      {!noResult && (
-        <Suspense
-          fallback={
-            <div className="rounded-xl border border-line bg-surface p-4 text-sm text-ink-muted">
-              正在加载机会标签…
-            </div>
-          }
-        >
-          <WorkbenchTabs
-            workbench={view.workbench}
+      {/* v7.2 结果区：ff_new_results 开 → 工作台三标签；关（回退）→ 旧式堆叠分组。
+          FLAGS 是构建期快照，顶层条件渲染在服务端与客户端一致，无 hydration 风险。
+          WorkbenchTabs 的 useSearchParams 在生产构建需要 Suspense 边界，避免 prerender 失败。 */}
+      {!noResult &&
+        (FLAGS.ff_new_results ? (
+          <Suspense
+            fallback={
+              <div className="rounded-xl border border-line bg-surface p-4 text-sm text-ink-muted">
+                正在加载机会标签…
+              </div>
+            }
+          >
+            <WorkbenchTabs
+              workbench={view.workbench}
+              evaluatedAt={evaluatedAt}
+              followBusyId={followBusyId}
+              onToggleFollow={toggleFollow}
+            />
+          </Suspense>
+        ) : (
+          <StackedResultSections
+            priority={view.priority}
+            otherPreliminary={view.otherPreliminary}
+            needInfoGroups={view.needInfoGroups}
+            manualReview={view.manualReview}
+            regionOutOfScope={view.regionOutOfScope}
             evaluatedAt={evaluatedAt}
             followBusyId={followBusyId}
             onToggleFollow={toggleFollow}
           />
-        </Suspense>
-      )}
+        ))}
 
       {/* 留档区：已截止 / 来源失效 / 明确不符合的公告不进入推荐，但历史依据仍可追溯。
           不用惩罚性红色（danger 仅用于来源失效/撤回的高风险留档，由 GateTag 自身控制）。 */}

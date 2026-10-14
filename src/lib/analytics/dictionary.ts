@@ -382,6 +382,35 @@ export const EVENT_DICTIONARY: EventDictionaryEntry[] = [
     properties: "tpl 维度短枚举（如 major）、edited 布尔；绝不记问题正文/原文/答复",
     core: false,
   },
+  // —— v7.2 整合收口：结果工作台与定向补充流程（只记枚举，不记任何正文） ——
+  {
+    type: "result_tab_changed",
+    label: "结果页标签切换",
+    trigger: "机会结果页工作台点击或键盘切换三标签（用户主动切换；挂载与 URL 恢复不记）",
+    properties: "tab 枚举（priority/supplement/outOfScope）；不记任何画像正文",
+    core: false,
+  },
+  {
+    type: "supplement_opened",
+    label: "打开定向补充页",
+    trigger: "进入 /opportunities/[unitId]/supplement（结果页/详情页/预览页入口共用）",
+    properties: "origin 枚举（preview/opportunities/detail）、bucket 枚举（need_more_info/manual_review）",
+    core: false,
+  },
+  {
+    type: "supplement_recomputed",
+    label: "补充后重算成功",
+    trigger: "定向补充页保存成功并重新拉取岗位详情完成重算",
+    properties: "无；结论是否变化由 qualification_supplemented 的 conclusionChanged 承载",
+    core: false,
+  },
+  {
+    type: "supplement_returned_to_result",
+    label: "补充后返回结果页",
+    trigger: "保存重算后从定向补充页点击返回，回到机会结果页（origin=opportunities）",
+    properties: "无",
+    core: false,
+  },
 ];
 
 export type MetricCategory = "user_value" | "quality_ops" | "stock" | "trial";

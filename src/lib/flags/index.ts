@@ -3,7 +3,8 @@
  *
  * 目的：为后续工作包提供小范围开关与回退能力（PRD 8.3 发布策略 / 8.4 回退策略）。
  * 设计约束：
- * - 全部开关默认关闭，关闭时严格保持 v7.1 现状行为；
+ * - 除 ff_db_catalog（镜像后端：production 默认开）外全部默认关闭，
+ *   关闭时严格保持 v7.1 现状行为；
  * - 只使用 NEXT_PUBLIC_* 环境变量（构建期内联到浏览器产物），严禁放密钥；
  * - 客户端修改开关后需要重新构建才生效，这是已知限制（见追踪表 R-WP0-02 风险）；
  * - 本模块只做「读开关 + 路由决策」，不包含任何业务逻辑；
@@ -42,8 +43,16 @@ export function isFeatureEnabled(key: FeatureFlagKey): boolean {
       return process.env.NEXT_PUBLIC_FF_NEW_RESULTS === "true";
     case "ff_targeted_supplement":
       return process.env.NEXT_PUBLIC_FF_TARGETED_SUPPLEMENT === "true";
-    case "ff_db_catalog":
-      return process.env.NEXT_PUBLIC_FF_DB_CATALOG === "true";
+    case "ff_db_catalog": {
+      // 语义镜像后端 backend/src/catalog/feature-flag.ts（isDbCatalogEnabled）：
+      // 显式 on/off 优先；未设置时 production 默认开启（Next.js 构建期把
+      // process.env.NODE_ENV 内联为 "production"，与后端发布语义一致）；
+      // dev/test 默认关闭。当前前端尚无消费者，仅保证前后端语义一致。
+      const value = process.env.NEXT_PUBLIC_FF_DB_CATALOG;
+      if (value === "true") return true;
+      if (value === "false") return false;
+      return process.env.NODE_ENV === "production";
+    }
     case "ff_active_crawl":
       return process.env.NEXT_PUBLIC_FF_ACTIVE_CRAWL === "true";
     case "ff_post_save_next":

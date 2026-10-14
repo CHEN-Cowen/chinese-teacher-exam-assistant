@@ -22,7 +22,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const pushMock = vi.fn();
 const replaceMock = vi.fn();
+const trackMock = vi.hoisted(() => vi.fn());
 let searchParams = new URLSearchParams();
+
+vi.mock("@/lib/analytics/eventService", () => ({
+  track: (...args: unknown[]) => trackMock(...args),
+  trackView: vi.fn(),
+}));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: pushMock, replace: replaceMock }),
@@ -157,6 +163,7 @@ beforeEach(() => {
   searchParams = new URLSearchParams();
   pushMock.mockClear();
   replaceMock.mockClear();
+  trackMock.mockClear();
 });
 
 afterEach(() => {
@@ -397,5 +404,34 @@ describe("WorkbenchTabs：URL ?tab= 恢复", () => {
     });
     const firstCall = replaceMock.mock.calls[0]?.[0] as string;
     expect(firstCall).toContain("tab=supplement");
+  });
+});
+
+describe("WorkbenchTabs：埋点", () => {
+  it("挂载不记录；点击切换标签记录 result_tab_changed（枚举 tab）", async () => {
+    const wb = makeWorkbench();
+    const page = await renderTabs(wb);
+    cleanup = page.unmount;
+    expect(trackMock).not.toHaveBeenCalled();
+
+    const supplementTab = getTab(page.container, "supplement");
+    await act(async () => {
+      supplementTab.click();
+    });
+    expect(trackMock).toHaveBeenCalledTimes(1);
+    expect(trackMock).toHaveBeenCalledWith("result_tab_changed", "opportunity", {
+      props: { tab: "supplement" },
+    });
+  });
+
+  it("点击已激活标签不构成切换，不记录", async () => {
+    const wb = makeWorkbench();
+    const page = await renderTabs(wb);
+    cleanup = page.unmount;
+    const priorityTab = getTab(page.container, "priority");
+    await act(async () => {
+      priorityTab.click();
+    });
+    expect(trackMock).not.toHaveBeenCalled();
   });
 });

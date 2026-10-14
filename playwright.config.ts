@@ -22,5 +22,11 @@ export default defineConfig({
     url: "http://localhost:3000",
     reuseExistingServer: true,
     timeout: 120_000,
+    // v7.2 E2E 锁定的是「保存后的下一步」开关开启后的行为；
+    // NEXT_PUBLIC_* 在 dev 编译期内联，必须随 dev server 进程注入。
+    env: {
+      ...process.env,
+      NEXT_PUBLIC_FF_POST_SAVE_NEXT: "true",
+    },
   },
 });

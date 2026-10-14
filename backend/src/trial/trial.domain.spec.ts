@@ -25,6 +25,43 @@ describe('v7.2 埋点事件白名单', () => {
   });
 });
 
+describe('v7.2 收口：结果工作台与定向补充事件白名单', () => {
+  it('四个新事件在 TRIAL_EVENT_TYPES 中且仅出现一次', () => {
+    for (const type of [
+      'result_tab_changed',
+      'supplement_opened',
+      'supplement_recomputed',
+      'supplement_returned_to_result',
+    ]) {
+      expect(TRIAL_EVENT_TYPES.filter((t) => t === type)).toHaveLength(1);
+    }
+  });
+
+  it('四个新事件均不去重（切换/打开/重算/返回可重复发生）', () => {
+    expect(dedupKeyFor('result_tab_changed', 'unit-1', { tab: 'supplement' })).toBeNull();
+    expect(
+      dedupKeyFor('supplement_opened', 'unit-1', {
+        origin: 'opportunities',
+        bucket: 'need_more_info',
+      }),
+    ).toBeNull();
+    expect(dedupKeyFor('supplement_recomputed', 'unit-1', null)).toBeNull();
+    expect(dedupKeyFor('supplement_returned_to_result', 'unit-1', null)).toBeNull();
+  });
+
+  it('枚举维度 props 通过脱敏；夹带画像正文被拒', () => {
+    const ok = sanitizeProps({
+      tab: 'outOfScope',
+      origin: 'opportunities',
+      bucket: 'manual_review',
+    });
+    expect(ok.ok).toBe(true);
+    // 学历/专业等画像正文（answer 等敏感键）一律拒绝，不落库
+    const rejected = sanitizeProps({ origin: 'detail', answer: '汉语言文学（师范）本科' });
+    expect(rejected.ok).toBe(false);
+  });
+});
+
 describe('sanitizeProps：v7.2 合法枚举通过', () => {
   it('next_action_opened 的 {tier, kind} 通过', () => {
     const result = sanitizeProps({ tier: 2, kind: 'urgent_node' });

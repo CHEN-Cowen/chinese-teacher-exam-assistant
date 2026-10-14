@@ -274,3 +274,57 @@ server {
 6. **通知 / 数据删除 / 指标监控（模块 6、9）**：站内事件真实生成（唯一键去重）；模块 9 已上线 P0 漏斗事件与指标口径（含访客暂存迁移、seed/live 分流）；真实删除服务端全流程未验证；短信、微信不在本轮。
 
 每步替换时移除页面中的直接 Mock 引用，并覆盖加载/成功/空态/失败/权限不足五种状态；非 demo 环境不得静默回退到 Mock。
+
+---
+
+## 17. Feature Flag 与发布阶段预设（v7.2）
+
+开关实现见 `src/lib/flags/index.ts`（前端）与 `backend/src/catalog/feature-flag.ts`（后端目录开关）；逐开关的消费者与回退规则见 [`docs/v7.2-implementation-tracking.md`](./docs/v7.2-implementation-tracking.md) 第 5 节。
+
+### 17.1 Feature Flag 环境变量表
+
+前端开关全部使用 `NEXT_PUBLIC_*` 环境变量（Next.js **构建期内联**进浏览器产物）：
+
+| 变量名 | 开关 | 默认值 | 作用 |
+|---|---|---|---|
+| `NEXT_PUBLIC_FF_NEW_HOME` | `ff_new_home` | 未设置 = 关 | 结果先行首页（关 = v7.1 价值首页） |
+| `NEXT_PUBLIC_FF_NEW_RESULTS` | `ff_new_results` | 未设置 = 关 | 结果工作台三互斥标签（关 = 旧堆叠分组布局 StackedResultSections） |
+| `NEXT_PUBLIC_FF_TARGETED_SUPPLEMENT` | `ff_targeted_supplement` | 未设置 = 关 | 定向补充专用路由（关 = 岗位详情页内联补充表单 `#supplement` 锚点，**绝不回 /onboarding 第一屏**） |
+| `NEXT_PUBLIC_FF_DB_CATALOG` | `ff_db_catalog` | 显式 `true`/`false` 优先；未设置时 production 开、dev/test 关 | 数据库已发布目录进匹配（语义镜像后端 `FF_DB_CATALOG`；前端当前暂无消费者） |
+| `NEXT_PUBLIC_FF_ACTIVE_CRAWL` | `ff_active_crawl` | 未设置 = 关 | 管理端来源管理页 `/admin/sources` 可见性（关 = 空态，已抓取的快照与暂停状态不受影响、不删除；实际抓取由后端 `CRAWL_WORKER_PAUSED` 控制） |
+| `NEXT_PUBLIC_FF_POST_SAVE_NEXT` | `ff_post_save_next` | 未设置 = 关 | 保存后「一个下一步」面板 SavedNextActionPanel（关 = 保存成功提示走 actionNotice） |
+
+使用约束：
+
+1. **构建期内联**：`NEXT_PUBLIC_*` 在构建（或 dev 编译）时内联，修改后必须重新构建并重新部署前端才生效，不能只改运行时环境变量。
+2. **严禁放密钥**：这些变量会进入浏览器产物，只能放非敏感开关值；密钥只放后端服务端变量（`INTERNAL_TOKEN`、`DATABASE_URL` 等）。
+3. 后端目录开关是独立变量 `FF_DB_CATALOG`（backend）：显式 `on`/`off`/`true`/`false`/`1`/`0` 优先；未设置时 production 默认开、dev/test 默认关。
+
+### 17.2 发布阶段预设（对齐 PRD 8.3）
+
+按 PRD 8.3 的发布顺序，每个阶段建议的开关组合如下（改动 `NEXT_PUBLIC_*` 后需重新构建前端镜像）：
+
+| 阶段（PRD 8.3 原文） | 建议开关组合 |
+|---|---|
+| 1. 先对内部管理员开启来源抓取 | 后端 `CRAWL_WORKER_PAUSED=false` + 前端 `NEXT_PUBLIC_FF_ACTIVE_CRAWL=true`（**两者需同步设置**）；其余 UI 开关保持关闭 |
+| 2. 抓取和解析进入 Shadow Mode，只生成待审核，不影响用户 | 同阶段 1；用户端匹配不读抓取产物（`FF_DB_CATALOG` 未开前发布不进匹配） |
+| 3. 对受邀账号开启新首页和定向补充 | `NEXT_PUBLIC_FF_NEW_HOME=true` + `NEXT_PUBLIC_FF_TARGETED_SUPPLEMENT=true` |
+| 4. 接通一个真实来源和数据库目录 | 后端 `FF_DB_CATALOG=on`（显式设置）+ 前端 `NEXT_PUBLIC_FF_DB_CATALOG=true`（语义镜像） |
+| 5. 观察错误、退出和数据质量后扩大到三个来源 | 维持阶段 1–4 组合，经 `/admin/sources` 观察来源健康与失败告警 |
+| 6. 最后开启保存后下一步与官方确认 | `NEXT_PUBLIC_FF_POST_SAVE_NEXT=true` |
+
+> **同步设置提醒**：`NEXT_PUBLIC_FF_ACTIVE_CRAWL` 只控制管理端页面可见性，实际抓取消费由后端 `CRAWL_WORKER_PAUSED` 控制。只开页面不放开 Worker 看不到运行数据；只放开 Worker 不开页面则没有管理入口。两个变量必须在同一发布阶段一起改。
+
+### 17.3 回退步骤（对齐 PRD 8.4）
+
+- **UI 回退**：`NEXT_PUBLIC_FF_NEW_HOME=false`（或移除）恢复旧首页；`NEXT_PUBLIC_FF_NEW_RESULTS=false` 恢复旧结果布局。改动后需重新构建部署。
+- **定向补充回退**：`NEXT_PUBLIC_FF_TARGETED_SUPPLEMENT=false` → 回退到岗位详情内联补充表单（`#supplement` 锚点），**绝不回到基础画像第 1 屏（/onboarding）**（由 flags 测试锁定）。
+- **抓取关闭**：`CRAWL_WORKER_PAUSED=true` → Worker 暂停消费但进程仍在线（心跳照写）；来源、快照与暂停/恢复状态**不删除**。可同时置 `NEXT_PUBLIC_FF_ACTIVE_CRAWL=false` 隐藏管理页。
+- **解析器回退**：新解析器失败时继续使用上一版候选和已发布版本，不覆盖既有数据。
+- **投影失败**：新公告投影失败时不进入用户端；数据库版本撤回保留审计链。
+- **静态目录**：静态演示目录只能作为 Demo 回退，不能重新混入生产真实机会。
+
+### 17.4 E2E / 验收注意
+
+- 浏览器 E2E（`playwright.config.ts`）通过 `webServer.env` 注入 `NEXT_PUBLIC_FF_POST_SAVE_NEXT=true` 启动 dev server：`NEXT_PUBLIC_*` 随 dev server 进程注入（dev 编译期内联），E2E 锁定的是该开关开启后的「保存后的下一步」行为。
+- 本机若已运行 dev server，`reuseExistingServer: true` 会沿用既有进程及其环境变量；手动切换开关验收时，需带新环境变量重启 dev server（或重新构建生产产物）。

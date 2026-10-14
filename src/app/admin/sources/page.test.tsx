@@ -193,12 +193,15 @@ beforeEach(() => {
   checkQueue = [];
   fetchMock.mockClear();
   vi.stubGlobal("fetch", fetchMock);
+  // 既有用例锁定的是开关开启时的来源管理页；isFeatureEnabled 在渲染时读取
+  process.env.NEXT_PUBLIC_FF_ACTIVE_CRAWL = "true";
 });
 
 afterEach(() => {
   cleanup?.();
   cleanup = null;
   vi.unstubAllGlobals();
+  delete process.env.NEXT_PUBLIC_FF_ACTIVE_CRAWL;
 });
 
 // ==================== 测试 ====================
@@ -347,5 +350,26 @@ describe("来源管理页：响应式双结构", () => {
         expect(b.tabIndex).not.toBe(-1);
       }
     }
+  });
+});
+
+describe("来源管理页：ff_active_crawl 开关门控", () => {
+  it("开关关闭：显示「主动抓取未开启」空态，不请求来源数据", async () => {
+    delete process.env.NEXT_PUBLIC_FF_ACTIVE_CRAWL;
+    const { container, html } = await renderPage();
+
+    expect(html()).toContain("主动抓取未开启");
+    expect(html()).toContain("快照");
+    // 列表与卡片结构都不渲染
+    expect(container.querySelector('[data-testid="sources-table"]')).toBeNull();
+    expect(container.querySelector('[data-testid="sources-cards"]')).toBeNull();
+    // 关闭时不发任何抓取数据请求（暂停/快照数据不受开关影响，只是不展示）
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("开关开启：正常展示来源列表", async () => {
+    process.env.NEXT_PUBLIC_FF_ACTIVE_CRAWL = "true";
+    const { container } = await renderPage();
+    expect(container.querySelector('[data-testid="sources-table"]')).toBeTruthy();
   });
 });

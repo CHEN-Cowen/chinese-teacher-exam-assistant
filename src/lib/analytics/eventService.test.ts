@@ -172,3 +172,23 @@ describe("事件字典守卫：M9 事件全部在字典中登记", () => {
     }
   });
 });
+
+describe("事件字典守卫：v7.2 收口事件全部在字典中登记", () => {
+  it("v7.2 收口 4 类事件在 EVENT_DICTIONARY 中且仅出现一次", async () => {
+    const { EVENT_DICTIONARY } = await import("./dictionary");
+    const v72Types = [
+      "result_tab_changed",
+      "supplement_opened",
+      "supplement_recomputed",
+      "supplement_returned_to_result",
+    ];
+    for (const t of v72Types) {
+      const entries = EVENT_DICTIONARY.filter((e) => e.type === t);
+      expect(entries).toHaveLength(1);
+      // 字典条目有 label/trigger/properties
+      expect(entries[0].label).toBeTruthy();
+      expect(entries[0].trigger).toBeTruthy();
+      expect(entries[0].properties).toBeTruthy();
+    }
+  });
+});

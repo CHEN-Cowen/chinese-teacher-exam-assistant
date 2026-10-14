@@ -248,8 +248,8 @@ describe('受邀试用看板 · 手算对账', () => {
 // ==================== v7.1 M9 分析事件与试用看板测试 ====================
 
 describe('M9 分析事件 · 白名单与隐私脱敏', () => {
-  it('TRIAL_EVENT_TYPES 包含全部 24 类事件（11 旧 + 11 新 + 2 个 v7.2）', () => {
-    expect(TRIAL_EVENT_TYPES).toHaveLength(24);
+  it('TRIAL_EVENT_TYPES 包含全部 28 类事件（11 旧 + 11 M9 + 6 个 v7.2）', () => {
+    expect(TRIAL_EVENT_TYPES).toHaveLength(28);
     // M9 新增 11 类
     const m9Types = [
       'home_start_match_clicked',
@@ -270,6 +270,11 @@ describe('M9 分析事件 · 白名单与隐私脱敏', () => {
     // v7.2 新增 2 类：保存后下一步曝光、复制官方确认问题
     expect(TRIAL_EVENT_TYPES).toContain('next_action_opened');
     expect(TRIAL_EVENT_TYPES).toContain('consultation_template_copied');
+    // v7.2 收口新增 4 类：结果页标签切换与定向补充流程
+    expect(TRIAL_EVENT_TYPES).toContain('result_tab_changed');
+    expect(TRIAL_EVENT_TYPES).toContain('supplement_opened');
+    expect(TRIAL_EVENT_TYPES).toContain('supplement_recomputed');
+    expect(TRIAL_EVENT_TYPES).toContain('supplement_returned_to_result');
   });
 
   it('sanitizeProps 拒绝敏感键名（身份证/地址/原文等）', () => {

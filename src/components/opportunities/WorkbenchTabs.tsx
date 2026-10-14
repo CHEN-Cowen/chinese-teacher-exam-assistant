@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import type { WorkbenchViewModel } from "@/lib/opportunities/list-view";
 import type { OpportunityListItemProps } from "./OpportunityListItem";
 import { OpportunityListItem } from "./OpportunityListItem";
+import { track } from "@/lib/analytics/eventService";
 
 type TabId = "priority" | "supplement" | "outOfScope";
 
@@ -113,6 +114,11 @@ export function WorkbenchTabs({
 
   const selectTab = useCallback(
     (id: TabId) => {
+      // v7.2 埋点：用户主动切换标签时记录（挂载与 URL 同步不经过这里）；
+      // 点击已激活标签不构成切换，不重复记录
+      if (id !== activeTab) {
+        track("result_tab_changed", "opportunity", { props: { tab: id } });
+      }
       // 即时更新本地 UI 真相，不等 URL 导航完成
       setActiveTab(id);
       // URL 同步：仅当目标与当前 URL 不同时才 replace，避免无谓导航
@@ -126,7 +132,7 @@ export function WorkbenchTabs({
       const qs = params.toString();
       router.replace(qs ? `/opportunities?${qs}` : "/opportunities");
     },
-    [router, searchParams],
+    [router, searchParams, activeTab],
   );
 
   const focusTab = (id: TabId) => {

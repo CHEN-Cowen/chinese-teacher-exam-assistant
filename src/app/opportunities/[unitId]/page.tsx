@@ -63,6 +63,7 @@ import { buildMapEntry } from "@/lib/opportunities/map-link";
 import { schoolDisplayText } from "@/lib/opportunities/school-placement";
 import { MapLink } from "@/components/opportunities/MapLink";
 import { useOnlineStatus, isForbiddenError } from "@/lib/useOnlineStatus";
+import { FLAGS, resolveSupplementTarget } from "@/lib/flags";
 
 function scrollToId(id: string) {
   const target = document.getElementById(id);
@@ -303,6 +304,17 @@ export default function OpportunityDetailPage() {
       return { ...base, href: action.href, external: action.external };
     }
     if (action.kind === "supplement") {
+      // v7.2 ff_targeted_supplement：开 → 专用补充页（origin=detail + 按总体结论选桶）；
+      // 关（回退）→ 详情页内联补充表单锚点，绝不回 /onboarding（PRD 8.4，由 flags 测试锁定）。
+      const supplementTarget = resolveSupplementTarget(unitId);
+      if (supplementTarget.kind === "route") {
+        const bucket =
+          unit.overall === "manual_review" ? "manual_review" : "need_more_info";
+        return {
+          ...base,
+          href: `${supplementTarget.href}?origin=detail&bucket=${bucket}`,
+        };
+      }
       return { ...base, onClick: () => scrollToId("supplement") };
     }
     if (action.kind === "confirm") {
@@ -739,7 +751,11 @@ export default function OpportunityDetailPage() {
           </svg>
         </summary>
         <div className="space-y-3 border-t border-line p-3">
-          {unit.follow && unit.follow.status === "considering" && (
+          {/* v7.2 ff_post_save_next：关（回退）时不渲染「一个下一步」面板，
+              保存成功提示仍走上方 actionNotice（StatusMessage），不回退到空反馈。 */}
+          {FLAGS.ff_post_save_next &&
+            unit.follow &&
+            unit.follow.status === "considering" && (
             <SavedNextActionPanel
               action={savedNextAction}
               emphasized={justSaved}

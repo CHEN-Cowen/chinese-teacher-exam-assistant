@@ -80,6 +80,16 @@ export function SupplementPageView({
     return parseSupplementParams(sp);
   }, [searchParamsString]);
 
+  // v7.2 埋点：进入定向补充页记录一次（origin/bucket 只记枚举，不记岗位名与画像正文）
+  useEffect(() => {
+    track("supplement_opened", "profile", {
+      targetId: unitId,
+      props: { origin: params.origin, bucket: params.bucket },
+    });
+    // 仅按进入时的入口参数记录；单元变更视为重新进入
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unitId]);
+
   const isGuest = profileState.status === "ready" && profileState.isGuest;
   const isDemo = mode === "demo";
 
@@ -253,6 +263,8 @@ export function SupplementPageView({
         const fresh = await loadDetail(active.profile);
         if (fresh) {
           setAfterOverall(fresh.unit.overall);
+          // v7.2 埋点：补充保存后重算成功（结论是否变化由 qualification_supplemented 承载）
+          track("supplement_recomputed", "profile", { targetId: unitId });
           // 13. 返回正确标签 + 15. 可访问状态播报
           const newOverall = fresh.unit.overall;
           const tag = overallTag(newOverall);
@@ -285,13 +297,24 @@ export function SupplementPageView({
     }
   };
 
+  // v7.2 埋点：保存重算后返回机会结果页（仅 origin=opportunities 且本次已保存）
+  const handleReturnToResult = () => {
+    if (params.origin === "opportunities" && afterOverall !== null) {
+      track("supplement_returned_to_result", "profile", { targetId: unitId });
+    }
+  };
+
   // 14. 返回正确岗位上下文
   const returnHref = getReturnHref(params.origin, unitId);
 
   return (
     <div className="mx-auto max-w-2xl space-y-6 pb-4">
       <nav className="text-xs text-ink-muted">
-        <Link href={returnHref} className="underline underline-offset-2 hover:text-brand">
+        <Link
+          href={returnHref}
+          onClick={handleReturnToResult}
+          className="underline underline-offset-2 hover:text-brand"
+        >
           ← 返回
         </Link>
       </nav>
@@ -378,7 +401,7 @@ export function SupplementPageView({
       {/* 14. 聚焦对应岗位或状态 */}
       {afterOverall && (
         <div className="flex gap-3">
-          <Link href={returnHref}>
+          <Link href={returnHref} onClick={handleReturnToResult}>
             <Button>
               {afterOverall === "preliminary_eligible"
                 ? "返回查看机会"

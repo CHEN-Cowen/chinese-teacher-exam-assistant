@@ -14,6 +14,7 @@ import {
   type SourceHealth,
   type SourcesHealthResponse,
 } from "@/lib/admin/sourcesApi";
+import { isFeatureEnabled } from "@/lib/flags";
 
 // ==================== 文案映射 ====================
 
@@ -69,6 +70,24 @@ function formatTime(value: string | null | undefined): string {
 // ==================== 主页面 ====================
 
 export default function AdminSourcesPage() {
+  // v7.2：ff_active_crawl 只控制管理端入口可见性；实际抓取由后端 CRAWL_WORKER_PAUSED
+  // 控制，两者由发布阶段预设同步设置（见 DEPLOYMENT.md）。关闭只是隐藏本页，
+  // 已抓取的快照、暂停/恢复状态与待审核数据均不受影响、不被删除。
+  // 用 isFeatureEnabled 运行时读取（而非 FLAGS 构建期快照）：Next 构建期会把
+  // NEXT_PUBLIC_* 字面量内联进双端产物，语义一致，同时便于按开关做用例级测试。
+  if (!isFeatureEnabled("ff_active_crawl")) {
+    return (
+      <EmptyState
+        icon={<span className="text-4xl">📡</span>}
+        title="主动抓取未开启"
+        description="该页面由部署环境的抓取开关（NEXT_PUBLIC_FF_ACTIVE_CRAWL）控制。开启后这里展示来源健康、暂停/恢复与手动检查；已抓取的快照与审核数据不会因开关关闭而删除。"
+      />
+    );
+  }
+  return <AdminSourcesContent />;
+}
+
+function AdminSourcesContent() {
   const [data, setData] = useState<SourcesHealthResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

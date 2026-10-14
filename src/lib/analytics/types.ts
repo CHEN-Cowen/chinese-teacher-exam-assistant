@@ -105,7 +105,12 @@ export type AnalyticsEventType =
   | "announcement_reschedule_viewed" // nodeKind
   // —— v7.2 保存后的下一步：只记动作级别/类型枚举与维度短枚举，绝不记问题正文/原文/答复 ——
   | "next_action_opened" // 保存后唯一主动作曝光：tier(1-5)、kind 枚举
-  | "consultation_template_copied"; // 复制官方确认问题：tpl 维度短枚举、edited 是否改过
+  | "consultation_template_copied" // 复制官方确认问题：tpl 维度短枚举、edited 是否改过
+  // —— v7.2 整合收口：结果工作台与定向补充流程（只记枚举，不记任何正文） ——
+  | "result_tab_changed" // 结果页三标签切换：tab=priority/supplement/outOfScope
+  | "supplement_opened" // 进入定向补充页：origin/bucket 枚举
+  | "supplement_recomputed" // 补充保存后重算成功
+  | "supplement_returned_to_result"; // 保存后从补充页返回机会结果页
 
 /**
  * 统一分析事件。

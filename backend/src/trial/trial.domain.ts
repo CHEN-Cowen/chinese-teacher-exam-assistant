@@ -48,6 +48,11 @@ export const TRIAL_EVENT_TYPES = [
   // —— v7.2 保存后的下一步 + 官方确认（曝光/复制可重复发生，不去重） ——
   'next_action_opened',
   'consultation_template_copied',
+  // —— v7.2 整合收口：结果工作台与定向补充流程（枚举维度，正文由 sanitizeProps 拒绝） ——
+  'result_tab_changed',
+  'supplement_opened',
+  'supplement_recomputed',
+  'supplement_returned_to_result',
 ] as const;
 
 export type TrialEventType = (typeof TRIAL_EVENT_TYPES)[number];
@@ -109,6 +114,11 @@ const DEDUP_SCOPES: Record<TrialEventType, 'user' | 'user_unit' | 'user_step' | 
   // v7.2：面板随机会数据重算可能多次曝光、问题可多次复制，均不去重
   next_action_opened: null,
   consultation_template_copied: null,
+  // v7.2 收口：标签切换/补充打开/重算/返回均为可重复行为，不去重
+  result_tab_changed: null,
+  supplement_opened: null,
+  supplement_recomputed: null,
+  supplement_returned_to_result: null,
 };
 
 export function dedupKeyFor(

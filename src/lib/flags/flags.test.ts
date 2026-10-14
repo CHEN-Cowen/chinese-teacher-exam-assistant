@@ -2,7 +2,8 @@
  * Feature Flag 体系单元测试（工作包 0）。
  *
  * 锁定的不变量：
- * 1. 六个开关全部登记且默认关闭（保守默认 = v7.1 现状行为）；
+ * 1. 六个开关全部登记；测试环境下默认关闭（保守默认 = v7.1 现状行为）；
+ *    ff_db_catalog 在 production 构建默认开启（镜像后端目录开关，见专用用例）；
  * 2. 只有 "true" 视为开启，其他值（含 "1"、"TRUE"、空串）一律关闭；
  * 3. 定向补充回退目标永远是岗位详情页内联表单，绝不指向 /onboarding
  *    （PRD 8.4：定向补充回退到岗位详情内联表单，绝不能回到基础画像第 1 屏）。
@@ -65,6 +66,40 @@ describe("Feature Flag 登记与默认值", () => {
     expect(mod.isFeatureEnabled("ff_db_catalog")).toBe(false);
     expect(mod.isFeatureEnabled("ff_post_save_next")).toBe(false);
     expect(mod.isFeatureEnabled("ff_targeted_supplement")).toBe(true);
+  });
+});
+
+describe("ff_db_catalog 前后端语义一致（镜像 isDbCatalogEnabled）", () => {
+  beforeEach(clearFlagEnv);
+  afterEach(() => {
+    clearFlagEnv();
+    vi.unstubAllEnvs();
+  });
+
+  it("显式 false 优先于 production 默认（可关闭）", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    process.env.NEXT_PUBLIC_FF_DB_CATALOG = "false";
+    expect(isFeatureEnabled("ff_db_catalog")).toBe(false);
+  });
+
+  it("production 构建未设置时默认开启（与后端发布语义一致）", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    delete process.env.NEXT_PUBLIC_FF_DB_CATALOG;
+    expect(isFeatureEnabled("ff_db_catalog")).toBe(true);
+  });
+
+  it("dev/test 环境未设置时默认关闭", () => {
+    vi.stubEnv("NODE_ENV", "development");
+    delete process.env.NEXT_PUBLIC_FF_DB_CATALOG;
+    expect(isFeatureEnabled("ff_db_catalog")).toBe(false);
+    vi.stubEnv("NODE_ENV", "test");
+    expect(isFeatureEnabled("ff_db_catalog")).toBe(false);
+  });
+
+  it('显式 "true" 在任何环境都开启', () => {
+    vi.stubEnv("NODE_ENV", "development");
+    process.env.NEXT_PUBLIC_FF_DB_CATALOG = "true";
+    expect(isFeatureEnabled("ff_db_catalog")).toBe(true);
   });
 });
 
