@@ -12,7 +12,10 @@
  *   绝不把异常结构呈现给用户，也绝不覆盖上一次已审核数据。
  */
 import { Injectable, Logger } from '@nestjs/common';
-import type { PrismaService } from '../prisma.service.js';
+// 必须是值导入而非 import type：PrismaService 由构造函数注入，
+// import type 会让运行时元数据退化为 Function，Nest 启动时抛
+// UnknownDependenciesException（index [0] 不可用）。
+import { PrismaService } from '../prisma.service.js';
 import type {
   AnnouncementVersion,
   RecruitmentAnnouncement,
