@@ -210,7 +210,8 @@ export function SupplementPageView({
           该机会当前无法继续补充信息。请先查看官方公告了解最新状态。
         </Callout>
         <div className="flex gap-3">
-          <Link href={getReturnHref(params.origin, unitId)}>
+          {/* 闸门失败分支：不进入重算，保持不带 tab 的返回行为 */}
+          <Link href={getReturnHref(params.origin, unitId, null)}>
             <Button variant="ghost">返回</Button>
           </Link>
         </div>
@@ -304,8 +305,8 @@ export function SupplementPageView({
     }
   };
 
-  // 14. 返回正确岗位上下文
-  const returnHref = getReturnHref(params.origin, unitId);
+  // 14. 返回正确岗位上下文（origin=opportunities 且已重算时聚焦对应分类标签）
+  const returnHref = getReturnHref(params.origin, unitId, afterOverall);
 
   return (
     <div className="mx-auto max-w-2xl space-y-6 pb-4">
@@ -416,18 +417,54 @@ export function SupplementPageView({
   );
 }
 
-/** 根据 origin 决定返回地址（返回正确岗位上下文） */
+/**
+ * 根据 origin 决定返回地址（返回正确岗位上下文）。
+ *
+ * v7.2 链路 B：origin=opportunities 且已发生重算（afterOverall 非 null）时，
+ * 带上结果页对应的三标签 key，返回时直接落在正确分类。
+ * preview / detail 保持既有行为，不带 tab。
+ */
 function getReturnHref(
   origin: SupplementOrigin,
   unitId: string,
+  afterOverall: OpportunityMatchStatus | null,
 ): string {
   switch (origin) {
     case "preview":
       return "/preview";
-    case "opportunities":
-      return "/opportunities";
+    case "opportunities": {
+      const tab = resultTabForOverall(afterOverall);
+      return tab ? `/opportunities?tab=${tab}` : "/opportunities";
+    }
     case "detail":
       return `/opportunities/${unitId}`;
+  }
+}
+
+/**
+ * 补充重算后的总体状态 → 结果页三标签 key。
+ *
+ * 与 WorkbenchTabs.TABS（priority / supplement / outOfScope，见
+ * components/opportunities/WorkbenchTabs.tsx）及 classify.ts 的
+ * overall→桶映射保持一致（lib/opportunities/classify.ts:61-73）：
+ * - preliminary_eligible → priority（优先机会）
+ * - need_more_info → supplement/unknown（补充后判断）
+ * - manual_review → supplement/consult（补充后判断）
+ * - not_eligible 的归属取决于「是否仅地区维度不符合」（outOfScope）还是
+ *   明确不符合（excluded），仅凭状态无法判定，返回 null 由调用方回退为
+ *   不带 tab 的 /opportunities。
+ */
+function resultTabForOverall(
+  overall: OpportunityMatchStatus | null,
+): "priority" | "supplement" | null {
+  switch (overall) {
+    case "preliminary_eligible":
+      return "priority";
+    case "need_more_info":
+    case "manual_review":
+      return "supplement";
+    default:
+      return null;
   }
 }
 

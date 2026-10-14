@@ -9,6 +9,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
+    "pretest:e2e": "node scripts/e2e-prebuild.mjs",
     "test:e2e": "playwright test",
     "check:external": "node scripts/check-external-deps.mjs --build"
   },
