@@ -60,8 +60,12 @@ export function resolveAllowedHosts(source: SourceRecord): string[] {
 export class SafeFetcherFactory {
   private readonly config: CrawlEnvConfig;
 
-  constructor(config?: CrawlEnvConfig) {
-    this.config = config ?? readCrawlEnv();
+  // 不通过构造函数注入配置：CrawlEnvConfig 是接口，运行时元数据会退化为
+  // Object，Nest 会把它当作待注入依赖并在启动时抛 UnknownDependenciesException。
+  // 配置在实例内部经 readCrawlEnv() 初始化；需要注入配置的场景应使用明确的
+  // Symbol/String token provider，而不是接口或裸 Object。
+  constructor() {
+    this.config = readCrawlEnv();
   }
 
   create(source: SourceRecord): SafeFetcher {

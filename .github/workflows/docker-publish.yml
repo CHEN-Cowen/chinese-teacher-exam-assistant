@@ -13,7 +13,40 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # 发布前阻断门禁：后端 lint/test/build + 真实启动冒烟（PostgreSQL/Redis/迁移/
+  # main.js/worker.js//health）。任一失败都不会推送 latest 或 sha-* 镜像，
+  # 防止"编译通过但进程起不来"的故障再次进入 GHCR（参考 sha-9f6164f7 回滚事件）。
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        run: npm ci
+
+      - name: Lint backend
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build backend
+        run: npm run build
+
+      - name: Runtime smoke (postgres + redis + migrate + api + worker + /health)
+        run: node scripts/smoke-runtime.mjs
+
   publish:
+    needs: verify
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

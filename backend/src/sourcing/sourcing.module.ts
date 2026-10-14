@@ -11,12 +11,15 @@ import { SourcingCoreModule } from './sourcing-core.module.js';
 import { CrawlOrchestrator } from './crawl-orchestrator.js';
 import { CrawlScheduler } from './crawl-scheduler.js';
 import { SourcingController } from './sourcing.controller.js';
-import { CrawlHealthService } from './crawl-health.service.js';
 
 @Module({
   imports: [SourcingCoreModule, NestScheduleModule.forRoot()],
   controllers: [SourcingController],
   providers: [CrawlOrchestrator, CrawlScheduler],
-  exports: [CrawlOrchestrator, CrawlHealthService],
+  // CrawlHealthService 由 SourcingCoreModule 提供并导出；Nest 不允许模块直接
+  // 导出非自身 providers 的 provider（UnknownExportException），因此通过
+  // 重新导出 SourcingCoreModule 让上层（HealthController 所在 AppModule）获得它。
+  // 注意：不要在两个模块重复注册 CrawlHealthService，否则会出现两个 Redis 连接。
+  exports: [CrawlOrchestrator, SourcingCoreModule],
 })
 export class SourcingModule {}
