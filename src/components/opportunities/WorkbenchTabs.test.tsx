@@ -241,7 +241,12 @@ describe("WorkbenchTabs：数量徽标", () => {
         ],
       },
       supplement: { count: 0, units: [] },
-      outOfScope: { count: 2, units: [makeUnit("o1", "not_eligible")] },
+      // count 与 units 必须一致（list-view 中 count 恒等于 units.length）；
+      // 徽标按真实卡片条数渲染（任务 §4.2：标签数量显示真实数据条数）
+      outOfScope: {
+        count: 2,
+        units: [makeUnit("o1", "not_eligible"), makeUnit("o2", "not_eligible")],
+      },
     });
     const page = await renderTabs(wb);
     cleanup = page.unmount;

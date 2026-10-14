@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { Hero } from "@/components/ia/Hero";
 import { Disclosure } from "@/components/ia/Layer";
@@ -31,6 +31,9 @@ import { SubscriptionCard } from "@/components/opportunities/SubscriptionCard";
 import { StatusMessage, StatusMessageRegion } from "@/components/ui/StatusMessage";
 import { Callout } from "@/components/ui/Callout";
 import { useOnlineStatus } from "@/lib/useOnlineStatus";
+import { ResultConditionSummary } from "@/components/results/ResultConditionSummary";
+import { buildEditConditionsHref } from "@/lib/results/condition-summary";
+import type { ConditionSource } from "@/lib/results/condition-summary";
 
 const NO_PROFILE_COPY: Record<string, { title: string; description: string }> = {
   no_draft: {
@@ -275,6 +278,12 @@ export default function OpportunitiesPage() {
 
       <CoverageBanner coverage={view.coverage} />
       <DatasetScopeNotice hasDemo={hasDemo} />
+      {/* v7.2：当前条件摘要 + 修改入口（与 /preview 同一组件，ff 开时展示） */}
+      {FLAGS.ff_new_results && state.profile && (
+        <Suspense fallback={null}>
+          <OpportunitiesConditionSummary source={state.profile} />
+        </Suspense>
+      )}
       {trialEntry && (
         <TrialJourneyGuide
           unitId={trialEntry.unit.id}
@@ -427,5 +436,22 @@ export default function OpportunitiesPage() {
 
       {!noResult && <SubscriptionCard profile={state.profile} />}
     </div>
+  );
+}
+
+/**
+ * v7.2 登录端条件摘要（ff_new_results 开）：与 /preview 同一 ResultConditionSummary。
+ * 「修改」默认进入第二屏，returnTo 保留当前标签，保存后回到 /opportunities 重新计算。
+ */
+function OpportunitiesConditionSummary({ source }: { source: ConditionSource }) {
+  const searchParams = useSearchParams();
+  const tab = searchParams.get("tab");
+  const returnTo =
+    tab && tab !== "priority" ? `/opportunities?tab=${tab}` : "/opportunities";
+  return (
+    <ResultConditionSummary
+      source={source}
+      editHref={buildEditConditionsHref(returnTo)}
+    />
   );
 }

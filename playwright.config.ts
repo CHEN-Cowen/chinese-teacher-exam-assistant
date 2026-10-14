@@ -51,7 +51,12 @@ export default defineConfig({
         ...devices["Desktop Chrome"],
         baseURL: `http://localhost:${V72_PORT}`,
       },
-      testMatch: ["v72-home.spec.ts", "v72-workbench.spec.ts", "v72-responsive.spec.ts"],
+      testMatch: [
+        "v72-home.spec.ts",
+        "v72-workbench.spec.ts",
+        "v72-responsive.spec.ts",
+        "v72-unified-results.spec.ts",
+      ],
     },
   ],
   webServer: [

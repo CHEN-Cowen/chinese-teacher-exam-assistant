@@ -112,8 +112,9 @@ describe("OpportunityListItem：七层结构", () => {
     expect(html).toContain("报名");
     // 第 2 层：岗位名
     expect(html).toContain("u1-岗位名");
-    expect(html).toContain("任教学校");
-    // 第 3 层：地点 + 地图入口
+    // 第 3 层：地点 · 任教学校（school-placement）+ 地图入口，同一行
+    expect(html).toContain('data-testid="location-row"');
+    expect(html).toContain('data-testid="school-placement"');
     expect(html).toContain("杭州市");
     expect(html).toContain("在地图中查看");
     // 第 4 层：用工/学段/人数

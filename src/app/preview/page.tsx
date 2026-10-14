@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { AUTH_MODE, useCurrentUser } from "@/lib/auth";
+import { FLAGS } from "@/lib/flags";
+import { PreviewWorkbench } from "./PreviewWorkbench";
 import {
   CREDENTIAL_LEVEL_OPTIONS,
   guestSessionService,
@@ -131,7 +133,14 @@ export default function PreviewPage() {
     );
   }
 
-  return (
+  return FLAGS.ff_new_results ? (
+    // v7.2 统一结果工作台：与 /opportunities 同一套三标签 + 统一岗位卡；
+    // 结果页不再重复询问用工形式（条件摘要 + 修改入口）。
+    // PreviewWorkbench 使用 useSearchParams，生产构建需要 Suspense 边界。
+    <Suspense fallback={<LoadingPage />}>
+      <PreviewWorkbench preview={preview} naturePref={naturePref} />
+    </Suspense>
+  ) : (
     <ReadyPreview
       preview={preview}
       naturePref={naturePref}

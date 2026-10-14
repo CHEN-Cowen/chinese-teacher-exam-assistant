@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { Disclosure } from "@/components/ui/Disclosure";
 import { FeedbackBar } from "@/components/ui/FeedbackBar";
 import { useCurrentUser, AUTH_MODE } from "@/lib/auth";
+import { safeReturnPath } from "@/lib/auth/return-to";
 import {
   CITY_OPTIONS,
   CREDENTIAL_LEVEL_OPTIONS,
@@ -74,12 +75,17 @@ function OnboardingForm() {
   const router = useRouter();
   const { status } = useCurrentUser();
   const searchParams = useSearchParams();
-  // 带 ?from= 进入（结果页/我的/机会页的"返回修改画像""填写报考信息"等）是明确
-  // 填写或修改意图，不触发自动跳转；否则画像已完成的访客弹回 /preview、
+  // 带 ?from= 或 ?mode=edit 进入（结果页/我的/机会页的"返回修改画像""填写报考信息"等）
+  // 是明确填写或修改意图，不触发自动跳转；否则画像已完成的访客弹回 /preview、
   // 已登录用户弹回 /opportunities，永远无法进入修改
-  const editing = searchParams.has("from");
+  const editMode = searchParams.get("mode") === "edit";
+  const editing = searchParams.has("from") || editMode;
+  // v7.2 修改条件流程：默认进入资格与偏好所在的第二屏；returnTo 只接受本站安全路径
+  // （safeReturnPath 拒绝外域、协议相对 URL 与 /onboarding，防开放重定向）
+  const stepParam = searchParams.get("step");
+  const returnTo = safeReturnPath(searchParams.get("returnTo"));
 
-  // 惰性初始化从 localStorage 恢复，避免 effect 内 setState
+  // 惰性初始化从 localStorage 恢复，避免 effect 内 setState；已有资料全部保留回填
   const [draft, setDraft] = useState<GuestProfileDraft>(() => {
     if (typeof window === "undefined") {
       return { regions: [], acceptedEmploymentNatures: [] };
@@ -92,6 +98,10 @@ function OnboardingForm() {
 
   const [view, setView] = useState(() => {
     if (typeof window === "undefined") return 1;
+    // 修改条件：默认第二屏（资格与偏好），step=1 时才进入地区第一屏
+    if (editMode) {
+      return stepParam === "1" ? 1 : TOTAL_PROFILE_STEPS;
+    }
     const session = guestSessionService.load();
     if (!session || session.step <= 0) return 1;
     if (session.step >= TOTAL_PROFILE_STEPS) return 1; // effect 会 replace 到结果页
@@ -182,7 +192,9 @@ function OnboardingForm() {
       trackOncePerUser("profile_completed", "profile", {
         props: { stepCount: TOTAL_PROFILE_STEPS },
       });
-      router.push("/preview");
+      // v7.2 修改条件流程：保存后返回原结果页（含原标签），结果页用最新草稿重新计算；
+      // 资料不清空；returnTo 非法时回退默认结果页
+      router.push(returnTo ?? "/preview");
     } else {
       setRecentFeedback({
         variant: "done",
@@ -220,7 +232,7 @@ function OnboardingForm() {
     trackOncePerUser("profile_completed", "profile", {
       props: { stepCount: TOTAL_PROFILE_STEPS, skipped: true },
     });
-    router.push("/preview");
+    router.push(returnTo ?? "/preview");
   };
 
   /** 撤销本阶段的「暂不提供」，留在本阶段填写 */
@@ -465,12 +477,13 @@ function OnboardingForm() {
             <button
               type="button"
               onClick={goBack}
+              data-testid={editMode ? "edit-regions-entry" : undefined}
               className="inline-flex items-center gap-1 text-sm text-ink-muted hover:text-ink"
             >
               <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="m15 18-6-6 6-6" />
               </svg>
-              返回上一阶段修改
+              {editMode ? "修改地区（返回第一阶段）" : "返回上一阶段修改"}
             </button>
           </div>
         )}
