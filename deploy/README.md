@@ -11,8 +11,8 @@
 
 镜像发布地址：
 
-- 前端：`ghcr.io/chen1998-create/chinese-teacher-exam-assistant`
-- 后端：`ghcr.io/chen1998-create/chinese-teacher-exam-assistant-api`
+- 前端：`ghcr.io/chen-cowen/chinese-teacher-exam-assistant`
+- 后端：`ghcr.io/chen-cowen/chinese-teacher-exam-assistant-api`
 
 推送本仓库后，根目录 `.github/workflows/docker-publish.yml` 自动构建两个镜像。同一次提交的镜像共享 `sha-<完整提交 SHA>` 标签；默认分支还会更新 `latest`。前端镜像固定为 **invited 受邀模式**，不是 Vercel 的公开 demo 模式。镜像发布成功不会自动部署服务器。
 
@@ -28,7 +28,7 @@ cp frontend.env.example frontend.env
 chmod 600 .env backend.env frontend.env
 ```
 
-在 `.env` 中设置 `GHCR_OWNER=chen1998-create`，并把 `BACKEND_IMAGE_TAG` 和 `FRONTEND_IMAGE_TAG` 固定为同一个成功构建的 `sha-<完整提交 SHA>`。`backend.env` 的 `DATABASE_URL` 必须指向实际 PostgreSQL；`INTERNAL_TOKEN` 生成强随机值，并在 `backend.env` 和 `frontend.env` 中填写相同值。`frontend.env` 的 `BACKEND_URL` 保持 `http://backend:3000`。按实际入口填写 `CORS_ORIGINS`，首次管理员初始化需要单独设置 `ADMIN_BOOTSTRAP_TOKEN`。
+在 `.env` 中设置 `GHCR_OWNER=chen-cowen`，并把 `BACKEND_IMAGE_TAG` 和 `FRONTEND_IMAGE_TAG` 固定为同一个成功构建的 `sha-<完整提交 SHA>`。`backend.env` 的 `DATABASE_URL` 必须指向实际 PostgreSQL；`INTERNAL_TOKEN` 生成强随机值，并在 `backend.env` 和 `frontend.env` 中填写相同值。`frontend.env` 的 `BACKEND_URL` 保持 `http://backend:3000`。按实际入口填写 `CORS_ORIGINS`，首次管理员初始化需要单独设置 `ADMIN_BOOTSTRAP_TOKEN`。
 
 当前 Compose **复用**服务器已有的 `kaobian-postgres` 容器和 `kaobian-net` 网络，不创建数据库。启动前确认数据库备份可恢复，检查旧容器与内存余量。不要把本地 `deploy/kaobian-db.env` 或任何真实密钥上传到 GitHub。
 

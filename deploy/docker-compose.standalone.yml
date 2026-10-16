@@ -71,7 +71,7 @@ services:
 
   # 一次性迁移服务：成功后退出，backend 等它完成才启动
   migrate:
-    image: ${REGISTRY:-ghcr.nju.edu.cn}/${GHCR_OWNER:-chen1998-create}/chinese-teacher-exam-assistant-api:${IMAGE_TAG:-latest}
+    image: ${REGISTRY:-ghcr.nju.edu.cn}/${GHCR_OWNER:-chen-cowen}/chinese-teacher-exam-assistant-api:${IMAGE_TAG:-latest}
     command: npx prisma migrate deploy
     environment:
       <<: *database-url
@@ -81,7 +81,7 @@ services:
     restart: "no"
 
   backend:
-    image: ${REGISTRY:-ghcr.nju.edu.cn}/${GHCR_OWNER:-chen1998-create}/chinese-teacher-exam-assistant-api:${IMAGE_TAG:-latest}
+    image: ${REGISTRY:-ghcr.nju.edu.cn}/${GHCR_OWNER:-chen-cowen}/chinese-teacher-exam-assistant-api:${IMAGE_TAG:-latest}
     environment:
       <<: *database-url
       PORT: "3000"
@@ -125,7 +125,7 @@ services:
   # 无对外端口，只消费 Redis 队列；故障或暂停都不会影响 backend/前端（不互相 depends_on）。
   # 可独立暂停（CRAWL_WORKER_PAUSED=true 或 docker compose stop worker）与扩缩（--scale worker=N）。
   worker:
-    image: ${REGISTRY:-ghcr.nju.edu.cn}/${GHCR_OWNER:-chen1998-create}/chinese-teacher-exam-assistant-api:${IMAGE_TAG:-latest}
+    image: ${REGISTRY:-ghcr.nju.edu.cn}/${GHCR_OWNER:-chen-cowen}/chinese-teacher-exam-assistant-api:${IMAGE_TAG:-latest}
     command: ["node", "dist/worker.js"]
     environment:
       <<: *database-url
@@ -142,7 +142,7 @@ services:
     restart: unless-stopped
 
   frontend:
-    image: ${REGISTRY:-ghcr.nju.edu.cn}/${GHCR_OWNER:-chen1998-create}/chinese-teacher-exam-assistant:${IMAGE_TAG:-latest}
+    image: ${REGISTRY:-ghcr.nju.edu.cn}/${GHCR_OWNER:-chen-cowen}/chinese-teacher-exam-assistant:${IMAGE_TAG:-latest}
     environment:
       # 镜像构建期已固定 NEXT_PUBLIC_* 为 invited 生产模式，这里只有运行时变量
       BACKEND_URL: http://backend:3000
