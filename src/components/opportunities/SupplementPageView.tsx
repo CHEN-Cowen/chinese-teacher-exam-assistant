@@ -105,6 +105,27 @@ export function SupplementPageView({
   const [beforeOverall, setBeforeOverall] = useState<OpportunityMatchStatus | null>(null);
   const [afterOverall, setAfterOverall] = useState<OpportunityMatchStatus | null>(null);
   const [statusAnnouncement, setStatusAnnouncement] = useState<string | null>(null);
+  const [profileUpdatedAt, setProfileUpdatedAt] = useState<string | undefined>();
+
+  // 登录画像的版本只在服务端读取一次，后续 PATCH 必须携带它。
+  useEffect(() => {
+    if (profileState.status !== "ready") return;
+    if (profileState.isGuest || authStatus !== "authenticated") {
+      return;
+    }
+    let cancelled = false;
+    void createProfileRepository(true)
+      .read()
+      .then((result) => {
+        if (!cancelled) setProfileUpdatedAt(result.updatedAt);
+      })
+      .catch(() => {
+        // 详情页仍可展示；保存时会再次读取并在失败时保留输入。
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [authStatus, profileState]);
 
   // 3. 加载最新详情
   const loadDetail = useCallback(
@@ -253,7 +274,12 @@ export function SupplementPageView({
         if (next.socialSecurityMonths !== undefined) patch.socialSecurityMonths = next.socialSecurityMonths;
         if (next.workExperienceMonths !== undefined) patch.workExperienceMonths = next.workExperienceMonths;
         if (next.extraAnswers !== undefined) patch.extraAnswers = next.extraAnswers;
-        await repo.patch(patch);
+        let expectedUpdatedAt = profileUpdatedAt;
+        if (!expectedUpdatedAt) {
+          expectedUpdatedAt = (await repo.read()).updatedAt;
+        }
+        const saved = await repo.patch(patch, expectedUpdatedAt);
+        setProfileUpdatedAt(saved.updatedAt);
         // 同步本地缓存
         setFacts(supplementFactsService.load());
       }
@@ -286,6 +312,7 @@ export function SupplementPageView({
       if (e instanceof ProfileConflictError) {
         // 9. 409 可恢复
         setConflictError("画像已在其他设备更新，已同步最新状态，请重试。");
+        setProfileUpdatedAt(e.currentUpdatedAt);
         // 读取最新状态
         const active = buildActiveProfile();
         if (active.ready) await loadDetail(active.profile);

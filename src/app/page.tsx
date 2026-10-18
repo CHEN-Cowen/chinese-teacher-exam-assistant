@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { BrandMark } from "@/components/layout/BrandMark";
@@ -14,6 +14,7 @@ import { GUEST_COVERAGE } from "@/lib/guest/coverage";
 import { coverageProvinceLine } from "@/lib/opportunities/coverage-view";
 import { track } from "@/lib/analytics/eventService";
 import { FLAGS } from "@/lib/flags";
+import type { CoverageDTO } from "@/lib/opportunities/api-types";
 
 /** "YYYY-MM-DD..." → "YYYY年M月D日"；无法解析时原样返回 */
 function formatDate(iso: string): string {
@@ -21,11 +22,6 @@ function formatDate(iso: string): string {
   if (Number.isNaN(d.getTime())) return iso;
   return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
 }
-
-const SOURCE_COUNT = GUEST_COVERAGE.regions.reduce(
-  (sum, region) => sum + region.sources.length,
-  0,
-);
 
 /**
  * 首页路由规则（v6.1 模块 0A 双入口混合式，V7 视觉语言重写，v7.1 M1 单一入口）：
@@ -44,6 +40,23 @@ const SOURCE_COUNT = GUEST_COVERAGE.regions.reduce(
 export default function Home() {
   const router = useRouter();
   const { status } = useCurrentUser();
+  const [coverage, setCoverage] = useState<CoverageDTO>(GUEST_COVERAGE);
+
+  useEffect(() => {
+    if (process.env.NEXT_PUBLIC_AUTH_MODE !== "invited") return;
+    let cancelled = false;
+    fetch("/api/opportunities/coverage", { credentials: "include" })
+      .then((res) => (res.ok ? (res.json() as Promise<CoverageDTO>) : null))
+      .then((next) => {
+        if (next && !cancelled) setCoverage(next);
+      })
+      .catch(() => {
+        // 首页仍可使用本地镜像，避免覆盖接口暂时不可用时阻断访客。
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (status === "loading") return;
@@ -64,7 +77,11 @@ export default function Home() {
 
   if (status === "loading") return <LoadingPage />;
 
-  const regionText = coverageProvinceLine(GUEST_COVERAGE);
+  const regionText = coverageProvinceLine(coverage);
+  const sourceCount = coverage.regions.reduce(
+    (sum, region) => sum + region.sources.length,
+    0,
+  );
 
   const handleStart = () => {
     track("home_start_match_clicked", "home");
@@ -444,8 +461,8 @@ export default function Home() {
                 真实监测：{regionText} · 语文教师岗位
               </p>
               <p className="mt-1 text-xs text-ink-muted" data-testid="home-coverage-summary">
-                最近核对 {formatDate(GUEST_COVERAGE.lastCheckedAt)} · 官方来源共 {SOURCE_COUNT} 个 ·
-                下一个窗口：{GUEST_COVERAGE.nextWindowNote}
+                最近核对 {formatDate(coverage.lastCheckedAt)} · 官方来源共 {sourceCount} 个 ·
+                下一个窗口：{coverage.nextWindowNote}
               </p>
             </div>
             <Disclosure
@@ -454,11 +471,11 @@ export default function Home() {
               contentClassName="mt-2 rounded-lg border border-line bg-surface p-4 text-sm leading-relaxed text-ink-muted sm:w-[480px] sm:shadow-2"
             >
               <dl className="grid gap-2 sm:grid-cols-2">
-                <div><dt className="text-xs text-ink-muted">最近核对</dt><dd className="mt-0.5 font-medium text-ink">{formatDate(GUEST_COVERAGE.lastCheckedAt)}</dd></div>
-                <div><dt className="text-xs text-ink-muted">官方来源</dt><dd className="mt-0.5 font-medium text-ink">共 {SOURCE_COUNT} 个</dd></div>
-                <div className="sm:col-span-2"><dt className="text-xs text-ink-muted">下一窗口</dt><dd className="mt-0.5 font-medium text-ink">{GUEST_COVERAGE.nextWindowNote}</dd></div>
+                <div><dt className="text-xs text-ink-muted">最近核对</dt><dd className="mt-0.5 font-medium text-ink">{formatDate(coverage.lastCheckedAt)}</dd></div>
+                <div><dt className="text-xs text-ink-muted">官方来源</dt><dd className="mt-0.5 font-medium text-ink">共 {sourceCount} 个</dd></div>
+                <div className="sm:col-span-2"><dt className="text-xs text-ink-muted">下一窗口</dt><dd className="mt-0.5 font-medium text-ink">{coverage.nextWindowNote}</dd></div>
               </dl>
-              <p className="mt-3 border-t border-line pt-3 text-xs">{GUEST_COVERAGE.scopeNote}</p>
+              <p className="mt-3 border-t border-line pt-3 text-xs">{coverage.scopeNote}</p>
               <p className="mt-2 text-xs">初步判断不是官方审核，最终以招聘单位认定为准。</p>
             </Disclosure>
           </div>

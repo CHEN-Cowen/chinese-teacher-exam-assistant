@@ -30,6 +30,12 @@ interface AuthenticatedRequest {
 export class OpportunitiesController {
   constructor(private readonly service: OpportunitiesService) {}
 
+  /** 首页公开读取覆盖摘要，不需要画像或登录。 */
+  @Get('coverage')
+  getCoverage() {
+    return this.service.coverage();
+  }
+
   /** 当前用户的新机会订阅（v7.1 M6；未开启过返回 null） */
   @Get('subscription')
   @UseGuards(UserGuard)

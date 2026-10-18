@@ -48,6 +48,7 @@ import {
 } from './corrections.domain.js';
 import {
   buildGoals,
+  buildCoverage,
   buildMatchResponse,
   buildQualificationSnapshot,
   buildUnitDetail,
@@ -128,13 +129,21 @@ export class OpportunitiesService {
   /** 机会列表（v7.1 M8：userId 可选，访客无关注记录） */
   async match(profile: unknown, userId?: string): Promise<MatchResponse> {
     const valid = await this.resolveProfile(profile, userId);
-    const catalog = await this.loadCatalog();
+    const now = new Date();
+    const catalog = await this.loadCatalog(now);
     const candidates = buildCandidates(
       catalog,
       valid,
-      new Date().toISOString(),
+      now.toISOString(),
     );
-    return this.assemble(candidates, valid, userId);
+    return this.assemble(candidates, valid, userId, catalog, now);
+  }
+
+  /** 公开覆盖摘要：首页与机会列表共用当前已发布目录口径。 */
+  async coverage() {
+    const now = new Date();
+    const catalog = await this.loadCatalog(now);
+    return buildCoverage({ openOpportunityCount: this.countOpenRealUnits(catalog, now) });
   }
 
   /** 机会详情（v7.1 M8：userId 可选，访客无关注记录） */
@@ -162,9 +171,33 @@ export class OpportunitiesService {
     candidates: ReturnType<typeof buildCandidates>,
     profile: UserRecruitmentProfile,
     userId?: string,
+    catalog?: readonly RecruitmentAnnouncement[],
+    now: Date = new Date(),
   ): Promise<MatchResponse> {
     const follows = await this.listFollowRecords(userId);
-    return buildMatchResponse(candidates, profile, follows, new Date());
+    return buildMatchResponse(candidates, profile, follows, now, {
+      openOpportunityCount: catalog ? this.countOpenRealUnits(catalog, now) : undefined,
+    });
+  }
+
+  /** 覆盖数来自当前目录的报名时间窗口，不再依赖静态手填数量。 */
+  private countOpenRealUnits(
+    catalog: readonly RecruitmentAnnouncement[],
+    now: Date,
+  ): number {
+    const timestamp = now.getTime();
+    return catalog
+      .filter((announcement) => announcement.dataset === 'real')
+      .reduce((count, announcement) => {
+        const version = currentVersion(announcement);
+        const start = version.timeline.registrationStart
+          ? new Date(version.timeline.registrationStart).getTime()
+          : Number.NEGATIVE_INFINITY;
+        const end = version.timeline.registrationEnd
+          ? new Date(version.timeline.registrationEnd).getTime()
+          : Number.NEGATIVE_INFINITY;
+        return count + (start <= timestamp && timestamp <= end ? version.units.length : 0);
+      }, 0);
   }
 
   // ==================== 新机会订阅（v7.1 M6） ====================

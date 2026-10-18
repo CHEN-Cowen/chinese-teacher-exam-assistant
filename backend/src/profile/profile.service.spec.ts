@@ -4,7 +4,7 @@
  * - 现状固化：ProfileService 整体 upsert 幂等、按用户隔离；
  * - v7.2 PATCH：白名单字段级部分更新 + 乐观锁冲突 409 + 部分合并 + 幂等。
  */
-import { describe, expect, it, beforeEach } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { ConflictException } from '@nestjs/common';
 import { ProfileService } from './profile.service.js';
 
@@ -38,6 +38,21 @@ function createFakePrisma() {
         };
         rows.set(create.userId, row);
         return row;
+      },
+      updateMany: async ({
+        where,
+        data,
+      }: {
+        where: { userId: string; updatedAt: Date };
+        data: { profile: unknown };
+      }) => {
+        const existing = rows.get(where.userId);
+        if (!existing || existing.updatedAt.getTime() !== where.updatedAt.getTime()) {
+          return { count: 0 };
+        }
+        existing.profile = data.profile;
+        existing.updatedAt = new Date(Date.now() + ++clock);
+        return { count: 1 };
       },
     },
   };
@@ -201,6 +216,35 @@ describe('PATCH /profile（v7.2 PRD 7.6.1）', () => {
     expect(profile.socialSecurityMonths).toBe(12);
     expect(profile.workExperienceMonths).toBe(24);
     expect(profile.extraAnswers).toEqual({ 'req-1': '是' });
+  });
+
+  it('extraAnswers 按岗位键合并，不覆盖已有岗位答案', async () => {
+    const prisma = createFakePrisma();
+    const service = new ProfileService(prisma as never);
+    await service.saveProfile('user-1', { extraAnswers: { 'req-1': '是' } });
+    const meta = await service.getProfileWithMeta('user-1');
+    const result = await service.patchProfile(
+      'user-1',
+      { extraAnswers: { 'req-2': '否' } },
+      meta.updatedAt,
+    );
+    expect(result.profile).toMatchObject({
+      extraAnswers: { 'req-1': '是', 'req-2': '否' },
+    });
+  });
+
+  it('条件更新失败时不覆盖并返回最新版本', async () => {
+    const prisma = createFakePrisma();
+    const service = new ProfileService(prisma as never);
+    await service.saveProfile('user-1', { extraAnswers: { 'req-1': '是' } });
+    const stale = await service.getProfileWithMeta('user-1');
+    await service.patchProfile('user-1', { extraAnswers: { 'req-2': '否' } });
+    await expect(
+      service.patchProfile('user-1', { extraAnswers: { 'req-3': '待确认' } }, stale.updatedAt),
+    ).rejects.toMatchObject({ response: { error: 'VERSION_CONFLICT' } });
+    expect(await service.getProfile('user-1')).toEqual({
+      extraAnswers: { 'req-1': '是', 'req-2': '否' },
+    });
   });
 
   it('getProfileWithMeta 返回 updatedAt', async () => {

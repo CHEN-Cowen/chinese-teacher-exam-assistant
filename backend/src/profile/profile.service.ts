@@ -74,6 +74,10 @@ export class ProfileService {
     return allowed;
   }
 
+  private isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+  }
+
   /**
    * v7.2 部分更新画像（PRD 7.6.1）。
    * - 只接受白名单字段；
@@ -120,13 +124,43 @@ export class ProfileService {
         ? (row.profile as Record<string, unknown>)
         : {};
     const merged = { ...currentProfile, ...changes };
+    if (this.isRecord(changes.extraAnswers)) {
+      merged.extraAnswers = {
+        ...(this.isRecord(currentProfile.extraAnswers)
+          ? currentProfile.extraAnswers
+          : {}),
+        ...changes.extraAnswers,
+      };
+    }
 
-    // 5. 保存
-    const updated = await this.prisma.userProfile.upsert({
-      where: { userId },
-      update: { profile: merged as never },
-      create: { userId, profile: merged as never },
-    });
+    // 5. 带版本时使用数据库条件更新，避免先读后写覆盖并发修改。
+    let updated;
+    if (expectedUpdatedAt !== undefined) {
+      const result = await this.prisma.userProfile.updateMany({
+        where: { userId, updatedAt: row!.updatedAt },
+        data: { profile: merged as never },
+      });
+      if (result.count !== 1) {
+        const current = await this.prisma.userProfile.findUnique({ where: { userId } });
+        throw new ConflictException({
+          error: 'VERSION_CONFLICT',
+          message: '画像已在其他设备更新，请基于最新信息重试',
+          profile: current?.profile,
+          updatedAt: current?.updatedAt.toISOString(),
+        });
+      }
+      updated = await this.prisma.userProfile.findUnique({ where: { userId } });
+    } else {
+      updated = await this.prisma.userProfile.upsert({
+        where: { userId },
+        update: { profile: merged as never },
+        create: { userId, profile: merged as never },
+      });
+    }
+
+    if (!updated) {
+      throw new ConflictException('画像更新失败');
+    }
 
     return {
       profile: updated.profile,

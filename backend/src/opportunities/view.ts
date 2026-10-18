@@ -196,16 +196,29 @@ export function buildMeta(now: Date): MetaDTO {
   };
 }
 
-export function buildCoverage(): CoverageDTO {
+export function buildCoverage(overrides: {
+  openOpportunityCount?: number;
+  lastCheckedAt?: string;
+} = {}): CoverageDTO {
+  const openOpportunityCount =
+    overrides.openOpportunityCount ?? REAL_COVERAGE.openOpportunityCount;
   return {
     version: COVERAGE_VERSION,
     subject: REAL_COVERAGE.subject,
     subjectLabel: REAL_COVERAGE.subjectLabel,
-    status: REAL_COVERAGE.status,
-    provinces: REAL_COVERAGE.provinces,
+    status: openOpportunityCount > 0 ? 'open_batch_exists' : REAL_COVERAGE.status,
+    provinces: REAL_COVERAGE.provinces.map((province) => ({
+      ...province,
+      status:
+        province.status === 'not_started'
+          ? province.status
+          : openOpportunityCount > 0
+            ? 'open_batch_exists'
+            : 'monitoring_no_open',
+    })),
     regions: REAL_COVERAGE.regions,
-    lastCheckedAt: REAL_COVERAGE.lastCheckedAt,
-    openOpportunityCount: REAL_COVERAGE.openOpportunityCount,
+    lastCheckedAt: overrides.lastCheckedAt ?? REAL_COVERAGE.lastCheckedAt,
+    openOpportunityCount,
     nextWindowNote: REAL_COVERAGE.nextWindowNote,
     scopeNote: REAL_COVERAGE.scopeNote,
   };
@@ -370,6 +383,7 @@ export function buildMatchResponse(
   profile: UserRecruitmentProfile,
   follows: readonly FollowRecord[],
   now: Date,
+  coverage?: { openOpportunityCount?: number; lastCheckedAt?: string },
 ): MatchResponse {
   // 模块 7.5 合规过滤：普通用户端不返回 AI 初核待人工复核记录（dataset === 'real'）。
   // 管理端复核界面使用独立 API，不受影响。
@@ -424,7 +438,7 @@ export function buildMatchResponse(
 
   return {
     meta: buildMeta(now),
-    coverage: buildCoverage(),
+    coverage: buildCoverage(coverage),
     primaryTargetUnitId: primary?.unitId ?? null,
     groups,
     follows: followsDTO,

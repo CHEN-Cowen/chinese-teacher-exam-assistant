@@ -45,8 +45,42 @@ jobs:
       - name: Runtime smoke (postgres + redis + migrate + api + worker + /health)
         run: node scripts/smoke-runtime.mjs
 
+  # 前端流程门禁：编译通过之外，必须验证画像填写、结果、补充保存、
+  # 日程入口及 v7.2 开关回退等真实浏览器链路。
+  frontend-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Lint frontend
+        run: npm run lint
+
+      - name: Frontend unit tests
+        run: npm test
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Build E2E variants
+        run: npm run pretest:e2e
+
+      - name: Browser flow tests
+        run: npm run test:e2e
+
   publish:
-    needs: verify
+    needs: [verify, frontend-verify]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
