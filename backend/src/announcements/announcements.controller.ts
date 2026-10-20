@@ -122,8 +122,11 @@ export class AnnouncementsController {
 
   @Post('runs/:id/publish')
   @UseGuards(ReviewGuard)
-  async publish(@Param('id') id: string) {
-    return this.service.publish(id);
+  async publish(
+    @Param('id') id: string,
+    @Body() body?: { dataset?: 'test' | 'demo' | 'real' },
+  ) {
+    return this.service.publish(id, body?.dataset);
   }
 
   // ==================== 管理员：重试失败任务 ====================

@@ -202,5 +202,11 @@ npm run build
 - 现有 publish 流水线 payload（ExtractionCandidate）与目录载荷不一致：本工作包**不重写**，
   由 E2E 测试以目录载荷写入 published 行证明读取闭环；如需生产 publish 直接写目录载荷，
   另立后续工作包。
+
+> **后续说明（WB5，2026-10-20）**：该断点已由 WorkBuddy 流水线 WB5「目录载荷与发布闭环」
+> 补齐——`backend/src/announcements/catalog-payload-assembler.ts` 提供单一目录载荷构造器，
+> `announcements.service.ts` 的 `publish()` 现按「门禁 → 构造 → 事务前 projector 严格校验 →
+> 事务内 supersede+insert+run update」写入目录载荷。WP3 本包的历史范围（projector/repository
+> 读取侧）保持不变；WB5 是新增的写入侧工作，两者分开记录，不互相改写。
 - `evidence_stale`（72h）可能使 DB 样本落入 `groups.closed`，但该单元仍出现在响应 JSON 中，
   满足回归断言；如断言改为“进 preliminary”，需把样本 checkedAt 设为近期（属于测试数据，非代码）。

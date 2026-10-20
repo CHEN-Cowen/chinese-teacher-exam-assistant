@@ -1,6 +1,6 @@
 # WorkBuddy 完成清单（WB1–WB6）
 
-> 状态：WB0 已完成（规格 + 黄金样本 + 隔离测试）。WB1、WB2、WB3、WB4 已完成，WB5–WB6 未实现。
+> 状态：WB0 已完成（规格 + 黄金样本 + 隔离测试）。WB1、WB2、WB3、WB4、WB5 已完成，WB6 未实现。
 > 本文把后续工作拆成六个模块，每个模块标注前置条件、完成门、非目标。
 
 ## 总前置条件（所有模块共用）
@@ -69,17 +69,39 @@
   - UI 不自行计算正确率，只显示后端 WB3 可复算质量状态。
 - **非目标**：不改抓取器、普通用户机会页、匹配算法、目录 projector 或 publish 行为；不新增 Prisma migration。
 
-### WB5：字段标准化与证据链完善
+### WB5：目录载荷与发布闭环（已完成）
 
-- **目标**：落实 `field-catalog.md` 的标准化边界（学段/学科/学历/用工性质枚举，
-  “师范”保留、年龄基准日/例外独立、报名批次绑定等），完善证据锚点回溯。
-- **前置条件**：WB1、WB2 完成。
+- **目标**：修复 announcements 发布载荷（`ExtractionCandidate`）与 catalog projector
+  契约（`{ dataset, announcement, version }`）之间的断点，用集成测试证明闭环。
+  单一目录载荷构造器把「已审核候选 + 受信元数据 + 版本上下文」构造成 projector
+  接受的目录载荷；发布前加门禁与严格结构校验；失败发生在事务前或整体回滚。
+- **前置条件**：WB1（scope/status/decision）、WB2（多岗位抽取）、WB3（质量门禁）、
+  WB4（审核工作台）完成。
 - **完成门**：
-  - 专业标准化保留“（师范）”等限定词；
-  - 年龄基准日/例外为独立字段，缺失置 unknown；
-  - 报名时间/材料/入口绑定明确批次；
-  - 每条字段证据可回溯到 worksheet/cell、段落或 URL 锚点。
-- **非目标**：不引入真实学科/专业目录数据库（可先用枚举/映射表）。
+  - 单一目录载荷构造器 `catalog-payload-assembler.ts`（纯函数），元数据只来自可信
+    DB 字段/审核输入/官方证据，缺失返回结构化错误，禁止从标题或 URL 猜地区/单位/
+    用工性质/报名入口；
+  - 每个已审核 job scope 映射一个 catalog unit，unit id/version id 稳定；
+  - unknown/conflict/pending/缺证据的高影响字段不静默进入「已确认」要求；
+  - 发布顺序：读 run+审核 → assertCanPublish + WB3 门禁 → 构造目录载荷 →
+    事务前 projectCatalogVersion 严格校验 → 事务内 supersede+insert+run update；
+  - legacy `ExtractionCandidate` 发布行不可变、不批量重写，投影失败记录失败/回退；
+  - 显式 payload 类型守卫（`isCatalogPayload`），禁止 `as unknown as` 掩盖契约差异；
+  - `dataset` 只允许 test/demo/real，real 要求官方来源证据且演示来源不得标 real；
+  - 集成测试覆盖两个岗位两个 units、字段不混岗、各阻塞路径、事务原子性、
+    重复发布、legacy 兼容、撤回与版本链回归。
+- **非目标**：不扩展抓取来源、普通用户 UI、导出、匹配规则或静态目录。
+- **实现文件**：
+  - `backend/src/announcements/catalog-payload-assembler.ts`（构造器 + 类型守卫）
+  - `backend/src/announcements/announcements.service.ts`（publish 门禁与事务）
+  - `backend/src/announcements/announcements.controller.ts`（publish 接收 dataset）
+  - `backend/src/announcements/catalog-payload-assembler.spec.ts`
+  - `backend/src/announcements/publish-catalog.integration.spec.ts`
+
+> 说明：本清单原 WB5「字段标准化与证据链完善」内容已由 WB3（标准化纯函数）承接，
+> 原「稳定岗位标识与发布载荷转换」职责由本次 WB5（目录载荷构造 + 发布闭环）落实。
+> WP3（v7.2-wp3-db-catalog）当时**未重写** announcements publish 流水线（见其 spec §8），
+> 本次 WB5 是补上该断点的新增工作，不与 WP3 历史范围混为一谈。
 
 ### WB6：端到端回归与验收
 
@@ -99,12 +121,13 @@
 WB0（本清单，已完成）
  └─► WB1（契约） ─► WB2（多行抽取） ─► WB3（高风险字段+质量门禁，已完成）
         │              │                    │
-        └─► WB4（审核工作台，已完成）  WB5（标准化）  └─► WB6（回归）
+        └─► WB4（审核工作台，已完成）  WB5（目录载荷与发布闭环，已完成）  └─► WB6（回归）
 ```
 
 > 注：WB3 按用户最新要求重定义为「高风险字段与质量门禁」，WB4 按用户最新要求
-> 重定义为「按岗位人工审核工作台」；原 checklist 中「稳定岗位标识与发布载荷转换」
-> 职责顺延至后续目录转换模块，不在 WB 系列编号内单独占位。
+> 重定义为「按岗位人工审核工作台」，WB5 按用户最新要求重定义为「目录载荷与发布闭环」。
+> WP3（v7.2-wp3-db-catalog）仅落地了 projector/repository 读取侧，未重写 publish 写入侧；
+> WB5 补上写入侧闭环。
 
 ## 非目标（全模块共通）
 

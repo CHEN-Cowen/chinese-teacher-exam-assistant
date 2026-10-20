@@ -21,12 +21,18 @@ import {
   type FieldDecisionInput,
   type ReviewAction,
 } from './domain.js';
-import { buildCompletenessReport } from './quality-gates.js';
+import { buildCompletenessReport, assertPublishable } from './quality-gates.js';
 import { parseAnnouncement } from './parser.js';
 import {
   ProjectionError,
   projectCatalogVersion,
 } from '../catalog/publication-projector.js';
+import {
+  buildCatalogPayload,
+  CatalogPayloadError,
+  isCatalogPayload,
+  type CatalogDataset,
+} from './catalog-payload-assembler.js';
 
 export interface SubmitSourceInput {
   publisher: string;
@@ -55,6 +61,33 @@ export interface SubmitReviewInput {
    * 后端若发现已变化（他人已提交）则返回 409，避免覆盖他人修改。
    */
   baseUpdatedAt?: string;
+}
+
+/**
+ * 目录载荷版本差异（WB5）：两个目录载荷之间按 unit + requirement 对齐的差异。
+ * legacy ExtractionCandidate 载荷走 domain.diffVersions；目录载荷走本函数。
+ * 差异不因 payload 类型变化崩溃。
+ */
+function catalogVersionDiff(
+  a: { id: string; versionNumber: number; payload: unknown },
+  b: { id: string; versionNumber: number; payload: unknown },
+): Array<{ field: string; before: string; after: string; changed: boolean }> {
+  const pa = (a.payload ?? {}) as { version?: { units?: Array<{ code?: string; headcount?: number }> } };
+  const pb = (b.payload ?? {}) as { version?: { units?: Array<{ code?: string; headcount?: number }> } };
+  const unitsA = new Map(
+    (pa.version?.units ?? []).map((u) => [u.code ?? '', u.headcount ?? 0]),
+  );
+  const unitsB = new Map(
+    (pb.version?.units ?? []).map((u) => [u.code ?? '', u.headcount ?? 0]),
+  );
+  const codes = new Set([...unitsA.keys(), ...unitsB.keys()]);
+  const diffs: Array<{ field: string; before: string; after: string; changed: boolean }> = [];
+  for (const code of codes) {
+    const before = unitsA.has(code) ? String(unitsA.get(code)) : '';
+    const after = unitsB.has(code) ? String(unitsB.get(code)) : '';
+    diffs.push({ field: `unit:${code}:headcount`, before, after, changed: before !== after });
+  }
+  return diffs;
 }
 
 /**
@@ -385,26 +418,67 @@ export class AnnouncementsService {
 
   // ==================== 5. 发布 ====================
 
-  async publish(runId: string) {
+  /**
+   * 发布（WB5：候选 → 目录载荷 → 严格校验 → 原子事务）。
+   *
+   * 顺序（严格）：
+   * 1. 读取 run（含 snapshot.source 与 publishedVersion）与审核状态；
+   * 2. 执行 `assertCanPublish`（approved + AI/OCR 已人工确认）与 WB3 质量门禁
+   *    `assertPublishable`（conflict/unknown 必需/高影响缺证据阻塞）；
+   * 3. 构造目录载荷（`buildCatalogPayload`，元数据不猜值）；
+   * 4. 在数据库事务前调用 `projectCatalogVersion` 做严格结构验证；
+   * 5. 通过后再执行 version supersede、新版本插入、run 状态更新的单一事务。
+   *
+   * 任何失败都不产生 published 半成品、不提前 supersede 旧版本、不把 run 标成 published。
+   *
+   * @param runId 提取任务 id
+   * @param dataset 数据集合（受信配置/审核输入明确给出，只允许 test/demo/real）
+   */
+  async publish(runId: string, dataset: CatalogDataset = 'demo') {
     const run = await this.prisma.extractionRun.findUnique({
       where: { id: runId },
-      include: { publishedVersion: true },
+      include: {
+        publishedVersion: true,
+        snapshot: { include: { source: true } },
+      },
     });
     if (!run) throw new NotFoundException('提取任务不存在');
 
-    // 只有 approved 状态可发布；AI/OCR 字段必须已人工确认
-    assertCanPublish(run.status as never, run.candidate
-      ? (run.candidate as unknown as ExtractionCandidate)
-      : undefined);
+    // 1. 读取审核状态 + 候选
+    if (!run.candidate) throw new BadRequestException('任务无候选结果，无法发布');
+    const candidate = run.candidate as unknown as ExtractionCandidate;
+
+    // 重复发布冲突（先于门禁，避免把已发布任务误报为「未审核」）
     if (run.publishedVersion) {
       throw new ConflictException('该任务已发布，不能重复发布');
     }
-    if (!run.candidate) throw new BadRequestException('任务无候选结果，无法发布');
 
-    const candidate = run.candidate as unknown as ExtractionCandidate;
+    // 2. 发布门禁：approved + AI/OCR 已确认 + WB3 质量门禁
+    assertCanPublish(run.status as never, candidate);
+    try {
+      assertPublishable(candidate);
+    } catch (e) {
+      throw new BadRequestException(
+        e instanceof Error ? e.message : '候选未通过发布门禁',
+      );
+    }
+
+    // dataset 校验：只允许 test/demo/real
+    if (dataset !== 'test' && dataset !== 'demo' && dataset !== 'real') {
+      throw new BadRequestException('dataset 只能是 test/demo/real');
+    }
+    // real 发布要求官方来源证据；演示来源（example.gov.cn）不得标为 real
+    const source = run.snapshot?.source;
+    if (!source) {
+      throw new BadRequestException('缺少来源信息，无法发布');
+    }
+    if (dataset === 'real' && /example\.(gov\.cn|com|org)/i.test(source.officialUrl)) {
+      throw new BadRequestException('演示来源不能标为 real 数据集');
+    }
+
     const announcementId = run.announcementId ?? run.id;
 
-    // 查找该公告的当前已发布版本
+    // 查找该公告的当前已发布版本（用于版本链 + supersede）
     const previous = await this.prisma.publishedAnnouncementVersion.findFirst({
       where: { announcementId, status: 'published' },
       orderBy: { versionNumber: 'desc' },
@@ -428,8 +502,61 @@ export class AnnouncementsService {
       publishedAt: now.toISOString(),
     });
 
+    // 3. 构造目录载荷（元数据来自可信 DB 字段；缺失/非法抛结构化错误）
+    let catalogPayload: ReturnType<typeof buildCatalogPayload>;
+    try {
+      catalogPayload = buildCatalogPayload(
+        candidate,
+        {
+          announcementId,
+          publisher: source.publisher,
+          officialUrl: source.officialUrl,
+          regionCode: source.regionCode ?? undefined,
+          dataset,
+          ...(dataset === 'real'
+            ? {
+                reviewedBy: run.submittedBy ?? undefined,
+                reviewedAt: now.toISOString(),
+              }
+            : {}),
+        },
+        {
+          versionId: version.id,
+          versionNumber: version.versionNumber,
+          sourceKind: 'original',
+          publishedAt: now.toISOString(),
+        },
+      );
+    } catch (e) {
+      throw new BadRequestException(
+        e instanceof CatalogPayloadError ? e.message : '目录载荷构造失败',
+      );
+    }
+
+    // 4. 事务前严格结构验证（projector 接受则通过，否则抛 ProjectionError）
+    try {
+      projectCatalogVersion(
+        {
+          id: version.id,
+          announcementId,
+          versionNumber: version.versionNumber,
+          status: 'published',
+          payload: catalogPayload,
+        },
+        now,
+      );
+    } catch (e) {
+      // 投影失败：不进入事务，不写任何数据
+      if (e instanceof ProjectionError) {
+        throw new BadRequestException(
+          `目录载荷结构校验失败（${e.fieldPath}）：${e.message}`,
+        );
+      }
+      throw e;
+    }
+
+    // 5. 单一事务：supersede 旧版本 + 插入新版本 + run 状态更新
     return this.prisma.$transaction(async (tx) => {
-      // 旧版本标记 superseded
       if (superseded) {
         await tx.publishedAnnouncementVersion.update({
           where: { id: superseded.id },
@@ -437,7 +564,6 @@ export class AnnouncementsService {
         });
       }
 
-      // 创建新版本
       const published = await tx.publishedAnnouncementVersion.create({
         data: {
           id: version.id,
@@ -445,13 +571,12 @@ export class AnnouncementsService {
           runId,
           versionNumber: version.versionNumber,
           status: 'published',
-          payload: version.payload as unknown as object,
+          payload: catalogPayload as unknown as object,
           publishedAt: now,
           previousVersionId: version.previousVersionId ?? null,
         },
       });
 
-      // 任务状态 → published（终态）
       await tx.extractionRun.update({
         where: { id: runId },
         data: { status: 'published' },
@@ -584,6 +709,14 @@ export class AnnouncementsService {
     if (!a || !b) throw new NotFoundException('指定版本不存在');
 
     const { diffVersions } = await import('./domain.js');
+
+    // 显式载荷类型守卫：目录载荷（WB5 新契约）与 legacy ExtractionCandidate
+    // 是两种契约，不得用 as unknown as 混用。二者都不含 legacy fields 时，
+    // 版本差异无法按字段对齐，返回明确的「目录载荷差异」而非崩溃。
+    if (isCatalogPayload(a.payload) || isCatalogPayload(b.payload)) {
+      return catalogVersionDiff(a, b);
+    }
+
     return diffVersions(
       {
         id: a.id,
