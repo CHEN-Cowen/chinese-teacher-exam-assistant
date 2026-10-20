@@ -12,9 +12,13 @@
  *   且 origin=ai/ocr 的字段在人工确认前不能发布。
  */
 import {
+  deriveJobKey,
+  fieldIdentity,
   type CandidateField,
   type EvidenceAnchorInput,
   type EvidenceLocator,
+  type FieldAlternative,
+  type JobScopeInfo,
 } from '../domain.js';
 import type {
   DocumentLocator,
@@ -22,7 +26,7 @@ import type {
   ParsedDocument,
 } from '../../document-processing/parsed-document.js';
 
-export const FIELD_EXTRACTOR_VERSION = 'rule-field-extractor@1.0.0';
+export const FIELD_EXTRACTOR_VERSION = 'rule-field-extractor@2.0.0';
 
 /** OCR 低置信度默认阈值（与 feature-flags 保持一致的兜底值） */
 export const LOW_CONFIDENCE_THRESHOLD = 0.8;
@@ -111,65 +115,29 @@ export interface RuleExtractionResult {
 }
 
 /**
- * 从标准文档抽取候选字段。
+ * 从标准文档抽取候选字段（WB2：多岗位逐行抽取）。
  * 规则来源：块文本匹配（全文类）+ 表格表头候选映射（岗位表类）。
+ *
+ * 岗位表抽取不变量：
+ * - 每个 sheet 独立识别数据行，不复用其它 sheet 的行号集合；
+ * - 每个有效数据行产生一个稳定 job scope（deriveJobKey）；
+ * - 同一行内所有表格字段共享同一 job scope 与精确 worksheet/cell 证据；
+ * - 去重 key 使用 scope identity + field（fieldIdentity），不同岗位同名字段全保留；
+ * - 同 scope 同 field 不同值 → conflict（保留 alternatives 及各自证据），不采用"首次命中"；
+ * - 空行/重复表头行/说明行跳过并产生可审计 warning，不静默吞掉。
  */
 export function extractFields(parsed: ParsedDocument): RuleExtractionResult {
   const fields: CandidateField[] = [];
   const dropped: RuleExtractionResult['dropped'] = [];
   const warnings: string[] = [];
-  /** 同一字段先命中先用（避免重复） */
-  const claimed = new Set<string>();
 
-  // 1. 表格列语义（确定性表头映射 → 首个数据行；多行岗位表需人工确认行级拆分）
-  const columnField = new Map<string, { field: string; headerRow: number }>();
-  for (const th of parsed.tableHeaders ?? []) {
-    for (const col of th.columns) {
-      if (col.suggestedField) {
-        columnField.set(`${th.sheet}:${col.column}`, {
-          field: col.suggestedField,
-          headerRow: th.headerRow,
-        });
-      }
-    }
-  }
-  if (columnField.size > 0) {
-    let dataRows = new Set<number>();
-    for (const th of parsed.tableHeaders ?? []) {
-      for (const block of parsed.blocks) {
-        if (block.locator.kind === 'worksheet' && block.locator.sheet === th.sheet) {
-          dataRows.add(block.locator.row);
-        }
-      }
-    }
-    for (const th of parsed.tableHeaders ?? []) {
-      const rows = [...dataRows].filter((r) => r > th.headerRow).sort((a, b) => a - b);
-      if (rows.length > 1) {
-        warnings.push(
-          `${th.sheet} 工作表包含 ${rows.length} 行岗位数据，已抽取首行（行级拆分需人工处理）`,
-        );
-      }
-      const firstRow = rows[0];
-      if (firstRow === undefined) continue;
-      for (const block of parsed.blocks) {
-        if (block.locator.kind !== 'worksheet') continue;
-        if (block.locator.sheet !== th.sheet || block.locator.row !== firstRow) continue;
-        const mapping = columnField.get(`${block.locator.sheet}:${block.locator.column}`);
-        if (!mapping || claimed.has(mapping.field)) continue;
-        const value = (block.displayValue ?? block.text).trim();
-        if (!value) continue;
-        claimed.add(mapping.field);
-        fields.push({
-          field: mapping.field,
-          value,
-          anchor: buildAnchor(block, parsed, mapping.field),
-          origin: 'rule',
-        });
-      }
-    }
-  }
+  // 1. 表格列语义（确定性表头映射 → 逐数据行，每行一个 job scope）
+  const tableFields = extractTableFields(parsed, warnings);
+  fields.push(...tableFields);
 
-  // 2. 文本规则（全文类块）
+  // 2. 文本规则（全文类块，产出公告级字段；仅当无 job 字段抢占该 field 时才产出）
+  const tableClaimedFields = new Set(tableFields.map((f) => f.field));
+  const claimed = new Set<string>(tableClaimedFields);
   for (const block of parsed.blocks) {
     const text = blockText(block);
     if (!text) continue;
@@ -182,6 +150,8 @@ export function extractFields(parsed: ParsedDocument): RuleExtractionResult {
       fields.push({
         field: rule.field,
         value,
+        scope: 'announcement',
+        ruleVersion: FIELD_EXTRACTOR_VERSION,
         anchor: buildAnchor(block, parsed, rule.field),
         origin: 'rule',
       });
@@ -200,6 +170,197 @@ export function extractFields(parsed: ParsedDocument): RuleExtractionResult {
   }
 
   return { fields: anchored, dropped, warnings };
+}
+
+/**
+ * WB2：按工作表逐行抽取岗位表字段。
+ *
+ * 返回带 job scope 的候选字段；跨行冲突通过 makeConflictField 保留 alternatives。
+ */
+function extractTableFields(
+  parsed: ParsedDocument,
+  warnings: string[],
+): CandidateField[] {
+  const headers = parsed.tableHeaders ?? [];
+  if (headers.length === 0) return [];
+
+  // 按 sheet 收集表头候选（sheet → 列号 → 建议字段）
+  const headersBySheet = new Map<string, { headerRow: number; columns: Map<number, string> }>();
+  for (const th of headers) {
+    const entry = headersBySheet.get(th.sheet) ?? { headerRow: th.headerRow, columns: new Map<number, string>() };
+    for (const col of th.columns) {
+      if (col.suggestedField) entry.columns.set(col.column, col.suggestedField);
+    }
+    headersBySheet.set(th.sheet, entry);
+  }
+
+  const out: CandidateField[] = [];
+  // 记录每个 (identity → field) 已产出的值与证据，用于去重与冲突判定
+  const seen = new Map<string, { field: string; value: string; jobScope: JobScopeInfo; block: ParsedBlock }>();
+
+  for (const [sheet, headerInfo] of headersBySheet) {
+    // 本 sheet 的表头列号集合（用于识别重复表头行/说明行）
+    const headerRow = headerInfo.headerRow;
+    // 收集本 sheet 所有 worksheet block 的行号（不跨 sheet 复用）
+    const sheetRows = new Set<number>();
+    for (const block of parsed.blocks) {
+      if (block.locator.kind === 'worksheet' && block.locator.sheet === sheet) {
+        sheetRows.add(block.locator.row);
+      }
+    }
+    const dataRows = [...sheetRows].filter((r) => r > headerRow).sort((a, b) => a - b);
+
+    for (const row of dataRows) {
+      const rowBlocks = parsed.blocks.filter(
+        (b): b is ParsedBlock & { locator: Extract<DocumentLocator, { kind: 'worksheet' }> } =>
+          b.locator.kind === 'worksheet' &&
+          b.locator.sheet === sheet &&
+          b.locator.row === row,
+      );
+      if (rowBlocks.length === 0) continue;
+
+      // 判定空行：该行所有单元格 value 均为空
+      const rowValues = rowBlocks.map((b) => (b.displayValue ?? b.text).trim());
+      const isEmptyRow = rowValues.every((v) => v === '');
+      if (isEmptyRow) {
+        warnings.push(`${sheet} 第 ${row} 行为空行，已跳过`);
+        continue;
+      }
+
+      // 判定重复表头行：该行文本与表头行高度重合（视为重复表头，跳过）
+      const headerTexts = new Set(
+        parsed.blocks
+          .filter(
+            (b) =>
+              b.locator.kind === 'worksheet' &&
+              b.locator.sheet === sheet &&
+              b.locator.row === headerRow,
+          )
+          .map((b) => (b.displayValue ?? b.text).trim())
+          .filter(Boolean),
+      );
+      const rowTextSet = new Set(rowValues.filter(Boolean));
+      let headerHit = 0;
+      for (const t of rowTextSet) if (headerTexts.has(t)) headerHit += 1;
+      const isHeaderRepeat =
+        headerTexts.size > 0 &&
+        rowTextSet.size > 0 &&
+        headerHit / Math.max(rowTextSet.size, 1) >= 0.5;
+      if (isHeaderRepeat) {
+        warnings.push(`${sheet} 第 ${row} 行为重复表头行，已跳过`);
+        continue;
+      }
+
+      // 判定说明行：无任何列命中表头列映射（该行不含可抽取的业务字段值）
+      const mappedCells = rowBlocks.filter((b) => {
+        const field = headerInfo.columns.get(b.locator.column);
+        const v = (b.displayValue ?? b.text).trim();
+        return field && v !== '';
+      });
+      if (mappedCells.length === 0) {
+        warnings.push(`${sheet} 第 ${row} 行未命中任何表头字段（疑似说明行），已跳过`);
+        continue;
+      }
+
+      // 判定说明行（补充）：岗位编号列的值包含说明类关键词（说明/备注/注/以上/以下等），
+      // 说明该行是脚注而非真实岗位数据行。
+      const jobCodeCols = [...headerInfo.columns.entries()]
+        .filter(([, f]) => f === 'job_code' || f === 'position_code' || f === 'code')
+        .map(([col]) => col);
+      const firstColValue = (() => {
+        for (const col of jobCodeCols) {
+          const cellBlock = rowBlocks.find((b) => b.locator.column === col);
+          if (cellBlock) return (cellBlock.displayValue ?? cellBlock.text).trim();
+        }
+        return '';
+      })();
+      if (/说明|备注|注[：: ]|以上|以下|合计|小计|共计/.test(firstColValue)) {
+        warnings.push(`${sheet} 第 ${row} 行为说明行（岗位编号列含说明关键词），已跳过`);
+        continue;
+      }
+
+      // 识别岗位编号（jobCode）：优先命中 field=job_code 的单元格
+      const jobCodeCell = mappedCells.find((b) => {
+        const field = headerInfo.columns.get(b.locator.column);
+        return field === 'job_code' || field === 'position_code' || field === 'code';
+      });
+      const jobCode = jobCodeCell ? (jobCodeCell.displayValue ?? jobCodeCell.text).trim() : undefined;
+      const jobKey = deriveJobKey({
+        jobCode,
+        sheet,
+        row,
+        sourceKey: parsed.snapshotId,
+      });
+      const jobScope: JobScopeInfo = { key: jobKey, jobCode, sheet, row };
+
+      // 为该行每个映射单元格生成字段
+      for (const cell of mappedCells) {
+        const field = headerInfo.columns.get(cell.locator.column)!;
+        const value = (cell.displayValue ?? cell.text).trim();
+        if (value === '') continue;
+
+        const candidate: CandidateField = {
+          field,
+          value,
+          scope: 'job',
+          jobScope,
+          status: 'extracted',
+          ruleVersion: FIELD_EXTRACTOR_VERSION,
+          anchor: buildAnchor(cell, parsed, field),
+          origin: 'rule',
+        };
+        const identity = fieldIdentity(candidate);
+
+        const existing = seen.get(identity);
+        if (!existing) {
+          seen.set(identity, { field, value, jobScope, block: cell });
+          out.push(candidate);
+          continue;
+        }
+
+        // 同 scope 同 field：
+        if (existing.value === value) {
+          // 相同值：去重，保留最强证据（本实现保留首个证据；可审计地记录重复来源）
+          warnings.push(
+            `${sheet} 第 ${row} 行 ${field}=${value} 与已存在来源重复，已去重（保留首个证据）`,
+          );
+          continue;
+        }
+
+        // 不同值 → 冲突：不采用首次命中，保留 alternatives
+        const altA: FieldAlternative = {
+          value: existing.value,
+          source: toEvidenceLocator(existing.block.locator, parsed),
+          excerpt: existing.block.text.slice(0, 200),
+        };
+        const altB: FieldAlternative = {
+          value,
+          source: toEvidenceLocator(cell.locator, parsed),
+          excerpt: cell.text.slice(0, 200),
+        };
+        const conflictField: CandidateField = {
+          field,
+          value: existing.value, // 主值保留首个来源，alternatives 保留全部
+          status: 'conflict',
+          scope: 'job',
+          jobScope,
+          ruleVersion: FIELD_EXTRACTOR_VERSION,
+          anchor: existing.block ? buildAnchor(existing.block, parsed, field) : undefined,
+          origin: 'rule',
+          alternatives: [altA, altB],
+        };
+        // 用冲突字段替换原有字段
+        const idx = out.findIndex((f) => fieldIdentity(f) === identity);
+        if (idx >= 0) out[idx] = conflictField;
+        else out.push(conflictField);
+        warnings.push(
+          `${sheet} ${field} 出现冲突值（${existing.value} vs ${value}），已保留 alternatives 待人工裁决`,
+        );
+      }
+    }
+  }
+
+  return out;
 }
 
 /** OCR/AI 候选进入候选列表前的整备：一律标记 needsHumanConfirm（人工确认后才可发布） */
