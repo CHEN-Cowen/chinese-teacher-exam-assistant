@@ -404,3 +404,188 @@ describe('AI/OCR 发布门禁', () => {
     );
   });
 });
+
+// ==================== 14. WB1：岗位级候选契约 ====================
+
+import {
+  deriveJobKey,
+  fieldIdentity,
+  groupFieldsByScope,
+  makeConflictField,
+  makeHumanDecision,
+  makeJobScopedField,
+  makeUnknownField,
+  normalizeCandidateField,
+  type FieldAlternative,
+  type HumanDecision,
+  type JobScopeInfo,
+} from './domain.js';
+
+describe('WB1 岗位归属 identity（scope+field 去重）', () => {
+  const jobA: JobScopeInfo = { key: 'job:3301A01', jobCode: '3301A01', sheet: '岗位表', row: 2 };
+  const jobB: JobScopeInfo = { key: 'job:3301A02', jobCode: '3301A02', sheet: '岗位表', row: 3 };
+
+  it('两个岗位中的同名 major 字段具有不同 identity', () => {
+    const majorA = makeJobScopedField({ field: 'major', value: '汉语言文学（师范）' }, jobA);
+    const majorB = makeJobScopedField({ field: 'major', value: '数学与应用数学' }, jobB);
+    expect(fieldIdentity(majorA)).toBe('job:job:3301A01:major');
+    expect(fieldIdentity(majorB)).toBe('job:job:3301A02:major');
+    expect(fieldIdentity(majorA)).not.toBe(fieldIdentity(majorB));
+  });
+
+  it('公共字段与岗位字段不会分到同组', () => {
+    const groups = groupFieldsByScope([
+      { field: 'title', value: '公告标题', scope: 'announcement' },
+      makeJobScopedField({ field: 'major', value: '汉语言文学（师范）' }, jobA),
+      makeJobScopedField({ field: 'major', value: '数学与应用数学' }, jobB),
+      { field: 'degree', value: '', status: 'unknown', scope: 'unknown' },
+    ]);
+    expect(groups.announcement.map((f) => f.field)).toEqual(['title']);
+    expect(groups.jobs.size).toBe(2);
+    expect(groups.jobs.get('job:3301A01')!.map((f) => f.field)).toEqual(['major']);
+    expect(groups.unknown.map((f) => f.field)).toEqual(['degree']);
+  });
+
+  it('deriveJobKey 优先官方岗位编号，否则用 sheet+row 派生', () => {
+    expect(deriveJobKey({ jobCode: '3301A01' })).toBe('job:3301A01');
+    expect(deriveJobKey({ sheet: '岗位表', row: 2 })).toBe('岗位表:row:2');
+    expect(deriveJobKey({ sourceKey: 'doc-1', sheet: '岗位表', row: 2 })).toBe(
+      'src:doc-1:岗位表:row:2',
+    );
+  });
+});
+
+describe('WB1 旧候选兼容读取', () => {
+  it('无 scope/status/ruleVersion 的旧字段仍能读取，默认公告级+已抽取', () => {
+    const legacy: CandidateField = { field: 'title', value: '杭州市教育局招聘公告' };
+    const normalized = normalizeCandidateField(legacy);
+    expect(normalized.scope).toBe('announcement');
+    expect(normalized.status).toBe('extracted');
+    expect(normalized.ruleVersion).toBeUndefined();
+    expect(normalized.value).toBe('杭州市教育局招聘公告');
+  });
+
+  it('normalizeCandidateField 不静默改写原对象', () => {
+    const legacy: CandidateField = { field: 'title', value: 'x' };
+    const before = { ...legacy };
+    normalizeCandidateField(legacy);
+    expect(legacy).toEqual(before);
+  });
+
+  it('旧 candidate 通过 assertCanApprove / assertCanPublish 不受影响（无回归）', () => {
+    // 旧字段无 scope/status，仍能走原有审核/发布门禁
+    expect(() => assertCanApprove('pending_review', validCandidate())).not.toThrow();
+    expect(() => assertCanPublish('approved', validCandidate())).not.toThrow();
+  });
+});
+
+describe('WB1 冲突状态（conflict 保留两值两证据）', () => {
+  const altA: FieldAlternative = {
+    value: '2',
+    source: { kind: 'worksheet', fileId: 'f1', fileName: '岗位表.xlsx', sheet: '岗位表', cell: 'E2' },
+    excerpt: '岗位表：2人',
+  };
+  const altB: FieldAlternative = {
+    value: '3',
+    source: { kind: 'file', fileId: 'f2', fileName: '附件.docx', page: 1 },
+    excerpt: '附件：3人',
+  };
+
+  it('conflict 字段保留 value + 两个替代值及各自证据', () => {
+    const f = makeConflictField({
+      field: 'headcount',
+      value: '2',
+      alternatives: [altA, altB],
+    });
+    expect(f.status).toBe('conflict');
+    expect(f.alternatives).toHaveLength(2);
+    expect(f.alternatives!.map((a) => a.value)).toEqual(['2', '3']);
+    expect(f.alternatives![0].source.kind).toBe('worksheet');
+    expect(f.alternatives![1].source.kind).toBe('file');
+  });
+
+  it('conflict 是结构化状态，不是拼接字符串', () => {
+    const f = makeConflictField({ field: 'headcount', value: '2', alternatives: [altA, altB] });
+    expect(f.value).toBe('2'); // 主值保持单一
+    expect(Array.isArray(f.alternatives)).toBe(true);
+    expect(typeof f.alternatives).not.toBe('string');
+  });
+});
+
+describe('WB1 unknown 状态（未知 ≠ 空的 extracted）', () => {
+  it('unknown 字段显式 status=unknown，且可被识别为 unknown 而非 extracted', () => {
+    const f = makeUnknownField({ field: 'degree' });
+    expect(f.status).toBe('unknown');
+    const normalized = normalizeCandidateField(f);
+    expect(normalized.status).toBe('unknown');
+    expect(normalized.status).not.toBe('extracted');
+  });
+
+  it('unknown 字段不携带有效 value（区别于 extracted 的空串误读）', () => {
+    const f = makeUnknownField({ field: 'degree' });
+    expect(f.value).toBe('');
+    expect(f.status).toBe('unknown');
+  });
+});
+
+describe('WB1 人工决策留痕（edit 保留前后值/原因/操作者/时间）', () => {
+  it('edit 决策保留 beforeValue 与 afterValue', () => {
+    const d: HumanDecision = makeHumanDecision({
+      action: 'edit',
+      beforeValue: '2',
+      afterValue: '3',
+      reason: '附件为最新口径',
+      operatorId: 'u-1',
+      decidedAt: '2026-10-20T00:00:00Z',
+    });
+    expect(d.action).toBe('edit');
+    expect(d.beforeValue).toBe('2');
+    expect(d.afterValue).toBe('3');
+    expect(d.reason).toBe('附件为最新口径');
+    expect(d.operatorId).toBe('u-1');
+    expect(d.decidedAt).toBe('2026-10-20T00:00:00Z');
+  });
+
+  it('四种决策类型均可构造：adopt/edit/reject/pending', () => {
+    const actions: HumanDecision['action'][] = ['adopt', 'edit', 'reject', 'pending'];
+    for (const a of actions) {
+      const d = makeHumanDecision({ action: a, reason: 'r', operatorId: 'u', decidedAt: 't' });
+      expect(d.action).toBe(a);
+    }
+  });
+});
+
+describe('WB1 新类型可安全 JSON 序列化', () => {
+  it('带 scope/status/alternatives/decision 的字段 JSON 往返一致', () => {
+    const alt: FieldAlternative = {
+      value: '3',
+      source: { kind: 'file', fileId: 'f2', fileName: '附件.docx', page: 1 },
+      excerpt: '附件：3人',
+    };
+    const decision: HumanDecision = makeHumanDecision({
+      action: 'edit',
+      beforeValue: '2',
+      afterValue: '3',
+      reason: '附件为最新口径',
+      operatorId: 'u-1',
+      decidedAt: '2026-10-20T00:00:00Z',
+    });
+    const f = makeConflictField({
+      field: 'headcount',
+      value: '2',
+      scope: 'job',
+      jobScope: { key: 'job:3301A01', jobCode: '3301A01', sheet: '岗位表', row: 2 },
+      ruleVersion: 'wb@1.0.0',
+      alternatives: [alt],
+    });
+    f.decision = decision;
+
+    const roundTrip = JSON.parse(JSON.stringify(f)) as CandidateField;
+    expect(roundTrip.status).toBe('conflict');
+    expect(roundTrip.scope).toBe('job');
+    expect(roundTrip.jobScope?.key).toBe('job:3301A01');
+    expect(roundTrip.ruleVersion).toBe('wb@1.0.0');
+    expect(roundTrip.alternatives).toHaveLength(1);
+    expect(roundTrip.decision?.afterValue).toBe('3');
+  });
+});

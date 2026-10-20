@@ -64,6 +64,69 @@ export interface EvidenceAnchorInput {
 /** 字段来源：确定性规则 / AI 候选 / OCR 候选（AI 与 OCR 只能产生候选） */
 export type FieldOrigin = 'rule' | 'ai' | 'ocr';
 
+/**
+ * 字段归属范围（WB1 岗位级候选契约）：
+ * - `announcement`：公告公共范围（只出现一次，对整份公告成立）；
+ * - `job`：岗位范围（随岗位变化），必须携带 `jobKey`；
+ * - `unknown`：原文结构无法判定归属，进入人工审核，不得猜归属。
+ */
+export type FieldScope = 'announcement' | 'job' | 'unknown';
+
+/**
+ * 候选字段结构化状态（WB1）：
+ * - `extracted`：成功提取到一个值；
+ * - `unknown`：原文未写明 / 无法判定（未知 ≠ 不符合）；
+ * - `conflict`：同一字段存在两个及以上互相矛盾的值（禁止静默覆盖）。
+ */
+export type FieldStatus = 'extracted' | 'unknown' | 'conflict';
+
+/**
+ * 岗位范围来源信息（WB1）：稳定 key + 可选的来源定位。
+ * `key` 不能依赖可被人工编辑的名称，建议由来源文档/工作表/数据行形成；
+ * 岗位编号（jobCode）只是业务属性，不是唯一技术依赖。
+ */
+export interface JobScopeInfo {
+  /** 稳定岗位 key（公告内唯一，如 `sheet:岗位表:row:2` 或来源文档+行号派生） */
+  key: string;
+  /** 官方岗位编号/代码（业务属性，可能缺失） */
+  jobCode?: string;
+  /** 来源工作表名 */
+  sheet?: string;
+  /** 来源数据行号 */
+  row?: number;
+}
+
+/**
+ * 冲突状态的替代值（WB1）：保留所有值及其各自证据，不允许拼接成一段字符串。
+ */
+export interface FieldAlternative {
+  /** 替代值原文 */
+  value: string;
+  /** 该替代值的来源定位（worksheet/cell、段落或 URL 锚点） */
+  source: EvidenceLocator;
+  /** 原文摘录（可选） */
+  excerpt?: string;
+}
+
+/**
+ * 可审计的人工决策（WB1）：`adopt | edit | reject | pending`。
+ * 保留编辑前后值、原因、操作者与时间。
+ */
+export interface HumanDecision {
+  /** 决策类型 */
+  action: 'adopt' | 'edit' | 'reject' | 'pending';
+  /** 决策前值（edit/reject 时有意义） */
+  beforeValue?: string;
+  /** 决策后值（adopt/edit 时为采纳值；reject/pending 时可空） */
+  afterValue?: string;
+  /** 决策原因（必填） */
+  reason: string;
+  /** 操作者 id */
+  operatorId: string;
+  /** 决策时间（ISO 字符串） */
+  decidedAt: string;
+}
+
 /** 提取产出的单个候选字段 */
 export interface CandidateField {
   field: string;
@@ -81,6 +144,22 @@ export interface CandidateField {
   needsHumanConfirm?: boolean;
   /** 人工确认时间（审核通过动作时写入；AI/OCR 字段没有它不能发布） */
   humanConfirmedAt?: string;
+
+  /**
+   * WB1 增量字段（全部可选，兼容旧 JSON）：
+   */
+  /** 归属范围；job 时须带 jobScope 或 jobKey */
+  scope?: FieldScope;
+  /** 岗位范围来源信息（scope=job 时提供） */
+  jobScope?: JobScopeInfo;
+  /** 结构化状态；默认按 extracted 语义处理（仅兼容读取时补齐） */
+  status?: FieldStatus;
+  /** 产生该字段的规则/解析器版本（可审计、可回放） */
+  ruleVersion?: string;
+  /** 冲突时的替代值列表（各带证据），禁止静默覆盖 */
+  alternatives?: FieldAlternative[];
+  /** 人工决策留痕（adopt/edit/reject/pending） */
+  decision?: HumanDecision;
 }
 
 /** 一次提取的候选结果（解析器/AI 产出，未经审核） */
@@ -499,4 +578,187 @@ export function diffVersions(
     diffs.push({ field, before, after, changed: before !== after });
   }
   return diffs;
+}
+
+// ==================== WB1：岗位级候选契约 ====================
+
+/**
+ * 候选字段的稳定身份（scope + field）。
+ *
+ * 供 WB2 去重使用：同一公告内，两个不同岗位的同名 `major` 字段
+ * 因为 jobKey 不同而得到不同 identity；公共字段与岗位字段不会相撞。
+ *
+ * 规则：
+ * - scope=announcement 或 unknown → `announcement:<field>`（公共字段全局唯一）；
+ * - scope=job → `job:<jobKey>:<field>`（岗位字段按岗位 key 隔离）。
+ */
+export function fieldIdentity(field: CandidateField): string {
+  const scope = normalizeFieldScope(field);
+  if (scope === 'job') {
+    const jobKey = field.jobScope?.key ?? '';
+    return `job:${jobKey}:${field.field}`;
+  }
+  return `${scope}:${field.field}`;
+}
+
+/**
+ * 兼容读取：把旧候选 JSON 的字段补齐默认语义，不静默改写历史数据库。
+ *
+ * 默认语义（仅在本函数返回的新对象中补齐）：
+ * - 无 scope → `announcement`（旧字段视为公告级）；
+ * - 无 status → `extracted`；
+ * - 其余 WB1 字段（jobScope/alternatives/decision/ruleVersion）保持缺省，不编造。
+ *
+ * 注意：本函数只做读取态归一化，调用方不得用其结果回写持久化数据。
+ */
+export function normalizeCandidateField(
+  raw: CandidateField,
+): CandidateField & { scope: FieldScope; status: FieldStatus } {
+  return {
+    ...raw,
+    scope: normalizeFieldScope(raw),
+    status: raw.status ?? 'extracted',
+  };
+}
+
+/** 归一化 scope：缺省视为 announcement（兼容旧 JSON） */
+function normalizeFieldScope(field: CandidateField): FieldScope {
+  return field.scope ?? 'announcement';
+}
+
+/**
+ * 按 scope 分组候选字段（供 WB4 审核 UI 使用）。
+ *
+ * 返回三组：announcement / job / unknown。
+ * job 组内再按 jobKey 聚合为子组，便于审核界面按岗位分区展示。
+ */
+export interface FieldGroups {
+  announcement: CandidateField[];
+  /** job 组按 jobKey 聚合；未知 jobKey 归入 `''` 桶 */
+  jobs: Map<string, CandidateField[]>;
+  unknown: CandidateField[];
+}
+
+export function groupFieldsByScope(fields: CandidateField[]): FieldGroups {
+  const result: FieldGroups = {
+    announcement: [],
+    jobs: new Map<string, CandidateField[]>(),
+    unknown: [],
+  };
+  for (const field of fields) {
+    const scope = normalizeFieldScope(field);
+    if (scope === 'announcement') {
+      result.announcement.push(field);
+    } else if (scope === 'job') {
+      const key = field.jobScope?.key ?? '';
+      const bucket = result.jobs.get(key);
+      if (bucket) bucket.push(field);
+      else result.jobs.set(key, [field]);
+    } else {
+      result.unknown.push(field);
+    }
+  }
+  return result;
+}
+
+/**
+ * 构造岗位范围的候选字段（WB1/WB2 共用便捷函数）。
+ * 生成稳定 jobKey：优先官方岗位编号，否则用来源定位（sheet+row）派生。
+ */
+export function makeJobScopedField(
+  field: CandidateField,
+  jobScope: JobScopeInfo,
+): CandidateField {
+  return { ...field, scope: 'job', jobScope };
+}
+
+/**
+ * 从来源定位派生稳定岗位 key（不依赖可编辑的名称）。
+ * 优先官方岗位编号（jobCode），否则用 sheet+row 形成内部位置键。
+ */
+export function deriveJobKey(parts: {
+  jobCode?: string;
+  sheet?: string;
+  row?: number;
+  sourceKey?: string;
+}): string {
+  if (parts.jobCode) return `job:${parts.jobCode}`;
+  if (parts.sourceKey && parts.sheet && parts.row !== undefined) {
+    return `src:${parts.sourceKey}:${parts.sheet}:row:${parts.row}`;
+  }
+  if (parts.sheet && parts.row !== undefined) {
+    return `${parts.sheet}:row:${parts.row}`;
+  }
+  return `job:unknown`;
+}
+
+/**
+ * 构造冲突候选字段（WB1）：保留主值与全部替代值，禁止静默覆盖。
+ * 调用方必须传入至少两个互不相同的值及其各自证据。
+ */
+export function makeConflictField(input: {
+  field: string;
+  value: string;
+  scope?: FieldScope;
+  jobScope?: JobScopeInfo;
+  ruleVersion?: string;
+  origin?: FieldOrigin;
+  alternatives: FieldAlternative[];
+}): CandidateField {
+  return {
+    field: input.field,
+    value: input.value,
+    status: 'conflict',
+    scope: input.scope ?? 'announcement',
+    jobScope: input.jobScope,
+    ruleVersion: input.ruleVersion,
+    origin: input.origin,
+    alternatives: input.alternatives,
+  };
+}
+
+/**
+ * 构造 unknown 候选字段（WB1）：原文未写明，显式 status=unknown，
+ * 不产生 value（未知 ≠ 不符合，也不等于空的 extracted）。
+ */
+export function makeUnknownField(input: {
+  field: string;
+  scope?: FieldScope;
+  jobScope?: JobScopeInfo;
+  ruleVersion?: string;
+  origin?: FieldOrigin;
+  anchor?: EvidenceAnchorInput;
+}): CandidateField {
+  return {
+    field: input.field,
+    value: '',
+    status: 'unknown',
+    scope: input.scope ?? 'announcement',
+    jobScope: input.jobScope,
+    ruleVersion: input.ruleVersion,
+    origin: input.origin,
+    anchor: input.anchor,
+  };
+}
+
+/**
+ * 构造人工决策留痕（WB1）：adopt/edit/reject/pending。
+ * edit 必须提供 beforeValue 与 afterValue；reject/pending 保留 beforeValue。
+ */
+export function makeHumanDecision(input: {
+  action: HumanDecision['action'];
+  beforeValue?: string;
+  afterValue?: string;
+  reason: string;
+  operatorId: string;
+  decidedAt: string;
+}): HumanDecision {
+  return {
+    action: input.action,
+    beforeValue: input.beforeValue,
+    afterValue: input.afterValue,
+    reason: input.reason,
+    operatorId: input.operatorId,
+    decidedAt: input.decidedAt,
+  };
 }
