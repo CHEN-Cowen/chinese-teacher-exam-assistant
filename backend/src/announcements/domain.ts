@@ -13,6 +13,7 @@
  * 业务持久化与权限在 service 层实现；service 调用本模块做规则判定。
  */
 import { createHash } from 'node:crypto';
+import { HIGH_IMPACT_FIELD_SET } from './field-registry.js';
 
 // ==================== 类型 ====================
 
@@ -208,21 +209,11 @@ export interface PublishedVersion {
  * 高影响字段：报名时间、考试时间、科目、分值、资格条件、招聘人数、
  * 用工性质、学历、专业、教师资格、年龄等。
  * 没有 EvidenceAnchor 的高影响字段不能通过审核。
+ *
+ * WB3 起本清单从字段注册表（`field-registry.ts`）派生，字段清单只有单一事实源，
+ * 不再在此复制。保留本导出以兼容既有调用方（`isHighImpactField` 语义不变）。
  */
-export const HIGH_IMPACT_FIELDS: ReadonlySet<string> = new Set([
-  'registration_time',
-  'exam_time',
-  'subjects',
-  'score',
-  'qualification',
-  'headcount',
-  'employment_nature',
-  'education',
-  'major',
-  'teacher_cert',
-  'age',
-  'hukou',
-]);
+export const HIGH_IMPACT_FIELDS: ReadonlySet<string> = HIGH_IMPACT_FIELD_SET;
 
 export function isHighImpactField(field: string): boolean {
   return HIGH_IMPACT_FIELDS.has(field);
