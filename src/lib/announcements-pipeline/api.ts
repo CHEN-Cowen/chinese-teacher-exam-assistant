@@ -46,6 +46,41 @@ interface Run {
     reviewedAt: string;
   }>;
   publishedVersion?: { id: string; versionNumber: number; status: string } | null;
+  /** WB4：后端用 WB3 纯函数算出的质量门禁报告（按岗位可复算状态） */
+  quality?: QualityReport | null;
+}
+
+/**
+ * WB4：字段级审核决策（前端提交）。
+ * identity 用后端 fieldIdentity 的规则：job → `job:<jobKey>:<field>`，
+ * 其余 → `<scope>:<field>`。
+ */
+interface FieldDecision {
+  identity: string;
+  field: string;
+  action: "adopt" | "edit" | "reject" | "pending";
+  afterValue?: string;
+  reason: string;
+}
+
+/** WB3 质量门禁报告（后端 buildCompletenessReport 的 JSON 形态） */
+interface ScopeCompleteness {
+  key: string;
+  expected: number;
+  extracted: number;
+  unknown: number;
+  conflict: number;
+  fieldNames: string[];
+}
+
+interface QualityReport {
+  scopes: ScopeCompleteness[];
+  missingEvidence: Array<{ field: string; scope: string; jobKey?: string; displayName: string }>;
+  unconfirmedAuto: Array<{ field: string; scope: string; jobKey?: string; origin: "ai" | "ocr" }>;
+  conflicts: Array<{ field: string; scope: string; jobKey?: string; alternativeCount: number }>;
+  reviewBlockers: Array<{ code: string; field?: string; scope?: string; jobKey?: string; alternativeCount?: number; message: string }>;
+  publishBlockers: Array<{ code: string; field?: string; scope?: string; jobKey?: string; alternativeCount?: number; message: string }>;
+  metrics: { completeness: number; adoptionRate: number; editRate: number };
 }
 
 interface PublishedVersion {
@@ -173,6 +208,8 @@ export const announcementsPipelineApi = {
     action: "approve" | "approve_with_edit" | "reject" | "mark_incomplete";
     reason: string;
     editedFields?: Array<{ field: string; value: string; anchor?: object }>;
+    fieldDecisions?: FieldDecision[];
+    baseUpdatedAt?: string;
   }): Promise<Run> {
     return request<Run>(`/runs/${input.runId}/review`, {
       method: "POST",
@@ -180,6 +217,8 @@ export const announcementsPipelineApi = {
         action: input.action,
         reason: input.reason,
         editedFields: input.editedFields,
+        fieldDecisions: input.fieldDecisions,
+        baseUpdatedAt: input.baseUpdatedAt,
       }),
     });
   },
@@ -239,4 +278,7 @@ export type {
   SnapshotParseRun,
   SnapshotParsedResponse,
   ProjectionStatus,
+  FieldDecision,
+  QualityReport,
+  ScopeCompleteness,
 };

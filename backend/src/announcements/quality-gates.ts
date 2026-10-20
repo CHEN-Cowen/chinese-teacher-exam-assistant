@@ -19,7 +19,8 @@ import {
   normalizeCandidateField,
   type CandidateField,
   type ExtractionCandidate,
-} from './domain.js';import {
+} from './domain.js';
+import {
   HIGH_IMPACT_FIELD_SET,
   REQUIRED_FIELD_SET,
   UNKNOWN_ALLOWED_FIELD_SET,

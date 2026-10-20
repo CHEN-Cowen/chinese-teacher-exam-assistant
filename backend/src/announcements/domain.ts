@@ -753,3 +753,144 @@ export function makeHumanDecision(input: {
     decidedAt: input.decidedAt,
   };
 }
+
+// ==================== WB4：字段级审核决策 ====================
+
+/**
+ * 字段级审核决策输入（前端提交的一个字段裁决）。
+ *
+ * `identity` 用于在候选字段列表中唯一定位目标字段：
+ * - scope=job 时为 `job:<jobKey>:<field>`；
+ * - 其余为 `<scope>:<field>`（与 fieldIdentity 一致）。
+ * 旧候选无 scope 时按 announcement 处理（兼容）。
+ */
+export interface FieldDecisionInput {
+  /** 目标字段稳定 identity（fieldIdentity 的结果） */
+  identity: string;
+  /** 字段名（冗余校验用，须与 identity 解析出的 field 一致） */
+  field: string;
+  /** 裁决动作 */
+  action: HumanDecision['action'];
+  /** edit 时的新值（adopt/reject/pending 可空） */
+  afterValue?: string;
+  /** 原因（adopt/edit/reject/pending 均必填非空） */
+  reason: string;
+}
+
+/**
+ * 把字段级决策应用到候选字段列表（纯函数）。
+ *
+ * 规则：
+ * - 按 identity 定位目标字段；找不到目标字段抛错（不静默吞掉）；
+ * - adopt：保留原值，写入 decision（beforeValue=原值，afterValue=原值）；
+ * - edit：afterValue 必填非空，beforeValue=原值，字段 value 更新为新值；
+ * - reject：保留原值，写入 decision（beforeValue=原值），字段标记 status 不变，
+ *   但 decision.action=reject 供下游在发布/投影时剔除；
+ * - pending：保留原值，写入 decision（说明缺什么）。
+ * - AI/OCR 字段仅在 action=adopt 或 edit 时写入 humanConfirmedAt（明确人工采用）。
+ *
+ * 返回新字段数组（不修改入参）。决策的 operatorId/decidedAt 由调用方统一注入。
+ */
+export function applyFieldDecisions(
+  fields: CandidateField[],
+  decisions: FieldDecisionInput[],
+  operatorId: string,
+  decidedAt: string,
+): CandidateField[] {
+  const result = fields.map((f) => ({ ...f }));
+  const byIdentity = new Map(result.map((f) => [fieldIdentity(f), f]));
+
+  for (const d of decisions) {
+    const target = byIdentity.get(d.identity);
+    if (!target) {
+      throw new Error(`字段决策目标不存在：${d.identity}`);
+    }
+    if (target.field !== d.field) {
+      throw new Error(
+        `字段决策 field 与 identity 不一致：${d.field} != ${target.field}`,
+      );
+    }
+
+    const beforeValue = target.value;
+    const isAutoField = target.origin === 'ai' || target.origin === 'ocr';
+
+    switch (d.action) {
+      case 'adopt':
+        target.decision = makeHumanDecision({
+          action: 'adopt',
+          beforeValue,
+          afterValue: beforeValue,
+          reason: d.reason,
+          operatorId,
+          decidedAt,
+        });
+        if (isAutoField) target.humanConfirmedAt = decidedAt;
+        break;
+      case 'edit': {
+        if (d.afterValue === undefined || d.afterValue.trim() === '') {
+          throw new Error(`edit 决策必须提供新值：${d.field}`);
+        }
+        target.decision = makeHumanDecision({
+          action: 'edit',
+          beforeValue,
+          afterValue: d.afterValue,
+          reason: d.reason,
+          operatorId,
+          decidedAt,
+        });
+        target.value = d.afterValue;
+        if (isAutoField) target.humanConfirmedAt = decidedAt;
+        break;
+      }
+      case 'reject':
+        target.decision = makeHumanDecision({
+          action: 'reject',
+          beforeValue,
+          reason: d.reason,
+          operatorId,
+          decidedAt,
+        });
+        break;
+      case 'pending':
+        target.decision = makeHumanDecision({
+          action: 'pending',
+          beforeValue,
+          reason: d.reason,
+          operatorId,
+          decidedAt,
+        });
+        break;
+      default: {
+        const exhaustive: never = d.action;
+        throw new Error(`未知字段决策动作：${String(exhaustive)}`);
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
+ * 校验字段决策输入的合法性（纯函数，供 service 在应用前调用）。
+ * 返回错误信息列表；空数组表示合法。
+ * - 原因必填非空（adopt/edit/reject/pending 一致）；
+ * - edit 必须提供非空 afterValue；
+ * - identity 必须能定位到候选字段（由 applyFieldDecisions 再次兜底）。
+ */
+export function validateFieldDecisions(
+  decisions: FieldDecisionInput[],
+): string[] {
+  const errors: string[] = [];
+  for (const d of decisions) {
+    if (!d.reason || d.reason.trim() === '') {
+      errors.push(`字段 ${d.field} 的 ${d.action} 决策缺少原因`);
+    }
+    if (d.action === 'edit' && (d.afterValue === undefined || d.afterValue.trim() === '')) {
+      errors.push(`字段 ${d.field} 的 edit 决策缺少新值`);
+    }
+    if (!d.identity || !d.field) {
+      errors.push('字段决策缺少 identity 或 field');
+    }
+  }
+  return errors;
+}

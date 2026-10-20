@@ -90,6 +90,14 @@ export class AnnouncementsController {
       action: ReviewAction;
       reason: string;
       editedFields?: Array<{ field: string; value: string; anchor?: object }>;
+      fieldDecisions?: Array<{
+        identity: string;
+        field: string;
+        action: 'adopt' | 'edit' | 'reject' | 'pending';
+        afterValue?: string;
+        reason: string;
+      }>;
+      baseUpdatedAt?: string;
     },
     @Req() req: AuthenticatedRequest,
   ) {
@@ -103,6 +111,8 @@ export class AnnouncementsController {
         action: body.action,
         reason: body.reason,
         editedFields: body.editedFields as never,
+        fieldDecisions: body.fieldDecisions as never,
+        baseUpdatedAt: body.baseUpdatedAt,
       },
       { id: req.user!.id, name: reviewerName },
     );

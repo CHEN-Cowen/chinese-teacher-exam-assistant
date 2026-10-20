@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service.js';
 import {
+  applyFieldDecisions,
   assertCanApprove,
   assertCanPublish,
   assertTransition,
@@ -13,11 +14,14 @@ import {
   nextStatusAfterReview,
   publishVersion,
   retryFailedRun,
+  validateFieldDecisions,
   withdrawVersion,
   type CandidateField,
   type ExtractionCandidate,
+  type FieldDecisionInput,
   type ReviewAction,
 } from './domain.js';
+import { buildCompletenessReport } from './quality-gates.js';
 import { parseAnnouncement } from './parser.js';
 import {
   ProjectionError,
@@ -41,6 +45,16 @@ export interface SubmitReviewInput {
   reason: string;
   /** approve_with_edit 时审核员修改后的候选字段 */
   editedFields?: CandidateField[];
+  /**
+   * WB4：字段级审核决策（adopt/edit/reject/pending），随 run 级 review 一并提交。
+   * 供按岗位审核工作台使用；后端用 applyFieldDecisions 应用到候选字段并留痕。
+   */
+  fieldDecisions?: FieldDecisionInput[];
+  /**
+   * WB4：乐观并发基线。前端提交时带上它读取到的 run.updatedAt；
+   * 后端若发现已变化（他人已提交）则返回 409，避免覆盖他人修改。
+   */
+  baseUpdatedAt?: string;
 }
 
 /**
@@ -232,7 +246,14 @@ export class AnnouncementsService {
       },
     });
     if (!run) throw new NotFoundException('提取任务不存在');
-    return run;
+
+    // WB4：附加 WB3 质量门禁报告（按岗位的可复算状态），供审核工作台展示。
+    // UI 不自行计算「正确率」，只消费后端用 WB3 纯函数算出的质量状态。
+    const quality = run.candidate
+      ? buildCompletenessReport(run.candidate as unknown as ExtractionCandidate)
+      : null;
+
+    return { ...run, quality };
   }
 
   async listRuns(params: { status?: string; announcementId?: string } = {}) {
@@ -253,6 +274,16 @@ export class AnnouncementsService {
     if (!run) throw new NotFoundException('提取任务不存在');
     if (!run.candidate) throw new BadRequestException('任务尚无提取结果，无法审核');
 
+    // WB4：乐观并发校验——若客户端基线时间与当前记录不一致，说明他人已提交，
+    // 拒绝覆盖（返回 409）。
+    if (
+      input.baseUpdatedAt &&
+      run.updatedAt &&
+      input.baseUpdatedAt !== run.updatedAt.toISOString()
+    ) {
+      throw new ConflictException('审核记录已被他人更新，请刷新后重试');
+    }
+
     const current = run.candidate as unknown as ExtractionCandidate;
 
     // 高影响字段证据校验（domain 规则）
@@ -262,13 +293,46 @@ export class AnnouncementsService {
 
     // 构造审核后候选
     let after: ExtractionCandidate = current;
+
+    // WB4：先应用字段级决策（adopt/edit/reject/pending），再合并到候选
+    if (input.fieldDecisions && input.fieldDecisions.length > 0) {
+      const validationErrors = validateFieldDecisions(input.fieldDecisions);
+      if (validationErrors.length > 0) {
+        throw new BadRequestException(validationErrors.join('；'));
+      }
+      const decidedAt = new Date().toISOString();
+      const fieldsWithDecisions = applyFieldDecisions(
+        current.fields,
+        input.fieldDecisions,
+        reviewer.id,
+        decidedAt,
+      );
+      after = { ...current, fields: fieldsWithDecisions };
+    }
+
     if (input.action === 'approve_with_edit') {
       if (!input.editedFields || input.editedFields.length === 0) {
         throw new BadRequestException('修改后通过必须提供修改后的字段');
       }
-      after = { ...current, fields: input.editedFields };
+      after = { ...after, fields: input.editedFields };
       // 修改后的候选也必须通过高影响字段证据校验
       assertCanApprove(run.status as never, after);
+    }
+
+    // WB4：审核通过前调用 WB3 质量门禁。
+    // 审核级阻塞 = 高影响字段缺证据（assertCanApprove 已覆盖）+ 未裁决的冲突字段。
+    // AI/OCR 未确认属「发布门禁」，由 approve 动作本身完成人工确认（markAutoFieldsConfirmed），
+    // 因此不在这里阻断 approve，避免与既有「审核通过即人工确认」语义冲突。
+    if (isApprovalAction(input.action)) {
+      const conflicts = after.fields.filter(
+        (f) => (f.status ?? 'extracted') === 'conflict',
+      );
+      if (conflicts.length > 0) {
+        const names = conflicts.map((f) => f.field).join('、');
+        throw new BadRequestException(
+          `存在未裁决的冲突字段，不能审核通过：${names}`,
+        );
+      }
     }
 
     // 审核通过 = 人工确认：为 AI/OCR 来源字段写入确认时间（发布门禁依据）

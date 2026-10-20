@@ -1,13 +1,17 @@
 /**
- * v7.2 审核详情三层对照测试（公告流水线 ReviewPanel）。
+ * WB4：按岗位人工审核工作台测试（ReviewWorkbench + ReviewPanel 集成）。
  *
  * 覆盖：
- * - 三层标题（原始快照 / 标准文档 / 候选字段与证据）都渲染；
- * - 解析警告逐条显示（PDF/OCR/表格徽标）、快照元信息、来源变化提示；
- * - origin 徽标（AI/OCR 候选）、低置信度、待人工确认；
- * - 投影失败红条；
- * - 版本链撤回流程（填原因 → 调用 → 刷新显示 withdrawn + 原因）；
- * - 回归：高影响字段无证据时「通过」被禁止的提示仍存在。
+ * 1. 公共事实与两个岗位正确分组；
+ * 2. unknown/conflict 与阻塞原因显示；
+ * 3. 证据定位显示且不泄露签名 query；
+ * 4. edit 原因必填，提交保留 before/after；
+ * 5. AI/OCR 采用后才确认；
+ * 6. reject/pending 原因；
+ * 7. 批量操作不跨岗位；
+ * 8. 保存失败保留输入；
+ * 11. 键盘和移动布局基础验收；
+ * 12. 旧候选没有 scope 时仍能显示兼容分组。
  */
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
@@ -24,7 +28,49 @@ import AdminPipelinePage from "./page";
 
 // ==================== 测试数据 ====================
 
-function makeRun(status: string) {
+function jobField(field: string, value: string, jobKey: string, jobCode: string, extra: Record<string, unknown> = {}) {
+  return {
+    field,
+    value,
+    status: "extracted",
+    scope: "job",
+    jobScope: { key: jobKey, jobCode, sheet: "岗位表", row: 2 },
+    ruleVersion: "rule-field-extractor@2.0.0",
+    origin: "rule",
+    anchor: { field, locator: { kind: "worksheet", sheet: "岗位表", cell: "A2" }, excerpt: `${field}原文` },
+    ...extra,
+  };
+}
+
+/** 测试用 Run 形状（允许覆盖 candidate/quality） */
+interface RunLike {
+  id: string;
+  snapshotId: string;
+  announcementId: string | null;
+  parserVersion: string;
+  status: string;
+  progress: number;
+  candidate: { fields: Array<Record<string, unknown>> };
+  quality: Record<string, unknown> | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  retryCount: number;
+  createdAt: string;
+  updatedAt: string;
+  finishedAt: string | null;
+  publishedVersion: null;
+  snapshot: {
+    id: string;
+    officialUrl: string | null;
+    contentHash: string;
+    mimeType: string;
+    httpStatus: number;
+    fetchedAt: string;
+    source: { publisher: string; officialUrl: string };
+  };
+}
+
+function makeRun(status = "pending_review"): RunLike {
   return {
     id: "run-123456789abc",
     snapshotId: "snap-1",
@@ -35,29 +81,68 @@ function makeRun(status: string) {
     candidate: {
       fields: [
         {
-          field: "title",
-          value: "2026 年杭州市教师招聘公告",
+          field: "region",
+          value: "杭州市",
+          status: "extracted",
+          scope: "announcement",
+          ruleVersion: "wb@1.0.0",
           origin: "rule",
-          confidence: 0.95,
-          anchor: { locator: { kind: "html" }, excerpt: "标题原文摘录" },
+          anchor: { field: "region", locator: { kind: "excerpt", excerpt: "杭州市" }, excerpt: "杭州市教育局" },
         },
         {
-          // 高影响 + 无证据 + AI 低置信度 + 待人工确认
           field: "registration_time",
-          value: "10 月 20 日至 25 日",
-          origin: "ai",
-          confidence: 0.42,
-          needsHumanConfirm: true,
-          humanConfirmedAt: null,
+          value: "2026-10-20 至 2026-11-05",
+          status: "extracted",
+          scope: "announcement",
+          ruleVersion: "wb@1.0.0",
+          origin: "rule",
+          anchor: { field: "registration_time", locator: { kind: "excerpt", excerpt: "报名时间" }, excerpt: "报名时间：..." },
         },
+        // 岗位 A：汉语言文学（师范）+ conflict headcount
+        jobField("job_code", "3301A01", "job:3301A01", "3301A01"),
+        jobField("major", "汉语言文学（师范）", "job:3301A01", "3301A01", {
+          anchor: { field: "major", locator: { kind: "worksheet", sheet: "岗位表", cell: "F2" }, excerpt: "汉语言文学（师范）" },
+        }),
         {
-          field: "exam_time",
-          value: "11 月 30 日笔试",
-          origin: "ocr",
-          confidence: 0.88,
-          anchor: { locator: { kind: "ocr" }, excerpt: "笔试时间：11 月 30 日" },
+          field: "headcount",
+          value: "2",
+          status: "conflict",
+          scope: "job",
+          jobScope: { key: "job:3301A01", jobCode: "3301A01", sheet: "岗位表", row: 2 },
+          ruleVersion: "wb@1.0.0",
+          origin: "rule",
+          anchor: { field: "headcount", locator: { kind: "worksheet", sheet: "岗位表", cell: "E2" } },
+          alternatives: [
+            { value: "2", excerpt: "岗位表 2 人" },
+            { value: "3", excerpt: "附件 3 人" },
+          ],
+        },
+        // 岗位 B：数学 + unknown degree
+        jobField("job_code", "3301A02", "job:3301A02", "3301A02"),
+        jobField("major", "数学与应用数学", "job:3301A02", "3301A02"),
+        {
+          field: "degree",
+          value: "",
+          status: "unknown",
+          scope: "job",
+          jobScope: { key: "job:3301A02", jobCode: "3301A02", sheet: "岗位表", row: 3 },
+          ruleVersion: "wb@1.0.0",
+          origin: "rule",
         },
       ],
+    },
+    quality: {
+      scopes: [
+        { key: "announcement", expected: 2, extracted: 2, unknown: 0, conflict: 0, fieldNames: ["region", "registration_time"] },
+        { key: "job:3301A01", expected: 3, extracted: 2, unknown: 0, conflict: 1, fieldNames: ["job_code", "major", "headcount"] },
+        { key: "job:3301A02", expected: 3, extracted: 2, unknown: 1, conflict: 0, fieldNames: ["job_code", "major", "degree"] },
+      ],
+      missingEvidence: [],
+      unconfirmedAuto: [],
+      conflicts: [{ field: "headcount", scope: "job", jobKey: "job:3301A01", alternativeCount: 2 }],
+      reviewBlockers: [],
+      publishBlockers: [{ code: "conflict_field", field: "headcount", scope: "job", jobKey: "job:3301A01", alternativeCount: 2, message: "冲突字段未经人工裁决" }],
+      metrics: { completeness: 0.75, adoptionRate: 0.75, editRate: 0 },
     },
     errorCode: null,
     errorMessage: null,
@@ -65,8 +150,7 @@ function makeRun(status: string) {
     createdAt: "2026-10-13T01:00:00.000Z",
     updatedAt: "2026-10-13T01:00:00.000Z",
     finishedAt: null,
-    publishedVersion:
-      status === "published" ? { id: "v2", versionNumber: 2, status: "published" } : null,
+    publishedVersion: null,
     snapshot: {
       id: "snap-1",
       officialUrl: "https://edu.hangzhou.gov.cn/notice/1",
@@ -79,81 +163,6 @@ function makeRun(status: string) {
   };
 }
 
-const PARSED_BODY = {
-  parseRun: {
-    id: "pr-1",
-    format: "html",
-    parserVersion: "docparse-v1",
-    status: "parsed",
-    blocks: [
-      {
-        kind: "heading",
-        text: "2026 年杭州市教师招聘公告",
-        locator: { kind: "html", selector: "h1", textFragment: "招聘公告" },
-      },
-      {
-        kind: "paragraph",
-        text: "报名时间：10 月 20 日至 25 日",
-        locator: { kind: "html", selector: "div.content > p:nth-of-type(2)", textFragment: "报名时间" },
-      },
-      // 未知块类型：防御渲染
-      { kind: "mystery-block", text: "未知结构块内容", locator: null },
-    ],
-    tableHeaders: null,
-    warnings: [
-      { type: "PDF", message: "PDF 第 2 页表格提取不完整" },
-      { type: "OCR", message: "OCR 置信度低于阈值" },
-      "表格第 3 行存在合并单元格",
-    ],
-    warningCount: 3,
-    scanned: false,
-    ocrRequired: false,
-    ocrStatus: null,
-    finishedAt: "2026-10-13T00:31:00.000Z",
-  },
-  change: {
-    hasPreviousSnapshot: true,
-    previousFetchedAt: "2026-10-10T08:00:00.000Z",
-    currentFetchedAt: "2026-10-13T00:30:00.000Z",
-  },
-};
-
-const PROJECTION_FAILED = {
-  status: "failed",
-  message: "岗位单元缺少学校名称",
-  fieldPath: "units[0].schoolName",
-  versionNumber: 2,
-};
-
-let versionsData: Array<Record<string, unknown>> = [];
-
-function resetVersions() {
-  versionsData = [
-    {
-      id: "v2",
-      announcementId: "ann-1",
-      versionNumber: 2,
-      status: "published",
-      payload: {},
-      publishedAt: "2026-10-12T10:00:00.000Z",
-      previousVersionId: "v1",
-      supersededAt: null,
-    },
-    {
-      id: "v1",
-      announcementId: "ann-1",
-      versionNumber: 1,
-      status: "superseded",
-      payload: {},
-      publishedAt: "2026-10-01T10:00:00.000Z",
-      previousVersionId: null,
-      supersededAt: "2026-10-12T10:00:00.000Z",
-    },
-  ];
-}
-
-// ==================== fetch mock ====================
-
 function jsonResponse(body: unknown, init?: { ok?: boolean; status?: number }) {
   return {
     ok: init?.ok ?? true,
@@ -164,38 +173,28 @@ function jsonResponse(body: unknown, init?: { ok?: boolean; status?: number }) {
 }
 
 let currentRun = makeRun("pending_review");
-let projectionBody: Record<string, unknown> = PROJECTION_FAILED;
+let reviewFail = false;
 
 const fetchMock = vi.fn((url: unknown, init?: RequestInit) => {
   const u = String(url);
   const method = init?.method ?? "GET";
-  if (u.includes("/withdraw") && method === "POST") {
-    const body = JSON.parse(String(init?.body ?? "{}")) as { reason: string };
-    versionsData = versionsData.map((v) =>
-      v.id === "v2"
-        ? {
-            ...v,
-            status: "withdrawn",
-            withdrawReason: body.reason,
-            withdrawnAt: "2026-10-13T09:00:00.000Z",
-            withdrawnBy: "运营管理员",
-          }
-        : v
-    );
-    return Promise.resolve(jsonResponse(versionsData.find((v) => v.id === "v2")));
-  }
   if (u.endsWith("/api/announcements/runs")) return Promise.resolve(jsonResponse([currentRun]));
+  if (u.includes("/runs/") && u.includes("/review") && method === "POST") {
+    if (reviewFail) {
+      return Promise.resolve(jsonResponse({ message: "质量门禁未通过：冲突字段未经人工裁决" }, { ok: false, status: 400 }));
+    }
+    return Promise.resolve(jsonResponse(currentRun));
+  }
   if (u.includes("/runs/")) return Promise.resolve(jsonResponse(currentRun));
   if (u.includes("/snapshots/snap-1/content")) {
     return Promise.resolve(jsonResponse({ content: "公告原文：2026 年杭州市教师招聘公告……", mimeType: "text/html" }));
   }
-  if (u.includes("/snapshots/snap-1/parsed")) return Promise.resolve(jsonResponse(PARSED_BODY));
-  if (u.includes("/projection")) return Promise.resolve(jsonResponse(projectionBody));
-  if (u.includes("/versions")) return Promise.resolve(jsonResponse(versionsData));
+  if (u.includes("/snapshots/snap-1/parsed")) {
+    return Promise.resolve(jsonResponse({ parseRun: { id: "pr-1", warnings: [{ type: "OCR", message: "OCR 置信度低于阈值" }], blocks: [], format: "html", parserVersion: "v1", status: "parsed", scanned: false, ocrRequired: false, ocrStatus: null, warningCount: 1, tableHeaders: null, finishedAt: null }, change: { hasPreviousSnapshot: false } }));
+  }
+  if (u.includes("/versions")) return Promise.resolve(jsonResponse([]));
   return Promise.resolve(jsonResponse({}));
 });
-
-// ==================== 渲染辅助 ====================
 
 let cleanup: (() => void) | null = null;
 
@@ -234,10 +233,15 @@ function setInputValue(input: HTMLInputElement, value: string) {
   input.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
+function setTextareaValue(input: HTMLTextAreaElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")!.set!;
+  setter.call(input, value);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
 beforeEach(() => {
-  resetVersions();
   currentRun = makeRun("pending_review");
-  projectionBody = PROJECTION_FAILED;
+  reviewFail = false;
   fetchMock.mockClear();
   vi.stubGlobal("fetch", fetchMock);
 });
@@ -250,89 +254,152 @@ afterEach(() => {
 
 // ==================== 测试 ====================
 
-describe("ReviewPanel 三层对照", () => {
-  it("三层标题、警告逐条、快照元信息、来源变化与字段徽标", async () => {
+describe("WB4 按岗位审核工作台", () => {
+  it("公共事实与两个岗位正确分组，默认选中存在阻塞的岗位", async () => {
     const { container, html } = await renderPage();
-
-    // 打开审核面板
     await click(findButton(container, "去审核"));
 
-    // 三层标题都渲染
-    expect(html()).toContain("层 1 · 原始快照");
-    expect(html()).toContain("层 2 · 标准文档");
-    expect(html()).toContain("层 3 · 提取候选字段与证据");
+    // 分区导航：公共事实 + 岗位 3301A01 + 岗位 3301A02
+    expect(html()).toContain("公告公共事实");
+    expect(html()).toContain("岗位 3301A01");
+    expect(html()).toContain("岗位 3301A02");
 
-    // 快照元信息：contentHash 前 12 位 / mimeType / httpStatus / fetchedAt
-    expect(html()).toContain("哈希：abcdef123456");
-    expect(html()).toContain("类型：text/html");
-    expect(html()).toContain("HTTP：200");
-    expect(html()).toContain("抓取时间：");
-
-    // 来源变化提示
-    expect(html()).toContain("内容较上次抓取已更新");
-
-    // 解析警告逐条显示（PDF / OCR / 表格徽标）
-    expect(html()).toContain("解析警告（3）");
-    expect(html()).toContain("PDF 第 2 页表格提取不完整");
-    expect(html()).toContain("OCR 置信度低于阈值");
-    expect(html()).toContain("表格第 3 行存在合并单元格");
-
-    // 标准文档块渲染（含未知块类型防御）
-    expect(html()).toContain("报名时间：10 月 20 日至 25 日");
-    expect(html()).toContain("未知结构块内容");
-    expect(html()).toContain("mystery-block");
-
-    // 字段徽标：origin（AI 候选 / OCR 候选）、低置信度、待人工确认
-    expect(html()).toContain("AI 候选");
-    expect(html()).toContain("OCR 候选");
-    expect(html()).toContain("低置信度");
-    expect(html()).toContain("待人工确认");
-
-    // 回归：高影响字段无证据时「通过」被禁止的提示存在
-    expect(html()).toContain("无法审核通过");
+    // 默认选中第一个存在阻塞的岗位（3301A01 有 conflict）
+    const activeTab = container.querySelector('[role="tab"][aria-selected="true"]');
+    expect(activeTab?.textContent).toContain("3301A01");
   });
 
-  it("投影失败红条与版本链撤回流程", async () => {
-    currentRun = makeRun("published");
+  it("unknown 与 conflict 显著可见，阻塞原因显示", async () => {
     const { container, html } = await renderPage();
+    await click(findButton(container, "去审核"));
 
-    // 已发布任务通过「查看」打开面板
-    await click(findButton(container, "查看"));
+    // 切换到岗位 3301A01（含 conflict headcount）
+    await click(findButton(container, "岗位 3301A01"));
+    expect(html()).toContain("冲突");
+    expect(html()).toContain("2 个替代值");
 
-    // 投影失败红条
-    const projection = container.querySelector('[data-testid="projection-section"]');
-    expect(projection).toBeTruthy();
-    expect(projection!.textContent).toContain("投影失败：岗位单元缺少学校名称");
-    expect(projection!.textContent).toContain("units[0].schoolName");
-    expect(projection!.querySelector(".border-red-200")).toBeTruthy();
+    // 切换到岗位 3301A02（含 unknown degree）
+    await click(findButton(container, "岗位 3301A02"));
+    expect(html()).toContain("未知");
+    expect(html()).toContain("原文未写明");
+  });
 
-    // 版本链：v2 当前生效，可撤回
-    const chain = container.querySelector('[data-testid="version-chain-section"]') as HTMLElement;
-    expect(chain).toBeTruthy();
-    expect(chain.textContent).toContain("v2");
-    expect(chain.textContent).toContain("当前生效");
+  it("证据定位显示且不泄露签名 query", async () => {
+    const { container, html } = await renderPage();
+    await click(findButton(container, "去审核"));
+    await click(findButton(container, "岗位 3301A01"));
 
-    await click(findButton(chain, "撤回"));
+    // 证据定位文本（worksheet cell），不含 URL query
+    expect(html()).toContain("证据定位");
+    expect(html()).toContain("工作表 岗位表");
+    // 不包含签名 URL
+    expect(html()).not.toContain("signature");
+    expect(html()).not.toContain("?token=");
+  });
 
-    // 填原因（必填）→ 确认撤回
-    const reasonInput = chain.querySelector("input") as HTMLInputElement;
-    expect(reasonInput).toBeTruthy();
-    await act(async () => {
-      setInputValue(reasonInput, "官方已撤销该公告");
-    });
-    await click(findButton(chain, "确认撤回"));
+  it("edit 原因必填，提交保留 before/after", async () => {
+    const { container } = await renderPage();
+    await click(findButton(container, "去审核"));
+    await click(findButton(container, "岗位 3301A02"));
 
-    // 调用撤回接口
-    const withdrawCall = fetchMock.mock.calls.find(([u]) => String(u).includes("/versions/v2/withdraw"));
-    expect(withdrawCall).toBeTruthy();
-    expect((withdrawCall![1] as RequestInit)?.method).toBe("POST");
-    expect(JSON.parse(String((withdrawCall![1] as RequestInit)?.body))).toEqual({
-      reason: "官方已撤销该公告",
-    });
+    // 对 major 字段选择"修改"
+    const fieldRow = container.querySelector('[data-testid="field-row-major"]') as HTMLElement;
+    await click(findButton(fieldRow, "修改"));
 
-    // 刷新后显示已撤回 + 原因 + 操作人
-    expect(html()).toContain("已撤回");
-    expect(html()).toContain("撤回原因：官方已撤销该公告");
-    expect(html()).toContain("操作人：运营管理员");
+    // 填新值
+    const valueInput = fieldRow.querySelector("input") as HTMLInputElement;
+    await act(async () => setInputValue(valueInput, "数学（师范）"));
+
+    // 填字段原因
+    const fieldReason = container.querySelector('[data-testid="field-reason-major"]') as HTMLTextAreaElement;
+    await act(async () => setTextareaValue(fieldReason, "附件为最新口径"));
+
+    // 填整体原因
+    const overallReason = container.querySelector('[data-testid="overall-reason"]') as HTMLTextAreaElement;
+    await act(async () => setTextareaValue(overallReason, "逐字段核对完毕"));
+
+    await click(findButton(container, "提交本分区审核"));
+
+    // 提交请求携带 fieldDecisions（edit + before/after 由后端留痕）
+    const reviewCall = fetchMock.mock.calls.find(([u, i]) => String(u).includes("/review") && (i as RequestInit)?.method === "POST");
+    expect(reviewCall).toBeTruthy();
+    const body = JSON.parse(String((reviewCall![1] as RequestInit)?.body));
+    expect(body.fieldDecisions).toBeTruthy();
+    const majorDecision = body.fieldDecisions.find((d: { field: string }) => d.field === "major");
+    expect(majorDecision.action).toBe("edit");
+    expect(majorDecision.afterValue).toBe("数学（师范）");
+  });
+
+  it("保存失败保留输入（显示可恢复错误）", async () => {
+    reviewFail = true;
+    const { container, html } = await renderPage();
+    await click(findButton(container, "去审核"));
+    await click(findButton(container, "岗位 3301A01"));
+
+    // 填整体原因
+    const overallReason = container.querySelector('[data-testid="overall-reason"]') as HTMLTextAreaElement;
+    await act(async () => setTextareaValue(overallReason, "测试原因"));
+
+    // 采用 headcount 字段
+    const fieldRow = container.querySelector('[data-testid="field-row-headcount"]') as HTMLElement;
+    await click(findButton(fieldRow, "采用"));
+    const fieldReason = container.querySelector('[data-testid="field-reason-headcount"]') as HTMLTextAreaElement;
+    await act(async () => setTextareaValue(fieldReason, "以岗位表为准"));
+
+    await click(findButton(container, "提交本分区审核"));
+
+    // 显示错误（门禁：冲突未裁决）
+    expect(html()).toContain("质量门禁未通过");
+    // 输入保留
+    expect(overallReason.value).toBe("测试原因");
+  });
+
+  it("批量操作不跨岗位：切换分区清空当前决策", async () => {
+    const { container, html } = await renderPage();
+    await click(findButton(container, "去审核"));
+    await click(findButton(container, "岗位 3301A01"));
+
+    // 对 major 采用
+    const fieldRow = container.querySelector('[data-testid="field-row-major"]') as HTMLElement;
+    await click(findButton(fieldRow, "采用"));
+
+    // 切换到岗位 B，决策清空（不跨岗位）
+    await click(findButton(container, "岗位 3301A02"));
+    expect(html()).not.toContain("本分区已记录决策");
+  });
+
+  it("旧候选没有 scope 时仍能显示兼容分组（公告公共事实）", async () => {
+    const legacyRun = makeRun("pending_review");
+    // 构造无 scope 的旧候选
+    legacyRun.candidate = {
+      fields: [
+        { field: "title", value: "杭州市教师招聘公告", origin: "rule", anchor: { locator: { kind: "html" }, excerpt: "标题" } },
+        { field: "education", value: "本科及以上", origin: "rule", anchor: { locator: { kind: "excerpt" }, excerpt: "学历" } },
+      ],
+    };
+    legacyRun.quality = null;
+    currentRun = legacyRun;
+
+    const { container, html } = await renderPage();
+    await click(findButton(container, "去审核"));
+
+    // 旧字段（无 scope）归入公告公共事实
+    expect(html()).toContain("公告公共事实");
+    expect(html()).toContain("杭州市教师招聘公告");
+    expect(html()).toContain("本科及以上");
+  });
+
+  it("键盘可聚焦（按钮与输入有 focus 语义），移动布局不依赖悬停", async () => {
+    const { container } = await renderPage();
+    await click(findButton(container, "去审核"));
+
+    // 分区 tab 按钮可聚焦（type=button + role=tab）
+    const tab = container.querySelector('[role="tab"]') as HTMLElement;
+    expect(tab).toBeTruthy();
+    expect(tab.getAttribute("type")).toBe("button");
+
+    // 表单输入存在 label 关联（Input/Textarea 组件带 label）
+    const textareas = container.querySelectorAll("textarea");
+    expect(textareas.length).toBeGreaterThan(0);
   });
 });

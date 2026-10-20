@@ -589,3 +589,131 @@ describe('WB1 新类型可安全 JSON 序列化', () => {
     expect(roundTrip.decision?.afterValue).toBe('3');
   });
 });
+
+// ==================== 15. WB4：字段级审核决策 ====================
+
+import {
+  applyFieldDecisions,
+  validateFieldDecisions,
+} from './domain.js';
+
+describe('WB4 字段级审核决策（adopt/edit/reject/pending）', () => {
+  const operator = 'u-1';
+  const at = '2026-10-20T12:00:00Z';
+
+  function aiField(): CandidateField {
+    return {
+      field: 'major',
+      value: '汉语言文学（师范）',
+      scope: 'job',
+      jobScope: { key: 'job:3301A01', jobCode: '3301A01', sheet: '岗位表', row: 2 },
+      origin: 'ai',
+      needsHumanConfirm: true,
+    };
+  }
+
+  it('adopt 保留原值并写 decision（before=after=原值）', () => {
+    const f = aiField();
+    const [out] = applyFieldDecisions(
+      [f],
+      [{ identity: 'job:job:3301A01:major', field: 'major', action: 'adopt', reason: '与原文一致' }],
+      operator,
+      at,
+    );
+    expect(out.decision?.action).toBe('adopt');
+    expect(out.decision?.beforeValue).toBe('汉语言文学（师范）');
+    expect(out.decision?.afterValue).toBe('汉语言文学（师范）');
+    expect(out.value).toBe('汉语言文学（师范）');
+  });
+
+  it('edit 必填新值，保留 before/after，字段值更新', () => {
+    const f = aiField();
+    const [out] = applyFieldDecisions(
+      [f],
+      [{ identity: 'job:job:3301A01:major', field: 'major', action: 'edit', afterValue: '汉语言文学', reason: '去除师范限定' }],
+      operator,
+      at,
+    );
+    expect(out.value).toBe('汉语言文学');
+    expect(out.decision?.beforeValue).toBe('汉语言文学（师范）');
+    expect(out.decision?.afterValue).toBe('汉语言文学');
+    expect(out.decision?.action).toBe('edit');
+  });
+
+  it('reject 保留原值并写 decision（action=reject）', () => {
+    const f = aiField();
+    const [out] = applyFieldDecisions(
+      [f],
+      [{ identity: 'job:job:3301A01:major', field: 'major', action: 'reject', reason: '来源不可信' }],
+      operator,
+      at,
+    );
+    expect(out.value).toBe('汉语言文学（师范）');
+    expect(out.decision?.action).toBe('reject');
+    expect(out.decision?.reason).toBe('来源不可信');
+  });
+
+  it('pending 保留原值并写 decision（说明缺什么）', () => {
+    const f = aiField();
+    const [out] = applyFieldDecisions(
+      [f],
+      [{ identity: 'job:job:3301A01:major', field: 'major', action: 'pending', reason: '待补充专业目录依据' }],
+      operator,
+      at,
+    );
+    expect(out.value).toBe('汉语言文学（师范）');
+    expect(out.decision?.action).toBe('pending');
+  });
+
+  it('AI/OCR 字段仅在 adopt 或 edit 时写入 humanConfirmedAt', () => {
+    const adopt = applyFieldDecisions(
+      [aiField()],
+      [{ identity: 'job:job:3301A01:major', field: 'major', action: 'adopt', reason: 'r' }],
+      operator,
+      at,
+    )[0]!;
+    expect(adopt.humanConfirmedAt).toBe(at);
+
+    const reject = applyFieldDecisions(
+      [aiField()],
+      [{ identity: 'job:job:3301A01:major', field: 'major', action: 'reject', reason: 'r' }],
+      operator,
+      at,
+    )[0]!;
+    expect(reject.humanConfirmedAt).toBeUndefined();
+
+    const pending = applyFieldDecisions(
+      [aiField()],
+      [{ identity: 'job:job:3301A01:major', field: 'major', action: 'pending', reason: 'r' }],
+      operator,
+      at,
+    )[0]!;
+    expect(pending.humanConfirmedAt).toBeUndefined();
+  });
+
+  it('目标字段不存在时抛错（不静默吞掉）', () => {
+    expect(() =>
+      applyFieldDecisions(
+        [aiField()],
+        [{ identity: 'job:nonexistent:major', field: 'major', action: 'adopt', reason: 'r' }],
+        operator,
+        at,
+      ),
+    ).toThrow(/目标不存在/);
+  });
+
+  it('edit 决策缺少新值时 validateFieldDecisions 报错', () => {
+    const errs = validateFieldDecisions([
+      { identity: 'job:job:3301A01:major', field: 'major', action: 'edit', reason: 'r' },
+    ]);
+    expect(errs.some((e) => e.includes('缺少新值'))).toBe(true);
+  });
+
+  it('缺少原因的决策报错（adopt/edit/reject/pending 一致）', () => {
+    const errs = validateFieldDecisions([
+      { identity: 'a', field: 'major', action: 'adopt', reason: '  ' },
+    ]);
+    expect(errs.some((e) => e.includes('缺少原因'))).toBe(true);
+  });
+});
+

@@ -1,6 +1,6 @@
 # WorkBuddy 规格：公告/岗位提取与审核契约
 
-> 状态：WB0 已定义，WB1/WB2/WB3 已实现，WB4–WB6 未实现。
+> 状态：WB0 已定义，WB1/WB2/WB3/WB4 已实现，WB5–WB6 未实现。
 > 本文只规定“什么算正确”。实现细节（抽取器、存储、审核界面）由后续模块完成。
 
 ## 1. 范围定义
@@ -178,3 +178,29 @@ conflict  ──人工裁决──► edit（选定其一并留痕）或 pending
 - 可选字段 unknown 可以进入人工审核，但必须在结果中可见；
 - AI/OCR 的既有人工确认门禁继续有效；
 - 错误信息必须带 scope 与 field，便于定位；不得输出敏感正文或完整签名 URL。
+
+## 9. 按岗位人工审核工作台（WB4）
+
+### 9.1 字段级决策（FieldDecision）
+
+审核工作台对每个候选字段产生一个决策，四种动作：
+
+| 动作 | 语义 | 对字段的副作用 |
+|---|---|---|
+| `adopt` | 采用原值 | 写 `decision`（before=after=原值）；AI/OCR 字段写 `humanConfirmedAt` |
+| `edit` | 修改后采用 | 写 `decision`（保留 before/after），字段 `value` 更新为新值；AI/OCR 字段写 `humanConfirmedAt` |
+| `reject` | 驳回该字段 | 写 `decision`（action=reject，保留原值）；不写确认时间 |
+| `pending` | 待补充/待确认 | 写 `decision`（action=pending，保留原值）；不写确认时间 |
+
+字段决策通过 `identity`（`fieldIdentity` 结果）定位目标字段；`edit` 必填 `afterValue`，
+四类动作 `reason` 均必填非空。决策随 run 级 `approve_with_edit` 一并提交，复用
+`ReviewRecord` 留痕（before/after 快照），不新增独立持久化表。
+
+### 9.2 审核工作台约束
+
+- 5 分区：公告公共事实 / 岗位列表 / 当前岗位字段 / 原文证据与解析警告 / 质量门禁与审核动作；
+- 默认选中第一个存在阻塞的岗位；URL/刷新可恢复 run 与岗位，但不信任未经校验的 scope 参数；
+- 批量操作只作用于当前岗位并明确列出字段，不提供「一键全部通过」；
+- 提交前再次调用 WB3 门禁（未裁决冲突阻塞 approve）；
+- 乐观并发：`baseUpdatedAt` 与当前记录不一致返回 409，避免覆盖他人修改；
+- 旧公告级候选无 scope 归入「公告公共事实」兼容分组。
