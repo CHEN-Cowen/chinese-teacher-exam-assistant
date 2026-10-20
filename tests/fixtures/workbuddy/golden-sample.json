@@ -1,0 +1,420 @@
+{
+  "meta": {
+    "note": "WorkBuddy 黄金样本。全部为脱敏/构造内容，非真实在招岗位。dataset=test。",
+    "dataset": "test",
+    "ruleVersion": "wb-golden@1.0.0",
+    "isFabricated": true
+  },
+  "announcement": {
+    "id": "wb-ann-demo",
+    "title": "【测试】示例市教育局2026年直属学校教师公开招聘公告",
+    "publisher": "示例市教育局（测试）",
+    "officialUrl": "https://www.example.gov.cn/test/wb-notice",
+    "announcementCode": "示教招〔2026〕01号（测试）",
+    "region": {
+      "code": "330100",
+      "province": "浙江省",
+      "city": "杭州市",
+      "district": "示例区"
+    },
+    "batch": {
+      "batchId": "wb-batch-2026-01",
+      "name": "示例市教育局2026年第一批直属学校教师招聘（测试）",
+      "registrationStart": "2026-10-20",
+      "registrationEnd": "2026-11-05",
+      "registrationEndTime": "17:00",
+      "materials": [
+        "本人有效居民身份证（测试）",
+        "学历学位证书（测试）",
+        "教师资格证书（测试）"
+      ],
+      "officialEntry": {
+        "url": "https://www.example.gov.cn/test/apply",
+        "appliesToBatch": "wb-batch-2026-01"
+      }
+    },
+    "ageBasisDate": "2026-11-05",
+    "employmentNature": "事业编制"
+  },
+  "candidateFields": [
+    {
+      "field": "announcement_title",
+      "value": "【测试】示例市教育局2026年直属学校教师公开招聘公告",
+      "status": "extracted",
+      "scope": "announcement",
+      "ruleVersion": "wb-golden@1.0.0",
+      "origin": "rule",
+      "evidence": [
+        {
+          "locator": { "kind": "url", "url": "https://www.example.gov.cn/test/wb-notice", "anchor": "公告标题" },
+          "excerpt": "【测试】示例市教育局2026年直属学校教师公开招聘公告"
+        }
+      ]
+    },
+    {
+      "field": "region",
+      "value": "杭州市",
+      "status": "extracted",
+      "scope": "announcement",
+      "ruleVersion": "wb-golden@1.0.0",
+      "origin": "rule",
+      "evidence": [
+        {
+          "locator": { "kind": "excerpt", "excerpt": "杭州市示例区教育局（测试）" }
+        }
+      ]
+    },
+    {
+      "field": "age_basis_date",
+      "value": "2026-11-05",
+      "status": "extracted",
+      "scope": "announcement",
+      "ruleVersion": "wb-golden@1.0.0",
+      "origin": "rule",
+      "evidence": [
+        {
+          "locator": { "kind": "excerpt", "excerpt": "年龄计算基准日为2026年11月5日（测试）" }
+        }
+      ]
+    },
+    {
+      "field": "age_exception",
+      "value": "硕士研究生及以上学历报考者，年龄放宽至40周岁及以下（测试）",
+      "status": "extracted",
+      "scope": "announcement",
+      "ruleVersion": "wb-golden@1.0.0",
+      "origin": "rule",
+      "evidence": [
+        {
+          "locator": { "kind": "excerpt", "excerpt": "硕士研究生及以上学历报考者，年龄放宽至40周岁及以下（测试）" }
+        }
+      ]
+    },
+    {
+      "field": "employment_nature",
+      "value": "事业编制",
+      "status": "extracted",
+      "scope": "announcement",
+      "ruleVersion": "wb-golden@1.0.0",
+      "origin": "rule",
+      "evidence": [
+        {
+          "locator": { "kind": "excerpt", "excerpt": "本次招聘人员纳入事业编制管理（测试）" }
+        }
+      ]
+    },
+    {
+      "field": "registration_time",
+      "value": "2026-10-20 至 2026-11-05 17:00",
+      "status": "extracted",
+      "scope": "announcement",
+      "ruleVersion": "wb-golden@1.0.0",
+      "origin": "rule",
+      "evidence": [
+        {
+          "locator": { "kind": "excerpt", "excerpt": "报名时间：2026年10月20日9:00至2026年11月5日17:00（测试）" }
+        }
+      ]
+    },
+    {
+      "field": "materials",
+      "value": "本人有效居民身份证；学历学位证书；教师资格证书",
+      "status": "extracted",
+      "scope": "announcement",
+      "ruleVersion": "wb-golden@1.0.0",
+      "origin": "rule",
+      "batchId": "wb-batch-2026-01",
+      "evidence": [
+        {
+          "locator": { "kind": "excerpt", "excerpt": "报名材料：本人有效居民身份证、学历学位证书、教师资格证书（测试）" }
+        }
+      ]
+    },
+    {
+      "field": "official_entry",
+      "value": "https://www.example.gov.cn/test/apply",
+      "status": "extracted",
+      "scope": "announcement",
+      "ruleVersion": "wb-golden@1.0.0",
+      "origin": "rule",
+      "batchId": "wb-batch-2026-01",
+      "evidence": [
+        {
+          "locator": { "kind": "url", "url": "https://www.example.gov.cn/test/apply", "anchor": "官方报名入口" }
+        }
+      ]
+    },
+    {
+      "field": "job_code",
+      "value": "3301A01",
+      "status": "extracted",
+      "scope": "job",
+      "jobKey": "job-A-3301A01",
+      "ruleVersion": "wb-golden@1.0.0",
+      "origin": "rule",
+      "evidence": [
+        {
+          "locator": { "kind": "worksheet", "fileId": "wb-xlsx-demo", "fileName": "岗位表（测试）.xlsx", "sheet": "岗位表", "cell": "A2" },
+          "excerpt": "3301A01"
+        }
+      ]
+    },
+    {
+      "field": "unit_name",
+      "value": "示例市第一中学（测试）",
+      "status": "extracted",
+      "scope": "job",
+      "jobKey": "job-A-3301A01",
+      "ruleVersion": "wb-golden@1.0.0",
+      "origin": "rule",
+      "evidence": [
+        {
+          "locator": { "kind": "worksheet", "fileId": "wb-xlsx-demo", "fileName": "岗位表（测试）.xlsx", "sheet": "岗位表", "cell": "B2" },
+          "excerpt": "示例市第一中学（测试）"
+        }
+      ]
+    },
+    {
+      "field": "stage",
+      "value": "初中",
+      "status": "extracted",
+      "scope": "job",
+      "jobKey": "job-A-3301A01",
+      "ruleVersion": "wb-golden@1.0.0",
+      "origin": "rule",
+      "evidence": [
+        {
+          "locator": { "kind": "worksheet", "fileId": "wb-xlsx-demo", "fileName": "岗位表（测试）.xlsx", "sheet": "岗位表", "cell": "C2" },
+          "excerpt": "初中"
+        }
+      ]
+    },
+    {
+      "field": "subject",
+      "value": "语文",
+      "status": "extracted",
+      "scope": "job",
+      "jobKey": "job-A-3301A01",
+      "ruleVersion": "wb-golden@1.0.0",
+      "origin": "rule",
+      "evidence": [
+        {
+          "locator": { "kind": "worksheet", "fileId": "wb-xlsx-demo", "fileName": "岗位表（测试）.xlsx", "sheet": "岗位表", "cell": "D2" },
+          "excerpt": "语文"
+        }
+      ]
+    },
+    {
+      "field": "headcount",
+      "value": "2",
+      "status": "conflict",
+      "scope": "job",
+      "jobKey": "job-A-3301A01",
+      "ruleVersion": "wb-golden@1.0.0",
+      "origin": "rule",
+      "evidence": [
+        {
+          "locator": { "kind": "worksheet", "fileId": "wb-xlsx-demo", "fileName": "岗位表（测试）.xlsx", "sheet": "岗位表", "cell": "E2" },
+          "excerpt": "2"
+        }
+      ],
+      "alternatives": [
+        {
+          "value": "2",
+          "source": {
+            "kind": "worksheet",
+            "locator": { "kind": "worksheet", "fileId": "wb-xlsx-demo", "fileName": "岗位表（测试）.xlsx", "sheet": "岗位表", "cell": "E2" },
+            "excerpt": "岗位表：2人"
+          }
+        },
+        {
+          "value": "3",
+          "source": {
+            "kind": "attachment",
+            "locator": { "kind": "file", "fileId": "wb-doc-demo", "fileName": "招聘岗位附件（测试）.docx", "page": 1 },
+            "excerpt": "附件：示例市第一中学 语文 3人"
+          }
+        }
+      ]
+    },
+    {
+      "field": "major",
+      "value": "汉语言文学（师范）",
+      "status": "extracted",
+      "scope": "job",
+      "jobKey": "job-A-3301A01",
+      "ruleVersion": "wb-golden@1.0.0",
+      "origin": "rule",
+      "evidence": [
+        {
+          "locator": { "kind": "worksheet", "fileId": "wb-xlsx-demo", "fileName": "岗位表（测试）.xlsx", "sheet": "岗位表", "cell": "F2" },
+          "excerpt": "汉语言文学（师范）"
+        }
+      ]
+    },
+    {
+      "field": "education",
+      "value": "本科及以上",
+      "status": "extracted",
+      "scope": "job",
+      "jobKey": "job-A-3301A01",
+      "ruleVersion": "wb-golden@1.0.0",
+      "origin": "rule",
+      "evidence": [
+        {
+          "locator": { "kind": "worksheet", "fileId": "wb-xlsx-demo", "fileName": "岗位表（测试）.xlsx", "sheet": "岗位表", "cell": "G2" },
+          "excerpt": "本科及以上"
+        }
+      ]
+    },
+    {
+      "field": "job_code",
+      "value": "3301A02",
+      "status": "extracted",
+      "scope": "job",
+      "jobKey": "job-B-3301A02",
+      "ruleVersion": "wb-golden@1.0.0",
+      "origin": "rule",
+      "evidence": [
+        {
+          "locator": { "kind": "worksheet", "fileId": "wb-xlsx-demo", "fileName": "岗位表（测试）.xlsx", "sheet": "岗位表", "cell": "A3" },
+          "excerpt": "3301A02"
+        }
+      ]
+    },
+    {
+      "field": "unit_name",
+      "value": "示例市第二中学（测试）",
+      "status": "extracted",
+      "scope": "job",
+      "jobKey": "job-B-3301A02",
+      "ruleVersion": "wb-golden@1.0.0",
+      "origin": "rule",
+      "evidence": [
+        {
+          "locator": { "kind": "worksheet", "fileId": "wb-xlsx-demo", "fileName": "岗位表（测试）.xlsx", "sheet": "岗位表", "cell": "B3" },
+          "excerpt": "示例市第二中学（测试）"
+        }
+      ]
+    },
+    {
+      "field": "stage",
+      "value": "高中",
+      "status": "extracted",
+      "scope": "job",
+      "jobKey": "job-B-3301A02",
+      "ruleVersion": "wb-golden@1.0.0",
+      "origin": "rule",
+      "evidence": [
+        {
+          "locator": { "kind": "worksheet", "fileId": "wb-xlsx-demo", "fileName": "岗位表（测试）.xlsx", "sheet": "岗位表", "cell": "C3" },
+          "excerpt": "高中"
+        }
+      ]
+    },
+    {
+      "field": "subject",
+      "value": "数学",
+      "status": "extracted",
+      "scope": "job",
+      "jobKey": "job-B-3301A02",
+      "ruleVersion": "wb-golden@1.0.0",
+      "origin": "rule",
+      "evidence": [
+        {
+          "locator": { "kind": "worksheet", "fileId": "wb-xlsx-demo", "fileName": "岗位表（测试）.xlsx", "sheet": "岗位表", "cell": "D3" },
+          "excerpt": "数学"
+        }
+      ]
+    },
+    {
+      "field": "headcount",
+      "value": "1",
+      "status": "extracted",
+      "scope": "job",
+      "jobKey": "job-B-3301A02",
+      "ruleVersion": "wb-golden@1.0.0",
+      "origin": "rule",
+      "evidence": [
+        {
+          "locator": { "kind": "worksheet", "fileId": "wb-xlsx-demo", "fileName": "岗位表（测试）.xlsx", "sheet": "岗位表", "cell": "E3" },
+          "excerpt": "1"
+        }
+      ]
+    },
+    {
+      "field": "major",
+      "value": "数学与应用数学",
+      "status": "extracted",
+      "scope": "job",
+      "jobKey": "job-B-3301A02",
+      "ruleVersion": "wb-golden@1.0.0",
+      "origin": "rule",
+      "evidence": [
+        {
+          "locator": { "kind": "worksheet", "fileId": "wb-xlsx-demo", "fileName": "岗位表（测试）.xlsx", "sheet": "岗位表", "cell": "F3" },
+          "excerpt": "数学与应用数学"
+        }
+      ]
+    },
+    {
+      "field": "education",
+      "value": "硕士研究生及以上",
+      "status": "extracted",
+      "scope": "job",
+      "jobKey": "job-B-3301A02",
+      "ruleVersion": "wb-golden@1.0.0",
+      "origin": "rule",
+      "evidence": [
+        {
+          "locator": { "kind": "worksheet", "fileId": "wb-xlsx-demo", "fileName": "岗位表（测试）.xlsx", "sheet": "岗位表", "cell": "G3" },
+          "excerpt": "硕士研究生及以上"
+        }
+      ]
+    },
+    {
+      "field": "degree",
+      "status": "unknown",
+      "scope": "job",
+      "jobKey": "job-B-3301A02",
+      "ruleVersion": "wb-golden@1.0.0",
+      "origin": "rule",
+      "evidence": [
+        {
+          "locator": { "kind": "excerpt", "excerpt": "（岗位表未写明学位要求，测试构造为 unknown）" }
+        }
+      ]
+    }
+  ],
+  "expectedReview": {
+    "note": "人工审核后的预期结论，用于验收复算。",
+    "unknownFields": ["degree"],
+    "conflictFields": [
+      {
+        "field": "headcount",
+        "jobKey": "job-A-3301A01",
+        "candidates": [
+          { "value": "2", "evidence": "岗位表 E2" },
+          { "value": "3", "evidence": "附件第1页" }
+        ],
+        "expectedResolution": "人工裁决，选定其一并保留 alternatives 留痕"
+      }
+    ],
+    "publicFields": [
+      "announcement_title",
+      "region",
+      "age_basis_date",
+      "age_exception",
+      "employment_nature",
+      "registration_time",
+      "materials",
+      "official_entry"
+    ],
+    "jobAFields": ["job_code", "unit_name", "stage", "subject", "headcount", "major", "education"],
+    "jobBFields": ["job_code", "unit_name", "stage", "subject", "headcount", "major", "education", "degree"],
+    "crossJobMixedValueGuards": [
+      { "field": "major", "jobA": "汉语言文学（师范）", "jobB": "数学与应用数学" },
+      { "field": "education", "jobA": "本科及以上", "jobB": "硕士研究生及以上" }
+    ]
+  }
+}
