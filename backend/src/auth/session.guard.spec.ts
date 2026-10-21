@@ -39,9 +39,9 @@ describe('SessionAuthGuard（invited 模式）', () => {
     ).resolves.toBe(true);
   });
 
-  it('无会话时放行既有公开路径 /health、/auth/login、/auth/session', async () => {
+  it('无会话时放行既有公开路径 /health、/auth/login、/auth/session、/auth/register', async () => {
     const guard = new SessionAuthGuard(authService);
-    for (const path of ['/health', '/auth/login', '/auth/session']) {
+    for (const path of ['/health', '/auth/login', '/auth/session', '/auth/register']) {
       await expect(guard.canActivate(mockContext(path))).resolves.toBe(true);
     }
   });
