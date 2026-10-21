@@ -91,6 +91,11 @@
   - 集成测试覆盖两个岗位两个 units、字段不混岗、各阻塞路径、事务原子性、
     重复发布、legacy 兼容、撤回与版本链回归。
 - **非目标**：不扩展抓取来源、普通用户 UI、导出、匹配规则或静态目录。
+- **已知风险（2026-10-21 验收登记）**：旧版手动提取路径 `AnnouncementsService.runExtraction`
+  仍走 `parser.ts`（公告级、无 scope）；经该路径产生的候选没有 job scope，发布会正确报错
+  「没有已审核岗位」而非静默发布。生产多岗位链路应走队列
+  `AnnouncementExtractService` → `extractFields`（WB2 抽取器已接入）。后续应统一
+  提取入口或在操作规范中明示该约束。
 - **实现文件**：
   - `backend/src/announcements/catalog-payload-assembler.ts`（构造器 + 类型守卫）
   - `backend/src/announcements/announcements.service.ts`（publish 门禁与事务）
