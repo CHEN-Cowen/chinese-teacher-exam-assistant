@@ -17,10 +17,15 @@ import { guestSessionService } from "@/lib/guest/guestSession";
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { login, status } = useCurrentUser();
+  const { login, register, status } = useCurrentUser();
   const demo = isDemoMode;
+  // 公开注册开关：仅受邀环境 + NEXT_PUBLIC_PUBLIC_REGISTRATION=true 时开放（构建期内联）
+  const registrationEnabled =
+    !demo && process.env.NEXT_PUBLIC_PUBLIC_REGISTRATION === "true";
 
+  const [mode, setMode] = useState<"login" | "register">("login");
   const [account, setAccount] = useState("");
+  const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -99,6 +104,27 @@ function LoginForm() {
     e.preventDefault();
     setError("");
 
+    if (mode === "register") {
+      if (!account.trim() || !password) {
+        setError("请输入邮箱和密码");
+        return;
+      }
+      setSubmitting(true);
+      try {
+        await register({
+          email: account.trim(),
+          password,
+          name: name.trim() || undefined,
+        });
+        // 注册成功后的访客迁移与跳转统一在 useEffect（status 变化）中处理
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "注册失败，请稍后重试");
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
+
     if (!account.trim() || !password) {
       setError("请输入账号和密码");
       return;
@@ -122,13 +148,17 @@ function LoginForm() {
         {/* 品牌区 */}
         <div className="mb-7 text-center">
           <BrandMark size="lg" className="justify-center" />
-          <h1 className="mt-5 text-2xl font-bold tracking-[-0.02em] text-ink">欢迎回来</h1>
+          <h1 className="mt-5 text-2xl font-bold tracking-[-0.02em] text-ink">
+            {mode === "register" ? "注册体验账号" : "欢迎回来"}
+          </h1>
           <p className="mt-2 text-sm text-ink-muted">
-            {returningToOpportunity
-              ? "登录后会回到刚才的机会，继续完成保存"
-              : continuingTrial
-                ? "登录后继续查看机会、材料清单和报考日程"
-              : "登录后继续查看已保存机会与报考进度"}
+            {mode === "register"
+              ? "现场体验：填写邮箱和密码即可创建账号并登录"
+              : returningToOpportunity
+                ? "登录后会回到刚才的机会，继续完成保存"
+                : continuingTrial
+                  ? "登录后继续查看机会、材料清单和报考日程"
+                  : "登录后继续查看已保存机会与报考进度"}
           </p>
         </div>
 
@@ -163,12 +193,32 @@ function LoginForm() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
+            {mode === "register" && (
+              <div>
+                <label
+                  htmlFor="name"
+                  className="mb-1.5 block text-sm font-medium text-ink"
+                >
+                  昵称（选填）
+                </label>
+                <input
+                  id="name"
+                  type="text"
+                  autoComplete="name"
+                  placeholder="例如：考生小张"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="h-12 w-full rounded-xl border border-line bg-surface px-3.5 text-sm text-ink transition-colors placeholder:text-ink-muted/60 hover:border-brand/30 focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/10"
+                />
+              </div>
+            )}
+
             <div>
               <label
                 htmlFor="account"
                 className="mb-1.5 block text-sm font-medium text-ink"
               >
-                账号
+                邮箱
               </label>
               <input
                 id="account"
@@ -192,7 +242,7 @@ function LoginForm() {
                 id="password"
                 type="password"
                 autoComplete="current-password"
-                placeholder={demo ? "演示密码：demo1234" : "密码"}
+                placeholder={demo ? "演示密码：demo1234" : mode === "register" ? "至少 6 位" : "密码"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="h-12 w-full rounded-xl border border-line bg-surface px-3.5 text-sm text-ink transition-colors placeholder:text-ink-muted/60 hover:border-brand/30 focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/10"
@@ -206,9 +256,50 @@ function LoginForm() {
             )}
 
             <Button type="submit" fullWidth size="lg" loading={submitting}>
-              {submitting ? "登录中" : "登录"}
+              {submitting
+                ? mode === "register"
+                  ? "注册中"
+                  : "登录中"
+                : mode === "register"
+                  ? "注册并登录"
+                  : "登录"}
             </Button>
           </form>
+
+          {/* 公开注册切换入口（仅受邀环境 + 开关开启时显示） */}
+          {registrationEnabled && (
+            <div className="mt-5 border-t border-line pt-4 text-center">
+              {mode === "login" ? (
+                <p className="text-sm text-ink-muted">
+                  还没有账号？{" "}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode("register");
+                      setError("");
+                    }}
+                    className="text-brand font-medium hover:underline"
+                  >
+                    现场注册体验账号
+                  </button>
+                </p>
+              ) : (
+                <p className="text-sm text-ink-muted">
+                  已有账号？{" "}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode("login");
+                      setError("");
+                    }}
+                    className="text-brand font-medium hover:underline"
+                  >
+                    返回登录
+                  </button>
+                </p>
+              )}
+            </div>
+          )}
 
           {/* 演示账号快捷填充 */}
           {demo && (
@@ -236,7 +327,9 @@ function LoginForm() {
         <p className="mt-4 text-center text-xs text-ink-muted">
           {demo
             ? "未注册账号？Demo 阶段无需注册，请直接使用演示账号"
-            : "仅限受邀测试用户，不开放公开注册"}
+            : registrationEnabled
+              ? "现场体验环境，可用邮箱自助注册"
+              : "仅限受邀测试用户，不开放公开注册"}
         </p>
         {nextPath === "/preview" && (
           <p className="text-center text-xs mt-3">

@@ -1,5 +1,7 @@
 import {
+  BadRequestException,
   Body,
+  ConflictException,
   Controller,
   Delete,
   Get,
@@ -53,6 +55,53 @@ export class AuthController {
     if (!user) {
       throw new UnauthorizedException('邮箱或密码不正确');
     }
+    const { token } = await this.authService.createSession(
+      user.id,
+      req.headers['user-agent'] as string | undefined,
+    );
+    res.cookie(COOKIE_NAME, token, cookieOptions(req));
+    return {
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+      },
+    };
+  }
+
+  /**
+   * 公开注册（比赛现场开放体验用）。
+   *
+   * - 仅当环境变量 PUBLIC_REGISTRATION=true 时开放（默认关闭，kbzs 试用环境不设）；
+   * - 固定 role=user（杜绝客户端传 role 提权）；
+   * - 邮箱查重，重复直接引导登录；
+   * - 注册即登录：签发会话并写 HttpOnly cookie，与 login 同一套会话语义。
+   */
+  @Post('register')
+  async register(
+    @Body() body: { email?: unknown; name?: unknown; password?: unknown },
+    @Req() req: AuthenticatedRequest,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    if (process.env.PUBLIC_REGISTRATION !== 'true') {
+      throw new UnauthorizedException('当前环境未开放公开注册');
+    }
+    const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+    const password = typeof body.password === 'string' ? body.password : '';
+    if (!email || password.length < 6) {
+      throw new BadRequestException('邮箱不能为空，密码至少 6 位');
+    }
+    const existing = await this.prisma.user.findUnique({ where: { email } });
+    if (existing) {
+      throw new ConflictException('该邮箱已注册，请直接登录');
+    }
+    const user = await this.authService.createUser({
+      email,
+      name: typeof body.name === 'string' ? body.name : undefined,
+      role: 'user',
+      password,
+    });
     const { token } = await this.authService.createSession(
       user.id,
       req.headers['user-agent'] as string | undefined,

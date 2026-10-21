@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import { User, UserRole } from "@/types";
-import { AuthCredentials, AuthStatus, Session } from "./types";
+import { AuthCredentials, AuthStatus, RegistrationInput, Session } from "./types";
 import { authService } from "./instance";
 
 interface AuthContextValue {
@@ -21,6 +21,8 @@ interface AuthContextValue {
   user: User | null;
   role: UserRole | null;
   login: (credentials: AuthCredentials) => Promise<Session>;
+  /** 公开注册（仅受邀环境 + PUBLIC_REGISTRATION 开启时可用），注册即登录 */
+  register: (input: RegistrationInput) => Promise<Session>;
   logout: () => Promise<void>;
   /** 修改当前用户基础资料（学段、可用时间、通知偏好等） */
   updateProfile: (patch: Partial<User>) => User;
@@ -64,6 +66,16 @@ export function AuthProvider({ children }: AuthProviderProps) {
     []
   );
 
+  const register = useCallback(
+    async (input: RegistrationInput) => {
+      const next = await authService.register(input);
+      setSession(next);
+      setStatus("authenticated");
+      return next;
+    },
+    []
+  );
+
   const logout = useCallback(async () => {
     await authService.logout();
     setSession(null);
@@ -94,11 +106,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
       user: session?.user ?? null,
       role: session?.role ?? null,
       login,
+      register,
       logout,
       updateProfile,
       hasRole,
     }),
-    [status, session, login, logout, updateProfile, hasRole]
+    [status, session, login, register, logout, updateProfile, hasRole]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

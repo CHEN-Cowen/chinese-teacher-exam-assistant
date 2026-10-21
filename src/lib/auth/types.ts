@@ -22,6 +22,13 @@ export interface AuthCredentials {
   password: string;
 }
 
+/** 公开注册入参（仅受邀环境 + PUBLIC_REGISTRATION 开启时可用） */
+export interface RegistrationInput {
+  email: string;
+  password: string;
+  name?: string;
+}
+
 export type AuthStatus = "loading" | "authenticated" | "unauthenticated";
 
 export type SessionInvalidReason = "expired" | "unauthorized";
@@ -37,6 +44,11 @@ export type SessionInvalidReason = "expired" | "unauthorized";
 export interface AuthService {
   /** 登录，成功返回会话；账号密码错误时抛出异常 */
   login(credentials: AuthCredentials): Promise<Session>;
+  /**
+   * 公开注册：受邀环境且 PUBLIC_REGISTRATION 开启时可用，注册即登录。
+   * 不支持的实现（如 Demo）应抛出异常。
+   */
+  register(input: RegistrationInput): Promise<Session>;
   /** 退出登录，清除本地会话 */
   logout(): Promise<void>;
   /**

@@ -69,6 +69,10 @@ export class DemoAuthProvider implements AuthService {
     this.emitChange();
   }
 
+  async register(): Promise<Session> {
+    throw new Error("演示环境不支持注册，请使用内置演示账号登录");
+  }
+
   getSession(): Session | null {
     if (typeof window === "undefined") return null;
     return loadFromStorage<Session | null>(STORAGE_KEYS.SESSION, null);

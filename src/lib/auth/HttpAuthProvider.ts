@@ -1,5 +1,5 @@
 import { User } from "@/types";
-import { AuthCredentials, AuthService, Session } from "./types";
+import { AuthCredentials, AuthService, RegistrationInput, Session } from "./types";
 import { profileApi } from "@/lib/profile/profileApi";
 
 const API_BASE = "/api/auth";
@@ -73,6 +73,27 @@ export class HttpAuthProvider implements AuthService {
     } catch {
       // 迁移失败不阻塞登录；用户可在机会页重新完善画像
     }
+    this.emitChange();
+    return this.session;
+  }
+
+  async register(input: RegistrationInput): Promise<Session> {
+    const res = await fetch(`${API_BASE}/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        email: input.email,
+        password: input.password,
+        name: input.name,
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.message || "注册失败，请稍后重试");
+    }
+    const data = (await res.json()) as { user: User };
+    this.session = this.buildSession(data.user);
     this.emitChange();
     return this.session;
   }

@@ -24,7 +24,6 @@ import type {
 import {
   detectPdfTable,
   tableToParsedBlocks,
-  type PdfTextItem,
 } from './pdf-table-detector.js';
 
 export const PDF_PARSER_VERSION = 'pdf-parser@1.0.0';
