@@ -186,6 +186,71 @@ describe('ManualExtractionService.submitSource + runExtraction', () => {
     expect(att.snapshotId).toBeTruthy();
     expect(att.name).toContain('岗位表.xlsx');
   });
+
+  it('M3-遗留修复：正文不变、仅新增附件 → 材料包指纹变化 → 产生新 run', async () => {
+    const ctx = makeService();
+
+    // 第一次：仅正文（无附件）
+    const first = (await ctx.service.submitSource(
+      {
+        publisher: '杭州市教育局',
+        officialUrl: 'https://example.gov.cn/notice/2026-hz-onlybody',
+        sourceType: 'manual_text',
+        content: BODY_HTML,
+        mimeType: 'text/html',
+      },
+      'admin-1',
+    )) as { run: { id: string; materialFingerprint?: string | null } };
+    await ctx.service.runExtraction(first.run.id);
+    const runCountAfterFirst = ctx.prisma.extractionRuns.length;
+
+    // 第二次：同一正文 + 新增附件（正文 contentHash 不变）
+    const second = (await ctx.service.submitSource(
+      {
+        publisher: '杭州市教育局',
+        officialUrl: 'https://example.gov.cn/notice/2026-hz-onlybody',
+        sourceType: 'manual_text',
+        content: BODY_HTML,
+        mimeType: 'text/html',
+        attachments: [
+          { name: '岗位表.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', bytes: buildXlsxFixture() },
+        ],
+      },
+      'admin-1',
+    )) as { run: { id: string; materialFingerprint?: string | null } };
+
+    // 关键断言：材料包变了，必须产生新 run，而不是命中旧幂等键
+    expect(ctx.prisma.extractionRuns.length).toBe(runCountAfterFirst + 1);
+    expect(second.run.id).not.toBe(first.run.id);
+
+    // 新 run 带材料包指纹，旧 run（仅正文）无指纹
+    expect(second.run.materialFingerprint).toBeTruthy();
+    expect(first.run.materialFingerprint ?? null).toBeNull();
+
+    // 新 run 能正常提取，且包含附件产出的岗位字段
+    const outcome = await ctx.service.runExtraction(second.run.id);
+    expect(outcome.status).toBe('pending_review');
+    const saved = ctx.prisma.extractionRuns.find((r) => r.id === second.run.id)!;
+    const fields = (saved.candidate as { fields: Array<{ scope?: string }> }).fields;
+    expect(fields.some((f) => f.scope === 'job')).toBe(true);
+
+    // 第三次：完全相同（正文 + 同一附件）再次提交 → 幂等，复用第二次的 run
+    const third = (await ctx.service.submitSource(
+      {
+        publisher: '杭州市教育局',
+        officialUrl: 'https://example.gov.cn/notice/2026-hz-onlybody',
+        sourceType: 'manual_text',
+        content: BODY_HTML,
+        mimeType: 'text/html',
+        attachments: [
+          { name: '岗位表.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', bytes: buildXlsxFixture() },
+        ],
+      },
+      'admin-1',
+    )) as { run: { id: string } };
+    expect(ctx.prisma.extractionRuns.length).toBe(runCountAfterFirst + 1);
+    expect(third.run.id).toBe(second.run.id);
+  });
 });
 
 // ==================== M3：跨文件归属与冲突复核（真实链路） ====================

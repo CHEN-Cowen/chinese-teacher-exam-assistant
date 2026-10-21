@@ -14,6 +14,7 @@ import {
   findUnconfirmedAutoFields,
   isApprovalAction,
   markAutoFieldsConfirmed,
+  materialPackKey,
   nextStatusAfterReview,
   publishVersion,
   retryFailedRun,
@@ -315,6 +316,51 @@ describe('失败重试与幂等', () => {
     const key3 = extractionIdempotencyKey('snap-1', 'parser@2');
     expect(key1).toBe(key2);
     expect(key1).not.toBe(key3);
+  });
+
+  it('幂等键可纳入材料包指纹：附件变化 → 键变化', () => {
+    const base = extractionIdempotencyKey('snap-1', 'parser@1');
+    const withFp1 = extractionIdempotencyKey('snap-1', 'parser@1', 'fp-1');
+    const withFp2 = extractionIdempotencyKey('snap-1', 'parser@1', 'fp-2');
+    // 无指纹保持旧语义（向后兼容队列路径）
+    expect(base).toBe('snap-1:parser@1');
+    // 指纹变化 → 幂等键变化，触发新 run
+    expect(withFp1).not.toBe(withFp2);
+    expect(withFp1).not.toBe(base);
+    // 同指纹同键（幂等）
+    expect(extractionIdempotencyKey('snap-1', 'parser@1', 'fp-1')).toBe(withFp1);
+  });
+
+  it('材料包指纹：无附件退化为正文哈希，有附件对顺序不敏感', () => {
+    const body = 'body-hash';
+    // 无附件 → 退化为正文哈希本身（保持「仅正文」原始语义）
+    expect(materialPackKey(body)).toBe(body);
+    expect(materialPackKey(body, [])).toBe(body);
+
+    const a = { name: '岗位表.xlsx', contentHash: 'h1' };
+    const b = { name: '更正表.pdf', contentHash: 'h2' };
+    // 顺序无关
+    expect(materialPackKey(body, [a, b])).toBe(materialPackKey(body, [b, a]));
+    // 附件不同 → 指纹不同
+    const c = { name: '岗位表.xlsx', contentHash: 'h3' };
+    expect(materialPackKey(body, [a, b])).not.toBe(materialPackKey(body, [c, b]));
+    // 有附件 ≠ 无附件
+    expect(materialPackKey(body, [a])).not.toBe(body);
+  });
+
+  it('材料包指纹：同名不同内容、不同名同内容均正确区分', () => {
+    const body = 'body-hash';
+    const sameNameDiffContent1 = { name: 'a.xlsx', contentHash: 'h1' };
+    const sameNameDiffContent2 = { name: 'a.xlsx', contentHash: 'h2' };
+    expect(materialPackKey(body, [sameNameDiffContent1])).not.toBe(
+      materialPackKey(body, [sameNameDiffContent2]),
+    );
+
+    const diffNameSameContent1 = { name: 'a.xlsx', contentHash: 'h1' };
+    const diffNameSameContent2 = { name: 'b.xlsx', contentHash: 'h1' };
+    expect(materialPackKey(body, [diffNameSameContent1])).not.toBe(
+      materialPackKey(body, [diffNameSameContent2]),
+    );
   });
 
   it('状态机：failed → submitted → extracting → pending_review 合法', () => {

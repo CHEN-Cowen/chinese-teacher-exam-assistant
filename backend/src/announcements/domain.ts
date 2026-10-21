@@ -548,15 +548,70 @@ export function retryFailedRun(
 }
 
 /**
- * 计算提取幂等键：同一快照 + 同一解析器版本只应产出一次候选。
+ * 材料包内单个附件的稳定身份（用于计算材料包指纹）。
+ * 只取参与内容判定的稳定字段：文件名 + 内容哈希。顺序不敏感（调用方排序）。
+ */
+export interface MaterialAttachmentKey {
+  name: string;
+  contentHash: string;
+}
+
+/**
+ * 计算「公告材料包」指纹：正文内容哈希 + 附件集合的确定性摘要。
+ *
+ * 材料包 = 正文 + 附件集合。正文不变、仅新增/变更/删除附件时，
+ * 材料包内容已发生变化，理应产出新的提取候选，而不是命中旧的幂等键。
+ * 因此材料包指纹纳入提取幂等键（见 extractionIdempotencyKey）。
+ *
+ * 规则：
+ * - 附件按 `contentHash` 排序后逐条拼接 `name + '\n' + contentHash` 求 SHA-256，
+ *   保证同名不同内容、不同名同内容、任意提交顺序都得到一致结果；
+ * - 无附件时返回正文哈希本身（退化为「仅正文」的原始语义）。
+ *
+ * 返回：长度稳定的十六进制指纹（或正文哈希）。
+ */
+export function materialPackKey(
+  bodyContentHash: string,
+  attachments: MaterialAttachmentKey[] = [],
+): string {
+  const sorted = [...attachments].sort((a, b) => {
+    if (a.contentHash !== b.contentHash) return a.contentHash < b.contentHash ? -1 : 1;
+    if (a.name !== b.name) return a.name < b.name ? -1 : 1;
+    return 0;
+  });
+  if (sorted.length === 0) return bodyContentHash;
+
+  const h = createHash('sha256');
+  h.update(bodyContentHash);
+  h.update('\n');
+  for (const att of sorted) {
+    h.update(att.name);
+    h.update('\n');
+    h.update(att.contentHash);
+    h.update('\n');
+  }
+  return h.digest('hex');
+}
+
+/**
+ * 计算提取幂等键：同一材料包 + 同一解析器版本只应产出一次候选。
  * service 层用此键检查是否已有 pending_review/approved/published 的结果，
  * 避免重试产生重复发布。
+ *
+ * - 不传 materialFingerprint 时，退化为旧语义 `snapshotId:parserVersion`
+ *   （队列路径逐快照确定性抽取仍按单快照幂等，不受材料包影响）；
+ * - 传入 materialFingerprint 时，附件集合变化 → 指纹变化 → 幂等键变化，
+ *   从而触发新的提取 run（修复「正文不变仅新增附件不参与提取」的 M3 遗留问题）。
  */
 export function extractionIdempotencyKey(
   snapshotId: string,
   parserVersion: string,
+  materialFingerprint?: string,
 ): string {
-  return `${snapshotId}:${parserVersion}`;
+  if (!materialFingerprint) {
+    return `${snapshotId}:${parserVersion}`;
+  }
+  return `${snapshotId}:${parserVersion}:${materialFingerprint}`;
 }
 
 // ==================== 版本差异 ====================

@@ -27,6 +27,7 @@ import {
   computeContentHash,
   extractionIdempotencyKey,
   findHighImpactFieldsWithoutAnchor,
+  materialPackKey,
   type CandidateField,
   type ExtractionCandidate,
 } from './domain.js';
@@ -144,8 +145,10 @@ export class ManualExtractionService {
     await this.attachSnapshot(bodyDocument.id, bodySnapshot.id, bodyContentHash);
 
     // 附件：逐个落快照 + 逻辑文档（child，parentDocumentId 指向正文文档）
+    const attachmentKeys: Array<{ name: string; contentHash: string }> = [];
     for (const att of input.attachments ?? []) {
       const attHash = computeContentHash(att.bytes);
+      attachmentKeys.push({ name: att.name, contentHash: attHash });
       const attKey = await this.putBinary(att.bytes, attHash, att.mimeType ?? 'application/octet-stream');
       const attSnapshot = await this.upsertSnapshot(source.id, {
         officialUrl: null,
@@ -162,8 +165,14 @@ export class ManualExtractionService {
       await this.attachSnapshot(attDocument.id, attSnapshot.id, attHash);
     }
 
-    // 创建提取任务（绑定正文快照；幂等键 = 正文快照 + 抽取版本）
-    const run = await this.createExtractionRun(bodySnapshot.id, input.announcementId, userId);
+    // M3 遗留修复：材料包指纹纳入幂等键。正文不变、仅新增/变更/删除附件时，
+    // 材料包内容已变，必须产出新提取候选，而不是命中旧的「正文快照 + 版本」幂等键。
+    // 无附件时 materialFingerprint 保持 undefined：不涉及材料包，幂等键退化为旧语义。
+    const materialFingerprint =
+      attachmentKeys.length > 0 ? materialPackKey(bodyContentHash, attachmentKeys) : undefined;
+
+    // 创建提取任务（绑定正文快照；幂等键 = 正文快照 + 抽取版本 + 材料包指纹）
+    const run = await this.createExtractionRun(bodySnapshot.id, input.announcementId, userId, materialFingerprint);
     return { run };
   }
 
@@ -651,9 +660,10 @@ export class ManualExtractionService {
     snapshotId: string,
     announcementId: string | undefined,
     userId: string,
+    materialFingerprint?: string,
   ) {
     const parserVersion = FIELD_EXTRACTOR_VERSION;
-    const idempotencyKey = extractionIdempotencyKey(snapshotId, parserVersion);
+    const idempotencyKey = extractionIdempotencyKey(snapshotId, parserVersion, materialFingerprint);
     const existing = await this.prisma.extractionRun.findUnique({
       where: { idempotencyKey },
     });
@@ -666,6 +676,7 @@ export class ManualExtractionService {
         announcementId,
         parserVersion,
         idempotencyKey,
+        materialFingerprint: materialFingerprint ?? null,
         status: 'submitted',
         submittedBy: userId,
       },

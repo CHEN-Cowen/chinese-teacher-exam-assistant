@@ -389,8 +389,12 @@ model ExtractionRun {
   announcementId String?
   /** 解析器/模型版本 */
   parserVersion  String
-  /** 幂等键：snapshotId + parserVersion */
+  /** 幂等键：snapshotId + parserVersion（+ 材料包指纹，手动链路含附件时） */
   idempotencyKey String   @unique @map("idempotency_key")
+  /** M3 遗留修复：材料包指纹（正文 + 附件集合摘要）。非空表示该 run 的提取
+   *  身份纳入了附件内容；附件变化 → 指纹变化 → 产生新 run。队列路径逐快照
+   *  抽取不涉及材料包，此字段为 null。 */
+  materialFingerprint String? @map("material_fingerprint")
   status         String   @default("submitted")
   /** 提取进度 0-100 */
   progress       Int      @default(0)
