@@ -22,6 +22,7 @@ import type {
   CandidateField,
   ExtractionCandidate,
 } from './domain.js';
+import { buildChecklist } from './expected-checklist.js';
 
 // ==================== 夹具（镜像 WB0 黄金样本） ====================
 
@@ -523,5 +524,68 @@ describe('computeScopeMetrics：人工决策计数', () => {
     expect(m.reject).toBe(1);
     expect(m.pending).toBe(1);
     expect(m.humanModified).toBe(1);
+  });
+});
+
+// ==================== M2：固定分母指标（期望清单口径） ====================
+
+describe('computeExportMetrics：M2 固定分母（期望清单）', () => {
+  it('无清单时 fixedDenominator.completenessNotEvaluated=true（旧任务未评估）', () => {
+    const metrics = computeExportMetrics({
+      runId: 'run-1',
+      status: 'approved',
+      parserVersion: 'v1',
+      candidate: goldenLikeCandidate(),
+      retryCount: 0,
+    });
+    expect(metrics.fixedDenominator).not.toBeNull();
+    expect(metrics.fixedDenominator!.hasChecklist).toBe(false);
+    expect(metrics.fixedDenominator!.completenessNotEvaluated).toBe(true);
+    expect(metrics.fixedDenominator!.completeness).toBeNull();
+    expect(metrics.fixedDenominator!.rawSlots).toBe(0);
+  });
+
+  it('有清单时固定分母 = 清单槽位，不从候选反推（整字段漏抽被点名）', () => {
+    const checklist = buildChecklist({
+      snapshotId: 'snap-1',
+      inputHash: 'hash-abc',
+      source: 'independent',
+      jobs: [
+        { key: 'job-A-3301A01', jobCode: '3301A01' },
+        { key: 'job-B-3301A02', jobCode: '3301A02' },
+      ],
+      frozenBy: 'admin-1',
+      frozenAt: '2026-10-21T10:00:00.000Z',
+    });
+
+    const metrics = computeExportMetrics({
+      runId: 'run-1',
+      status: 'approved',
+      parserVersion: 'v1',
+      candidate: goldenLikeCandidate(),
+      retryCount: 0,
+      checklist,
+    });
+
+    expect(metrics.fixedDenominator!.hasChecklist).toBe(true);
+    expect(metrics.fixedDenominator!.checklistVersion).toBe(1);
+    expect(metrics.fixedDenominator!.retrospective).toBe(false);
+    // 有效分母 > 0（清单槽位非空）
+    expect(metrics.fixedDenominator!.effectiveDenominator).toBeGreaterThan(0);
+    // 完整度 = extracted / 有效分母，≤ 1
+    expect(metrics.fixedDenominator!.completeness).toBeLessThanOrEqual(1);
+  });
+
+  it('固定分母完整性不是准确率：formulaNotes 显式声明', () => {
+    const metrics = computeExportMetrics({
+      runId: 'run-1',
+      status: 'approved',
+      parserVersion: 'v1',
+      candidate: goldenLikeCandidate(),
+      retryCount: 0,
+    });
+    const notes = metrics.formulaNotes.join('\n');
+    expect(notes).toContain('固定分母');
+    expect(notes).toContain('不是准确率');
   });
 });

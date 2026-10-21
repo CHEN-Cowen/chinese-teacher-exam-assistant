@@ -48,6 +48,10 @@ interface Run {
   publishedVersion?: { id: string; versionNumber: number; status: string } | null;
   /** WB4：后端用 WB3 纯函数算出的质量门禁报告（按岗位可复算状态） */
   quality?: QualityReport | null;
+  /** M2：任务期望清单（固定分母）；无清单为 null */
+  checklist?: ExpectedChecklist | null;
+  /** M2：固定分母质量报告（基于期望清单） */
+  checklistQuality?: ChecklistQualityReport | null;
   /** M1：手动提取结果（材料包各文件读取状态与提取版本） */
   manualExtraction?: {
     runId: string;
@@ -97,6 +101,80 @@ interface QualityReport {
   reviewBlockers: Array<{ code: string; field?: string; scope?: string; jobKey?: string; alternativeCount?: number; message: string }>;
   publishBlockers: Array<{ code: string; field?: string; scope?: string; jobKey?: string; alternativeCount?: number; message: string }>;
   metrics: { completeness: number; adoptionRate: number; editRate: number };
+}
+
+/** M2：任务期望清单（固定分母） */
+interface ExpectedSlot {
+  field: string;
+  scope: "announcement" | "job" | "unknown";
+  jobKey?: string;
+  applicability: "applicable" | "not_applicable";
+  basis: string;
+}
+
+interface ExpectedJob {
+  key: string;
+  jobCode?: string;
+  sheet?: string;
+  row?: number;
+  slots: ExpectedSlot[];
+}
+
+interface ExpectedChecklist {
+  version: number;
+  snapshotId: string;
+  inputHash: string;
+  source: "independent" | "retrospective";
+  announcementSlots: ExpectedSlot[];
+  jobs: ExpectedJob[];
+  frozenAt: string;
+  frozenBy: string;
+  note?: string;
+}
+
+/** M2：固定分母质量报告（基于期望清单） */
+interface SlotResult {
+  field: string;
+  scope: "announcement" | "job" | "unknown";
+  jobKey?: string;
+  declaredApplicability: "applicable" | "not_applicable";
+  status:
+    | "extracted"
+    | "not_stated_in_source"
+    | "should_have_but_missing"
+    | "not_applicable"
+    | "source_missing_unverifiable"
+    | "conflict";
+  value?: string;
+  alternativeCount?: number;
+  note?: string;
+}
+
+interface SlotMetrics {
+  rawSlots: number;
+  notApplicable: number;
+  effectiveDenominator: number;
+  byStatus: Record<string, number>;
+  extracted: number;
+  missing: number;
+}
+
+interface ChecklistQualityReport {
+  hasChecklist: boolean;
+  checklistVersion: number | null;
+  checklistSource: "independent" | "retrospective" | null;
+  evaluation: {
+    hasChecklist: boolean;
+    checklistVersion?: number;
+    checklistSource?: "independent" | "retrospective";
+    slots: SlotResult[];
+    jobs: Array<{ key: string; jobCode?: string; results: SlotResult[] }>;
+    announcement: SlotResult[];
+    metrics: SlotMetrics;
+  };
+  fixedDenominatorCompleteness: number | null;
+  retrospective: boolean;
+  completenessNotEvaluated: boolean;
 }
 
 interface PublishedVersion {
@@ -204,6 +282,24 @@ interface ExportMetrics {
   ratios: RatioMetric[];
   timing: TimingMetrics;
   formulaNotes: string[];
+  /** M2：固定分母（期望清单）口径；无清单时 completenessNotEvaluated=true */
+  fixedDenominator: FixedDenominatorMetrics | null;
+}
+
+/** M2：固定分母（期望清单）指标 */
+interface FixedDenominatorMetrics {
+  hasChecklist: boolean;
+  checklistVersion: number | null;
+  checklistSource: "independent" | "retrospective" | null;
+  retrospective: boolean;
+  rawSlots: number;
+  notApplicable: number;
+  effectiveDenominator: number;
+  byStatus: Record<string, number>;
+  extracted: number;
+  missing: number;
+  completeness: number | null;
+  completenessNotEvaluated: boolean;
 }
 
 /** 从当前会话读取用户身份，注入请求头。
@@ -300,6 +396,32 @@ export const announcementsPipelineApi = {
   /** 任务详情 */
   getRun(runId: string): Promise<Run> {
     return request<Run>(`/runs/${runId}`);
+  },
+
+  /** M2：读取任务期望清单（固定分母） */
+  getChecklist(runId: string): Promise<ExpectedChecklist | null> {
+    return request<ExpectedChecklist | null>(`/runs/${runId}/checklist`);
+  },
+
+  /** M2：冻结任务期望清单（确立固定分母）；修改新增版本 */
+  freezeChecklist(
+    runId: string,
+    input: {
+      source?: "independent" | "retrospective";
+      jobs: Array<{ key: string; jobCode?: string; sheet?: string; row?: number }>;
+      applicabilityOverrides?: Array<{
+        field: string;
+        jobKey?: string;
+        applicability: "applicable" | "not_applicable";
+        basis: string;
+      }>;
+      note?: string;
+    }
+  ): Promise<ExpectedChecklist> {
+    return request<ExpectedChecklist>(`/runs/${runId}/checklist`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
   },
 
   /** 提交审核 */
@@ -406,4 +528,11 @@ export type {
   RatioMetric,
   TimingMetrics,
   DownloadFile,
+  ExpectedChecklist,
+  ExpectedSlot,
+  ExpectedJob,
+  ChecklistQualityReport,
+  SlotResult,
+  SlotMetrics,
+  FixedDenominatorMetrics,
 };

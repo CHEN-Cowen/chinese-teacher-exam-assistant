@@ -508,6 +508,40 @@ export function ReviewWorkbench({
       </div>
 
       {/* 质量门禁状态（WB3 可复算，不自行计算正确率） */}
+      {/* M2 固定分母（期望清单）总览：未建立清单 → 提示；有清单 → 显示遗漏与完整度 */}
+      {run.checklistQuality && (
+        <div
+          className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600"
+          data-testid="fixed-denominator-summary"
+        >
+          {run.checklistQuality.completenessNotEvaluated ? (
+            <p className="text-slate-500">
+              <strong>未建立固定分母，完整性未评估。</strong>
+              建立期望清单后可发现整项字段漏抽与整岗位漏抽。
+            </p>
+          ) : (
+            <div className="space-y-0.5">
+              <p>
+                固定分母完整性：
+                <strong className="text-slate-800">
+                  {run.checklistQuality.fixedDenominatorCompleteness === null
+                    ? "未记录"
+                    : `${(run.checklistQuality.fixedDenominatorCompleteness * 100).toFixed(1)}%`}
+                </strong>
+                <span className="ml-1 text-slate-400">
+                  （清单 v{run.checklistQuality.checklistVersion}，有效分母{" "}
+                  {run.checklistQuality.evaluation.metrics.effectiveDenominator}，
+                  遗漏 {run.checklistQuality.evaluation.metrics.missing}）
+                </span>
+              </p>
+              {run.checklistQuality.retrospective && (
+                <p className="text-amber-600">回顾性核对（候选后补建，非独立基准）</p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {scopeQuality && (
         <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600" data-testid="quality-summary">
           本分区：已提取 {scopeQuality.extracted} · 未知 {scopeQuality.unknown} · 冲突 {scopeQuality.conflict}（共 {scopeQuality.expected} 个字段）

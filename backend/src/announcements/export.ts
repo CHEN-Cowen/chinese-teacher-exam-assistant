@@ -28,6 +28,12 @@ import {
 import { isHighImpactField } from './field-registry.js';
 import { redactUrl } from '../sourcing/fetch/safe-fetcher.js';
 import { isCatalogPayload } from './catalog-payload-assembler.js';
+import {
+  evaluateChecklist,
+  fixedDenominatorCompleteness,
+  isRetrospective,
+  type ExpectedChecklist,
+} from './expected-checklist.js';
 
 // ==================== 版本与列契约 ====================
 
@@ -291,6 +297,34 @@ export interface ExportMetrics {
   timing: TimingMetrics;
   /** 指标口径说明（逐条人类可读，含公式） */
   formulaNotes: string[];
+  /** M2：固定分母（期望清单）口径；无清单为 null */
+  fixedDenominator: FixedDenominatorMetrics | null;
+}
+
+/**
+ * M2：固定分母（期望清单）指标。
+ * 分母来自预先确认的清单，不从候选输出反推；缺失/未知/无法核验不移出分母。
+ */
+export interface FixedDenominatorMetrics {
+  /** 是否有清单 */
+  hasChecklist: boolean;
+  /** 清单版本 */
+  checklistVersion: number | null;
+  /** 清单来源：independent / retrospective */
+  checklistSource: 'independent' | 'retrospective' | null;
+  /** 回顾性核对标记 */
+  retrospective: boolean;
+  /** 原始槽位 / 明确不适用 / 有效分母 / 各状态计数 */
+  rawSlots: number;
+  notApplicable: number;
+  effectiveDenominator: number;
+  byStatus: Record<string, number>;
+  extracted: number;
+  missing: number;
+  /** 固定分母完整性 = extracted / 有效分母；无清单或分母为 0 为 null */
+  completeness: number | null;
+  /** 是否「未建立固定分母，完整性未评估」 */
+  completenessNotEvaluated: boolean;
 }
 
 /** 单 scope 指标计算（纯函数，可用黄金样本人工复算） */
@@ -411,6 +445,10 @@ export function computeExportMetrics(input: {
   retryCount: number;
   publishedPayload?: unknown;
   sourceOfficialUrl?: string | null;
+  /** M2：期望清单（固定分母）；无清单时为 null/undefined（旧任务未评估） */
+  checklist?: ExpectedChecklist | null;
+  /** M2：无法核验的来源集合（可选） */
+  unverifiableScopes?: ReadonlySet<string>;
 }): ExportMetrics {
   const groups = groupFieldsByScope(input.candidate.fields);
 
@@ -477,6 +515,38 @@ export function computeExportMetrics(input: {
     ? input.publishedPayload.dataset
     : 'unmarked';
 
+  // M2：固定分母（期望清单）指标；无清单 → 明确「未评估」
+  const evaluation = evaluateChecklist(
+    input.checklist ?? null,
+    input.candidate.fields.map((f) => {
+      const norm = normalizeCandidateField(f);
+      return {
+        field: f.field,
+        value: f.value,
+        scope: norm.scope,
+        jobScope: f.jobScope,
+        status: norm.status,
+        alternatives: f.alternatives,
+      };
+    }),
+    { unverifiableScopes: input.unverifiableScopes },
+  );
+  const checklistMetrics = evaluation.metrics;
+  const fixedDenominator: FixedDenominatorMetrics = {
+    hasChecklist: evaluation.hasChecklist,
+    checklistVersion: evaluation.checklistVersion ?? null,
+    checklistSource: evaluation.checklistSource ?? null,
+    retrospective: isRetrospective(input.checklist ?? null),
+    rawSlots: checklistMetrics.rawSlots,
+    notApplicable: checklistMetrics.notApplicable,
+    effectiveDenominator: checklistMetrics.effectiveDenominator,
+    byStatus: checklistMetrics.byStatus as unknown as Record<string, number>,
+    extracted: checklistMetrics.extracted,
+    missing: checklistMetrics.missing,
+    completeness: fixedDenominatorCompleteness(evaluation),
+    completenessNotEvaluated: !evaluation.hasChecklist,
+  };
+
   return {
     runId: input.runId,
     status: input.status,
@@ -488,6 +558,7 @@ export function computeExportMetrics(input: {
     totals,
     ratios,
     timing: { totalDurationMs, reviewDurationMs, retryCount: input.retryCount },
+    fixedDenominator,
     formulaNotes: [
       '应有字段数 = 该范围内去重出现过的字段名数（与 WB3 完整性报告 expected 同口径，可用黄金样本逐条数出）',
       '有证据高影响字段数 = 高影响字段中携带证据锚点（anchor）的数量',
@@ -495,6 +566,8 @@ export function computeExportMetrics(input: {
       '总耗时 = finishedAt − createdAt（任一缺失记为「未记录」）',
       '人工审核耗时 = 末条审核记录时间 − 首条审核记录时间（不足两条记为「未记录」）',
       '人工采用率不是准确率：没有黄金答案或独立人工裁决时，不输出准确率/召回率/提效百分比',
+      'M2 固定分母：完整性 = 已提取槽位 / 有效分母（原始槽位 − 明确不适用），分母来自预先确认的清单，不从候选输出反推；缺失/未知/无法核验不移出分母',
+      'M2 固定分母完整性不是准确率：只反映「清单期望槽位中有多少被提取」，不声称字段值正确',
     ],
   };
 }

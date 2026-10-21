@@ -90,6 +90,37 @@ export class AnnouncementsController {
     return this.service.getRun(id);
   }
 
+  // ==================== 管理员：M2 期望清单（固定分母） ====================
+  // 冻结清单即确立固定分母；岗位集合由人工独立清点/补入，不从本轮候选推断。
+  // 修改清单新增版本（version 递增，保留历史）。
+
+  @Get('runs/:id/checklist')
+  @UseGuards(AdminGuard)
+  async getChecklist(@Param('id') id: string) {
+    return this.service.getChecklist(id);
+  }
+
+  @Post('runs/:id/checklist')
+  @UseGuards(StrictAdminGuard)
+  async freezeChecklist(
+    @Param('id') id: string,
+    @Body()
+    body: {
+      source?: 'independent' | 'retrospective';
+      jobs: Array<{ key: string; jobCode?: string; sheet?: string; row?: number }>;
+      applicabilityOverrides?: Array<{
+        field: string;
+        jobKey?: string;
+        applicability: 'applicable' | 'not_applicable';
+        basis: string;
+      }>;
+      note?: string;
+    },
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.service.freezeChecklist(id, body, { id: req.user!.id });
+  }
+
   @Get('snapshots/:id/content')
   @UseGuards(AdminGuard)
   async getSnapshotContent(@Param('id') id: string) {

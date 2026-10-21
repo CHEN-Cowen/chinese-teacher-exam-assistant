@@ -21,7 +21,11 @@ import {
   type FieldDecisionInput,
   type ReviewAction,
 } from './domain.js';
-import { buildCompletenessReport, assertPublishable } from './quality-gates.js';
+import { buildCompletenessReport, assertPublishable, buildChecklistQuality } from './quality-gates.js';
+import {
+  buildChecklist,
+  type ExpectedChecklist,
+} from './expected-checklist.js';
 import {
   ProjectionError,
   projectCatalogVersion,
@@ -353,6 +357,7 @@ export class AnnouncementsService {
         evidenceAnchors: true,
         reviewRecords: { orderBy: { reviewedAt: 'desc' } },
         publishedVersion: true,
+        expectedChecklist: true,
       },
     });
     if (!run) throw new NotFoundException('提取任务不存在');
@@ -366,7 +371,20 @@ export class AnnouncementsService {
     // M1：材料包文件状态（已持久化在 candidate.rawJson.files，刷新/重进可读）
     const manualExtraction = this.readMaterialPack(run.candidate, run.parserVersion);
 
-    return { ...run, quality, manualExtraction };
+    // M2：固定分母质量报告（基于期望清单）。有清单 → 固定分母评估；
+    // 无清单 → completenessNotEvaluated=true，前端显示「未建立固定分母，完整性未评估」。
+    const checklist = run.expectedChecklist
+      ? this.checklistFromRow(run.expectedChecklist)
+      : null;
+    const checklistQuality = run.candidate
+      ? buildChecklistQuality(
+          checklist,
+          run.candidate as unknown as ExtractionCandidate,
+          this.unverifiableScopesFromMaterialPack(run.candidate),
+        )
+      : null;
+
+    return { ...run, quality, manualExtraction, checklist, checklistQuality };
   }
 
   async listRuns(params: { status?: string; announcementId?: string } = {}) {
@@ -378,6 +396,98 @@ export class AnnouncementsService {
       orderBy: { createdAt: 'desc' },
       include: { snapshot: { include: { source: true } } },
     });
+  }
+
+  // ==================== 3.1 M2：期望清单（固定分母）构建与冻结 ====================
+
+  /**
+   * 冻结任务期望清单（固定分母）。
+   *
+   * 岗位集合由调用方显式传入（独立清点/人工补入），不从本轮候选推断；
+   * 候选之后补建必须标 `source='retrospective'`（回顾性核对，不冒称独立基准）。
+   * 冻结即持久化一份不可变清单；修改清单需新增版本（version 递增，保留历史）。
+   *
+   * 清单只保存「哪些项要检查」，绝不保存标准答案值。
+   */
+  async freezeChecklist(
+    runId: string,
+    input: {
+      source?: 'independent' | 'retrospective';
+      jobs: Array<{ key: string; jobCode?: string; sheet?: string; row?: number }>;
+      applicabilityOverrides?: Array<{
+        field: string;
+        jobKey?: string;
+        applicability: 'applicable' | 'not_applicable';
+        basis: string;
+      }>;
+      note?: string;
+    },
+    operator: { id: string },
+  ) {
+    const run = await this.prisma.extractionRun.findUnique({
+      where: { id: runId },
+      include: { snapshot: true },
+    });
+    if (!run) throw new NotFoundException('提取任务不存在');
+
+    const checklist = buildChecklist({
+      snapshotId: run.snapshotId,
+      inputHash: run.snapshot?.contentHash ?? '',
+      source: input.source ?? 'independent',
+      jobs: input.jobs,
+      applicabilityOverrides: input.applicabilityOverrides,
+      frozenBy: operator.id,
+      frozenAt: new Date().toISOString(),
+      note: input.note,
+    });
+
+    const existing = await this.prisma.expectedChecklist.findUnique({
+      where: { runId },
+    });
+
+    // 修改清单 → 新增版本（保留历史）；旧版本指标不被追溯修改。
+    const nextVersion = existing ? existing.version + 1 : 1;
+
+    const payload = {
+      announcementSlots: checklist.announcementSlots,
+      jobs: checklist.jobs,
+    } as unknown as object;
+
+    const saved = existing
+      ? await this.prisma.expectedChecklist.update({
+          where: { runId },
+          data: {
+            version: nextVersion,
+            snapshotId: checklist.snapshotId,
+            inputHash: checklist.inputHash,
+            source: checklist.source,
+            slots: payload,
+            frozenAt: new Date(checklist.frozenAt),
+            frozenBy: checklist.frozenBy,
+            note: checklist.note ?? null,
+          },
+        })
+      : await this.prisma.expectedChecklist.create({
+          data: {
+            runId,
+            version: nextVersion,
+            snapshotId: checklist.snapshotId,
+            inputHash: checklist.inputHash,
+            source: checklist.source,
+            slots: payload,
+            frozenAt: new Date(checklist.frozenAt),
+            frozenBy: checklist.frozenBy,
+            note: checklist.note ?? null,
+          },
+        });
+
+    return { ...saved, checklist };
+  }
+
+  /** 读取任务期望清单（无则返回 null） */
+  async getChecklist(runId: string) {
+    const row = await this.prisma.expectedChecklist.findUnique({ where: { runId } });
+    return row ? this.checklistFromRow(row) : null;
   }
 
   /** M1：从候选 rawJson.files 提取材料包文件状态（持久化后刷新可读） */
@@ -395,6 +505,50 @@ export class AnnouncementsService {
       fieldCount: (raw?.fields ?? []).length,
       files,
     };
+  }
+
+  /** M2：把持久化的 ExpectedChecklist 行还原为领域对象 */
+  private checklistFromRow(row: {
+    version: number;
+    snapshotId: string;
+    inputHash: string;
+    source: string;
+    slots: unknown;
+    frozenAt: Date;
+    frozenBy: string;
+    note?: string | null;
+  }): ExpectedChecklist {
+    const slots = (row.slots ?? {}) as {
+      announcementSlots?: ExpectedChecklist['announcementSlots'];
+      jobs?: ExpectedChecklist['jobs'];
+    };
+    return {
+      version: row.version,
+      snapshotId: row.snapshotId,
+      inputHash: row.inputHash,
+      source: (row.source === 'retrospective' ? 'retrospective' : 'independent') as ExpectedChecklist['source'],
+      announcementSlots: slots.announcementSlots ?? [],
+      jobs: slots.jobs ?? [],
+      frozenAt: row.frozenAt.toISOString(),
+      frozenBy: row.frozenBy,
+      note: row.note ?? undefined,
+    };
+  }
+
+  /** M2：从材料包文件状态推导「无法核验」的 scope（不可读附件的岗位来源） */
+  private unverifiableScopesFromMaterialPack(candidate: unknown): ReadonlySet<string> {
+    const raw = candidate as {
+      rawJson?: { files?: Array<{ readStatus?: string }> };
+    } | null;
+    const files = raw?.rawJson?.files;
+    if (!Array.isArray(files) || files.length === 0) return new Set();
+    const unreadable = files.some(
+      (f) => f.readStatus !== 'ok' && f.readStatus !== undefined,
+    );
+    // 任一附件不可读时，无法判断哪些岗位槽位「原文未明示」还是「来源缺失」，
+    // 保守标记全部范围为「无法核验」，避免把解析失败误判为原文没有。
+    if (unreadable) return new Set(['__all__']);
+    return new Set();
   }
 
   // ==================== 4. 提交审核 ====================

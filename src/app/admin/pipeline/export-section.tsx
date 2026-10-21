@@ -209,6 +209,46 @@ export function ExportSection({ runId }: { runId: string }) {
       )}
       {metrics && (
         <div className="mt-3 space-y-3" data-testid="metrics-summary">
+          {/* M2 固定分母（期望清单）状态 */}
+          {metrics.fixedDenominator && (
+            <div
+              className="rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-xs text-slate-600"
+              data-testid="fixed-denominator"
+            >
+              {metrics.fixedDenominator.completenessNotEvaluated ? (
+                <p className="text-slate-500">
+                  <strong>未建立固定分母，完整性未评估。</strong>
+                  <span className="ml-1">
+                    建立期望清单后，完整性将按「预先确认的清单」评估，可发现整项字段漏抽与整岗位漏抽。
+                  </span>
+                </p>
+              ) : (
+                <div className="space-y-1">
+                  <p>
+                    <strong>固定分母完整性：</strong>
+                    {metrics.fixedDenominator.completeness === null
+                      ? "未记录"
+                      : `${(metrics.fixedDenominator.completeness * 100).toFixed(1)}%`}
+                    <span className="ml-1 text-slate-400">
+                      （{metrics.fixedDenominator.extracted}/
+                      {metrics.fixedDenominator.effectiveDenominator}，
+                      原始槽位 {metrics.fixedDenominator.rawSlots}，不适用{" "}
+                      {metrics.fixedDenominator.notApplicable}，遗漏{" "}
+                      {metrics.fixedDenominator.missing}）
+                    </span>
+                  </p>
+                  <p className="text-slate-400">
+                    清单版本 v{metrics.fixedDenominator.checklistVersion} ·{" "}
+                    {metrics.fixedDenominator.checklistSource === "retrospective"
+                      ? "回顾性核对（候选后补建，非独立基准）"
+                      : "独立清点"}
+                    {metrics.fixedDenominator.retrospective && " · 回顾性核对"}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* 比例（分子/分母/公式） */}
           <div className="flex flex-wrap gap-2">
             {metrics.ratios.map((r) => (

@@ -13,6 +13,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service.js';
 import type { ExtractionCandidate } from './domain.js';
+import type { ExpectedChecklist } from './expected-checklist.js';
 import {
   buildCsv,
   buildExportRows,
@@ -33,6 +34,7 @@ export class ExportService {
         snapshot: { include: { source: true } },
         reviewRecords: { orderBy: { reviewedAt: 'asc' } },
         publishedVersion: true,
+        expectedChecklist: true,
       },
     });
     if (!run) throw new NotFoundException('提取任务不存在');
@@ -42,11 +44,44 @@ export class ExportService {
     return run;
   }
 
+  /** M2：把持久化的清单行还原为领域对象（无清单返回 null） */
+  private checklistFromRun(run: {
+    expectedChecklist?: {
+      version: number;
+      snapshotId: string;
+      inputHash: string;
+      source: string;
+      slots: unknown;
+      frozenAt: Date;
+      frozenBy: string;
+      note?: string | null;
+    } | null;
+  }): ExpectedChecklist | null {
+    const row = run.expectedChecklist;
+    if (!row) return null;
+    const slots = (row.slots ?? {}) as {
+      announcementSlots?: ExpectedChecklist['announcementSlots'];
+      jobs?: ExpectedChecklist['jobs'];
+    };
+    return {
+      version: row.version,
+      snapshotId: row.snapshotId,
+      inputHash: row.inputHash,
+      source: (row.source === 'retrospective' ? 'retrospective' : 'independent') as ExpectedChecklist['source'],
+      announcementSlots: slots.announcementSlots ?? [],
+      jobs: slots.jobs ?? [],
+      frozenAt: row.frozenAt.toISOString(),
+      frozenBy: row.frozenBy,
+      note: row.note ?? undefined,
+    };
+  }
+
   /** 导出 JSON（结构化 scope、证据、alternatives、审核记录、实测指标） */
   async exportJson(runId: string): Promise<{ body: string; filename: string }> {
     const run = await this.loadRunOrThrow(runId);
     const candidate = run.candidate as unknown as ExtractionCandidate;
     const source = run.snapshot?.source;
+    const checklist = this.checklistFromRun(run);
 
     const metrics = computeExportMetrics({
       runId: run.id,
@@ -59,6 +94,7 @@ export class ExportService {
       retryCount: run.retryCount,
       publishedPayload: run.publishedVersion?.payload ?? undefined,
       sourceOfficialUrl: source?.officialUrl ?? null,
+      checklist,
     });
 
     const payload = buildJsonExport({
@@ -118,6 +154,7 @@ export class ExportService {
     const run = await this.loadRunOrThrow(runId);
     const candidate = run.candidate as unknown as ExtractionCandidate;
     const source = run.snapshot?.source;
+    const checklist = this.checklistFromRun(run);
 
     return computeExportMetrics({
       runId: run.id,
@@ -130,6 +167,7 @@ export class ExportService {
       retryCount: run.retryCount,
       publishedPayload: run.publishedVersion?.payload ?? undefined,
       sourceOfficialUrl: source?.officialUrl ?? null,
+      checklist,
     });
   }
 }

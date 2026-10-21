@@ -27,6 +27,13 @@ import {
   displayNameOf,
   isHighImpactField,
 } from './field-registry.js';
+import {
+  evaluateChecklist,
+  fixedDenominatorCompleteness,
+  isRetrospective,
+  type ChecklistEvaluation,
+  type ExpectedChecklist,
+} from './expected-checklist.js';
 
 // ==================== 报告类型 ====================
 
@@ -359,3 +366,73 @@ export function assertPublishable(candidate: ExtractionCandidate): void {
 
 // 再导出常量，供需要显式引用的调用方使用（单一事实源）
 export { HIGH_IMPACT_FIELD_SET, REQUIRED_FIELD_SET, UNKNOWN_ALLOWED_FIELD_SET };
+
+// ==================== M2：固定分母质量报告（基于期望清单） ====================
+
+/**
+ * M2 固定分母质量报告：把「期望清单 + 候选输出」评估为可复算的质量状态。
+ *
+ * 与 WB3 `buildCompletenessReport` 的区别：
+ * - WB3 的 `expected` 从候选「已出现字段」反推，漏抽会缩小分母；
+ * - 本报告的分母来自**预先确认的清单**（固定分母），整字段漏抽、整岗位漏抽都会被
+ *   点名（`should_have_but_missing`），零输出岗位也出现。
+ *
+ * 兼容：无清单的任务返回 `hasChecklist=false`，调用方显示「未建立固定分母，
+ * 完整性未评估」；不把 legacy 缺失资料冒充高完整度。有清单时保留 WB3 报告
+ * 的冲突/缺证据/未确认门禁（这些仍然有效）。
+ */
+export interface ChecklistQualityReport {
+  /** 是否有固定分母（清单） */
+  hasChecklist: boolean;
+  /** 清单版本（无清单为 null） */
+  checklistVersion: number | null;
+  /** 清单来源：independent / retrospective */
+  checklistSource: ChecklistEvaluation['checklistSource'] | null;
+  /** 固定分母评估（逐槽位结果 + 指标） */
+  evaluation: ChecklistEvaluation;
+  /** 固定分母完整性 = extracted / 有效分母；无清单或分母为 0 时为 null */
+  fixedDenominatorCompleteness: number | null;
+  /** 回顾性核对标记（候选之后补建，不冒称独立基准） */
+  retrospective: boolean;
+  /** 是否应显示「未建立固定分母，完整性未评估」 */
+  completenessNotEvaluated: boolean;
+}
+
+/**
+ * 构建固定分母质量报告。
+ *
+ * @param checklist 期望清单（可空）
+ * @param candidate 候选结果（实际输出）
+ * @param unverifiableScopes 无法核验的来源集合（可选）
+ */
+export function buildChecklistQuality(
+  checklist: ExpectedChecklist | null | undefined,
+  candidate: ExtractionCandidate,
+  unverifiableScopes?: ReadonlySet<string>,
+): ChecklistQualityReport {
+  const evaluation = evaluateChecklist(
+    checklist,
+    candidate.fields.map((f) => {
+      const norm = normalizeCandidateField(f);
+      return {
+        field: f.field,
+        value: f.value,
+        scope: norm.scope,
+        jobScope: f.jobScope,
+        status: norm.status,
+        alternatives: f.alternatives,
+      };
+    }),
+    { unverifiableScopes },
+  );
+
+  return {
+    hasChecklist: evaluation.hasChecklist,
+    checklistVersion: evaluation.checklistVersion ?? null,
+    checklistSource: evaluation.checklistSource ?? null,
+    evaluation,
+    fixedDenominatorCompleteness: fixedDenominatorCompleteness(evaluation),
+    retrospective: isRetrospective(checklist),
+    completenessNotEvaluated: !evaluation.hasChecklist,
+  };
+}

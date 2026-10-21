@@ -408,10 +408,56 @@ model ExtractionRun {
   evidenceAnchors EvidenceAnchor[]
   reviewRecords   ReviewRecord[]
   publishedVersion PublishedAnnouncementVersion?
+  /** M2：任务期望清单（固定分母）。一个 run 至多一份；版本升级通过 version 递增保留历史。 */
+  expectedChecklist ExpectedChecklist?
 
   @@index([status])
   @@index([announcementId])
   @@map("extraction_runs")
+}
+
+/**
+ * M2：任务期望清单（固定分母）——可持久化的提取完整性评估基准。
+ *
+ * 用途：让质量分母来自「输入 + 预先确认的清单」，而不是从本轮候选输出反推。
+ * 清单只描述「哪些项要检查」，绝不保存标准答案值；评估答案与任务输入隔离。
+ *
+ * - 一个 ExtractionRun 至多一份（一对一）；清单固定后修改必须新增版本，
+ *   由 version 递增表达，历史报告保留；
+ * - source 区分独立清点（independent）与回顾性核对（retrospective，候选之后补建，
+ *   不冒称独立基准）；
+ * - slots 以 JSON 存岗位清单与公告公共/岗位字段槽位（含适用性与依据）；
+ * - 旧任务无此记录 → 前端显示「未建立固定分母，完整性未评估」，不以 legacy
+ *   缺失资料冒充高完整度。
+ *
+ * 兼容与回退：本模型为可选关联（ExtractionRun.expectedChecklist 可空），旧任务
+ * 不受影响；新增模型不影响既有读写路径。迁移不自动对生产库执行。
+ */
+model ExpectedChecklist {
+  id         String   @id @default(uuid())
+  runId      String   @unique
+  run        ExtractionRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  /** 清单版本：固定后修改必须递增，保留历史 */
+  version    Int      @default(1)
+  /** 输入标识：快照 id（sample/material bundle ID） */
+  snapshotId String   @map("snapshot_id")
+  /** 输入版本或哈希：内容哈希（清单冻结时指向的输入） */
+  inputHash  String   @map("input_hash")
+  /** 清单来源：independent=独立清点 / retrospective=回顾性核对 */
+  source     String   @default("independent")
+  /** 岗位清单 + 公告公共/岗位字段槽位（含适用性、依据） */
+  slots      Json
+  /** 冻结（确认）时间 */
+  frozenAt   DateTime @map("frozen_at")
+  /** 确认操作者 id */
+  frozenBy   String   @map("frozen_by")
+  /** 冻结附注（可选） */
+  note       String?
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@index([runId])
+  @@map("expected_checklists")
 }
 
 /**
