@@ -191,7 +191,7 @@ async function buildClosure() {
             announcementId: 'hz-closure-ann',
             versionNumber: 1,
             status: 'published',
-            payload: { dataset: 'test', announcement, version },
+            payload: { dataset: 'demo', announcement, version },
             publishedAt: new Date(),
             previousVersionId: null,
             supersededAt: null,
