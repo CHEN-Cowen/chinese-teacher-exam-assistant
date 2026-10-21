@@ -13,6 +13,7 @@ import { SourceDocumentStore } from '../source-document-store.js';
 import { HangzhouEducationAdapter } from '../adapters/hangzhou-education.adapter.js';
 import { NingboEducationAdapter } from '../adapters/ningbo-education.adapter.js';
 import { YinzhouGovernmentAdapter } from '../adapters/yinzhou-government.adapter.js';
+import { NanjingEducationAdapter } from '../adapters/nanjing-education.adapter.js';
 import { DocumentFetchService } from './document-fetch.service.js';
 import type { DocumentFetchPayload } from './task-queue.js';
 import {
@@ -61,6 +62,7 @@ async function setup(
     new HangzhouEducationAdapter(),
     new NingboEducationAdapter(),
     new YinzhouGovernmentAdapter(),
+    new NanjingEducationAdapter(),
   );
   const service = new DocumentFetchService(
     runStore,

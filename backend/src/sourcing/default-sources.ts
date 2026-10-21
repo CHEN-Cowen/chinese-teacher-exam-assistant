@@ -11,6 +11,7 @@
 import { HANGZHOU_ADAPTER_KEY } from './adapters/hangzhou-education.adapter.js';
 import { NINGBO_ADAPTER_KEY } from './adapters/ningbo-education.adapter.js';
 import { YINZHOU_ADAPTER_KEY } from './adapters/yinzhou-government.adapter.js';
+import { NANJING_ADAPTER_KEY } from './adapters/nanjing-education.adapter.js';
 
 export interface DefaultCrawlSource {
   adapterKey: string;
@@ -24,6 +25,20 @@ export interface DefaultCrawlSource {
 }
 
 export const DEFAULT_CRAWL_SOURCES: readonly DefaultCrawlSource[] = [
+  {
+    adapterKey: NANJING_ADAPTER_KEY,
+    publisher: '南京市教育局',
+    regionCode: '320100',
+    officialUrl: 'https://edu.nanjing.gov.cn/bsfw/zpzk/',
+    // 教师招聘栏目列表页 + 分页（index_1 为第 2 页，含 2026-01 各区公告）。
+    // 栏目路径已对照真实官网核实（2026-10-21）。
+    listUrls: [
+      'https://edu.nanjing.gov.cn/bsfw/zpzk/index.html',
+      'https://edu.nanjing.gov.cn/bsfw/zpzk/index_1.html',
+    ],
+    allowedHosts: ['edu.nanjing.gov.cn'],
+    pollEveryMinutes: 60,
+  },
   {
     adapterKey: HANGZHOU_ADAPTER_KEY,
     publisher: '杭州市教育局',

@@ -9,6 +9,7 @@ import type { OfficialSiteAdapter } from './official-site-adapter.js';
 import { HangzhouEducationAdapter } from './adapters/hangzhou-education.adapter.js';
 import { NingboEducationAdapter } from './adapters/ningbo-education.adapter.js';
 import { YinzhouGovernmentAdapter } from './adapters/yinzhou-government.adapter.js';
+import { NanjingEducationAdapter } from './adapters/nanjing-education.adapter.js';
 
 @Injectable()
 export class AdapterRegistry {
@@ -18,8 +19,9 @@ export class AdapterRegistry {
     hangzhou: HangzhouEducationAdapter,
     ningbo: NingboEducationAdapter,
     yinzhou: YinzhouGovernmentAdapter,
+    nanjing: NanjingEducationAdapter,
   ) {
-    const adapters = [hangzhou, ningbo, yinzhou];
+    const adapters = [hangzhou, ningbo, yinzhou, nanjing];
     this.byKey = new Map(adapters.map((adapter) => [adapter.key, adapter]));
   }
 

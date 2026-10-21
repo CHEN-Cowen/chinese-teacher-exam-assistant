@@ -12,6 +12,7 @@ import { SourceDocumentStore } from '../source-document-store.js';
 import { HangzhouEducationAdapter } from '../adapters/hangzhou-education.adapter.js';
 import { NingboEducationAdapter } from '../adapters/ningbo-education.adapter.js';
 import { YinzhouGovernmentAdapter } from '../adapters/yinzhou-government.adapter.js';
+import { NanjingEducationAdapter } from '../adapters/nanjing-education.adapter.js';
 import { SourceDiscoverService } from './source-discover.service.js';
 import type { SourceDiscoverPayload } from './task-queue.js';
 import {
@@ -47,6 +48,7 @@ async function setup(
     new HangzhouEducationAdapter(),
     new NingboEducationAdapter(),
     new YinzhouGovernmentAdapter(),
+    new NanjingEducationAdapter(),
   );
   const factory = new OfflineFetcherFactory(routes);
   const service = new SourceDiscoverService(
@@ -157,6 +159,7 @@ describe('SourceDiscoverService.handle', () => {
         new HangzhouEducationAdapter(),
         new NingboEducationAdapter(),
         new YinzhouGovernmentAdapter(),
+        new NanjingEducationAdapter(),
       ),
       queue,
     );
