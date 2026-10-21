@@ -19,6 +19,8 @@ ENV NEXT_PUBLIC_DEMO_MODE=false
 # v7.2 统一结果工作台开关：必须在构建阶段内联进浏览器产物
 # （NEXT_PUBLIC_* 为编译期常量，容器运行时设置不会生效）
 ENV NEXT_PUBLIC_FF_NEW_RESULTS=true
+# 公开注册入口：比赛现场体验时开放自助注册（后端 PUBLIC_REGISTRATION 须同步开启）
+ENV NEXT_PUBLIC_PUBLIC_REGISTRATION=true
 COPY public ./public
 COPY scripts ./scripts
 COPY src ./src

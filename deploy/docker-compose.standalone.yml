@@ -92,6 +92,9 @@ services:
       # 位于 Next.js 同源反代（以及你的 nginx）之后
       TRUST_PROXY: "true"
       AUTH_MODE: invited
+      # 公开注册开关：true 时开放 POST /auth/register（比赛现场自助注册体验）；
+      # 默认 false（受邀阶段不开放公开注册）。
+      PUBLIC_REGISTRATION: ${PUBLIC_REGISTRATION:-false}
       # 生产镜像要求 INTERNAL_TOKEN 非空；backend 不暴露端口，固定默认值即可。
       # 若哪天给 backend 加了 ports 映射，必须改成强随机值。
       INTERNAL_TOKEN: ${INTERNAL_TOKEN:-jiaozhao-internal-local}
