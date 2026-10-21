@@ -43,10 +43,10 @@ const DB_PUBLISHED_ROW = {
   versionNumber: 1,
   status: 'published',
   payload: {
-    dataset: 'test',
+    dataset: 'real',
     announcement: {
       id: 'fx-ann-db-priority',
-      title: '【测试】数据库已发布公告',
+      title: '数据库已发布公告（人工复核）',
       publisher: '测试市教育局',
       organizationType: 'government_unified',
       officialUrl: 'https://www.example.gov.cn/test/db-notice',
@@ -54,6 +54,11 @@ const DB_PUBLISHED_ROW = {
       region: { code: '330100', province: '浙江省', city: '杭州市' },
       lifecycle: 'active',
       firstPublishedAt: '2026-10-10T00:00:00.000Z',
+      // M5：已发布进用户端的正确语义是「真实数据 + 已人工复核」，
+      // 而非 test 样本（test 按 M5-05 不得进入用户端目录）。
+      reviewStatus: 'human_reviewed',
+      reviewedBy: 'fx-reviewer',
+      reviewedAt: '2026-10-10T01:00:00.000Z',
     },
     version: {
       id: 'fx-ann-db-priority-v1',

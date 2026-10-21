@@ -275,9 +275,10 @@ export interface RecruitmentAnnouncement {
   versions: AnnouncementVersion[];
   /**
    * 数据集合：demo=演示数据（example.gov.cn 占位来源）；
-   * real=真实监测台账数据（人工维护，附官方锚点）。缺省视为 demo。
+   * real=真实监测台账数据（人工维护，附官方锚点）；
+   * test=自动化测试样本（永不进入用户端目录，M5-05）。缺省视为 demo。
    */
-  dataset?: 'demo' | 'real';
+  dataset?: 'demo' | 'real' | 'test';
   /** 人工复核状态与复核人；real 记录未复核不进入主要推荐 */
   reviewStatus?: AnnouncementReviewStatus;
   reviewedBy?: string | null;

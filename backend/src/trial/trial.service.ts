@@ -30,13 +30,17 @@ function datasetOfUnit(unitId: string | null): 'demo' | 'real' | null {
   if (!datasetIndex) {
     datasetIndex = new Map();
     const register = (
-      announcements: readonly { dataset?: 'demo' | 'real'; versions: readonly { units: readonly { id: string }[] }[] }[],
+      announcements: readonly { dataset?: 'demo' | 'real' | 'test'; versions: readonly { units: readonly { id: string }[] }[] }[],
       dataset: 'demo' | 'real',
     ) => {
       for (const a of announcements) {
         for (const v of a.versions) {
           for (const u of v.units) {
-            if (!datasetIndex!.has(u.id)) datasetIndex!.set(u.id, a.dataset ?? dataset);
+            if (!datasetIndex!.has(u.id)) {
+              // 静态目录（demo 台账 / real 台账）不含 test；test 值在此收窄丢弃
+              const ds = a.dataset === 'test' ? dataset : (a.dataset ?? dataset);
+              datasetIndex!.set(u.id, ds);
+            }
           }
         }
       }

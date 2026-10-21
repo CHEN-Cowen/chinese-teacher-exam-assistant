@@ -20,6 +20,7 @@ import {
   MATCH_RULE_VERSION,
   currentVersion,
   groupByMissingDimension,
+  isUserVisibleInCatalog,
   sortCandidates,
 } from '../matching/engine.js';
 import type {
@@ -121,8 +122,8 @@ export interface UnitMatchDTO {
     publisher: string;
     organizationType: string;
     officialUrl: string;
-    /** demo=演示数据；real=真实监测台账数据 */
-    dataset: 'demo' | 'real';
+    /** demo=演示数据；real=真实监测台账数据；test=自动化样本（不进用户端） */
+    dataset: 'demo' | 'real' | 'test';
     reviewStatus: 'ai_reviewed_pending' | 'human_reviewed';
     reviewedBy: string | null;
     reviewedAt: string | null;
@@ -385,10 +386,10 @@ export function buildMatchResponse(
   now: Date,
   coverage?: { openOpportunityCount?: number; lastCheckedAt?: string },
 ): MatchResponse {
-  // 模块 7.5 合规过滤：普通用户端不返回 AI 初核待人工复核记录（dataset === 'real'）。
-  // 管理端复核界面使用独立 API，不受影响。
-  const publishedCandidates = candidates.filter(
-    (c) => c.announcement.dataset !== 'real',
+  // M5 合规过滤：普通用户端不返回 test 样本与 AI 初核待人工复核的真实记录。
+  // 已人工复核（human_reviewed）的真实岗位照常进入；管理端复核走独立 API。
+  const publishedCandidates = candidates.filter((c) =>
+    isUserVisibleInCatalog(c.announcement),
   );
   const sorted = sortCandidates([...publishedCandidates], profile);
   const dtoOf = (c: OpportunityCandidate) =>
@@ -459,9 +460,9 @@ export function buildUnitDetail(
   follows: readonly FollowRecord[],
   now: Date,
 ): UnitDetailResponse | null {
-  // 模块 7.5 合规过滤：普通用户端不返回 AI 初核待人工复核记录（dataset === 'real'）。
+  // M5 合规过滤：普通用户端不返回 test 样本与 AI 初核待人工复核的真实记录。
   const candidate = candidates.find(
-    (c) => c.unit.id === unitId && c.announcement.dataset !== 'real',
+    (c) => c.unit.id === unitId && isUserVisibleInCatalog(c.announcement),
   );
   if (!candidate) return null;
   const follow = follows.find((f) => followMatchesUnit(f, candidate)) ?? null;

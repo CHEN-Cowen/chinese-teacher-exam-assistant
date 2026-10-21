@@ -5,6 +5,7 @@ import {
   currentVersion,
   evaluateRequirement,
   groupByMissingDimension,
+  isUserVisibleInCatalog,
   isValidOpportunity,
   majorNameMatches,
   normalizeMajor,
@@ -270,5 +271,32 @@ describe('资格匹配引擎：当前版本选择', () => {
       (a) => a.id === SCENARIO_IDS.supplemented,
     )!;
     expect(currentVersion(hefei).id).toBe('ann-hefei-v2');
+  });
+});
+
+// ==================== M5：目录可见性（数据集合 × 人工复核状态分离） ====================
+
+describe('M5 目录可见性：isUserVisibleInCatalog', () => {
+  const base = (dataset?: 'demo' | 'real' | 'test', reviewStatus?: string) =>
+    ({ dataset, reviewStatus }) as {
+      dataset?: 'demo' | 'real';
+      reviewStatus?: 'ai_reviewed_pending' | 'human_reviewed';
+    };
+
+  it('demo（含缺省）始终可见', () => {
+    expect(isUserVisibleInCatalog(base('demo'))).toBe(true);
+    expect(isUserVisibleInCatalog(base(undefined))).toBe(true);
+  });
+
+  it('test 样本永不进入用户端（M5-05）', () => {
+    expect(isUserVisibleInCatalog(base('test'))).toBe(false);
+    // 即便被错误标记为 human_reviewed 也不放行（test 是自动化样本）
+    expect(isUserVisibleInCatalog(base('test', 'human_reviewed'))).toBe(false);
+  });
+
+  it('real 仅在 human_reviewed 后可见；AI 初核待复核不可见（M5-03）', () => {
+    expect(isUserVisibleInCatalog(base('real', 'human_reviewed'))).toBe(true);
+    expect(isUserVisibleInCatalog(base('real', 'ai_reviewed_pending'))).toBe(false);
+    expect(isUserVisibleInCatalog(base('real', undefined))).toBe(false);
   });
 });

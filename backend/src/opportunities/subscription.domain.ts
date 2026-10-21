@@ -12,7 +12,7 @@
  * 只提醒一次；首次同步对既有匹配公告做基线回填（notified=false），不产生通知风暴；
  * 公告发布新版本视为新信息，允许再次提醒（仍每版本一次）。
  */
-import { currentVersion } from '../matching/engine.js';
+import { currentVersion, isUserVisibleInCatalog } from '../matching/engine.js';
 import type {
   AnnouncementVersion,
   ApplicationUnit,
@@ -169,12 +169,9 @@ export function firstQualifyingUnit(
   if (!announcement.officialUrl.startsWith('https://')) return null;
 
   // 3. 已人工核对：演示台账（缺省 dataset 视为 demo）为人工维护示例；
-  //    真实台账必须 human_reviewed
+  //    真实台账必须 human_reviewed；test 样本永不提醒（M5 统一口径）
   if (announcement.lifecycle !== 'active') return null;
-  const dataset = announcement.dataset ?? 'demo';
-  if (dataset !== 'demo' && announcement.reviewStatus !== 'human_reviewed') {
-    return null;
-  }
+  if (!isUserVisibleInCatalog(announcement)) return null;
 
   // 4/5. 地区、学科、用工偏好与已知明确不符合项按单元判定
   for (const unit of version.units) {

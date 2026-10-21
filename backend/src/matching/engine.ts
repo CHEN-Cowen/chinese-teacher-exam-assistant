@@ -94,6 +94,30 @@ export function currentVersion(
 }
 
 /**
+ * 普通用户端目录可见性（M5，单一事实源）。
+ *
+ * 语义：区分「数据集合」与「人工复核状态」，绝不把二者混为一谈：
+ * - dataset='test'：自动化测试样本，**永不进入用户端目录**（M5-05）；
+ * - dataset='real'：真实监测台账/已发布真实数据，**仅当 reviewStatus='human_reviewed'**
+ *   （已人工复核）才进入用户端；AI 初核（ai_reviewed_pending）不进入（M5-03）；
+ * - dataset 缺省：视为 demo，人工维护示例，进入用户端。
+ *
+ * 历史成因：此前多处用 `dataset === 'real'` 直接过滤，把「已人工复核的真实岗位」
+ * 也一并挡在用户端之外，导致同一批已审核数据无法被目录/用户端读取（M5 目标）。
+ * 本函数统一该口径，与 subscription.domain 的既有正确语义对齐。
+ */
+export function isUserVisibleInCatalog(
+  announcement: Pick<RecruitmentAnnouncement, 'dataset' | 'reviewStatus'>,
+): boolean {
+  const dataset = announcement.dataset ?? 'demo';
+  if (dataset === 'test') return false;
+  if (dataset === 'real' && announcement.reviewStatus !== 'human_reviewed') {
+    return false;
+  }
+  return true;
+}
+
+/**
  * 地区匹配：画像地区按省级（前2位）或市级（前4位）前缀匹配。
  * 画像未填任何地区 → UNKNOWN（不臆造意向，也不判不符合）。
  */

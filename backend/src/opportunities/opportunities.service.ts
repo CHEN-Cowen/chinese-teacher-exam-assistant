@@ -12,7 +12,11 @@ import { ProfileService } from '../profile/profile.service.js';
 import { ScheduleService } from '../schedule/schedule.service.js';
 import { REAL_ANNOUNCEMENTS } from '../matching/real-catalog.js';
 import { getRollingCatalogAnnouncements } from '../matching/rolling-catalog.js';
-import { buildCandidates, currentVersion } from '../matching/engine.js';
+import {
+  buildCandidates,
+  currentVersion,
+  isUserVisibleInCatalog,
+} from '../matching/engine.js';
 import { PublishedCatalogRepository } from '../catalog/published-catalog.repository.js';
 import { isDbCatalogEnabled } from '../catalog/feature-flag.js';
 import type {
@@ -443,8 +447,9 @@ export class OpportunitiesService {
   ): CatalogSnapshot[] {
     const snapshots: CatalogSnapshot[] = [];
     for (const announcement of catalog) {
-      // 模块 7.5 合规过滤：用户端不返回 AI 初核待人工复核记录
-      if (announcement.dataset === 'real') continue;
+      // M5 合规过滤：test 样本与 AI 初核待复核的真实记录不进用户端备考目标；
+      // 已人工复核（human_reviewed）的真实岗位照常进入。
+      if (!isUserVisibleInCatalog(announcement)) continue;
       const version = currentVersion(announcement);
       for (const unit of version.units) {
         // 旧版本中同 code 单元的 id（关注记录可能仍指向旧版本单元 id）
@@ -945,8 +950,8 @@ export class OpportunitiesService {
     versionId: string;
   } {
     for (const announcement of catalog) {
-      // 模块 7.5 合规过滤：普通用户端不允许关注/查看 AI 初核待人工复核记录
-      if (announcement.dataset === 'real') continue;
+      // M5 合规过滤：test 样本与 AI 初核待复核真实记录不可关注/查看
+      if (!isUserVisibleInCatalog(announcement)) continue;
       const version = currentVersion(announcement);
       const unit = version.units.find((u) => u.id === unitId);
       if (unit) return { announcementId: announcement.id, versionId: version.id };
@@ -960,7 +965,7 @@ export class OpportunitiesService {
     catalog: readonly RecruitmentAnnouncement[],
   ): Record<string, MaterialStatus> {
     for (const announcement of catalog) {
-      if (announcement.dataset === 'real') continue;
+      if (!isUserVisibleInCatalog(announcement)) continue;
       for (const version of announcement.versions) {
         const unit = version.units.find((candidate) => candidate.id === unitId);
         if (!unit) continue;
