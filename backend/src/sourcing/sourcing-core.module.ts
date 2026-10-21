@@ -40,7 +40,17 @@ import { BullmqTaskQueue } from './jobs/bullmq-task-queue.js';
     SourceDocumentStore,
     CrawlHealthService,
     SourcingMetrics,
-    { provide: REDIS_CLIENT, useFactory: () => createRedisClient() },
+    {
+      provide: REDIS_CLIENT,
+      useFactory: () => {
+        const client = createRedisClient();
+        // lazyConnect 的连接不会自行建立：必须显式 connect()，否则首个命令即
+        // 「Stream isn't writeable」且永远失败（2026-10-22 生产验证：心跳从未写入）。
+        // 失败不阻塞启动——retryStrategy 会后台持续重连，Redis 恢复后自愈。
+        void client.connect().catch(() => undefined);
+        return client;
+      },
+    },
     {
       provide: OBJECT_STORE,
       // 生产（配置 OSS_* 环境变量）→ 私有版本化 OSS；开发/测试 → 本地内容寻址快照

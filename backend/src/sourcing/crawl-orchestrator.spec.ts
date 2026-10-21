@@ -40,7 +40,7 @@ describe('CrawlOrchestrator.checkSource', () => {
 
     expect(ref.status).toBe('queued');
     expect(ref.deduplicated).toBe(false);
-    expect(ref.jobId).toMatch(/^discover:src-hz:/);
+    expect(ref.jobId).toMatch(/^discover-src-hz-/);
     expect(queue.count('source.discover')).toBe(1);
 
     const run = prisma.findRun(ref.runId)!;

@@ -89,7 +89,7 @@ describe('DocumentParseService.handle', () => {
     expect(run.format).toBe('pdf');
     expect(ctx.queue.count('announcement.extract')).toBe(1);
     const extractJob = ctx.queue.enqueued.find((j) => j.name === 'announcement.extract');
-    expect(extractJob?.jobId).toBe(`extract:${snapshot.id}:rule-field-extractor@1.0.0`);
+    expect(extractJob?.jobId).toBe(`extract-${snapshot.id}-rule-field-extractor@1.0.0`);
   });
 
   it('同快照同版本重放 → already_parsed（不重复解析、不覆盖成功记录）', async () => {

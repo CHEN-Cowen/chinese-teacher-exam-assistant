@@ -12,6 +12,10 @@
  * - 解析：snapshotId + documentParserVersion
  * - 业务抽取：snapshotId + parserVersion
  * - 投影：publishedVersionId + projectorVersion
+ *
+ * ⚠️ jobId 一律用 `-` 分隔、禁止冒号：BullMQ 校验「含冒号时必须恰好 3 段」
+ * （job.js Custom Id cannot contain :），段数不符直接抛错。fetch 曾是 4 段，
+ * 2026-10-22 生产首次真实抓取时踩中（发现成功、投递下载全部失败）。
  */
 import { createHash } from 'node:crypto';
 import type { DocumentKind } from '../official-site-adapter.js';
@@ -113,7 +117,7 @@ function sha256(text: string): string {
 }
 
 export function discoverJobId(sourceId: string, checkWindow: string): string {
-  return `discover:${sourceId}:${checkWindow}`;
+  return `discover-${sourceId}-${checkWindow}`;
 }
 
 export function fetchJobId(
@@ -121,7 +125,7 @@ export function fetchJobId(
   canonicalUrl: string,
   remoteVersionHint: string,
 ): string {
-  return `fetch:${sourceId}:${sha256(canonicalUrl).slice(0, 32)}:${
+  return `fetch-${sourceId}-${sha256(canonicalUrl).slice(0, 32)}-${
     remoteVersionHint || 'noversion'
   }`;
 }
@@ -130,18 +134,18 @@ export function parseJobId(
   snapshotId: string,
   documentParserVersion: string,
 ): string {
-  return `parse:${snapshotId}:${documentParserVersion}`;
+  return `parse-${snapshotId}-${documentParserVersion}`;
 }
 
 export function extractJobId(snapshotId: string, parserVersion: string): string {
-  return `extract:${snapshotId}:${parserVersion}`;
+  return `extract-${snapshotId}-${parserVersion}`;
 }
 
 export function projectJobId(
   publishedVersionId: string,
   projectorVersion: string,
 ): string {
-  return `project:${publishedVersionId}:${projectorVersion}`;
+  return `project-${publishedVersionId}-${projectorVersion}`;
 }
 
 /**
