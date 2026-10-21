@@ -276,10 +276,162 @@ export interface RatioMetric {
 export interface TimingMetrics {
   /** 总耗时（ms）= finishedAt − createdAt；任一缺失为 null */
   totalDurationMs: number | null;
-  /** 人工审核耗时（ms）= 末条审核记录 reviewedAt − 首条审核记录 reviewedAt；不足两条为 null */
+  /**
+   * 审核事件跨度（ms）= 末条审核记录时间 − 首条审核记录时间。
+   * 这是「事件跨度」，不是「人工投入时长」——审核员中途可能等待、离开或并行，
+   * 不得当作人工投入上报（M6-01）。
+   */
   reviewDurationMs: number | null;
   /** 重试次数（run.retryCount） */
   retryCount: number;
+}
+
+// ==================== M6：时间计量（自报式，不补造历史） ====================
+
+/**
+ * 最小任务时间计量（M6-A）。除 run 原始时间戳（createdAt/finishedAt）与审核
+ * 事件跨度外，人工投入/等待/返工/暂停等**只来自人工自报**，无记录一律 null，
+ * 绝不从旧日志猜工作分钟、也不填 0（0 会误导为「零成本」）。
+ */
+export interface TimeTrackingInput {
+  /** 人工开始时间（ISO）；缺失=未记录 */
+  startedAt?: string | null;
+  /** 人工验收完成时间（ISO）；缺失=未记录（任务可能未结束） */
+  completedAt?: string | null;
+  /** 人工投入时长（毫秒，自报）；缺失=未记录 */
+  humanEffortMs?: number | null;
+  /** 人工等待时长（毫秒，自报）；缺失=未记录 */
+  waitingMs?: number | null;
+  /** 返工时长（毫秒，自报）；缺失=未记录 */
+  reworkMs?: number | null;
+  /** 暂停/中断次数（自报）；缺失=未记录 */
+  pauseCount?: number | null;
+  /** 重试次数（自报或复用 run.retryCount）；缺失=未记录 */
+  retryCount?: number | null;
+}
+
+export interface TimeTrackingReport {
+  /** 是否未结束（有 startedAt 但无 completedAt） */
+  notFinished: boolean;
+  /** 人工事件跨度（ms）= completedAt − startedAt；任一缺失或负值为 null */
+  eventSpanMs: number | null;
+  /** 人工投入（自报）；无记录 null */
+  humanEffortMs: number | null;
+  /** 人工等待（自报）；无记录 null */
+  waitingMs: number | null;
+  /** 返工（自报）；无记录 null */
+  reworkMs: number | null;
+  /** 暂停/中断次数（自报）；无记录 null */
+  pauseCount: number | null;
+  /** 重试次数（自报）；无记录 null */
+  retryCount: number | null;
+  /** 说明：墙钟/人工投入/等待可能并行，不强求相加 */
+  note: string;
+}
+
+/**
+ * 计算最小任务时间计量（M6-01/M6-A）。
+ *
+ * 处理规则：
+ * - 未结束（有 startedAt 无 completedAt）→ notFinished=true，eventSpanMs=null；
+ * - 负时间（completedAt < startedAt）→ eventSpanMs=null，不输出负值；
+ * - 重复事件/重复操作：由自报方去重后传入，本函数只做区间差，不重复累加；
+ * - 暂停/恢复：pauseCount 为自报计数，本函数不臆造恢复时长；
+ * - 无记录（null/undefined）→ 对应字段为 null，不填 0；
+ * - 墙钟总时长、人工投入、等待三者可能并行，不做相加（note 说明）。
+ */
+export function computeTimeTracking(input: TimeTrackingInput): TimeTrackingReport {
+  const startedMs = input.startedAt ? new Date(input.startedAt).getTime() : null;
+  const completedMs = input.completedAt ? new Date(input.completedAt).getTime() : null;
+
+  const notFinished = startedMs !== null && completedMs === null;
+  let eventSpanMs: number | null = null;
+  if (startedMs !== null && completedMs !== null && completedMs >= startedMs) {
+    eventSpanMs = completedMs - startedMs;
+  }
+
+  const nonNegative = (v: number | null | undefined): number | null =>
+    v == null || v < 0 ? null : v;
+
+  return {
+    notFinished,
+    eventSpanMs,
+    humanEffortMs: nonNegative(input.humanEffortMs),
+    waitingMs: nonNegative(input.waitingMs),
+    reworkMs: nonNegative(input.reworkMs),
+    pauseCount:
+      input.pauseCount == null || input.pauseCount < 0 ? null : input.pauseCount,
+    retryCount:
+      input.retryCount == null || input.retryCount < 0 ? null : input.retryCount,
+    note: '墙钟总时长、人工投入与等待可能并行，三者分别报告、不做相加；无记录一律为 null 而非 0；人工投入只来自自报，审核事件跨度不是人工投入。',
+  };
+}
+
+// ==================== M6：独立核验正确率（仅在可核验时计算） ====================
+
+/**
+ * 独立核验结果（M6-B6/M6-03）。只有当存在「原件独立核验」的正确答案与
+ * 核验人/方式时，才允许计算正确率；否则不得输出正确率/召回率/提效百分比。
+ */
+export interface IndependentVerification {
+  /** 核验人（自报，如「评审员 A」） */
+  verifier: string;
+  /** 核验方式（自报，如「对照官方原件逐字段核验」） */
+  method: string;
+  /** 核验的字段总数（分母） */
+  totalFields: number;
+  /** 判定为正确的字段数（分子） */
+  correctFields: number;
+}
+
+export interface AccuracyReport {
+  /** 是否有独立核验结果；false 时不输出正确率 */
+  evaluated: boolean;
+  /** 正确率分子（无核验为 null） */
+  correctFields: number | null;
+  /** 正确率分母（无核验为 null；分母 0 时 value=null） */
+  totalFields: number | null;
+  /** 核验人（无核验为 null） */
+  verifier: string | null;
+  /** 核验方式（无核验为 null） */
+  method: string | null;
+  /** 正确率值 = correct/total；无核验或分母 0 为 null */
+  value: number | null;
+}
+
+/**
+ * 计算正确率（M6-B6/M6-03）。
+ *
+ * 红线：
+ * - 无独立核验结果 → evaluated=false，value=null，**不输出正确率**；
+ * - 分母为 0 或正确数 > 总数 → value=null（数据异常，不编造）；
+ * - 采用率（adoption）不是准确率；有锚点（anchor）不是定位成功；
+ * - 绝不输出召回率、提效百分比（缺对照基线/独立答案时不具备计算条件）。
+ */
+export function computeAccuracy(
+  verification: IndependentVerification | null | undefined,
+): AccuracyReport {
+  if (!verification) {
+    return {
+      evaluated: false,
+      correctFields: null,
+      totalFields: null,
+      verifier: null,
+      method: null,
+      value: null,
+    };
+  }
+  const correct = verification.correctFields;
+  const total = verification.totalFields;
+  const valid = total > 0 && correct >= 0 && correct <= total;
+  return {
+    evaluated: true,
+    correctFields: correct,
+    totalFields: total,
+    verifier: verification.verifier,
+    method: verification.method,
+    value: valid ? correct / total : null,
+  };
 }
 
 export interface ExportMetrics {
@@ -564,7 +716,7 @@ export function computeExportMetrics(input: {
       '有证据高影响字段数 = 高影响字段中携带证据锚点（anchor）的数量',
       '人工修改字段数 = decision.action=edit 的字段数',
       '总耗时 = finishedAt − createdAt（任一缺失记为「未记录」）',
-      '人工审核耗时 = 末条审核记录时间 − 首条审核记录时间（不足两条记为「未记录」）',
+      '审核事件跨度 = 末条审核记录时间 − 首条审核记录时间（不足两条记为「未记录」；这是事件跨度，不是人工投入时长）',
       '人工采用率不是准确率：没有黄金答案或独立人工裁决时，不输出准确率/召回率/提效百分比',
       'M2 固定分母：完整性 = 已提取槽位 / 有效分母（原始槽位 − 明确不适用），分母来自预先确认的清单，不从候选输出反推；缺失/未知/无法核验不移出分母',
       'M2 固定分母完整性不是准确率：只反映「清单期望槽位中有多少被提取」，不声称字段值正确',
