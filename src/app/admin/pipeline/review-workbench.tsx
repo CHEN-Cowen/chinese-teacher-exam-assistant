@@ -25,7 +25,9 @@ import { Input, Textarea } from "@/components/ui/Input";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { cn } from "@/lib/utils";
 import type {
+  ChecklistQualityReport,
   FieldDecision,
+  QualityReport,
   Run,
 } from "@/lib/announcements-pipeline/api";
 
@@ -153,6 +155,70 @@ function groupByScope(fields: CandidateField[]) {
     } else unknown.push(f);
   }
   return { announcement, jobs, unknown };
+}
+
+/**
+ * 单岗位未解决项计数（M4-01）。来自服务端质量报告与固定分母清单，前端只聚合展示，
+ * 不复制门禁算法。未解决项 = 冲突字段 + 未知字段 + 该岗位漏抽槽位 + 来源不可核验。
+ */
+interface JobIssueCounts {
+  conflict: number;
+  unknown: number;
+  missing: number;
+  unverifiable: number;
+  /** 未解决总数（冲突+未知+遗漏+不可核验） */
+  unresolved: number;
+}
+
+/**
+ * 计算每个岗位（含清单里的零输出岗位）的未解决项数与风险等级。
+ * 风险分级（M4-01 实施要求 1）：
+ *   3 = 冲突 / 来源失败(不可核验) / 必需遗漏（最影响可信度）
+ *   2 = 高影响字段缺证据
+ *   1 = 普通待审（unknown 等）
+ *   0 = 无未解决项
+ * 同等级按岗位 key 稳定排序。
+ */
+function computeJobRisk(
+  jobKey: string,
+  quality: QualityReport | null,
+  checklistQuality: ChecklistQualityReport | null,
+): { counts: JobIssueCounts; risk: number } {
+  const scope = quality?.scopes.find((s) => s.key === jobKey);
+  const counts: JobIssueCounts = {
+    conflict: scope?.conflict ?? 0,
+    unknown: scope?.unknown ?? 0,
+    missing: 0,
+    unverifiable: 0,
+    unresolved: 0,
+  };
+
+  // M2 清单：该岗位漏抽槽位 + 来源不可核验
+  if (checklistQuality?.evaluation?.jobs) {
+    const jobEval = checklistQuality.evaluation.jobs.find((j) => j.key === jobKey);
+    if (jobEval) {
+      for (const r of jobEval.results ?? []) {
+        if (r.status === "should_have_but_missing") counts.missing += 1;
+        else if (r.status === "source_missing_unverifiable") counts.unverifiable += 1;
+      }
+    }
+  }
+
+  // 高影响缺证据（按 jobKey 归属）
+  const missingEvidence = (quality?.missingEvidence ?? []).filter(
+    (m) => m.jobKey === jobKey || m.scope === "job",
+  ).length;
+
+  counts.unresolved =
+    counts.conflict + counts.unknown + counts.missing + counts.unverifiable;
+
+  // 风险分级
+  let risk = 0;
+  if (counts.conflict > 0 || counts.unverifiable > 0 || counts.missing > 0) risk = 3;
+  else if (missingEvidence > 0) risk = 2;
+  else if (counts.unknown > 0) risk = 1;
+
+  return { counts, risk };
 }
 
 /** 证据定位的可复制文本（不输出签名 URL 的敏感 query） */
@@ -350,6 +416,71 @@ function FieldRow({
   );
 }
 
+// ==================== 漏抽岗位视图（M4-01） ====================
+
+/**
+ * 整岗位漏抽（候选无字段，但清单里有该岗位的遗漏槽位）时的视图。
+ * 显示该岗位在固定分母清单里被标记为 should_have_but_missing /
+ * source_missing_unverifiable 的槽位，供人工确认「整岗位漏抽」还是「不适用」。
+ */
+function MissingJobView({
+  jobKey,
+  checklistQuality,
+}: {
+  jobKey: string;
+  checklistQuality: ChecklistQualityReport | null;
+}) {
+  const jobEval = checklistQuality?.evaluation?.jobs?.find((j) => j.key === jobKey);
+  const missingSlots = (jobEval?.results ?? []).filter(
+    (r) => r.status === "should_have_but_missing" || r.status === "source_missing_unverifiable",
+  );
+
+  if (!checklistQuality || !jobEval) {
+    return (
+      <EmptyState
+        icon={<span className="text-3xl">🗂️</span>}
+        title="当前分区没有字段"
+        description="该分区下暂无候选字段"
+      />
+    );
+  }
+
+  if (missingSlots.length === 0) {
+    return (
+      <EmptyState
+        icon={<span className="text-3xl">✅</span>}
+        title="该岗位在清单中已全部提取"
+        description="候选里没有该岗位的字段，但固定分母清单也未标记遗漏槽位"
+      />
+    );
+  }
+
+  return (
+    <div
+      className="rounded-xl border border-amber-200 bg-amber-50 p-3"
+      data-testid="missing-job-view"
+    >
+      <p className="text-sm font-medium text-amber-800">
+        该岗位疑似整岗位漏抽，清单标记 {missingSlots.length} 个缺失槽位：
+      </p>
+      <ul className="mt-2 space-y-1">
+        {missingSlots.map((s, i) => (
+          <li key={i} className="text-xs text-slate-700">
+            <span className="font-medium">{FIELD_LABELS[s.field] ?? s.field}</span>
+            <span className="ml-1 text-slate-500">({s.field})</span>
+            {s.status === "source_missing_unverifiable" && (
+              <span className="ml-2 text-amber-600">（来源不可读，无法核验）</span>
+            )}
+          </li>
+        ))}
+      </ul>
+      <p className="mt-2 text-[11px] text-slate-500">
+        请核对：该岗位是确实漏抽，还是清单里本就不适用（应标记 not_applicable）。
+      </p>
+    </div>
+  );
+}
+
 // ==================== 主工作台 ====================
 
 export function ReviewWorkbench({
@@ -372,19 +503,39 @@ export function ReviewWorkbench({
 
   const { announcement, jobs, unknown } = useMemo(() => groupByScope(fields), [fields]);
   const quality = run.quality ?? null;
+  const checklistQuality = run.checklistQuality ?? null;
 
-  // 岗位分组顺序：announcement（公共事实）单列，jobs 按 key，unknown 单独一组
-  const jobKeys = useMemo(() => [...jobs.keys()], [jobs]);
+  // M4：合并「候选岗位」与「清单里的漏抽岗位」为统一岗位 key 集合，并做风险排序。
+  // 漏抽岗位在候选里没有字段（jobs.get 返回空），但仍要能点进去看遗漏槽位（M4-01）。
+  const allJobKeys = useMemo(() => {
+    const set = new Set<string>(jobs.keys());
+    for (const j of checklistQuality?.evaluation?.jobs ?? []) set.add(j.key);
+    return [...set];
+  }, [jobs, checklistQuality]);
 
-  // 默认选中第一个存在阻塞的岗位，否则第一个岗位/公告
-  const defaultKey = useMemo(() => {
-    const blockedJob = jobKeys.find((key) => {
-      const scopeQuality = quality?.scopes.find((s) => s.key === key);
-      return scopeQuality && (scopeQuality.conflict > 0 || scopeQuality.unknown > 0);
+  // 每岗位未解决项数 + 风险等级（来自服务端质量报告 + 固定分母清单）
+  const jobRisk = useMemo(() => {
+    const map = new Map<string, { counts: JobIssueCounts; risk: number }>();
+    for (const key of allJobKeys) {
+      map.set(key, computeJobRisk(key, quality, checklistQuality));
+    }
+    return map;
+  }, [allJobKeys, quality, checklistQuality]);
+
+  // M4-01：风险排序（冲突/遗漏/不可核验 > 高影响缺证据 > 普通待审），同等级按 key 稳定排序。
+  const orderedJobKeys = useMemo(() => {
+    return [...allJobKeys].sort((a, b) => {
+      const ra = jobRisk.get(a)?.risk ?? 0;
+      const rb = jobRisk.get(b)?.risk ?? 0;
+      if (ra !== rb) return rb - ra;
+      return a < b ? -1 : a > b ? 1 : 0;
     });
-    if (blockedJob) return blockedJob;
-    return jobKeys[0] ?? "announcement";
-  }, [jobKeys, quality]);
+  }, [allJobKeys, jobRisk]);
+
+  // 默认选中风险最高的岗位；无岗位则回退公告公共事实
+  const defaultKey = useMemo(() => {
+    return orderedJobKeys[0] ?? "announcement";
+  }, [orderedJobKeys]);
 
   // 当前选中的"分区"：'announcement' | 'unknown' | 某 jobKey
   const [activeKey, setActiveKey] = useState<string>(defaultKey);
@@ -392,6 +543,8 @@ export function ReviewWorkbench({
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // M4-09：切换分区前的未保存确认（弹窗内容）
+  const [pendingSwitch, setPendingSwitch] = useState<string | null>(null);
 
   const activeFields: CandidateField[] = useMemo(() => {
     if (activeKey === "announcement") return announcement;
@@ -404,13 +557,18 @@ export function ReviewWorkbench({
     if (activeKey === "unknown") return "归属未知的字段";
     const job = activeFields.find((f) => f.jobScope);
     const code = job?.jobScope?.jobCode;
-    return code ? `岗位 ${code}` : `岗位 ${activeKey.slice(0, 12)}`;
-  }, [activeKey, activeFields]);
+    if (code) return `岗位 ${code}`;
+    // 漏抽岗位（无候选字段）从清单拿 jobCode
+    const checklistCode = checklistQuality?.evaluation?.jobs?.find((j) => j.key === activeKey)?.jobCode;
+    if (checklistCode) return `岗位 ${checklistCode}`;
+    return `岗位 ${activeKey.slice(0, 12)}`;
+  }, [activeKey, activeFields, checklistQuality]);
 
   // 当前分区的质量状态（可复算，来自后端 WB3）
   const scopeQuality = quality?.scopes.find((s) => s.key === activeKey);
 
   const hasDecision = Object.values(decisions).some((d) => d !== undefined);
+  const hasUnsavedChanges = hasDecision || reason.trim() !== "";
 
   const resetForScope = () => {
     setDecisions({});
@@ -419,8 +577,22 @@ export function ReviewWorkbench({
   };
 
   const switchScope = (key: string) => {
+    // M4-09：有未保存变更时先提示，确认后才清空并切换，防止丢失
+    if (key !== activeKey && hasUnsavedChanges) {
+      setPendingSwitch(key);
+      return;
+    }
     setActiveKey(key);
     resetForScope();
+  };
+
+  const confirmSwitch = () => {
+    const target = pendingSwitch;
+    setPendingSwitch(null);
+    if (target != null) {
+      setActiveKey(target);
+      resetForScope();
+    }
   };
 
   const updateDecision = (field: CandidateField, d: PendingDecision | undefined) => {
@@ -466,32 +638,60 @@ export function ReviewWorkbench({
     setSubmitting(true);
     try {
       const { announcementsPipelineApi } = await import("@/lib/announcements-pipeline/api");
+      // M4-03 修复：只用逐字段 fieldDecisions（approve），不再用 approve_with_edit 的
+      // editedFields 整体覆盖（那会丢弃 edit 决策的 afterValue）。后端 applyFieldDecisions
+      // 会正确写入 before/after 与原因，并处理 conflict→extracted 状态转移。
       await announcementsPipelineApi.submitReview({
         runId: run.id,
-        action: "approve_with_edit",
+        action: "approve",
         reason: reason.trim(),
-        editedFields: activeFields.map((f) => ({ field: f.field, value: f.value, anchor: f.anchor as object })),
         fieldDecisions,
         baseUpdatedAt: run.updatedAt,
       });
       onDone();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "审核提交失败");
+      const msg = e instanceof Error ? e.message : "审核提交失败";
+      // M4-05/M4-08：409 并发冲突 → 引导重新加载/比对，不静默覆盖。
+      // 只匹配明确的并发冲突语义，不误伤「冲突字段未裁决」等普通门禁错误。
+      if (/409|已被他人更新|并发冲突/i.test(msg)) {
+        setError("审核记录已被他人更新，请重新加载后再比对提交，避免覆盖他人修改。");
+      } else {
+        setError(msg);
+      }
     } finally {
       setSubmitting(false);
     }
   };
 
-  // 分区导航项
-  const navItems: Array<{ key: string; label: string; badge?: string }> = [
+  // 分区导航项（M4-01：岗位按风险排序，显示未解决项数；漏抽岗位也进入导航）
+  const navItems: Array<{
+    key: string;
+    label: string;
+    badge?: string;
+    badgeTone?: "danger" | "warning" | "neutral";
+  }> = [
     { key: "announcement", label: "公告公共事实", badge: announcement.length ? String(announcement.length) : undefined },
-    ...jobKeys.map((k) => {
-      const code = jobs.get(k)?.find((f) => f.jobScope?.jobCode)?.jobScope?.jobCode;
-      return { key: k, label: code ? `岗位 ${code}` : `岗位 ${k.slice(0, 8)}` };
+    ...orderedJobKeys.map((k) => {
+      const code =
+        jobs.get(k)?.find((f) => f.jobScope?.jobCode)?.jobScope?.jobCode ??
+        checklistQuality?.evaluation?.jobs?.find((j) => j.key === k)?.jobCode;
+      const { counts } = jobRisk.get(k) ?? { counts: { unresolved: 0 } as JobIssueCounts, risk: 0 };
+      const badgeTone: "danger" | "warning" | "neutral" =
+        counts.conflict > 0 || counts.unverifiable > 0
+          ? "danger"
+          : counts.missing > 0 || counts.unknown > 0
+            ? "warning"
+            : "neutral";
+      return {
+        key: k,
+        label: code ? `岗位 ${code}` : `岗位 ${k.slice(0, 8)}`,
+        badge: counts.unresolved > 0 ? String(counts.unresolved) : undefined,
+        badgeTone,
+      };
     }),
   ];
   if (unknown.length > 0) {
-    navItems.push({ key: "unknown", label: "归属未知", badge: String(unknown.length) });
+    navItems.push({ key: "unknown", label: "归属未知", badge: String(unknown.length), badgeTone: "warning" });
   }
 
   return (
@@ -508,17 +708,41 @@ export function ReviewWorkbench({
         </Button>
       </div>
 
-      {/* 分区导航（岗位列表 + 公共事实 + 归属未知） */}
+      {/* 分区导航（岗位列表 + 公共事实 + 归属未知，M4 按风险排序） */}
       <div className="mb-4 flex flex-wrap gap-2" role="tablist" aria-label="审核分区">
-        {navItems.map((item) => {
+        {navItems.map((item, idx) => {
           const active = activeKey === item.key;
+          const tone = item.badgeTone === "danger"
+            ? "text-red-600"
+            : item.badgeTone === "warning"
+              ? "text-amber-600"
+              : "text-ink-muted";
           return (
             <button
               key={item.key}
               type="button"
               role="tab"
               aria-selected={active}
+              tabIndex={active ? 0 : -1}
+              ref={(el) => {
+                if (el && active) el.focus();
+              }}
               onClick={() => switchScope(item.key)}
+              onKeyDown={(e) => {
+                // M4-08：方向键在分区间导航（roving tabindex）
+                if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+                  e.preventDefault();
+                  const dir = e.key === "ArrowRight" ? 1 : -1;
+                  const next = navItems[(idx + dir + navItems.length) % navItems.length];
+                  switchScope(next.key);
+                } else if (e.key === "Home") {
+                  e.preventDefault();
+                  switchScope(navItems[0].key);
+                } else if (e.key === "End") {
+                  e.preventDefault();
+                  switchScope(navItems[navItems.length - 1].key);
+                }
+              }}
               className={cn(
                 "h-9 px-3 rounded-lg text-sm font-medium border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand",
                 active
@@ -527,7 +751,11 @@ export function ReviewWorkbench({
               )}
             >
               {item.label}
-              {item.badge && <span className="ml-1 text-xs opacity-70">({item.badge})</span>}
+              {item.badge && (
+                <span className={cn("ml-1 text-xs font-semibold", tone)} data-testid={`nav-badge-${item.key}`}>
+                  ({item.badge})
+                </span>
+              )}
             </button>
           );
         })}
@@ -581,10 +809,9 @@ export function ReviewWorkbench({
 
       {/* 字段表 */}
       {activeFields.length === 0 ? (
-        <EmptyState
-          icon={<span className="text-3xl">🗂️</span>}
-          title="当前分区没有字段"
-          description="该分区下暂无候选字段"
+        <MissingJobView
+          jobKey={activeKey}
+          checklistQuality={checklistQuality}
         />
       ) : (
         <div className="space-y-2.5 max-h-[520px] overflow-y-auto pr-1">
@@ -676,6 +903,32 @@ export function ReviewWorkbench({
           </Button>
         </div>
       </div>
+
+      {/* M4-09：切岗位前的未保存变更确认 */}
+      {pendingSwitch != null && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
+          role="dialog"
+          aria-modal="true"
+          aria-label="未保存变更确认"
+          data-testid="switch-confirm-dialog"
+        >
+          <div className="w-full max-w-sm rounded-xl bg-surface p-4 shadow-xl">
+            <p className="text-sm font-semibold text-ink">当前分区有未保存的变更</p>
+            <p className="mt-1 text-xs text-ink-muted">
+              切换到其他分区会丢失本分区尚未提交的决策与原因。确定要切换吗？
+            </p>
+            <div className="mt-3 flex justify-end gap-2">
+              <Button size="sm" variant="outline" onClick={() => setPendingSwitch(null)}>
+                继续编辑
+              </Button>
+              <Button size="sm" variant="danger" onClick={confirmSwitch} data-testid="confirm-switch">
+                放弃并切换
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </Card>
   );
 }

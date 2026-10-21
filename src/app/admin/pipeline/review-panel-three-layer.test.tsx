@@ -355,7 +355,7 @@ describe("WB4 按岗位审核工作台", () => {
     expect(overallReason.value).toBe("测试原因");
   });
 
-  it("批量操作不跨岗位：切换分区清空当前决策", async () => {
+  it("批量操作不跨岗位：切换分区前提示未保存变更，确认后清空", async () => {
     const { container, html } = await renderPage();
     await click(findButton(container, "去审核"));
     await click(findButton(container, "岗位 3301A01"));
@@ -364,9 +364,16 @@ describe("WB4 按岗位审核工作台", () => {
     const fieldRow = container.querySelector('[data-testid="field-row-major"]') as HTMLElement;
     await click(findButton(fieldRow, "采用"));
 
-    // 切换到岗位 B，决策清空（不跨岗位）
+    // 切换到岗位 B：有未保存决策 → 弹确认框，不清空
     await click(findButton(container, "岗位 3301A02"));
+    expect(html()).toContain("有未保存的变更");
+    expect(html()).toContain("本分区已记录决策");
+
+    // 确认切换 → 清空决策（不跨岗位）
+    await click(findButton(container, "放弃并切换"));
     expect(html()).not.toContain("本分区已记录决策");
+    // 已切到岗位 B
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toContain("3301A02");
   });
 
   it("旧候选没有 scope 时仍能显示兼容分组（公告公共事实）", async () => {

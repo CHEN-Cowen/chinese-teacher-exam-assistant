@@ -99,6 +99,42 @@ describe('WB4 submitReview 字段决策', () => {
     expect(reviewRecords[0].reviewerName).toBe('陈惠艳');
   });
 
+  it('M4-03：approve + fieldDecisions（无 editedFields）→ edit 决策的 afterValue 正确持久化', async () => {
+    const fields = [anchored('education', '本科及以上')];
+    const { prisma, getRun, reviewRecords } = makePrisma(
+      makeRunRow({ candidate: candidate(fields) }),
+    );
+    const service = new AnnouncementsService(prisma);
+
+    await service.submitReview(
+      {
+        runId: 'run-1',
+        action: 'approve',
+        reason: '逐字段审核',
+        // 关键：不传 editedFields，只用 fieldDecisions（M4 修复后的前端路径）
+        fieldDecisions: [
+          {
+            identity: 'announcement:education',
+            field: 'education',
+            action: 'edit',
+            afterValue: '本科',
+            reason: '公告明确只要求本科',
+          },
+        ],
+      },
+      { id: 'u-1', name: '陈惠艳' },
+    );
+
+    // edit 决策的 afterValue 写入 candidate，未被 editedFields 覆盖
+    const saved = getRun().candidate as { fields: Array<{ field: string; value: string; decision?: { action: string; afterValue?: string } }> };
+    const edu = saved.fields.find((f) => f.field === 'education')!;
+    expect(edu.value).toBe('本科');
+    expect(edu.decision?.action).toBe('edit');
+    expect(edu.decision?.afterValue).toBe('本科');
+    // 审核记录留痕 action=approve
+    expect(reviewRecords[0].action).toBe('approve');
+  });
+
   it('存在未裁决 conflict 字段时 approve 被拒绝', async () => {
     const conflictField = {
       field: 'headcount',
