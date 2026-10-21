@@ -465,6 +465,7 @@ describe('M7 多岗位报考日程自动同步', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.clearAllMocks();
   });
 
@@ -777,13 +778,13 @@ describe('M7 多岗位报考日程自动同步', () => {
 
   it('默认提醒阶段幂等：同一节点+阶段只产生一次通知', async () => {
     const { prisma, notifications, follows } = createFakePrisma();
-    // 使用接近截止日期的公告，让提醒触发
-    // 服务用 new Date() 取当前时间，所以截止日期设为 2 天后（相对今天）
-    const twoDaysLater = new Date(Date.now() + 2 * 86400000)
-      .toISOString()
-      .slice(0, 10);
+    // 固定系统时间与截止日期：服务用 new Date() 取当前时间，原实现动态算「2 天后」
+    // 用 UTC 的 toISOString 取日期，跨时区/深夜运行时 UTC 与本地日期错位，
+    // 会让 d-1 被误触发（2026-10-22 凌晨实测）。固定后任意时区/时刻运行结果恒定。
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-01T12:00:00+08:00'));
     const ann = catalog.CATALOG_ANNOUNCEMENTS.find((a) => a.id === 'annA')!;
-    ann.versions[0]!.timeline.registrationEnd = twoDaysLater;
+    ann.versions[0]!.timeline.registrationEnd = '2026-10-03';
     seedFollow(follows, 'u1', 'unitA', 'annA', 'annA-v1');
     const service = new ScheduleService(prisma);
 
@@ -804,6 +805,7 @@ describe('M7 多岗位报考日程自动同步', () => {
       (n) => n.userId === 'u1' && n.reminderStage !== null && n.eventKey?.includes('registration_end'),
     );
     expect(reminders2.length).toBe(beforeCount);
+    vi.useRealTimers();
   });
 
   it('待定转明确：时间从 null 变为具体日期时展示新值', async () => {
