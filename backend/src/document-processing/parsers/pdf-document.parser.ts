@@ -19,7 +19,13 @@ import type {
   DocumentLocator,
   ParsedBlock,
   ParsedDocument,
+  TableHeaderCandidate,
 } from '../parsed-document.js';
+import {
+  detectPdfTable,
+  tableToParsedBlocks,
+  type PdfTextItem,
+} from './pdf-table-detector.js';
 
 export const PDF_PARSER_VERSION = 'pdf-parser@1.0.0';
 
@@ -125,6 +131,7 @@ export class PdfDocumentParser implements DocumentParser {
       }
 
       const blocks: ParsedBlock[] = [];
+      const tableHeaders: TableHeaderCandidate[] = [];
       let scannedPages = 0;
 
       for (let pageNo = 1; pageNo <= doc.numPages; pageNo += 1) {
@@ -152,6 +159,33 @@ export class PdfDocumentParser implements DocumentParser {
         }
         if (pageChars < MIN_TEXT_CHARS_PER_PAGE) {
           warnings.push(`第 ${pageNo} 页文本层内容极少（仅 ${pageChars} 字符）`);
+        }
+
+        // 尝试按坐标还原表格：检测到可靠表格结构时，产出 worksheet 风格的
+        // cell 块 + 表头候选（供下游业务抽取层按"岗位×字段"精确抽取）；
+        // 否则回退到逐行文本段落（保持原有行为，不伪造表格）。
+        const table = detectPdfTable(
+          items.map((it) => ({
+            page: pageNo,
+            x: it.transform[4],
+            y: it.transform[5],
+            width: it.width,
+            height: it.height,
+            str: it.str,
+          })),
+          pageNo,
+        );
+        if (table) {
+          const result = tableToParsedBlocks(table);
+          if (blocks.length + result.blocks.length <= this.limits.maxBlocks) {
+            blocks.push(...result.blocks);
+            tableHeaders.push(...result.tableHeaders);
+            warnings.push(
+              `第 ${pageNo} 页检测到表格结构，已按行列还原（${table.headers.length} 列，含表头行 ${table.headerRow}）`,
+            );
+            continue;
+          }
+          // 表格块超出预算：回退到逐行文本（保持可读，不静默丢失内容）
         }
 
         for (const line of groupLines(items)) {
@@ -193,6 +227,7 @@ export class PdfDocumentParser implements DocumentParser {
         },
         parserVersion: PDF_PARSER_VERSION,
         blocks,
+        ...(tableHeaders.length > 0 ? { tableHeaders } : {}),
         scanned,
         pageCount: doc.numPages,
         ocr: scanned

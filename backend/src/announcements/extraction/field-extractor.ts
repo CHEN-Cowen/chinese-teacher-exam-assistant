@@ -185,6 +185,29 @@ export function extractFields(parsed: ParsedDocument): RuleExtractionResult {
  *
  * 返回带 job scope 的候选字段；跨行冲突通过 makeConflictField 保留 alternatives。
  */
+/** 从「招聘岗位/岗位名称」文本中提取学科与学段（如「高中物理」→ stage=高中 subject=物理） */
+function extractSubjectFromPosition(
+  positionName: string,
+): { subject?: string; stage?: string } | null {
+  const t = positionName.replace(/\s+/g, '');
+  if (!t) return null;
+  // 学段前缀（高中/初中/小学/中职/中专/幼儿园等）
+  const stageMatch = t.match(/^(高中|初中|小学|中职|中专|职高|幼儿园|特殊教育|特教)/);
+  const stage = stageMatch?.[1];
+  const rest = stage ? t.slice(stage.length) : t;
+  // 剩余部分若是学科名（或含学科名），视为学科
+  const subjectNames = [
+    '语文','数学','英语','物理','化学','生物','政治','历史','地理','音乐','体育','美术',
+    '信息科技','信息技术','心理','心理健康','科学','道德与法治','思想政治','通用技术',
+  ];
+  for (const s of subjectNames) {
+    if (rest === s || rest.includes(s)) {
+      return { subject: s, stage };
+    }
+  }
+  return null;
+}
+
 function extractTableFields(
   parsed: ParsedDocument,
   warnings: string[],
@@ -192,12 +215,27 @@ function extractTableFields(
   const headers = parsed.tableHeaders ?? [];
   if (headers.length === 0) return [];
 
-  // 按 sheet 收集表头候选（sheet → 列号 → 建议字段）
-  const headersBySheet = new Map<string, { headerRow: number; columns: Map<number, string> }>();
+  // 按 sheet 收集表头候选（sheet → 列号 → {字段, 表头文本}）。
+  // 多级表头：同一列跨多行时，用「更靠下的行」的表头文本（学科列名通常在
+  // 二级表头行，如「招聘单位」下的「语文/数学/…」）；headerRow 取最大
+  // （数据行在最靠下的表头行之后）。
+  const headersBySheet = new Map<
+    string,
+    { headerRow: number; columns: Map<number, { field: string; headerText: string }> }
+  >();
   for (const th of headers) {
-    const entry = headersBySheet.get(th.sheet) ?? { headerRow: th.headerRow, columns: new Map<number, string>() };
+    const entry = headersBySheet.get(th.sheet) ?? {
+      headerRow: th.headerRow,
+      columns: new Map<number, { field: string; headerText: string }>(),
+    };
+    entry.headerRow = Math.max(entry.headerRow, th.headerRow);
     for (const col of th.columns) {
-      if (col.suggestedField) entry.columns.set(col.column, col.suggestedField);
+      if (col.suggestedField) {
+        entry.columns.set(col.column, {
+          field: col.suggestedField,
+          headerText: col.headerText,
+        });
+      }
     }
     headersBySheet.set(th.sheet, entry);
   }
@@ -261,9 +299,9 @@ function extractTableFields(
 
       // 判定说明行：无任何列命中表头列映射（该行不含可抽取的业务字段值）
       const mappedCells = rowBlocks.filter((b) => {
-        const field = headerInfo.columns.get(b.locator.column);
+        const colInfo = headerInfo.columns.get(b.locator.column);
         const v = (b.displayValue ?? b.text).trim();
-        return field && v !== '';
+        return colInfo && v !== '';
       });
       if (mappedCells.length === 0) {
         warnings.push(`${sheet} 第 ${row} 行未命中任何表头字段（疑似说明行），已跳过`);
@@ -273,7 +311,7 @@ function extractTableFields(
       // 判定说明行（补充）：岗位编号列的值包含说明类关键词（说明/备注/注/以上/以下等），
       // 说明该行是脚注而非真实岗位数据行。
       const jobCodeCols = [...headerInfo.columns.entries()]
-        .filter(([, f]) => f === 'job_code' || f === 'position_code' || f === 'code')
+        .filter(([, info]) => info.field === 'job_code' || info.field === 'position_code' || info.field === 'code')
         .map(([col]) => col);
       const firstColValue = (() => {
         for (const col of jobCodeCols) {
@@ -289,8 +327,8 @@ function extractTableFields(
 
       // 识别岗位编号（jobCode）：优先命中 field=job_code 的单元格
       const jobCodeCell = mappedCells.find((b) => {
-        const field = headerInfo.columns.get(b.locator.column);
-        return field === 'job_code' || field === 'position_code' || field === 'code';
+        const info = headerInfo.columns.get(b.locator.column);
+        return info?.field === 'job_code' || info?.field === 'position_code' || info?.field === 'code';
       });
       const jobCode = jobCodeCell ? (jobCodeCell.displayValue ?? jobCodeCell.text).trim() : undefined;
       const jobKey = deriveJobKey({
@@ -303,67 +341,93 @@ function extractTableFields(
 
       // 为该行每个映射单元格生成字段
       for (const cell of mappedCells) {
-        const field = headerInfo.columns.get(cell.locator.column)!;
+        const colInfo = headerInfo.columns.get(cell.locator.column)!;
         const value = (cell.displayValue ?? cell.text).trim();
         if (value === '') continue;
 
-        const candidate: CandidateField = {
-          field,
-          value,
-          scope: 'job',
-          jobScope,
-          status: 'extracted',
-          ruleVersion: FIELD_EXTRACTOR_VERSION,
-          anchor: buildAnchor(cell, parsed, field),
-          origin: 'rule',
-        };
-        const identity = fieldIdentity(candidate);
-
-        const existing = seen.get(identity);
-        if (!existing) {
-          seen.set(identity, { field, value, jobScope, block: cell });
-          out.push(candidate);
-          continue;
-        }
-
-        // 同 scope 同 field：
-        if (existing.value === value) {
-          // 相同值：去重，保留最强证据（本实现保留首个证据；可审计地记录重复来源）
-          warnings.push(
-            `${sheet} 第 ${row} 行 ${field}=${value} 与已存在来源重复，已去重（保留首个证据）`,
+        // 学科矩阵展开：该列是「具体学科名」列（语文/数学/…），其值为招聘人数。
+        // 展开为 subject=学科名 + headcount=人数 两个字段（矩阵表的语义）。
+        const isSubjectColumn = colInfo.field === 'subject' && /^\d+$/.test(value);
+        // 岗位名提取学科：该列是「招聘岗位/岗位名称」，值为「学段+学科」（如
+        // 「高中物理」「初中语文」「信息科技」），从文本剥离学段前缀得到学科。
+        const subjectFromPosition = extractSubjectFromPosition(value);
+        const fieldsToEmit: Array<{ field: string; value: string }> = [];
+        if (isSubjectColumn) {
+          fieldsToEmit.push(
+            { field: 'subject', value: colInfo.headerText.replace(/\s+/g, '') },
+            { field: 'headcount', value },
           );
-          continue;
+        } else if (colInfo.field === 'position_name' && subjectFromPosition) {
+          fieldsToEmit.push({ field: 'position_name', value });
+          if (subjectFromPosition.subject) {
+            fieldsToEmit.push({ field: 'subject', value: subjectFromPosition.subject });
+          }
+          if (subjectFromPosition.stage) {
+            fieldsToEmit.push({ field: 'stage', value: subjectFromPosition.stage });
+          }
+        } else {
+          fieldsToEmit.push({ field: colInfo.field, value });
         }
 
-        // 不同值 → 冲突：不采用首次命中，保留 alternatives
-        const altA: FieldAlternative = {
-          value: existing.value,
-          source: toEvidenceLocator(existing.block.locator, parsed),
-          excerpt: existing.block.text.slice(0, 200),
-        };
-        const altB: FieldAlternative = {
-          value,
-          source: toEvidenceLocator(cell.locator, parsed),
-          excerpt: cell.text.slice(0, 200),
-        };
-        const conflictField: CandidateField = {
-          field,
-          value: existing.value, // 主值保留首个来源，alternatives 保留全部
-          status: 'conflict',
-          scope: 'job',
-          jobScope,
-          ruleVersion: FIELD_EXTRACTOR_VERSION,
-          anchor: existing.block ? buildAnchor(existing.block, parsed, field) : undefined,
-          origin: 'rule',
-          alternatives: [altA, altB],
-        };
-        // 用冲突字段替换原有字段
-        const idx = out.findIndex((f) => fieldIdentity(f) === identity);
-        if (idx >= 0) out[idx] = conflictField;
-        else out.push(conflictField);
-        warnings.push(
-          `${sheet} ${field} 出现冲突值（${existing.value} vs ${value}），已保留 alternatives 待人工裁决`,
-        );
+        for (const emit of fieldsToEmit) {
+          const field = emit.field;
+          const emitValue = emit.value;
+          const candidate: CandidateField = {
+            field,
+            value: emitValue,
+            scope: 'job',
+            jobScope,
+            status: 'extracted',
+            ruleVersion: FIELD_EXTRACTOR_VERSION,
+            anchor: buildAnchor(cell, parsed, field),
+            origin: 'rule',
+          };
+          const identity = fieldIdentity(candidate);
+
+          const existing = seen.get(identity);
+          if (!existing) {
+            seen.set(identity, { field, value: emitValue, jobScope, block: cell });
+            out.push(candidate);
+            continue;
+          }
+
+          // 同 scope 同 field：
+          if (existing.value === emitValue) {
+            warnings.push(
+              `${sheet} 第 ${row} 行 ${field}=${emitValue} 与已存在来源重复，已去重（保留首个证据）`,
+            );
+            continue;
+          }
+
+          // 不同值 → 冲突：不采用首次命中，保留 alternatives
+          const altA: FieldAlternative = {
+            value: existing.value,
+            source: toEvidenceLocator(existing.block.locator, parsed),
+            excerpt: existing.block.text.slice(0, 200),
+          };
+          const altB: FieldAlternative = {
+            value: emitValue,
+            source: toEvidenceLocator(cell.locator, parsed),
+            excerpt: cell.text.slice(0, 200),
+          };
+          const conflictField: CandidateField = {
+            field,
+            value: existing.value,
+            status: 'conflict',
+            scope: 'job',
+            jobScope,
+            ruleVersion: FIELD_EXTRACTOR_VERSION,
+            anchor: existing.block ? buildAnchor(existing.block, parsed, field) : undefined,
+            origin: 'rule',
+            alternatives: [altA, altB],
+          };
+          const idx = out.findIndex((f) => fieldIdentity(f) === identity);
+          if (idx >= 0) out[idx] = conflictField;
+          else out.push(conflictField);
+          warnings.push(
+            `${sheet} ${field} 出现冲突值（${existing.value} vs ${emitValue}），已保留 alternatives 待人工裁决`,
+          );
+        }
       }
     }
   }

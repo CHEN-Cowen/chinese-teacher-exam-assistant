@@ -19,6 +19,7 @@ import {
   clampText,
   type ParseLimits,
 } from '../parse-guard.js';
+import { suggestField } from '../header-hints.js';
 import type {
   DocumentParser,
   DocumentLocator,
@@ -28,22 +29,6 @@ import type {
 } from '../parsed-document.js';
 
 export const SPREADSHEET_PARSER_VERSION = 'spreadsheet-parser@1.0.0';
-
-/** 表头候选关键词 → 建议字段（仅候选；业务语义由抽取层与审核确认） */
-const HEADER_HINTS: Array<{ keywords: string[]; field: string }> = [
-  { keywords: ['岗位代码', '职位代码', '代码'], field: 'position_code' },
-  { keywords: ['招聘单位', '用人单位', '单位名称', '主管部门'], field: 'employer' },
-  { keywords: ['岗位', '职位名称', '招聘岗位'], field: 'position_name' },
-  { keywords: ['学科', '科目'], field: 'subjects' },
-  { keywords: ['人数', '名额', '招聘数'], field: 'headcount' },
-  { keywords: ['学历'], field: 'education' },
-  { keywords: ['专业'], field: 'major' },
-  { keywords: ['年龄'], field: 'age' },
-  { keywords: ['户籍', '户口'], field: 'hukou' },
-  { keywords: ['教师资格', '教资'], field: 'teacher_cert' },
-  { keywords: ['用工', '编制', '性质'], field: 'employment_nature' },
-  { keywords: ['备注'], field: 'remarks' },
-];
 
 interface CellRecord {
   v?: unknown;
@@ -142,43 +127,48 @@ export class SpreadsheetDocumentParser implements DocumentParser {
       const merges = sheet['!merges'] ?? [];
       const mergedTopLeft = new Set(merges.map((m) => `${m.s.r}:${m.s.c}`));
 
-      // 表头候选：首个包含 ≥2 个非空单元格的行
-      let headerRow = -1;
+      // 表头识别（支持多级表头）：
+      // 在顶部最多 9 行内，收集所有「含强表头特征」的行（强关键词如招聘单位/
+      // 学历/专业/人数/岗位/序号/电话/备注等；具体学科名不作为判定表头行的依据，
+      // 避免把数据行的专业值「数学」误判成学科表头）。学科列（语文/数学/…）的
+      // subject 映射仅在「已是表头行」的行内生效。
+      const headerCandidates: Array<{ row: number; columns: TableHeaderCandidate['columns'] }> = [];
       for (let r = range.s.r; r <= Math.min(range.e.r, range.s.r + 9); r += 1) {
-        let filled = 0;
+        const rowColumns: TableHeaderCandidate['columns'] = [];
+        let strongHeaderCount = 0;
+        let subjectColumnCount = 0;
         for (let c = range.s.c; c <= range.e.c; c += 1) {
           const cell = sheet[XLSX.utils.encode_cell({ r, c })];
-          if (isCell(cell) && cell.v != null) filled += 1;
-        }
-        if (filled >= 2) {
-          headerRow = r;
-          break;
-        }
-      }
-      if (headerRow >= 0) {
-        const columns: TableHeaderCandidate['columns'] = [];
-        for (let c = range.s.c; c <= range.e.c; c += 1) {
-          const cell = sheet[XLSX.utils.encode_cell({ r: headerRow, c })];
           if (!isCell(cell) || cell.v == null) continue;
           const headerText = cellText(cell.w ?? cell.v).trim();
           if (!headerText) continue;
-          const hint = HEADER_HINTS.find((h) =>
-            h.keywords.some((kw) => headerText.includes(kw)),
-          );
-          columns.push({
-            // column 统一为 1-based（与 cell locator.column 一致），
-            // 供业务抽取层按 locator.column 精确命中列语义（否则列错位）。
+          const hint = suggestField(headerText);
+          rowColumns.push({
             column: c + 1,
-            cell: XLSX.utils.encode_cell({ r: headerRow, c }),
+            cell: XLSX.utils.encode_cell({ r, c }),
             headerText,
-            suggestedField: hint?.field,
+            suggestedField: hint,
           });
+          // 强表头关键词（非学科名）计数：用于判定该行是否为表头行
+          if (hint && hint !== 'subject' && hint !== 'subjects') strongHeaderCount += 1;
+          else if (hint === 'subject') subjectColumnCount += 1;
         }
-        if (columns.length >= 2) {
-          // headerRow 统一为 1-based（与 cell locator.row 一致），
-          // 供业务抽取层按 `row > headerRow` 判定数据行（否则表头行会被误抽）。
-          tableHeaders.push({ sheet: sheetName, headerRow: headerRow + 1, columns });
+        // 该行是否算表头行：
+        // (a) 含强表头关键词；或 (b) 全为学科列（≥2 列）且紧跟在已识别表头行之后
+        //     （多级表头：学科子列常在「招聘单位」等一级表头行的下一行）。
+        const isStrongHeader = rowColumns.length >= 2 && strongHeaderCount > 0;
+        const isSubjectHeader =
+          subjectColumnCount >= 2 && headerCandidates.length > 0;
+        if (isStrongHeader || isSubjectHeader) {
+          headerCandidates.push({ row: r, columns: rowColumns });
         }
+      }
+      for (const hc of headerCandidates) {
+        tableHeaders.push({
+          sheet: sheetName,
+          headerRow: hc.row + 1,
+          columns: hc.columns,
+        });
       }
 
       for (let r = range.s.r; r <= range.e.r; r += 1) {
