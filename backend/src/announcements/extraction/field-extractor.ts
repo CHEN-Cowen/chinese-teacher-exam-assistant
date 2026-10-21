@@ -135,10 +135,17 @@ export function extractFields(parsed: ParsedDocument): RuleExtractionResult {
   const tableFields = extractTableFields(parsed, warnings);
   fields.push(...tableFields);
 
-  // 2. 文本规则（全文类块，产出公告级字段；仅当无 job 字段抢占该 field 时才产出）
-  const tableClaimedFields = new Set(tableFields.map((f) => f.field));
-  const claimed = new Set<string>(tableClaimedFields);
+  // 2. 文本规则（全文类块，产出公告级字段）。
+  // M3：去掉「表格已产出同名字段就跳过文本规则」的跨范围抢占——
+  // 表格字段是 job scope、文本字段是 announcement scope，二者身份不同、是不同的槽位
+  // （如公告总人数 vs 各岗位人数、公共学历条件 vs 岗位学历要求）。
+  // 抢占会把公告级事实（正文里的总人数/公共条件）静默丢弃，即「同字段首次命中
+  // 丢弃另一来源」。文本规则之间仍按同 scope 首次命中去重（同一来源内的去重）。
+  // 表格单元格文本不参与文本规则（其语义由表格列映射按岗位行归属，spec §1.3
+  // 归属判定以原文结构为准），避免单元格值被误抽为公告级条件。
+  const claimed = new Set<string>();
   for (const block of parsed.blocks) {
+    if (block.locator.kind === 'worksheet') continue;
     const text = blockText(block);
     if (!text) continue;
     for (const rule of RULES) {
@@ -151,6 +158,7 @@ export function extractFields(parsed: ParsedDocument): RuleExtractionResult {
         field: rule.field,
         value,
         scope: 'announcement',
+        status: 'extracted',
         ruleVersion: FIELD_EXTRACTOR_VERSION,
         anchor: buildAnchor(block, parsed, rule.field),
         origin: 'rule',

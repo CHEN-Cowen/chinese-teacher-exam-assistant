@@ -29,6 +29,7 @@ import {
 } from './field-registry.js';
 import {
   evaluateChecklist,
+  findJobsOutsideChecklist,
   fixedDenominatorCompleteness,
   isRetrospective,
   type ChecklistEvaluation,
@@ -396,6 +397,11 @@ export interface ChecklistQualityReport {
   retrospective: boolean;
   /** 是否应显示「未建立固定分母，完整性未评估」 */
   completenessNotEvaluated: boolean;
+  /**
+   * M3：候选中出现但不在清单内的岗位 key。
+   * 新发现岗位不得静默修改已冻结清单——需显式新增清单版本后才纳入固定分母。
+   */
+  jobsOutsideChecklist: string[];
 }
 
 /**
@@ -434,5 +440,12 @@ export function buildChecklistQuality(
     fixedDenominatorCompleteness: fixedDenominatorCompleteness(evaluation),
     retrospective: isRetrospective(checklist),
     completenessNotEvaluated: !evaluation.hasChecklist,
+    jobsOutsideChecklist: findJobsOutsideChecklist(
+      checklist,
+      candidate.fields.map((f) => ({
+        scope: normalizeCandidateField(f).scope,
+        jobScope: f.jobScope,
+      })),
+    ),
   };
 }

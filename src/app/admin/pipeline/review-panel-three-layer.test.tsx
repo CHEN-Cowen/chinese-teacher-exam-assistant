@@ -276,7 +276,8 @@ describe("WB4 按岗位审核工作台", () => {
     // 切换到岗位 3301A01（含 conflict headcount）
     await click(findButton(container, "岗位 3301A01"));
     expect(html()).toContain("冲突");
-    expect(html()).toContain("2 个替代值");
+    // M3：冲突标题按来源值计数（跨文件复核后每个来源值一条）
+    expect(html()).toContain("2 个来源值");
 
     // 切换到岗位 3301A02（含 unknown degree）
     await click(findButton(container, "岗位 3301A02"));

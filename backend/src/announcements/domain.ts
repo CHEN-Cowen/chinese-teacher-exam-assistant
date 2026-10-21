@@ -99,6 +99,7 @@ export interface JobScopeInfo {
 
 /**
  * 冲突状态的替代值（WB1）：保留所有值及其各自证据，不允许拼接成一段字符串。
+ * M3：增加 ruleVersion（产生该替代值的提取版本），供冲突复核审计。
  */
 export interface FieldAlternative {
   /** 替代值原文 */
@@ -107,6 +108,10 @@ export interface FieldAlternative {
   source: EvidenceLocator;
   /** 原文摘录（可选） */
   excerpt?: string;
+  /** 产生该替代值的规则/解析器版本（M3：跨文件冲突复核时保留双方提取版本） */
+  ruleVersion?: string;
+  /** 来源文件标识（M3：文件名或附件名，人工裁决时可辨别来源） */
+  sourceFile?: string;
 }
 
 /**
@@ -161,6 +166,16 @@ export interface CandidateField {
   alternatives?: FieldAlternative[];
   /** 人工决策留痕（adopt/edit/reject/pending） */
   decision?: HumanDecision;
+  /**
+   * 批次/适用范围（M3）：同一公告内不同批次（如分批报名）的报名入口/时间/材料
+   * 属于不同槽位；缺省视为同一（无名）批次。进入字段身份（fieldIdentity）。
+   */
+  batchId?: string;
+  /**
+   * 多来源证据（M3）：同值合并时保留全部来源锚点（不只保留第一次）。
+   * `anchor` 保持首个来源（向后兼容）；anchors 为全部来源的完整列表。
+   */
+  anchors?: EvidenceAnchorInput[];
 }
 
 /** 一次提取的候选结果（解析器/AI 产出，未经审核） */
@@ -574,22 +589,27 @@ export function diffVersions(
 // ==================== WB1：岗位级候选契约 ====================
 
 /**
- * 候选字段的稳定身份（scope + field）。
+ * 候选字段的稳定身份（scope + field + batchId）。
  *
  * 供 WB2 去重使用：同一公告内，两个不同岗位的同名 `major` 字段
- * 因为 jobKey 不同而得到不同 identity；公共字段与岗位字段不会相撞。
+ * 因为 jobKey 不同而得到不同 identity；公共字段与岗位字段不会相撞；
+ * 不同批次（batchId）的同名字段（如分批报名入口）也得到不同 identity，
+ * 不互相合并、不自动判冲突。
  *
  * 规则：
- * - scope=announcement 或 unknown → `announcement:<field>`（公共字段全局唯一）；
- * - scope=job → `job:<jobKey>:<field>`（岗位字段按岗位 key 隔离）。
+ * - scope=announcement 或 unknown → `announcement:<field>`（公共字段全局唯一；
+ *   batchId 存在时为 `announcement:batch:<batchId>:<field>`）；
+ * - scope=job → `job:<jobKey>:<field>`（岗位字段按岗位 key 隔离；
+ *   batchId 存在时为 `job:<jobKey>:batch:<batchId>:<field>`）。
  */
 export function fieldIdentity(field: CandidateField): string {
   const scope = normalizeFieldScope(field);
+  const batch = field.batchId ? `batch:${field.batchId}:` : '';
   if (scope === 'job') {
     const jobKey = field.jobScope?.key ?? '';
-    return `job:${jobKey}:${field.field}`;
+    return `job:${jobKey}:${batch}${field.field}`;
   }
-  return `${scope}:${field.field}`;
+  return `${scope}:${batch}${field.field}`;
 }
 
 /**
@@ -825,6 +845,9 @@ export function applyFieldDecisions(
           decidedAt,
         });
         if (isAutoField) target.humanConfirmedAt = decidedAt;
+        // M3：conflict 经人工裁决（选定原值）→ 转为 extracted（spec §4.1 状态转移），
+        // alternatives 保留为审计留痕；否则已裁决冲突会永久阻塞审核/发布门禁。
+        if (target.status === 'conflict') target.status = 'extracted';
         break;
       case 'edit': {
         if (d.afterValue === undefined || d.afterValue.trim() === '') {
@@ -840,6 +863,9 @@ export function applyFieldDecisions(
         });
         target.value = d.afterValue;
         if (isAutoField) target.humanConfirmedAt = decidedAt;
+        // M3：conflict 经人工裁决（选定新值）→ 转为 extracted（spec §4.1 状态转移），
+        // alternatives 保留为审计留痕；否则已裁决冲突会永久阻塞审核/发布门禁。
+        if (target.status === 'conflict') target.status = 'extracted';
         break;
       }
       case 'reject':

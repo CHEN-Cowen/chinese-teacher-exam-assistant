@@ -16,7 +16,7 @@ import { DocumentParserService } from '../document-processing/document-parser.se
 import { DocumentParseStore } from '../document-processing/document-parse-store.js';
 import { readParseLimits } from '../document-processing/parse-guard.js';
 import { readFeatureFlags } from '../document-processing/feature-flags.js';
-import { buildXlsxFixture } from '../document-processing/testing/fixture-builders.js';
+import { buildXlsxFixture, buildCorrectionXlsxFixture } from '../document-processing/testing/fixture-builders.js';
 import { ManualExtractionService } from './manual-extraction.service.js';
 
 const BODY_HTML = `<!doctype html><html><head><title>杭州市教育局2026年教师公开招聘公告</title></head>
@@ -185,5 +185,184 @@ describe('ManualExtractionService.submitSource + runExtraction', () => {
     expect(att.documentId).toBeTruthy();
     expect(att.snapshotId).toBeTruthy();
     expect(att.name).toContain('岗位表.xlsx');
+  });
+});
+
+// ==================== M3：跨文件归属与冲突复核（真实链路） ====================
+// 真实 xlsx（岗位表 2 人）+ 真实 xlsx（更正表 3 人，同岗位代码）经正式
+// 提取/复核服务产生冲突——不是手工构造的 conflict 对象。
+
+describe('M3：正文 + 岗位表附件 + 更正表附件 → 跨文件冲突复核', () => {
+  async function submitBodyWithTwoAttachments(
+    ctx: ReturnType<typeof makeService>,
+    att1: Buffer,
+    att2: Buffer,
+  ) {
+    return ctx.service.submitSource(
+      {
+        publisher: '杭州市教育局',
+        officialUrl: 'https://example.gov.cn/notice/2026-hz-m3',
+        sourceType: 'manual_text',
+        content: BODY_HTML,
+        mimeType: 'text/html',
+        attachments: [
+          { name: '岗位表.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', bytes: att1 },
+          { name: '更正表.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', bytes: att2 },
+        ],
+      },
+      'admin-1',
+    );
+  }
+
+  it('M3-01（真实链路）：同岗位岗位表 2 人、更正表 3 人 → conflict 两值两证据', async () => {
+    const ctx = makeService();
+    const { run } = (await submitBodyWithTwoAttachments(
+      ctx,
+      buildXlsxFixture(),
+      buildCorrectionXlsxFixture(),
+    )) as { run: { id: string } };
+
+    const outcome = await ctx.service.runExtraction(run.id);
+    expect(outcome.status).toBe('pending_review');
+
+    const candidate = ctx.prisma.extractionRuns.find((r) => r.id === run.id)!.candidate as {
+      fields: Array<{
+        field: string;
+        value: string;
+        status?: string;
+        scope?: string;
+        jobScope?: { key: string; jobCode?: string };
+        alternatives?: Array<{ value: string; ruleVersion?: string; sourceFile?: string }>;
+        anchors?: Array<{ locator: { kind: string; fileId?: string } }>;
+      }>;
+      rawJson: {
+        files: Array<{ name: string; kind: string }>;
+        reconciliation: {
+          conflicts: Array<{
+            identity: string;
+            field: string;
+            values: Array<{ value: string; sourceFile: string }>;
+            suspectedCorrection: boolean;
+          }>;
+          merged: Array<{ identity: string; evidenceCount: number }>;
+          unattributed: Array<{ field: string }>;
+        };
+      };
+    };
+
+    // 三个材料文件都参与复核
+    expect(candidate.rawJson.files).toHaveLength(3);
+    expect(candidate.rawJson.reconciliation).toBeTruthy();
+
+    // 岗位 2026-HZ-01 的 headcount：岗位表 2 vs 更正表 3 → conflict
+    const headcount = candidate.fields.find(
+      (f) =>
+        f.field === 'headcount' &&
+        f.jobScope?.key === 'job:2026-HZ-01',
+    )!;
+    expect(headcount).toBeTruthy();
+    expect(headcount.status).toBe('conflict');
+    // 两值（2 与 3）+ 两证据（各自 worksheet 来源 + 提取版本）
+    expect(headcount.alternatives!.map((a) => a.value).sort()).toEqual(['2', '3']);
+    for (const alt of headcount.alternatives!) {
+      expect(alt.ruleVersion).toBeTruthy();
+      expect(alt.sourceFile).toBeTruthy();
+    }
+    // anchors 保留全部来源锚点
+    expect(headcount.anchors!.length).toBeGreaterThanOrEqual(2);
+
+    // 复核报告登记冲突（来源含岗位表与更正表）
+    const conflict = candidate.rawJson.reconciliation.conflicts.find(
+      (c) => c.field === 'headcount',
+    )!;
+    expect(conflict).toBeTruthy();
+    expect(conflict.values.map((v) => v.value).sort()).toEqual(['2', '3']);
+    expect(conflict.values.some((v) => v.sourceFile.includes('更正表'))).toBe(true);
+
+    // 岗位 2026-HZ-02（只在岗位表）不受影响，仍 extracted
+    const job02Headcount = candidate.fields.find(
+      (f) => f.field === 'headcount' && f.jobScope?.key === 'job:2026-HZ-02',
+    )!;
+    expect(job02Headcount.status).toBe('extracted');
+    expect(job02Headcount.value).toBe('1');
+  });
+
+  it('M3-03（真实链路）：正文总人数与岗位人数并存，互不覆盖', async () => {
+    const ctx = makeService();
+    // BODY_HTML 正文含「招聘50名教师」→ M3 修复后公告级 headcount 不再被
+    // 表格抢占丢弃；与岗位级 headcount（scope 不同）并存。
+    const { run } = (await submitBodyWithTwoAttachments(
+      ctx,
+      buildXlsxFixture(),
+      buildCorrectionXlsxFixture(),
+    )) as { run: { id: string } };
+
+    await ctx.service.runExtraction(run.id);
+    const candidate = ctx.prisma.extractionRuns.find((r) => r.id === run.id)!.candidate as {
+      fields: Array<{ field: string; value: string; status?: string; scope?: string; jobScope?: { key: string } }>;
+    };
+
+    // 公告级 headcount=50（来自正文），不被岗位表抢占丢弃
+    const annHeadcount = candidate.fields.find(
+      (f) => f.field === 'headcount' && (f.scope ?? 'announcement') === 'announcement',
+    );
+    expect(annHeadcount).toBeTruthy();
+    expect(annHeadcount!.value).toBe('50');
+    expect(annHeadcount!.status).toBe('extracted');
+
+    // 岗位级 headcount 各自保留（01 冲突 2/3、02 为 1），总数不塞入任何岗位
+    const jobCounts = candidate.fields.filter(
+      (f) => f.field === 'headcount' && f.scope === 'job',
+    );
+    const job01Values = jobCounts
+      .filter((f) => f.jobScope?.key === 'job:2026-HZ-01')
+      .flatMap((f) => (f.status === 'conflict' ? f.alternatives?.map((a) => a.value) ?? [] : [f.value]));
+    expect(job01Values.sort((a, b) => a.localeCompare(b))).toEqual(['2', '3']);
+    expect(
+      jobCounts.some((f) => f.value === '50'),
+    ).toBe(false);
+  });
+
+  it('M3-04（真实链路）：同岗位同值多来源合并保留双证据', async () => {
+    const ctx = makeService();
+    // 两个附件给出完全相同的岗位表（同内容 → 内容哈希相同 → 复用同一快照，
+    // 不会产生两个来源）。改用「岗位表 + 同岗位代码的另一表」验证同值合并：
+    // 更正表与岗位表的 2026-HZ-02 行不存在（更正表只有 01），
+    // 因此这里用岗位表两次但内容不同来验证 01 行的 education 同值合并——
+    // 构造：岗位表（本科及以上）+ 更正表（本科及以上 同值，headcount 不同）。
+    const { run } = (await submitBodyWithTwoAttachments(
+      ctx,
+      buildXlsxFixture(),
+      buildCorrectionXlsxFixture(),
+    )) as { run: { id: string } };
+
+    await ctx.service.runExtraction(run.id);
+    const candidate = ctx.prisma.extractionRuns.find((r) => r.id === run.id)!.candidate as {
+      fields: Array<{
+        field: string;
+        value: string;
+        status?: string;
+        jobScope?: { key: string };
+        anchors?: Array<{ locator: { fileId?: string } }>;
+      }>;
+      rawJson: { reconciliation: { merged: Array<{ identity: string; field: string; evidenceCount: number }> } };
+    };
+
+    // 岗位 2026-HZ-01 的 education：两个来源（岗位表/更正表）同值「本科及以上」
+    // → 合并为一条候选，anchors 保留双证据
+    const educations = candidate.fields.filter(
+      (f) => f.field === 'education' && f.jobScope?.key === 'job:2026-HZ-01',
+    );
+    expect(educations).toHaveLength(1);
+    expect(educations[0]!.status).toBe('extracted');
+    expect(educations[0]!.value).toBe('本科及以上');
+    expect(educations[0]!.anchors!.length).toBeGreaterThanOrEqual(2);
+
+    // 复核报告登记合并（证据数 ≥ 2）
+    const merged = candidate.rawJson.reconciliation.merged.find(
+      (m) => m.field === 'education' && m.identity.includes('job:2026-HZ-01'),
+    );
+    expect(merged).toBeTruthy();
+    expect(merged!.evidenceCount).toBeGreaterThanOrEqual(2);
   });
 });

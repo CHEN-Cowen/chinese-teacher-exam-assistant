@@ -520,6 +520,29 @@ export function isRetrospective(checklist: ExpectedChecklist | null | undefined)
 }
 
 /**
+ * M3：候选中出现但不在已冻结清单内的岗位（清单外岗位）。
+ *
+ * 新发现岗位/范围不得静默修改已冻结期望清单——发现清单外岗位时只报告，
+ * 提示需要显式新增清单版本（freezeChecklist version 递增）后才纳入固定分母。
+ */
+export function findJobsOutsideChecklist(
+  checklist: ExpectedChecklist | null | undefined,
+  candidateFields: Array<{ scope?: string; jobScope?: { key?: string } }>,
+): string[] {
+  if (!checklist) return [];
+  const listed = new Set(checklist.jobs.map((j) => j.key));
+  const found = new Set<string>();
+  for (const f of candidateFields) {
+    if ((f.scope ?? 'announcement') !== 'job') continue;
+    const key = f.jobScope?.key ?? '';
+    // 身份不明（空/job:unknown）不作为「清单外岗位」报告（它们在待归属清单）
+    if (!key || key === 'job:unknown') continue;
+    if (!listed.has(key)) found.add(key);
+  }
+  return [...found];
+}
+
+/**
  * 固定分母完整性：已提取 / 有效分母（排除明确不适用）。
  * 有清单时使用；无清单不调用（返回 undefined 表示未评估）。
  */

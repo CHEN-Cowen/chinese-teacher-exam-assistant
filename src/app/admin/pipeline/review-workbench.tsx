@@ -48,6 +48,8 @@ interface CandidateField {
   field: string;
   value: string;
   anchor?: { field?: string; locator?: EvidenceLocator; excerpt?: string };
+  /** M3：同值合并的多来源证据（不只保留第一次） */
+  anchors?: Array<{ field?: string; locator?: EvidenceLocator; excerpt?: string }>;
   confidence?: number;
   origin?: "rule" | "ai" | "ocr";
   needsHumanConfirm?: boolean;
@@ -56,10 +58,14 @@ interface CandidateField {
   jobScope?: { key: string; jobCode?: string; sheet?: string; row?: number };
   status?: "extracted" | "unknown" | "conflict";
   ruleVersion?: string;
+  /** M3：批次/适用范围（同字段不同批次为不同槽位） */
+  batchId?: string;
   alternatives?: Array<{
     value: string;
     source?: unknown;
     excerpt?: string;
+    ruleVersion?: string;
+    sourceFile?: string;
   }>;
   decision?: {
     action: "adopt" | "edit" | "reject" | "pending";
@@ -223,6 +229,20 @@ function FieldRow({
             {origin}
           </span>
         )}
+        {field.batchId && (
+          <span className="px-1.5 py-px rounded bg-indigo-100 text-indigo-700 text-[11px]" data-testid={`batch-badge-${field.field}`}>
+            批次 {field.batchId}
+          </span>
+        )}
+        {field.anchors && field.anchors.length > 1 && (
+          <span
+            className="px-1.5 py-px rounded bg-teal-100 text-teal-700 text-[11px]"
+            title={`同值多来源合并，保留 ${field.anchors.length} 条证据`}
+            data-testid={`multi-evidence-${field.field}`}
+          >
+            多来源证据（{field.anchors.length}）
+          </span>
+        )}
         {isAuto && !field.humanConfirmedAt && (
           <span className="px-1.5 py-px rounded bg-orange-100 text-orange-700 text-[11px]">
             待人工确认
@@ -235,16 +255,22 @@ function FieldRow({
         )}
       </div>
 
-      {/* 值：conflict 显著展示全部替代值 */}
+      {/* 值：conflict 显著展示全部替代值（含来源文件与提取版本） */}
       {status === "conflict" && field.alternatives && field.alternatives.length > 0 ? (
         <div className="mt-2 rounded-lg border border-red-200 bg-red-50 p-2">
           <p className="text-xs font-medium text-red-700 mb-1">
-            冲突（{field.alternatives.length} 个替代值，需人工裁决）：
+            冲突（{field.alternatives.length} 个来源值，需人工裁决）：
           </p>
           <ul className="space-y-1">
             {field.alternatives.map((a, i) => (
               <li key={i} className="text-sm text-slate-800">
                 <span className="font-medium">{a.value}</span>
+                {a.sourceFile && (
+                  <span className="ml-2 text-xs text-slate-500">来源：{a.sourceFile}</span>
+                )}
+                {a.ruleVersion && (
+                  <span className="ml-2 text-xs text-slate-400">（{a.ruleVersion}）</span>
+                )}
                 {a.excerpt && <span className="ml-2 text-xs text-slate-500">（{a.excerpt}）</span>}
               </li>
             ))}

@@ -190,6 +190,21 @@ export function buildXlsxFixture(): Buffer {
   return buildWorkbookBuffer('xlsx');
 }
 
+/**
+ * M3：更正表 XLSX——与 buildXlsxFixture 同表头、同岗位代码（2026-HZ-01），
+ * 但人数改为 3（模拟官方更正文件：正文/岗位表 2 人 → 更正 3 人）。
+ * 用于跨文件冲突复核的真实链路测试。
+ */
+export function buildCorrectionXlsxFixture(): Buffer {
+  const wb = XLSX.utils.book_new();
+  const positions = XLSX.utils.aoa_to_sheet([
+    ['岗位代码', '岗位名称', '学历要求', '专业', '招聘人数'],
+    ['2026-HZ-01', '语文教师', '本科及以上', '汉语言文学', '3'],
+  ]);
+  XLSX.utils.book_append_sheet(wb, positions, 'Positions');
+  return XLSX.write(wb, { bookType: 'xlsx', type: 'buffer' }) as Buffer;
+}
+
 /** XLSB 字节（ZIP 容器含 xl/workbook.bin） */
 export function buildXlsbFixture(): Buffer {
   return buildWorkbookBuffer('xlsb');

@@ -31,6 +31,7 @@ import {
   type ExtractionCandidate,
 } from './domain.js';
 import { FIELD_EXTRACTOR_VERSION, extractFields } from './extraction/field-extractor.js';
+import { reconcileFields, type ReconcileSource } from './field-reconciler.js';
 import { DocumentParserService, GuardError } from '../document-processing/document-parser.service.js';
 import { DocumentParseStore } from '../document-processing/document-parse-store.js';
 import type { ObjectStore } from '../sourcing/storage/object-store.js';
@@ -188,11 +189,13 @@ export class ManualExtractionService {
       const bodySnapshot = run.snapshot;
       const bodyBytes = await this.readBytes(bodySnapshot.storageKey);
 
-      // 材料包：正文 + 关联附件（经 SourceDocument.parentDocumentId 追溯）
-      const attachments = await this.listAttachments(bodySnapshot.id);
+      // 材料包：正文 + 关联附件（经 SourceDocument.parentDocumentId 追溯，
+      // 含 M3-07 的 relationType 更正/补充关系标注）
+      const { bodyDocumentId, attachments } = await this.listAttachments(bodySnapshot.id);
 
       const files: MaterialFileStatus[] = [];
-      const allFields: CandidateField[] = [];
+      // M3：逐文件独立收集候选与锚点，再进入跨文件归属与冲突复核
+      const reconcileSources: ReconcileSource[] = [];
       const allDropped: unknown[] = [];
       const allWarnings: string[] = [];
 
@@ -201,9 +204,19 @@ export class ManualExtractionService {
         { id: bodySnapshot.id, storageKey: bodySnapshot.storageKey, mimeType: bodySnapshot.mimeType, officialUrl: bodySnapshot.officialUrl },
         bodyBytes,
         'body',
+        bodyDocumentId,
       );
       files.push(bodyOutcome.file);
-      allFields.push(...bodyOutcome.fields);
+      reconcileSources.push({
+        file: {
+          documentId: bodyDocumentId,
+          snapshotId: bodySnapshot.id,
+          name: bodySnapshot.officialUrl ?? bodySnapshot.id,
+          kind: 'body',
+          relationType: null,
+        },
+        fields: bodyOutcome.fields,
+      });
       allDropped.push(...bodyOutcome.dropped);
       allWarnings.push(...bodyOutcome.warnings);
 
@@ -230,10 +243,25 @@ export class ManualExtractionService {
           att.documentId,
         );
         files.push(outcome.file);
-        allFields.push(...outcome.fields);
+        reconcileSources.push({
+          file: {
+            documentId: att.documentId,
+            snapshotId: att.snapshotId,
+            name: att.name,
+            kind: 'attachment',
+            relationType: att.relationType ?? null,
+          },
+          fields: outcome.fields,
+        });
         allDropped.push(...outcome.dropped);
         allWarnings.push(...outcome.warnings);
       }
+
+      // M3：跨文件归属与冲突复核——同岗位同字段不同值转 conflict（保留全部
+      // 来源与证据），同值合并保留全部证据，不再通过首次命中静默丢弃另一来源。
+      const reconciled = reconcileFields(reconcileSources);
+      const allFields = reconciled.fields;
+      allWarnings.push(...reconciled.report.warnings);
 
       const hasAnyUnreadable = files.some((f) => f.readStatus !== 'ok');
 
@@ -277,6 +305,8 @@ export class ManualExtractionService {
             readStatus: f.readStatus,
             reason: f.reason,
           })),
+          // M3：跨文件复核报告（冲突/合并/待归属/适用关系对照），审计可追溯
+          reconciliation: reconciled.report,
         },
       };
 
@@ -558,14 +588,25 @@ export class ManualExtractionService {
     });
   }
 
-  /** 按正文快照找到其逻辑文档，再枚举 child 附件文档 */
-  private async listAttachments(bodySnapshotId: string): Promise<
-    Array<{ documentId: string; snapshotId: string; storageKey: string; mimeType: string; name: string }>
-  > {
+  /** 按正文快照找到其逻辑文档与 child 附件文档（含 M3-07 relationType 关系标注） */
+  private async listAttachments(bodySnapshotId: string): Promise<{
+    bodyDocumentId: string;
+    attachments: Array<{
+      documentId: string;
+      snapshotId: string;
+      storageKey: string;
+      mimeType: string;
+      name: string;
+      /** 更正/补充关系（replacement/supplement 等；null=关系不明） */
+      relationType?: string | null;
+    }>;
+  }> {
     const bodyDoc = await this.prisma.sourceDocument.findFirst({
       where: { latestSnapshotId: bodySnapshotId },
     });
-    if (!bodyDoc) return [];
+    if (!bodyDoc) {
+      return { bodyDocumentId: '', attachments: [] };
+    }
     const children = await this.prisma.sourceDocument.findMany({
       where: { parentDocumentId: bodyDoc.id, kind: 'attachment' },
     });
@@ -575,6 +616,7 @@ export class ManualExtractionService {
       storageKey: string;
       mimeType: string;
       name: string;
+      relationType?: string | null;
     }> = [];
     for (const child of children) {
       if (!child.latestSnapshotId) continue;
@@ -588,9 +630,10 @@ export class ManualExtractionService {
         storageKey: snapshot.storageKey,
         mimeType: snapshot.mimeType,
         name: this.attachmentName(child.canonicalUrl, child.id),
+        relationType: child.relationType ?? null,
       });
     }
-    return out;
+    return { bodyDocumentId: bodyDoc.id, attachments: out };
   }
 
   /** 从附件 canonicalUrl 提取可读文件名（URL 解码，兜底用文档 id） */
