@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma.service.js';
 import {
   applyFieldDecisions,
@@ -22,7 +22,6 @@ import {
   type ReviewAction,
 } from './domain.js';
 import { buildCompletenessReport, assertPublishable } from './quality-gates.js';
-import { parseAnnouncement } from './parser.js';
 import {
   ProjectionError,
   projectCatalogVersion,
@@ -33,16 +32,25 @@ import {
   isCatalogPayload,
   type CatalogDataset,
 } from './catalog-payload-assembler.js';
+import { ManualExtractionService } from './manual-extraction.service.js';
+import { SafeFetcherFactory } from '../sourcing/fetch/safe-fetcher-factory.js';
+import type { SourceRecord } from '../sourcing/crawl-run-store.js';
 
 export interface SubmitSourceInput {
   publisher: string;
   officialUrl: string;
   sourceType: string;
-  /** 原始内容（HTML/文本）；首版支持 URL 抓取失败后人工粘贴 */
+  /** 原始内容（HTML/文本）；URL 模式时为官方公告链接（M1 抓取后回填正文） */
   content: string;
   mimeType: string;
   regionCode?: string;
   announcementId?: string;
+  /** M1：岗位附件（当前解析器可读的 XLS/XLSX/PDF 等），与正文组成材料包 */
+  attachments?: Array<{
+    name: string;
+    mimeType?: string;
+    bytes: Buffer;
+  }>;
 }
 
 export interface SubmitReviewInput {
@@ -98,20 +106,86 @@ function catalogVersionDiff(
  */
 @Injectable()
 export class AnnouncementsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    // M1：手动提交/提取委托给 ManualExtractionService（复用新多岗位抽取链路）。
+    // @Optional 保持既有单测（new AnnouncementsService(prisma)）可构造；未注入时
+    // submitSource/runExtraction 会回退旧 parser.ts 路径（仅用于兼容旧测试，生产恒注入）。
+    @Optional() private readonly manualExtraction?: ManualExtractionService,
+    @Optional() private readonly fetcherFactory?: SafeFetcherFactory,
+  ) {}
 
   // ==================== 1. 提交来源 + 留档快照 ====================
 
   async submitSource(input: SubmitSourceInput, userId: string) {
+    // M1：URL 模式真正抓取正文（复用 SafeFetcher 的安全域名/SSRF/重定向/大小/类型约束），
+    // 绝不把 URL 字符串当成功正文。抓取失败抛出明确错误，由前端切换人工粘贴。
+    const isUrlMode = this.looksLikeUrl(input.content) && input.sourceType === 'government';
+    let content = input.content;
+    let mimeType = input.mimeType;
+    let officialUrl = input.officialUrl;
+
+    if (isUrlMode) {
+      if (!this.fetcherFactory) {
+        throw new BadRequestException('URL 抓取未配置，请切换「粘贴正文」人工输入');
+      }
+      const tempSource = {
+        id: 'manual',
+        publisher: input.publisher,
+        officialUrl: input.officialUrl,
+        allowedHosts: null,
+      } as unknown as SourceRecord;
+      const fetcher = this.fetcherFactory.create(tempSource);
+      const fetched = await fetcher.fetch(input.content).catch((e) => {
+        throw new BadRequestException(
+          `公告链接抓取失败，请核对链接或切换「粘贴正文」人工输入：${
+            e instanceof Error ? e.message : String(e)
+          }`,
+        );
+      });
+      content = fetched.body;
+      mimeType = fetched.mimeType || 'text/html';
+      officialUrl = fetched.finalUrl || input.officialUrl;
+    }
+
+    // M1：委托 ManualExtractionService 走新链路（正文 + 附件材料包）。
+    if (this.manualExtraction) {
+      const result = await this.manualExtraction.submitSource(
+        {
+          publisher: input.publisher,
+          officialUrl,
+          sourceType: input.sourceType,
+          regionCode: input.regionCode,
+          announcementId: input.announcementId,
+          content,
+          mimeType,
+          attachments: input.attachments,
+        },
+        userId,
+      );
+      return result.run;
+    }
+
+    // 兜底（仅旧单测无 manualExtraction 注入时）：保持原 parser.ts 路径语义不变。
+    return this.submitSourceLegacy(input, userId);
+  }
+
+  // ==================== 1.1 URL 判定 ====================
+
+  private looksLikeUrl(content: string): boolean {
+    return /^https?:\/\//i.test(content.trim());
+  }
+
+  // ==================== 1.2 旧提交路径（仅兼容无 manualExtraction 注入的旧单测） ====================
+
+  private async submitSourceLegacy(input: SubmitSourceInput, userId: string) {
     const contentHash = computeContentHash(input.content);
 
-    // 同一来源下相同内容哈希不创建重复快照
     const existingSnapshots = await this.prisma.sourceSnapshot.findMany({
       where: { source: { officialUrl: input.officialUrl } },
       select: { id: true, contentHash: true },
     });
 
-    // 按官方 URL 找或创建 Source
     let source = await this.prisma.source.findFirst({
       where: { officialUrl: input.officialUrl },
     });
@@ -126,15 +200,12 @@ export class AnnouncementsService {
       });
     }
 
-    // 快照去重
     const dupId = findDuplicateSnapshot(existingSnapshots, contentHash);
     if (dupId) {
-      // 复用已有快照，但仍创建新的提取任务（管理员可能想重新提取）
       const snapshot = await this.prisma.sourceSnapshot.findUnique({ where: { id: dupId } });
       return this.createExtractionRun(snapshot!.id, input.announcementId, userId);
     }
 
-    // 保存原始内容（首版存本地文件；生产环境替换为对象存储）
     const storageKey = `snapshots/${source.id}/${contentHash.slice(0, 16)}.bin`;
     const fs = await import('node:fs/promises');
     const path = await import('node:path');
@@ -183,6 +254,19 @@ export class AnnouncementsService {
   // ==================== 2. 执行提取（管理员手动触发） ====================
 
   async runExtraction(runId: string) {
+    // M1：复用新多岗位抽取链路（正文 + 附件材料包）。
+    if (this.manualExtraction) {
+      const outcome = await this.manualExtraction.runExtraction(runId);
+      const run = await this.prisma.extractionRun.findUnique({ where: { id: runId } });
+      if (!run) throw new NotFoundException('提取任务不存在');
+      return { ...run, manualExtraction: outcome };
+    }
+
+    // 兜底（仅旧单测无 manualExtraction 注入时）：保持原 parser.ts 路径语义不变。
+    return this.runExtractionLegacy(runId);
+  }
+
+  private async runExtractionLegacy(runId: string) {
     const run = await this.prisma.extractionRun.findUnique({
       where: { id: runId },
       include: { snapshot: true },
@@ -200,14 +284,6 @@ export class AnnouncementsService {
     });
 
     try {
-      // 首版：直接读取快照内容并解析。
-      // 生产环境应从对象存储读取 storageKey 对应的文件。
-      // 这里 content 未单独持久化到 DB（大文件不入库），首版从 snapshot 的 storageKey 对应文件读取。
-      // 为了让流水线可走通，解析器接收 content 由调用方传入；此处从 DB 无法拿到原始内容，
-      // 因此提交时已将 content 传入，runExtraction 需要重新获取。
-      // 简化方案：将原始内容暂存到 snapshot 的 storageKey 路径，runExtraction 读取该文件。
-      // 鉴于首版无对象存储，我们将 content 暂存到本地文件或内存。
-      // 这里采用：提交时把 content 写入本地文件，runExtraction 读取。
       const fs = await import('node:fs/promises');
       const path = await import('node:path');
       const storageDir = path.join(process.cwd(), '.data', 'snapshots');
@@ -221,6 +297,7 @@ export class AnnouncementsService {
         throw new BadRequestException('原始快照内容丢失，请重新提交公告');
       }
 
+      const { parseAnnouncement } = await import('./parser.js');
       const candidate = parseAnnouncement(content, run.snapshot.mimeType);
 
       // 保存候选结果 + 证据锚点
@@ -286,7 +363,10 @@ export class AnnouncementsService {
       ? buildCompletenessReport(run.candidate as unknown as ExtractionCandidate)
       : null;
 
-    return { ...run, quality };
+    // M1：材料包文件状态（已持久化在 candidate.rawJson.files，刷新/重进可读）
+    const manualExtraction = this.readMaterialPack(run.candidate, run.parserVersion);
+
+    return { ...run, quality, manualExtraction };
   }
 
   async listRuns(params: { status?: string; announcementId?: string } = {}) {
@@ -298,6 +378,23 @@ export class AnnouncementsService {
       orderBy: { createdAt: 'desc' },
       include: { snapshot: { include: { source: true } } },
     });
+  }
+
+  /** M1：从候选 rawJson.files 提取材料包文件状态（持久化后刷新可读） */
+  private readMaterialPack(candidate: unknown, parserVersion: string) {
+    const raw = candidate as {
+      rawJson?: { files?: Array<Record<string, unknown>> };
+      fields?: unknown[];
+    } | null;
+    const files = raw?.rawJson?.files;
+    if (!Array.isArray(files) || files.length === 0) return null;
+    return {
+      runId: null,
+      status: files.some((f) => f.readStatus !== 'ok') ? 'partial' : 'pending_review',
+      parserVersion,
+      fieldCount: (raw?.fields ?? []).length,
+      files,
+    };
   }
 
   // ==================== 4. 提交审核 ====================

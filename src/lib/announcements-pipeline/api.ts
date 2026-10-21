@@ -48,6 +48,22 @@ interface Run {
   publishedVersion?: { id: string; versionNumber: number; status: string } | null;
   /** WB4：后端用 WB3 纯函数算出的质量门禁报告（按岗位可复算状态） */
   quality?: QualityReport | null;
+  /** M1：手动提取结果（材料包各文件读取状态与提取版本） */
+  manualExtraction?: {
+    runId: string;
+    status: 'pending_review' | 'failed' | 'partial';
+    parserVersion: string;
+    fieldCount: number;
+    files: Array<{
+      documentId: string;
+      snapshotId: string;
+      name: string;
+      kind: 'body' | 'attachment';
+      readStatus: 'ok' | 'unreadable' | 'unsupported' | 'pending_manual';
+      reason?: string;
+      format?: string;
+    }>;
+  } | null;
 }
 
 /**
@@ -249,7 +265,7 @@ async function downloadFile(path: string, fallbackFilename: string): Promise<Dow
 }
 
 export const announcementsPipelineApi = {
-  /** 提交公告来源（URL/文本内容） */
+  /** 提交公告来源（URL/文本内容 + 可选岗位附件） */
   submitSource(input: {
     publisher: string;
     officialUrl: string;
@@ -258,6 +274,8 @@ export const announcementsPipelineApi = {
     mimeType: string;
     regionCode?: string;
     announcementId?: string;
+    /** M1：岗位附件（base64 编码），与正文组成材料包 */
+    attachments?: Array<{ name: string; mimeType?: string; base64: string }>;
   }): Promise<Run> {
     return request<Run>("/sources", {
       method: "POST",

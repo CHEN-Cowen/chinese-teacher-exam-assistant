@@ -349,18 +349,37 @@ export class FakePrisma {
       applyUpdate(row, data);
       return row;
     },
-    findMany: async ({ where }: { where: { sourceId: string } }) =>
-      this.documents.filter((d) => d.sourceId === where.sourceId),
+    findMany: async ({
+      where,
+      orderBy,
+    }: {
+      where: { sourceId?: string; parentDocumentId?: string; kind?: string };
+      orderBy?: unknown;
+    }) => {
+      void orderBy;
+      let rows = [...this.documents];
+      if (where.sourceId) rows = rows.filter((d) => d.sourceId === where.sourceId);
+      if (where.parentDocumentId !== undefined) {
+        rows = rows.filter((d) => d.parentDocumentId === where.parentDocumentId);
+      }
+      if (where.kind) rows = rows.filter((d) => d.kind === where.kind);
+      return rows;
+    },
     findFirst: async ({
       where,
       select,
     }: {
-      where: { sourceId: string };
+      where: { sourceId?: string; latestSnapshotId?: string };
       select?: Record<string, boolean>;
     }) => {
-      const row =
-        this.documents.find((d) => d.sourceId === where.sourceId) ?? null;
-      return row ? pickSelect(row as Record<string, unknown>, select) : null;
+      let row: Record<string, unknown> | null = null;
+      if (where.latestSnapshotId !== undefined) {
+        row =
+          this.documents.find((d) => d.latestSnapshotId === where.latestSnapshotId) ?? null;
+      } else if (where.sourceId) {
+        row = this.documents.find((d) => d.sourceId === where.sourceId) ?? null;
+      }
+      return row ? pickSelect(row, select) : null;
     },
   };
 
@@ -492,17 +511,22 @@ export class FakePrisma {
   readonly extractionRun = {
     findUnique: async ({
       where,
+      include,
     }: {
       where: { id?: string; idempotencyKey?: string };
+      include?: { snapshot?: boolean };
     }) => {
-      if (where.id) return this.extractionRuns.find((r) => r.id === where.id) ?? null;
-      if (where.idempotencyKey) {
-        return (
-          this.extractionRuns.find((r) => r.idempotencyKey === where.idempotencyKey) ??
-          null
-        );
+      let row: Record<string, unknown> | null = null;
+      if (where.id) row = this.extractionRuns.find((r) => r.id === where.id) ?? null;
+      else if (where.idempotencyKey) {
+        row = this.extractionRuns.find((r) => r.idempotencyKey === where.idempotencyKey) ?? null;
       }
-      return null;
+      if (!row) return null;
+      if (include?.snapshot) {
+        const snapshot = this.snapshots.find((s) => s.id === row!.snapshotId) ?? null;
+        return { ...row, snapshot };
+      }
+      return row;
     },
     /** 支持 status 过滤与经 SourceSnapshot 关联的 sourceId 过滤（待审核积压统计用） */
     count: async ({

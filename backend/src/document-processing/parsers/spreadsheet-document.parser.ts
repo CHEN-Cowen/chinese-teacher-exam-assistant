@@ -166,14 +166,18 @@ export class SpreadsheetDocumentParser implements DocumentParser {
             h.keywords.some((kw) => headerText.includes(kw)),
           );
           columns.push({
-            column: c,
+            // column 统一为 1-based（与 cell locator.column 一致），
+            // 供业务抽取层按 locator.column 精确命中列语义（否则列错位）。
+            column: c + 1,
             cell: XLSX.utils.encode_cell({ r: headerRow, c }),
             headerText,
             suggestedField: hint?.field,
           });
         }
         if (columns.length >= 2) {
-          tableHeaders.push({ sheet: sheetName, headerRow, columns });
+          // headerRow 统一为 1-based（与 cell locator.row 一致），
+          // 供业务抽取层按 `row > headerRow` 判定数据行（否则表头行会被误抽）。
+          tableHeaders.push({ sheet: sheetName, headerRow: headerRow + 1, columns });
         }
       }
 

@@ -43,11 +43,29 @@ export class AnnouncementsController {
       mimeType: string;
       regionCode?: string;
       announcementId?: string;
+      /** M1：岗位附件（base64 编码字节），与正文组成材料包 */
+      attachments?: Array<{ name: string; mimeType?: string; base64: string }>;
     },
     @Req() req: AuthenticatedRequest,
   ) {
     const userId = req.user!.id;
-    return this.service.submitSource(body, userId);
+    return this.service.submitSource(
+      {
+        publisher: body.publisher,
+        officialUrl: body.officialUrl,
+        sourceType: body.sourceType,
+        content: body.content,
+        mimeType: body.mimeType,
+        regionCode: body.regionCode,
+        announcementId: body.announcementId,
+        attachments: (body.attachments ?? []).map((att) => ({
+          name: att.name,
+          mimeType: att.mimeType,
+          bytes: Buffer.from(att.base64, 'base64'),
+        })),
+      },
+      userId,
+    );
   }
 
   // ==================== 管理员：执行提取 ====================

@@ -57,7 +57,29 @@ export default function AdminPipelinePage() {
   const [publisher, setPublisher] = useState("");
   const [officialUrl, setOfficialUrl] = useState("");
   const [content, setContent] = useState("");
+  const [attachments, setAttachments] = useState<
+    Array<{ name: string; mimeType: string; base64: string }>
+  >([]);
   const [submitting, setSubmitting] = useState(false);
+
+  // 附件上传：读为 base64（M1 材料包），不直接提交二进制（保持 JSON 通路）
+  const handleAttachments = (files: FileList | null) => {
+    if (!files) return;
+    const next: Array<{ name: string; mimeType: string; base64: string }> = [];
+    let remaining = files.length;
+    for (const file of Array.from(files)) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const base64 = (reader.result as string).split(",")[1] ?? "";
+        next.push({ name: file.name, mimeType: file.type, base64 });
+        remaining -= 1;
+        if (remaining === 0) {
+          setAttachments((prev) => [...prev, ...next]);
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   const refresh = async () => {
     try {
@@ -98,16 +120,19 @@ export default function AdminPipelinePage() {
         officialUrl: submitMode === "url" ? officialUrl.trim() : `text://${Date.now()}`,
         sourceType: submitMode === "url" ? "government" : "manual_text",
         content: submitMode === "url" ? officialUrl.trim() : content,
-        mimeType: submitMode === "url" ? "text/plain" : "text/plain",
+        mimeType: submitMode === "url" ? "text/plain" : "text/html",
+        attachments: attachments.map((a) => ({
+          name: a.name,
+          mimeType: a.mimeType,
+          base64: a.base64,
+        })),
       };
-      // 文本模式：content 是正文；URL 模式：首版把 URL 当作内容提交（生产环境应抓取）
-      if (submitMode === "url") {
-        // 首版 URL 模式实际提交 URL 字符串作为内容，解析器会提取标题等
-        input.content = officialUrl.trim();
-      }
+      // URL 模式：content 为官方链接，后端用安全抓取器抓取真实正文；
+      // 抓取失败后端返回明确错误，前端提示切换「粘贴正文」人工输入。
       await announcementsPipelineApi.submitSource(input);
       setOfficialUrl("");
       setContent("");
+      setAttachments([]);
       await refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "提交失败");
@@ -185,16 +210,46 @@ export default function AdminPipelinePage() {
               label="官方公告链接"
               value={officialUrl}
               onChange={(e) => setOfficialUrl(e.target.value)}
-              placeholder="https://www.example.gov.cn/...（首版提交链接文本，生产环境抓取网页）"
+              placeholder="https://www.example.gov.cn/...（提交后真实抓取正文，失败可切换「粘贴正文」人工输入）"
             />
           ) : (
-            <Textarea
-              label="公告正文"
-              className="min-h-[160px]"
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              placeholder="粘贴公告 HTML 或纯文本正文，系统会自动提取报名时间、考试时间、科目、分值、资格条件等字段"
-            />
+            <>
+              <Textarea
+                label="公告正文"
+                className="min-h-[160px]"
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                placeholder="粘贴公告 HTML 或纯文本正文，系统会自动提取报名时间、考试时间、科目、分值、资格条件等字段"
+              />
+              <div className="space-y-2">
+                <label className="block">
+                  <span className="text-sm font-medium text-slate-700">岗位附件（可选，如岗位表 xlsx/pdf）</span>
+                  <input
+                    type="file"
+                    multiple
+                    accept=".xls,.xlsx,.xlsb,.et,.pdf,.docx"
+                    onChange={(e) => handleAttachments(e.target.files)}
+                    className="mt-1 block w-full text-sm text-slate-500 file:mr-3 file:rounded file:border-0 file:bg-blue-50 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-blue-700 hover:file:bg-blue-100"
+                  />
+                </label>
+                {attachments.length > 0 && (
+                  <ul className="space-y-1">
+                    {attachments.map((a) => (
+                      <li key={a.name} className="flex items-center justify-between text-xs text-slate-500">
+                        <span className="truncate">📎 {a.name}</span>
+                        <button
+                          type="button"
+                          className="text-red-500 hover:text-red-700"
+                          onClick={() => setAttachments((prev) => prev.filter((x) => x.name !== a.name))}
+                        >
+                          移除
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </>
           )}
           <Button onClick={handleSubmit} disabled={submitting || (submitMode === "url" ? !officialUrl : !content)}>
             {submitting ? "提交中..." : "提交并创建提取任务"}
@@ -257,6 +312,22 @@ export default function AdminPipelinePage() {
                           <p className="text-xs text-red-500 mt-1 max-w-[180px] truncate">
                             {run.errorMessage}
                           </p>
+                        )}
+                        {run.manualExtraction?.files && run.manualExtraction.files.length > 0 && (
+                          <div className="mt-1 space-y-0.5">
+                            {run.manualExtraction.files.map((f) => (
+                              <p
+                                key={`${f.kind}-${f.snapshotId}`}
+                                className={cn(
+                                  "text-xs truncate max-w-[180px]",
+                                  f.readStatus === "ok" ? "text-slate-400" : "text-amber-600"
+                                )}
+                              >
+                                {f.kind === "body" ? "正文" : "附件"} · {f.name} ·{" "}
+                                {f.readStatus === "ok" ? "已读取" : f.reason ?? f.readStatus}
+                              </p>
+                            ))}
+                          </div>
                         )}
                       </td>
                       <td className="py-2.5 pr-3 text-xs text-slate-500">
