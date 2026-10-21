@@ -18,6 +18,10 @@ jobs:
   # 防止"编译通过但进程起不来"的故障再次进入 GHCR（参考 sha-9f6164f7 回滚事件）。
   verify:
     runs-on: ubuntu-latest
+    # 产品面向中国用户，时间渲染按北京时间（产品语义）；runner 默认 UTC 会让
+    # 依赖本地时区的时间断言必挂（如 ConsultationPanel 的「核对时间」测试）。
+    env:
+      TZ: Asia/Shanghai
     defaults:
       run:
         working-directory: backend
@@ -49,6 +53,9 @@ jobs:
   # 日程入口及 v7.2 开关回退等真实浏览器链路。
   frontend-verify:
     runs-on: ubuntu-latest
+    # 同 verify：时间渲染按北京时间，避免 UTC runner 上的时区脆弱断言
+    env:
+      TZ: Asia/Shanghai
     steps:
       - uses: actions/checkout@v4
 
