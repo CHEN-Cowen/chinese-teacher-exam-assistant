@@ -14,6 +14,7 @@ import {
   type SnapshotParsedResponse,
 } from "@/lib/announcements-pipeline/api";
 import { ReviewWorkbench } from "./review-workbench";
+import { ExportSection } from "./export-section";
 
 // ==================== 状态映射 ====================
 
@@ -425,6 +426,12 @@ function ReviewPanel({
         onClose={onClose}
         onDone={onDone}
       />
+      {/* WB6：审核导出与实测指标（服务端已保存记录的只读导出） */}
+      {run.candidate != null && (
+        <div className="mt-4">
+          <ExportSection runId={run.id} />
+        </div>
+      )}
       {/* 已审核/已发布：保留投影状态与版本链（v7.2 既有能力，不丢失） */}
       {isReviewed && run.announcementId && (
         <div className="mt-4">

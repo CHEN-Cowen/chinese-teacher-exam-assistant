@@ -1,6 +1,6 @@
 # WorkBuddy 完成清单（WB1–WB6）
 
-> 状态：WB0 已完成（规格 + 黄金样本 + 隔离测试）。WB1、WB2、WB3、WB4、WB5 已完成，WB6 未实现。
+> 状态：WB0 已完成（规格 + 黄金样本 + 隔离测试）。WB1、WB2、WB3、WB4、WB5、WB6 已完成。
 > 本文把后续工作拆成六个模块，每个模块标注前置条件、完成门、非目标。
 
 ## 总前置条件（所有模块共用）
@@ -103,17 +103,45 @@
 > WP3（v7.2-wp3-db-catalog）当时**未重写** announcements publish 流水线（见其 spec §8），
 > 本次 WB5 是补上该断点的新增工作，不与 WP3 历史范围混为一谈。
 
-### WB6：端到端回归与验收
+### WB6：审核导出与实测指标（已完成）
 
-- **目标**：把 WB1–WB5 串成端到端链路（抽取 → 审核 → 发布 → 目录 → 匹配），
-  跑通全量回归与隔离测试，更新 v7.2 追踪表。
-- **前置条件**：WB1–WB5 全部完成。
+- **目标**：让 WorkBuddy 比赛成果「可下载、可复核、可复算」。提供审核导出（JSON/CSV）
+  与实测指标摘要；不修改抽取、候选质量判定或正式发布逻辑。
+- **前置条件**：WB1（scope/status）、WB2（多岗位抽取）、WB3（注册表/门禁）、
+  WB4（审核工作台与字段决策）完成。
 - **完成门**：
-  - 黄金样本全链路可复算（抽取结果与 `expectedReview` 一致）；
-  - `tests/fixtures/isolation.test.ts` 与全部 fixture 测试通过；
-  - 无生产代码被 fixture 污染；
-  - 更新 `docs/v7.2-implementation-tracking.md`，标记 WB 各模块完成状态。
-- **非目标**：不做 OCR 精度提升（WP5-03 独立评估）、不做多岗位比较（后续版本）。
+  - 两种导出：JSON（保留结构化 scope、证据定位、alternatives、人工审核记录）；
+    UTF-8 CSV（一行一个「岗位 × 字段」，14 列固定顺序：sample_id/job_id/field/value/
+    source_file/quote/locator/status/scope/rule_version/run_id/human_revision/reason/
+    alternatives，schema 版本 `wb-export@1.0.0`）；
+  - 导出基于服务端已保存记录（run.candidate + reviewRecords），不从 UI 状态拼装；
+  - CSV 公式注入防护（= + - @ 前缀 `'`，原值可追溯，JSON 导出保留完全原值）；
+    逗号/引号/换行/中文正确转义；
+  - 脱敏：URL locator 复用既有 redactUrl 规则（host+path，query 丢弃）；不输出访问令牌、
+    Cookie、签名 query、数据库连接信息或用户敏感画像；rawJson 不导出；
+  - 导出接口复用管理员权限（AdminGuard），Content-Type/Content-Disposition/
+    Cache-Control: no-store 齐备；
+  - 实测指标按 run + 按公告公共/逐岗位输出：应有字段数、extracted/unknown/conflict、
+    有证据/应有高影响字段数、adopt/edit/reject/pending、人工修改字段数、
+    总耗时/人工审核耗时/重试次数；每个比例同时给分子、分母、公式；
+    无时间戳显示「未记录」不补零；无黄金答案不输出准确率/召回率/提效百分比；
+  - UI：/admin/pipeline 审核页提供下载 JSON/CSV、指标口径说明、数据集标记
+    （测试/演示/真实/未标记 + example 域名提示）；导出失败给出可恢复错误，
+    不生成空文件冒充成功。
+- **非目标**：不改抽取器、质量门禁、publish、matching、Prisma schema 或普通用户页面；
+  不新增 CSV 库（标准 RFC 4180 自实现）。
+- **实现文件**：
+  - `backend/src/announcements/export.ts`（纯函数：CSV 构造/转义/防护、脱敏、指标）
+  - `backend/src/announcements/export.service.ts`（只读导出服务）
+  - `backend/src/announcements/announcements.controller.ts`（三个只读导出端点）
+  - `src/app/admin/pipeline/export-section.tsx`（导出按钮与指标摘要组件）
+  - `src/lib/announcements-pipeline/api.ts`（导出 API 与指标类型）
+  - `backend/src/announcements/export.spec.ts`（25 项纯函数测试，含黄金样本复算）
+  - `backend/src/announcements/export.service.spec.ts`（7 项服务与权限测试）
+  - `src/app/admin/pipeline/export-section.test.tsx`（8 项 UI 测试）
+
+> 说明：本清单原 WB6「端到端回归与验收」按用户最新要求重定义为「审核导出与实测指标」。
+> 原回归验收内容（全链路回归、追踪表更新）已随各模块完成时分别验证。
 
 ## 依赖顺序
 
@@ -121,11 +149,13 @@
 WB0（本清单，已完成）
  └─► WB1（契约） ─► WB2（多行抽取） ─► WB3（高风险字段+质量门禁，已完成）
         │              │                    │
-        └─► WB4（审核工作台，已完成）  WB5（目录载荷与发布闭环，已完成）  └─► WB6（回归）
+        └─► WB4（审核工作台，已完成）  WB5（目录载荷与发布闭环，已完成）
+             WB6（审核导出与实测指标，已完成，消费 WB1–WB4 全部产物）
 ```
 
 > 注：WB3 按用户最新要求重定义为「高风险字段与质量门禁」，WB4 按用户最新要求
-> 重定义为「按岗位人工审核工作台」，WB5 按用户最新要求重定义为「目录载荷与发布闭环」。
+> 重定义为「按岗位人工审核工作台」，WB5 按用户最新要求重定义为「目录载荷与发布闭环」，
+> WB6 按用户最新要求重定义为「审核导出与实测指标」（原端到端回归内容已随各模块完成时分别验证）。
 > WP3（v7.2-wp3-db-catalog）仅落地了 projector/repository 读取侧，未重写 publish 写入侧；
 > WB5 补上写入侧闭环。
 

@@ -137,6 +137,59 @@ type ProjectionStatus =
   | { status: "projected"; unitCount: number; versionNumber: number }
   | { status: "failed"; fieldPath?: string; message?: string; versionNumber: number };
 
+// ==================== WB6：审核导出与实测指标 ====================
+
+/** 单个 scope（公告公共 / 某岗位 / 归属未知）的实测指标 */
+interface ScopeMetrics {
+  key: string;
+  /** 应有字段数 = 该 scope 内去重出现过的字段名数（与 WB3 expected 同口径） */
+  expected: number;
+  extracted: number;
+  unknown: number;
+  conflict: number;
+  /** 有证据的高影响字段数（携带 anchor） */
+  highImpactEvidenced: number;
+  /** 应有高影响字段数 = 该 scope 内出现的高影响字段总数 */
+  highImpactExpected: number;
+  adopt: number;
+  edit: number;
+  reject: number;
+  pending: number;
+  /** 人工修改字段数 = decision.action=edit 的字段数 */
+  humanModified: number;
+}
+
+/** 比例指标：分子、分母、公式齐备；分母为 0 时 value 为 null（UI 显示「未记录」） */
+interface RatioMetric {
+  key: "completeness" | "highImpactEvidenceCoverage" | "humanAdoptionRate";
+  numerator: number;
+  denominator: number;
+  formula: string;
+  value: number | null;
+}
+
+/** 时间指标：无可靠时间戳为 null（显示「未记录」，不补零） */
+interface TimingMetrics {
+  totalDurationMs: number | null;
+  reviewDurationMs: number | null;
+  retryCount: number;
+}
+
+/** 实测指标响应（后端 export.ts computeExportMetrics 的 JSON 形态） */
+interface ExportMetrics {
+  runId: string;
+  status: string;
+  parserVersion: string;
+  datasetMark: "test" | "demo" | "real" | "unmarked";
+  sourceHost: string;
+  isExampleSource: boolean;
+  scopes: ScopeMetrics[];
+  totals: ScopeMetrics;
+  ratios: RatioMetric[];
+  timing: TimingMetrics;
+  formulaNotes: string[];
+}
+
 /** 从当前会话读取用户身份，注入请求头。
  * invited 模式：身份由 HttpOnly 会话 cookie 承载，绝不发送客户端可伪造的 x-user-*。 */
 function authHeaders(): Record<string, string> {
@@ -164,6 +217,35 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     throw new Error(body.message || body.error || `请求失败 (${res.status})`);
   }
   return res.json() as Promise<T>;
+}
+
+/** WB6：下载文件结果（blob + 文件名） */
+interface DownloadFile {
+  blob: Blob;
+  filename: string;
+}
+
+/**
+ * WB6：下载导出文件。失败时抛出服务端错误信息（绝不把失败响应当成功文件）。
+ * 文件名优先取 Content-Disposition，兜底用服务端约定的默认名。
+ */
+async function downloadFile(path: string, fallbackFilename: string): Promise<DownloadFile> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    headers: { ...authHeaders() },
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ message: res.statusText }));
+    throw new Error(body.message || body.error || `导出失败 (${res.status})`);
+  }
+  const disposition = res.headers.get("Content-Disposition") ?? "";
+  const match = disposition.match(/filename="([^"]+)"/);
+  const filename = match?.[1] ?? fallbackFilename;
+  const blob = await res.blob();
+  // 服务端明确告知为空载荷时同样视为失败，不生成空文件冒充成功
+  if (blob.size === 0) {
+    throw new Error("导出内容为空，请稍后重试或联系管理员");
+  }
+  return { blob, filename };
 }
 
 export const announcementsPipelineApi = {
@@ -269,6 +351,26 @@ export const announcementsPipelineApi = {
   getProjection(announcementId: string): Promise<ProjectionStatus> {
     return request<ProjectionStatus>(`/${announcementId}/projection`);
   },
+
+  // ==================== WB6：审核导出与实测指标（只读） ====================
+
+  /**
+   * 下载 JSON 导出。返回 blob 与文件名（取自 Content-Disposition，兜底本地构造）。
+   * 失败时抛错（不生成空文件）；调用方负责把 blob 触发浏览器下载。
+   */
+  async exportRunJson(runId: string): Promise<DownloadFile> {
+    return downloadFile(`/runs/${runId}/export/json`, `workbuddy-run-${runId}.json`);
+  },
+
+  /** 下载 UTF-8 CSV 导出（一行一个「岗位 × 字段」，14 列固定顺序） */
+  async exportRunCsv(runId: string): Promise<DownloadFile> {
+    return downloadFile(`/runs/${runId}/export/csv`, `workbuddy-run-${runId}.csv`);
+  },
+
+  /** 实测指标（按 run + 按公告公共/逐岗位，分子分母与公式齐备） */
+  getExportMetrics(runId: string): Promise<ExportMetrics> {
+    return request<ExportMetrics>(`/runs/${runId}/export/metrics`);
+  },
 };
 
 export type {
@@ -281,4 +383,9 @@ export type {
   FieldDecision,
   QualityReport,
   ScopeCompleteness,
+  ExportMetrics,
+  ScopeMetrics,
+  RatioMetric,
+  TimingMetrics,
+  DownloadFile,
 };

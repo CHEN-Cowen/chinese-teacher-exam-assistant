@@ -6,9 +6,12 @@ import {
   Post,
   Query,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { AnnouncementsService } from './announcements.service.js';
+import { ExportService } from './export.service.js';
 import { AdminGuard, ReviewGuard, StrictAdminGuard } from './admin.guard.js';
 import type { ReviewAction } from './domain.js';
 
@@ -19,7 +22,10 @@ interface AuthenticatedRequest {
 
 @Controller('announcements')
 export class AnnouncementsController {
-  constructor(private readonly service: AnnouncementsService) {}
+  constructor(
+    private readonly service: AnnouncementsService,
+    private readonly exportService: ExportService,
+  ) {}
 
   // ==================== 管理员：提交来源 ====================
   // 提交真实公告来源改写对用户展示的真实监测台账，属最高影响操作；
@@ -77,6 +83,36 @@ export class AnnouncementsController {
   @UseGuards(AdminGuard)
   async getSnapshotParsed(@Param('id') id: string) {
     return this.service.getSnapshotParsed(id);
+  }
+
+  // ==================== 管理员：审核导出与实测指标（WB6，只读） ====================
+  // 复用管理员权限（STAFF_ROLES）；导出基于服务端已保存记录，不从 UI 状态拼装。
+  // 下载响应显式设置 Content-Type / Content-Disposition / Cache-Control: no-store。
+
+  @Get('runs/:id/export/json')
+  @UseGuards(AdminGuard)
+  async exportRunJson(@Param('id') id: string, @Res() res: Response) {
+    const { body, filename } = await this.exportService.exportJson(id);
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Cache-Control', 'no-store');
+    res.send(body);
+  }
+
+  @Get('runs/:id/export/csv')
+  @UseGuards(AdminGuard)
+  async exportRunCsv(@Param('id') id: string, @Res() res: Response) {
+    const { body, filename } = await this.exportService.exportCsv(id);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Cache-Control', 'no-store');
+    res.send(body);
+  }
+
+  @Get('runs/:id/export/metrics')
+  @UseGuards(AdminGuard)
+  async getExportMetrics(@Param('id') id: string) {
+    return this.exportService.getMetrics(id);
   }
 
   // ==================== 审核员：提交审核 ====================
