@@ -21,6 +21,9 @@ ENV NEXT_PUBLIC_DEMO_MODE=false
 ENV NEXT_PUBLIC_FF_NEW_RESULTS=true
 # 公开注册入口：比赛现场体验时开放自助注册（后端 PUBLIC_REGISTRATION 须同步开启）
 ENV NEXT_PUBLIC_PUBLIC_REGISTRATION=true
+# 主动抓取来源管理页开关：开启后后台「来源管理」展示来源健康/暂停/手动抓取
+# （后端 CRAWL_SCHEDULER_ENABLED=true 须同步开启，否则仅显示来源但不轮询）
+ENV NEXT_PUBLIC_FF_ACTIVE_CRAWL=true
 COPY public ./public
 COPY scripts ./scripts
 COPY src ./src
