@@ -9,6 +9,42 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import { AnnouncementsService } from './announcements.service.js';
 
+describe('审核原件读取与抓取存储契约', () => {
+  function context(mimeType = 'text/html') {
+    const prisma = {
+      sourceSnapshot: { findUnique: vi.fn(async () => ({ id: 'snap-read', storageKey: 'snapshots/ab/abcdef', contentHash: 'abcdef', mimeType })) },
+      documentParseRun: { findFirst: vi.fn(async () => ({ blocks: [{ text: '岗位表原文' }] })) },
+    };
+    const store = { getBinary: vi.fn(async () => Buffer.from('已归档正文')) };
+    const service = new AnnouncementsService(prisma as never, undefined, undefined, store as never);
+    return { service, store, prisma };
+  }
+  it('按数据库storageKey读取自动抓取正文，不猜hash.bin路径', async () => {
+    const { service, store } = context();
+    expect(await service.getSnapshotContent('snap-read')).toEqual({ content: '已归档正文', mimeType: 'text/html' });
+    expect(store.getBinary).toHaveBeenCalledWith('snapshots/ab/abcdef');
+  });
+  it('附件展示同一快照解析文本，不解码二进制原件', async () => {
+    const { service, store, prisma } = context('application/pdf');
+    store.getBinary.mockResolvedValue(Buffer.from([0xff, 0x00, 0x80]));
+    const result = await service.getSnapshotContent('snap-read');
+    expect(result.content).toContain('同一归档快照的解析文本');
+    expect(result.content).toContain('岗位表原文');
+    expect(prisma.documentParseRun.findFirst).toHaveBeenCalledWith({ where: { snapshotId: 'snap-read' }, orderBy: { createdAt: 'desc' } });
+  });
+  it('存储权限错误不误报丢失，不要求用户重新上传', async () => {
+    const { service, store } = context();
+    const error = Object.assign(new Error('denied'), { code: 'EACCES' });
+    store.getBinary.mockRejectedValue(error);
+    await expect(service.getSnapshotContent('snap-read')).rejects.toBe(error);
+  });
+  it('真正缺失时明确要求检查历史归档，不以重新抓取覆盖证据', async () => {
+    const { service, store } = context();
+    store.getBinary.mockRejectedValue(Object.assign(new Error('missing'), { code: 'ENOENT' }));
+    await expect(service.getSnapshotContent('snap-read')).rejects.toThrow('历史证据');
+  });
+});
+
 // ==================== 夹具 ====================
 
 /** 合法目录载荷（与 published-catalog.repository.spec.ts 内联样本同构） */

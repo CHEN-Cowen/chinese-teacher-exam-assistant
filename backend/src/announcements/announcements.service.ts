@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, ConflictException, Optional } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException, Optional, Inject } from '@nestjs/common';
 import { PrismaService } from '../prisma.service.js';
 import {
   applyFieldDecisions,
@@ -39,6 +39,8 @@ import {
 import { ManualExtractionService } from './manual-extraction.service.js';
 import { SafeFetcherFactory } from '../sourcing/fetch/safe-fetcher-factory.js';
 import type { SourceRecord } from '../sourcing/crawl-run-store.js';
+import { OBJECT_STORE } from '../sourcing/storage/storage.tokens.js';
+import { LocalObjectStore, type ObjectStore } from '../sourcing/storage/object-store.js';
 
 export interface SubmitSourceInput {
   publisher: string;
@@ -117,6 +119,7 @@ export class AnnouncementsService {
     // submitSource/runExtraction 会回退旧 parser.ts 路径（仅用于兼容旧测试，生产恒注入）。
     @Optional() private readonly manualExtraction?: ManualExtractionService,
     @Optional() private readonly fetcherFactory?: SafeFetcherFactory,
+    @Optional() @Inject(OBJECT_STORE) private readonly objectStore?: ObjectStore,
   ) {}
 
   // ==================== 1. 提交来源 + 留档快照 ====================
@@ -1016,15 +1019,44 @@ export class AnnouncementsService {
     });
     if (!snapshot) throw new NotFoundException('快照不存在');
 
-    const fs = await import('node:fs/promises');
-    const path = await import('node:path');
-    const filePath = path.join(process.cwd(), '.data', 'snapshots', `${snapshot.contentHash}.bin`);
+    // 抓取与 M1 手动材料包都按 storageKey 保存；不能再猜旧版 hash.bin 路径。
+    const store = this.objectStore ?? new LocalObjectStore();
+    let bytes: Buffer;
     try {
-      const content = await fs.readFile(filePath, 'utf-8');
-      return { content, mimeType: snapshot.mimeType };
-    } catch {
-      throw new NotFoundException('原始快照内容已丢失，请重新提交公告');
+      bytes = await store.getBinary(snapshot.storageKey);
+    } catch (error) {
+      // 仅兼容旧提交链路生成的 .bin 引用；远程存储/权限错误不伪装成丢失。
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      if (!snapshot.storageKey.endsWith('.bin')) {
+        throw new NotFoundException('归档原件暂时无法读取，请检查快照存储；重新检查来源不会自动替代此历史证据');
+      }
+      const fs = await import('node:fs/promises');
+      const path = await import('node:path');
+      try {
+        bytes = await fs.readFile(path.join(process.cwd(), '.data', 'snapshots', `${snapshot.contentHash}.bin`));
+      } catch (legacyError) {
+        if ((legacyError as NodeJS.ErrnoException).code !== 'ENOENT') throw legacyError;
+        throw new NotFoundException('归档原件暂时无法读取，请检查快照存储；重新检查来源不会自动替代此历史证据');
+      }
     }
+    if (/^(text\/|application\/(json|xml|xhtml\+xml))/i.test(snapshot.mimeType)) {
+      return { content: bytes.toString('utf8'), mimeType: snapshot.mimeType };
+    }
+    // PDF/Excel/DOCX 原件是二进制，审核文本取自同一快照的解析记录，不能 UTF-8 乱解码。
+    const parsed = await this.prisma.documentParseRun.findFirst({
+      where: { snapshotId }, orderBy: { createdAt: 'desc' },
+    });
+    const blocks = Array.isArray(parsed?.blocks) ? parsed.blocks : [];
+    const content = blocks.flatMap((block) => {
+      if (typeof block !== 'object' || block === null || !('text' in block) || typeof block.text !== 'string') return [];
+      return [block.text];
+    }).join('\n');
+    return {
+      content: content
+        ? `【同一归档快照的解析文本，非原始二进制文件】\n${content}`
+        : '【归档原件存在，但暂无可显示的解析文本，请检查解析状态或人工处理扫描件】',
+      mimeType: 'text/plain',
+    };
   }
 
   // ==================== 管理员：快照标准文档与来源变化（v7.2 三层对照） ====================
