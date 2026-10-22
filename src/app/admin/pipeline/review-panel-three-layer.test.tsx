@@ -255,6 +255,41 @@ afterEach(() => {
 // ==================== 测试 ====================
 
 describe("WB4 按岗位审核工作台", () => {
+  it("点击去审核立即打开固定视口详情，Escape关闭并恢复焦点", async () => {
+    const { container } = await renderPage();
+    const trigger = findButton(container, "去审核");
+    trigger.focus();
+    await click(trigger);
+    const dialog = container.querySelector<HTMLElement>('[role="dialog"]');
+    expect(dialog?.getAttribute("aria-label")).toBe("公告审核详情");
+    expect(dialog?.parentElement?.className).toContain("fixed inset-0");
+    expect(dialog?.contains(document.activeElement)).toBe(true);
+    expect(document.body.style.overflow).toBe("hidden");
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+    expect(document.body.style.overflow).not.toBe("hidden");
+  });
+
+  it("查看已审核任务同样打开详情且可返回列表", async () => {
+    currentRun = makeRun("approved");
+    const { container } = await renderPage();
+    await click(findButton(container, "查看"));
+    expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+    await click(findButton(container, "返回任务列表"));
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it("详情接口失败在可见面板中显示错误而非静默无响应", async () => {
+    const { container } = await renderPage();
+    fetchMock.mockImplementationOnce(() => Promise.resolve(jsonResponse({ message: "详情读取失败" }, { ok: false, status: 500 })));
+    await click(findButton(container, "去审核"));
+    expect(container.querySelector('[role="dialog"]')?.textContent).toContain("详情读取失败");
+  });
+
+
   it("公共事实与两个岗位正确分组，默认选中存在阻塞的岗位", async () => {
     const { container, html } = await renderPage();
     await click(findButton(container, "去审核"));

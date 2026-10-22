@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input, Textarea } from "@/components/ui/Input";
@@ -374,18 +374,71 @@ export default function AdminPipelinePage() {
 
       {/* 审核面板 */}
       {selectedRunId && (
-        <ReviewPanel
-          runId={selectedRunId}
-          onClose={() => setSelectedRunId(null)}
-          onDone={() => {
-            setSelectedRunId(null);
-            refresh();
-          }}
-        />
+        <ReviewOverlay onClose={() => setSelectedRunId(null)}>
+          <ReviewPanel
+            key={selectedRunId}
+            runId={selectedRunId}
+            onClose={() => setSelectedRunId(null)}
+            onDone={() => {
+              setSelectedRunId(null);
+              refresh();
+            }}
+          />
+        </ReviewOverlay>
       )}
 
       {/* 已发布版本 */}
       <PublishedVersionsSection runs={runs} />
+    </div>
+  );
+}
+
+// 审核详情必须在当前视口可见，不能被长任务列表推到屏幕之外。
+function ReviewOverlay({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef(onClose);
+  useEffect(() => { closeRef.current = onClose; }, [onClose]);
+  useEffect(() => {
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    panelRef.current?.focus();
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeRef.current();
+      }
+      if (event.key === "Tab") {
+        const controls = Array.from(panelRef.current?.querySelectorAll<HTMLElement>(
+          'button:not(:disabled), a[href], input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex="0"]'
+        ) ?? []);
+        const first = controls[0];
+        const last = controls[controls.length - 1];
+        if (!first) { event.preventDefault(); return; }
+        if (event.shiftKey && (document.activeElement === first || document.activeElement === panelRef.current)) {
+          event.preventDefault(); last.focus();
+        } else if (!event.shiftKey && (document.activeElement === last || document.activeElement === panelRef.current)) {
+          event.preventDefault(); first.focus();
+        }
+      }
+    };
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("keydown", handleKey);
+      document.body.style.overflow = previousOverflow;
+      previousFocus?.focus();
+    };
+  }, []);
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-900/40 p-2 sm:p-4">
+      <div ref={panelRef} role="dialog" aria-modal="true" aria-label="公告审核详情" tabIndex={-1}
+        className="mx-auto flex h-full max-w-7xl flex-col rounded-xl bg-slate-50 shadow-xl outline-none">
+        <div className="flex shrink-0 items-center justify-between border-b border-slate-200 px-4 py-3">
+          <h2 className="font-semibold text-slate-900">公告审核详情</h2>
+          <Button size="sm" variant="outline" onClick={onClose}>返回任务列表</Button>
+        </div>
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3 sm:p-5">{children}</div>
+      </div>
     </div>
   );
 }
