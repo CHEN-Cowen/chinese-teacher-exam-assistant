@@ -439,7 +439,7 @@ model ExtractionRun {
  */
 model ExpectedChecklist {
   id         String   @id @default(uuid())
-  runId      String   @unique
+  runId      String   @unique @map("run_id")
   run        ExtractionRun @relation(fields: [runId], references: [id], onDelete: Cascade)
   /** 清单版本：固定后修改必须递增，保留历史 */
   version    Int      @default(1)
