@@ -107,6 +107,7 @@ export interface EvidenceAnchor {
   state: EvidenceReviewState;
   /** 最后核对时间 ISO 字符串 */
   checkedAt: string;
+  locatorData?: Record<string, unknown>;
 }
 
 /** 资格条件维度（PRD 7.3 / 7.4：硬性条件逐项判断） */
@@ -209,6 +210,8 @@ export interface ApplicationUnit {
   schoolPlacement?: SchoolPlacement;
   /** 官方报名入口（版本级或单元级） */
   registerUrl?: string;
+  recruitmentOrganization?: string;
+  fieldEvidence?: Record<string, EvidenceAnchor[]>;
   requirements: Requirement[];
   /** 报名材料清单（按公告要求，每项必须有可追溯来源） */
   materials?: MaterialItem[];

@@ -446,8 +446,11 @@ export const announcementsPipelineApi = {
   },
 
   /** 发布 */
-  publish(runId: string): Promise<PublishedVersion> {
-    return request<PublishedVersion>(`/runs/${runId}/publish`, { method: "POST" });
+  publish(runId: string, dataset: "demo" | "real" = "demo"): Promise<PublishedVersion> {
+    return request<PublishedVersion>(`/runs/${runId}/publish`, {
+      method: "POST",
+      body: JSON.stringify({ dataset }),
+    });
   },
 
   /** 重试失败任务 */

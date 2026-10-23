@@ -31,6 +31,16 @@ function jsonResponse(body: unknown) {
   };
 }
 
+describe("S2 显式发布数据集", () => {
+  it.each(["real", "demo"] as const)("发布请求显式携带 %s", async (dataset) => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ id: "v1" }));
+    await announcementsPipelineApi.publish("run-1", dataset);
+    const [url, init] = fetchMock.mock.calls[0] as [string, { method: string; body: string }];
+    expect(url).toContain("/runs/run-1/publish");
+    expect(JSON.parse(init.body)).toEqual({ dataset });
+  });
+});
+
 describe("announcementsPipelineApi.submitSource（M1 材料包）", () => {
   it("正文 + 附件（base64）正确提交到 /sources", async () => {
     fetchMock.mockResolvedValueOnce(

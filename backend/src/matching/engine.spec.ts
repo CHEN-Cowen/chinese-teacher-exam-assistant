@@ -4,6 +4,7 @@ import {
   buildCandidates,
   currentVersion,
   evaluateRequirement,
+  evaluateRegion,
   groupByMissingDimension,
   isUserVisibleInCatalog,
   isValidOpportunity,
@@ -15,6 +16,17 @@ import type {
   Requirement,
   UserRecruitmentProfile,
 } from './types.js';
+
+describe('S2 区县精度', () => {
+  const profile: UserRecruitmentProfile = { regions: [{ code: '320106', province: '江苏省', city: '南京市', level: 'required' }], acceptedEmploymentNatures: [] };
+  it('同市不同区县不误判符合', () => {
+    expect(evaluateRegion('320104', profile).value).toBe('FAIL');
+    expect(evaluateRegion('320106', profile).value).toBe('PASS');
+  });
+  it('只有市级地区时区县匹配未知，不判不符或符合', () => {
+    expect(evaluateRegion('320100', profile).value).toBe('UNKNOWN');
+  });
+});
 
 const NOW = '2026-10-04T12:00:00+08:00';
 

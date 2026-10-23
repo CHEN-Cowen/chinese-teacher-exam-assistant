@@ -130,7 +130,11 @@ function evidenceAt(value: unknown, path: string) {
     ['url', 'file', 'worksheet', 'excerpt'] as const,
     `${path}.locator.kind`,
   );
+  const requiredKeys = kind === 'url' ? ['url'] : kind === 'excerpt' ? ['excerpt']
+    : kind === 'worksheet' ? ['fileId', 'fileName', 'sheet'] : ['fileId', 'fileName'];
+  for (const key of requiredKeys) stringAt(locator[key], `${path}.locator.${key}`);
   return {
+    ...(isRecord(anchor.locatorData) ? { locatorData: anchor.locatorData } : {}),
     id: stringAt(anchor.id, `${path}.id`),
     locator: {
       kind,
@@ -250,6 +254,13 @@ function unitAt(value: unknown, path: string) {
     ...(isRecord(unit.sourceRow)
       ? { sourceRow: evidenceAt(unit.sourceRow, `${path}.sourceRow`) }
       : {}),
+    ...(unit.recruitmentOrganization !== undefined
+      ? { recruitmentOrganization: stringAt(unit.recruitmentOrganization, `${path}.recruitmentOrganization`) } : {}),
+    ...(unit.fieldEvidence !== undefined ? {
+      fieldEvidence: Object.fromEntries(Object.entries(recordAt(unit.fieldEvidence, `${path}.fieldEvidence`))
+        .map(([key, anchors]) => [key, arrayAt(anchors, `${path}.fieldEvidence.${key}`)
+          .map((anchor, i) => evidenceAt(anchor, `${path}.fieldEvidence.${key}[${i}]`))])),
+    } : {}),
     ...(Array.isArray(unit.materials)
       ? { materials: unit.materials as never }
       : {}),

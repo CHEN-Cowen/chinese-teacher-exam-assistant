@@ -79,7 +79,7 @@ export const FIELD_REGISTRY: ReadonlyArray<FieldRegistration> = [
   },
   {
     field: 'region',
-    scope: 'announcement',
+    scope: 'both',
     highImpact: true,
     required: true,
     allowUnknown: false,

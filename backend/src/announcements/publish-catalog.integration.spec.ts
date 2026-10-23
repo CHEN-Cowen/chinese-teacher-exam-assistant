@@ -177,6 +177,32 @@ const PROFILE: UserRecruitmentProfile = {
 
 // ==================== 测试 ====================
 
+describe('S2 正式审核元数据', () => {
+  it('real 使用实际审核人和审核时间，不冒用提交人', async () => {
+    const run = makeRunRow();
+    run.snapshot.source.officialUrl = 'https://edu.hangzhou.gov.cn/notice/test';
+    run.submittedBy = 'submitter';
+    run.candidate.fields.push(anchored('teacher_cert', '具有相应教师资格', 'announcement'),
+      anchored('age', '35周岁及以下', 'announcement'));
+    const state: FakeState = { runs: [run], versions: [], transactionCalls: 0, transactionEntered: false };
+    const prisma = makePrisma(state);
+    prisma.reviewRecord = { findFirst: vi.fn(async () => ({ reviewerId: 'reviewer-real', action: 'approve', reviewedAt: new Date('2026-10-20T01:00:00Z') })) };
+    const published = await new AnnouncementsService(prisma).publish('run-1', 'real');
+    expect(published.payload.announcement.reviewedBy).toBe('reviewer-real');
+    expect(published.payload.announcement.reviewedAt).toBe('2026-10-20T01:00:00.000Z');
+    expect(published.payload.dataset).toBe('real');
+  });
+  it('无通过审核记录时 real 在事务前拒绝', async () => {
+    const run = makeRunRow();
+    run.snapshot.source.officialUrl = 'https://edu.hangzhou.gov.cn/notice/test';
+    const state: FakeState = { runs: [run], versions: [], transactionCalls: 0, transactionEntered: false };
+    const prisma = makePrisma(state);
+    prisma.reviewRecord = { findFirst: vi.fn(async () => null) };
+    await expect(new AnnouncementsService(prisma).publish('run-1', 'real')).rejects.toThrow(/人工通过审核/);
+    expect(state.transactionEntered).toBe(false);
+  });
+});
+
 describe('WB5：发布载荷与 projector 契约闭环', () => {
   it('两个已审核岗位 → 两个 units，projector 成功，repository 可读取', async () => {
     const state: FakeState = { runs: [makeRunRow()], versions: [], transactionCalls: 0, transactionEntered: false };
@@ -276,15 +302,12 @@ describe('WB5：发布载荷与 projector 契约闭环', () => {
     expect(state.versions).toHaveLength(0);
   });
 
-  it('projector 失败（结构非法）时零数据库写入', async () => {
-    // 用学科「数学」触发 projector 不接受（不在开放范围），但构造器其实在构造阶段就抛错。
-    // 这里改用「构造阶段通过、投影阶段失败」的场景：直接模拟构造出缺 headcount 的载荷比较困难，
-    // 因此用非语文岗位在构造阶段抛错来证明「失败发生在事务前」。
+  it('学科无法确定时在事务前失败，零数据库写入', async () => {
     const cand = reviewedCandidate();
     const mathSubject = cand.fields.find(
       (f) => f.field === 'subject' && f.scope === 'job' && f.jobScope?.key === 'job-B-3301A02',
     );
-    mathSubject!.value = '数学';
+    mathSubject!.value = '待确认';
     const state: FakeState = { runs: [makeRunRow({ candidate: cand })], versions: [], transactionCalls: 0, transactionEntered: false };
     const prisma = makePrisma(state);
     const service = new AnnouncementsService(prisma);

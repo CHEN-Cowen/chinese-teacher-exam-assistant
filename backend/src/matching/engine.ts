@@ -121,6 +121,11 @@ export function isUserVisibleInCatalog(
  * 地区匹配：画像地区按省级（前2位）或市级（前4位）前缀匹配。
  * 画像未填任何地区 → UNKNOWN（不臆造意向，也不判不符合）。
  */
+function regionPrefix(code: string): string {
+  return code.endsWith('0000') ? code.slice(0, 2)
+    : code.endsWith('00') ? code.slice(0, 4) : code;
+}
+
 export function evaluateRegion(
   unitRegionCode: string,
   profile: UserRecruitmentProfile,
@@ -138,9 +143,7 @@ export function evaluateRegion(
     };
   }
   const accepted = profile.regions.find((pref) => {
-    const prefix = pref.code.slice(0, 4).endsWith('00')
-      ? pref.code.slice(0, 2)
-      : pref.code.slice(0, 4);
+    const prefix = regionPrefix(pref.code);
     return unitRegionCode.startsWith(prefix);
   });
   if (accepted) {
@@ -149,6 +152,9 @@ export function evaluateRegion(
       value: 'PASS',
       reason: `岗位地区在你可接受的${accepted.province}${accepted.city ?? ''}范围内`,
     };
+  }
+  if (profile.regions.some((pref) => pref.code.startsWith(regionPrefix(unitRegionCode)))) {
+    return { ...base, value: 'UNKNOWN', reason: '岗位区县尚未明确，不能确认是否在意向地区内' };
   }
   return {
     ...base,
@@ -312,7 +318,7 @@ export function evaluateRequirement(
       if (!profile.hukouRegionCode)
         return unknown(req, '该岗位有户籍要求，补充户籍信息后判断');
       const ok = c.allowedRegionCodes.some((code) =>
-        profile.hukouRegionCode!.startsWith(code.slice(0, 4)),
+        profile.hukouRegionCode!.startsWith(regionPrefix(code)),
       );
       if (ok) return pass(req, '户籍在公告允许范围内');
       return fail(req, '户籍不在公告允许范围内');
@@ -660,9 +666,7 @@ export function sortCandidates(
   const regionPrefOf = (c: OpportunityCandidate) =>
     profile.regions.find((pref) =>
       c.unit.region.code.startsWith(
-        pref.code.slice(0, 4).endsWith('00')
-          ? pref.code.slice(0, 2)
-          : pref.code.slice(0, 4),
+        regionPrefix(pref.code),
       ),
     )?.level ?? 'consider';
 

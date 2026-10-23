@@ -730,6 +730,19 @@ export class AnnouncementsService {
       throw new BadRequestException('演示来源不能标为 real 数据集');
     }
 
+    // 正式发布必须使用真实审核留痕，提交人及发布时间不能冒充复核信息。
+    const review = dataset === 'real'
+      ? await this.prisma.reviewRecord.findFirst({
+          where: { runId },
+          orderBy: { reviewedAt: 'desc' },
+        })
+      : null;
+    if (dataset === 'real' && (!review ||
+      !['approve', 'approve_with_edit'].includes(review.action) ||
+      !review.reviewerId?.trim() || !review.reviewedAt)) {
+      throw new BadRequestException('正式发布缺少有效的人工通过审核记录');
+    }
+
     const announcementId = run.announcementId ?? run.id;
 
     // 查找该公告的当前已发布版本（用于版本链 + supersede）
@@ -769,8 +782,8 @@ export class AnnouncementsService {
           dataset,
           ...(dataset === 'real'
             ? {
-                reviewedBy: run.submittedBy ?? undefined,
-                reviewedAt: now.toISOString(),
+                reviewedBy: review!.reviewerId,
+                reviewedAt: review!.reviewedAt.toISOString(),
               }
             : {}),
         },

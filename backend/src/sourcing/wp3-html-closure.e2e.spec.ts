@@ -115,7 +115,7 @@ async function buildClosure() {
     toSnapshot(detailResult.finalUrl, detailResult.body, detailResult.mimeType),
   );
 
-  // 目录载荷：最小元数据，显式标注 dataset:'test'；核对时间用当前时间避免 evidence_stale
+  // 内联测试样本模拟正式通过审核载荷；不写入真实库。demo/test 不进入正式机会。
   const reviewedAt = new Date().toISOString();
   const announcement = {
     id: 'hz-closure-ann',
@@ -127,6 +127,9 @@ async function buildClosure() {
     region: { code: '330100', province: '浙江省', city: '杭州市' },
     lifecycle: 'active',
     firstPublishedAt: detail.publishedAt,
+    reviewStatus: 'human_reviewed',
+    reviewedBy: 'closure-test-reviewer',
+    reviewedAt,
   };
   const version = {
     id: 'hz-closure-ann-v1',
@@ -191,7 +194,7 @@ async function buildClosure() {
             announcementId: 'hz-closure-ann',
             versionNumber: 1,
             status: 'published',
-            payload: { dataset: 'demo', announcement, version },
+            payload: { dataset: 'real', announcement, version },
             publishedAt: new Date(),
             previousVersionId: null,
             supersededAt: null,

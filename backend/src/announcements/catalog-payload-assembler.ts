@@ -158,6 +158,21 @@ function adoptedJobValue(
   );
 }
 
+/** 公共条件只在没有岗位级同名槽位时继承，未裁决岗位字段不得被公共值掩盖。 */
+function effectiveValue(fields: CandidateField[], jobKey: string, name: string) {
+  const hasJobSlot = fields.some((f) => f.field === name &&
+    normalizeCandidateField(f).scope === 'job' && f.jobScope?.key === jobKey);
+  return hasJobSlot ? adoptedJobValue(fields, jobKey, name)
+    : adoptedValue(fields, name, 'announcement');
+}
+
+function manualRequirement(field: CandidateField, path: string, id: string, checkedAt: string,
+  dimension: Requirement['dimension'] = 'other'): Requirement {
+  return { id, dimension, description: field.value, hard: true,
+    criterion: { kind: 'other', manualReview: true },
+    evidence: toEvidenceAnchor(field, path, id, checkedAt) };
+}
+
 /**
  * 把候选字段的证据锚点转换为匹配领域的 `EvidenceAnchor`。
  * 候选字段必须带 anchor（高影响字段由门禁保证），否则视为缺证据失败。
@@ -180,7 +195,7 @@ function toEvidenceAnchor(
   let locator: EvidenceAnchor['locator'];
   switch (src.kind) {
     case 'url':
-      locator = { kind: 'url', url: src.url };
+      locator = { kind: 'url', url: src.url, ...(src.anchor ? { anchor: src.anchor } : {}) };
       break;
     case 'excerpt':
       locator = { kind: 'excerpt', excerpt: src.excerpt };
@@ -209,11 +224,12 @@ function toEvidenceAnchor(
   }
 
   return {
-    id: `${idPrefix}-evidence`,
+    id: `${idPrefix}-${field.field}-evidence`,
     locator,
     ...(field.anchor.excerpt ? { excerpt: field.anchor.excerpt } : {}),
     state,
     checkedAt,
+    ...(field.anchor.locatorData ? { locatorData: field.anchor.locatorData } : {}),
   };
 }
 
@@ -225,6 +241,10 @@ function educationRequirement(
   checkedAt: string,
 ): Requirement {
   const text = field.value;
+  // 只有单一、无附加限定的最低学历可安全使用 minLevel；精确学历/组合/例外转人工。
+  if (!/^(本科|硕士(?:研究生)?|博士(?:研究生)?|大专|专科)(及以上|以上)$/.test(text)) {
+    return manualRequirement(field, path, `${idPrefix}-edu`, checkedAt, 'education');
+  }
   let minLevel: 'secondary' | 'college' | 'bachelor' | 'master' | 'doctorate';
   if (text.includes('博士')) minLevel = 'doctorate';
   else if (text.includes('硕士')) minLevel = 'master';
@@ -249,7 +269,7 @@ function majorRequirement(
   checkedAt: string,
 ): Requirement {
   const text = field.value;
-  if (text.includes('不限')) {
+  if (/^(不限|专业不限|不限专业)$/.test(text)) {
     return {
       id: `${idPrefix}-major`,
       dimension: 'major',
@@ -274,8 +294,8 @@ function toStageCode(value: string, path: string): string {
   if (value.includes('小学')) return 'primary';
   if (value.includes('初中')) return 'middle';
   if (value.includes('高中')) return 'high';
-  if (value.includes('幼')) return 'primary';
-  if (value.includes('中职')) return 'middle';
+  if (value === '幼儿园' || value === '幼教') return 'preschool';
+  if (value === '中职') return 'vocational';
   throw new CatalogPayloadError(path, `学段值无法映射：${value}`);
 }
 
@@ -292,20 +312,36 @@ function buildRegion(
   path: string,
 ): RegionRef {
   if (field) {
-    const text = field.value;
-    // 尝试从「浙江省杭州市…」等文本中取省/市
-    const provinceMatch = text.match(/([\u4e00-\u9fa5]{2,4}省|[\u4e00-\u9fa5]{2,4}市|[\u4e00-\u9fa5]{2,4}自治区)/);
-    const code = regionCode ?? '';
-    const province = provinceMatch?.[1] ?? '';
-    const city = text.replace(province, '').replace(/[市区县]/g, '') || undefined;
-    return {
-      code: code || '',
-      province,
-      ...(city ? { city } : {}),
-    };
-  }
-  if (regionCode) {
-    return { code: regionCode, province: '' };
+    const text = field.value.trim();
+    // 审核可显式给出结构化地区；代码不由地名/机构名猜测。
+    if (text.startsWith('{')) {
+      let parsed: unknown;
+      try { parsed = JSON.parse(text); } catch { throw new CatalogPayloadError(path, '地区 JSON 非法'); }
+      if (typeof parsed !== 'object' || parsed === null) throw new CatalogPayloadError(path, '地区必须为对象');
+      const r = parsed as Record<string, unknown>;
+      if (typeof r.code !== 'string' || !/^\d{6}$/.test(r.code) ||
+        typeof r.province !== 'string' || !r.province.trim()) {
+        throw new CatalogPayloadError(path, '结构化地区需六位代码和省级名称');
+      }
+      for (const key of ['city', 'district']) {
+        if (r[key] !== undefined && (typeof r[key] !== 'string' || !r[key].trim())) {
+          throw new CatalogPayloadError(path, `${key} 必须为非空名称`);
+        }
+      }
+      return { code: r.code, province: r.province,
+        ...(r.city ? { city: r.city as string } : {}),
+        ...(r.district ? { district: r.district as string } : {}) };
+    }
+    const match = text.match(/^(.+?(?:省|自治区)|北京市|天津市|上海市|重庆市)(.*)$/);
+    if (match && regionCode && /^\d{6}$/.test(regionCode)) {
+      const rest = match[2]!;
+      const cityMatch = rest.match(/^(.+?(?:市|自治州|地区|盟))(.*)$/);
+      const district = cityMatch ? cityMatch[2] : rest;
+      return { code: regionCode, province: match[1]!,
+        ...(cityMatch ? { city: cityMatch[1]! } : {}),
+        ...(district ? { district } : {}) };
+    }
+    throw new CatalogPayloadError(path, '地区名称或代码不完整，请人工确认结构化地区');
   }
   throw new CatalogPayloadError(path, '缺少地区（region）信息，不得从标题或 URL 猜测');
 }
@@ -319,10 +355,21 @@ function buildRequirements(
   checkedAt: string,
 ): Requirement[] {
   const requirements: Requirement[] = [];
-  const education = adoptedJobValue(fields, jobKey, 'education');
+  const education = effectiveValue(fields, jobKey, 'education');
   if (education) requirements.push(educationRequirement(education, `${path}.education`, idPrefix, checkedAt));
-  const major = adoptedJobValue(fields, jobKey, 'major');
+  const major = effectiveValue(fields, jobKey, 'major');
   if (major) requirements.push(majorRequirement(major, `${path}.major`, idPrefix, checkedAt));
+  const dimensions = {
+    degree: 'degree', teacher_cert: 'teacher_cert', age: 'age',
+    age_basis_date: 'age', age_exception: 'age', hukou: 'hukou',
+    work_experience: 'work_experience', graduate_status: 'graduate_status',
+    social_security: 'social_security',
+  } as const;
+  for (const [name, dimension] of Object.entries(dimensions)) {
+    const field = effectiveValue(fields, jobKey, name);
+    if (field) requirements.push(manualRequirement(field, `${path}.${name}`,
+      `${idPrefix}-${name}`, checkedAt, dimension));
+  }
   return requirements;
 }
 
@@ -344,7 +391,7 @@ function buildUnit(
   const stage = adoptedJobValue(fields, jobKey, 'stage');
   const subject = adoptedJobValue(fields, jobKey, 'subject');
   const headcount = adoptedJobValue(fields, jobKey, 'headcount');
-  const employmentNature = adoptedJobValue(fields, jobKey, 'employment_nature');
+  const employmentNature = effectiveValue(fields, jobKey, 'employment_nature');
 
   // 高影响岗位字段缺失 → 失败，不编默认值
   if (!jobCode) throw new CatalogPayloadError(`${path}.job_code`, '岗位编号缺失，不能发布');
@@ -361,12 +408,24 @@ function buildUnit(
   // 用工性质：必需；官方原文 + 分类码（只在精确命中时附加）
   const natureText = employmentNature?.value;
   if (!natureText) {
-    throw new CatalogPayloadError(`${path}.employment_nature`, '编制/用工性质缺失，不能发布');
+    throw new CatalogPayloadError(`${path}.employment_nature`, '编制/用工性质缺失，请审核标记“未说明”，不得猜测');
   }
-  const natureCode = classifyEmploymentNature(natureText);
-  const employmentNatureCode = natureCode ?? 'other';
+  const natureCode = /不|非|未|无|不含/.test(natureText) ? undefined : classifyEmploymentNature(natureText);
+  const employmentNatureCode: ApplicationUnit['employmentNature']['code'] =
+    natureCode === 'public_institution_staff' || natureCode === 'record_filing' ||
+    natureCode === 'post_quota' || natureCode === 'headcount_control' ? natureCode : 'other';
 
-  const unitRegion = announcementRegion; // 岗位地区缺省回退公告地区（公告地区已可信）
+  const jobRegion = adoptedJobValue(fields, jobKey, 'region');
+  // 发布机构的区县不是岗位区县：未说明时最多保留公告省市层级。
+  const unitRegion = jobRegion
+    ? buildRegion(jobRegion, undefined, `${path}.region`)
+    : { code: `${announcementRegion.code.slice(0, 4)}00`,
+        province: announcementRegion.province,
+        ...(announcementRegion.city ? { city: announcementRegion.city } : {}) };
+  const entry = effectiveValue(fields, jobKey, 'official_entry');
+  if (entry && !/^https?:\/\//i.test(entry.value)) {
+    throw new CatalogPayloadError(`${path}.official_entry`, '报名入口必须为官方明确的 HTTP(S) 地址');
+  }
 
   return {
     id: `${announcementId}-unit-${jobCode.value}`,
@@ -378,14 +437,21 @@ function buildUnit(
     subject: toSubjectCode(subject.value, `${path}.subject`),
     stage: toStageCode(stage.value, `${path}.stage`),
     headcount: headcountNum,
-    organizationType: 'government_unified',
+    organizationType: 'other',
+    recruitmentOrganization: unitName.value,
+    fieldEvidence: Object.fromEntries(fields.filter((f) => isExtracted(f) && isAdopted(f) && f.anchor &&
+      (normalizeCandidateField(f).scope === 'announcement' || f.jobScope?.key === jobKey))
+      .map((f, i) => [`${normalizeCandidateField(f).scope}:${f.field}:${i}`,
+        [f.anchor!, ...(f.anchors ?? []).filter((a) => a !== f.anchor)].map((anchor, j) =>
+          toEvidenceAnchor({ ...f, anchor }, `${path}.${f.field}`, `${idPrefix}-${i}-${j}`, checkedAt))])),
+    ...(entry ? { registerUrl: entry.value } : {}),
     employmentNature: {
       code: employmentNatureCode as ApplicationUnit['employmentNature']['code'],
       officialName: natureText,
     },
     allocation: {
-      code: 'unified_assignment',
-      description: '由招聘单位统一调配',
+      code: 'other',
+      description: '原文未说明定岗方式，请向招聘单位确认',
     },
     requirements: buildRequirements(fields, jobKey, path, idPrefix, checkedAt),
     sourceRow: toEvidenceAnchor(headcount, `${path}.headcount`, idPrefix, checkedAt),
@@ -406,6 +472,10 @@ export function buildCatalogPayload(
   ctx: CatalogVersionContext,
 ): CatalogPayload {
   const fields = candidate.fields;
+  if (metadata.dataset === 'real' && (!metadata.reviewedBy?.trim() ||
+    !metadata.reviewedAt || Number.isNaN(Date.parse(metadata.reviewedAt)))) {
+    throw new CatalogPayloadError('announcement.reviewedBy', '正式发布必须有有效复核人和复核时间');
+  }
 
   // 1. 公告级必需元数据（可信，不猜）
   if (!metadata.publisher || !metadata.publisher.trim()) {
@@ -429,6 +499,9 @@ export function buildCatalogPayload(
 
   // 4. 报名时间 → timeline
   const regTime = adoptedValue(fields, 'registration_time', 'announcement');
+  if (metadata.dataset === 'real' && !regTime?.anchor) {
+    throw new CatalogPayloadError('version.timeline', '正式发布需要已审核报名时间及证据');
+  }
   const timeline = buildTimeline(regTime);
 
   // 6. 岗位单元：每个已审核 job scope 一个 unit
@@ -436,7 +509,24 @@ export function buildCatalogPayload(
   if (jobKeys.length === 0) {
     throw new CatalogPayloadError('version.units', '没有已审核岗位，无法发布目录');
   }
-  const units = jobKeys.map((jobKey, index) =>
+  const includedKeys = jobKeys.filter((jobKey) => {
+    const subject = adoptedJobValue(fields, jobKey, 'subject');
+    if (!subject || !subject.value.trim()) throw new CatalogPayloadError('version.units.subject', '学科待确认');
+    if (/^(语文|小学语文|初中语文|高中语文)$/.test(subject.value)) return true;
+    if (/^(数学|英语|物理|化学|生物|历史|地理|政治|体育|音乐|美术|信息技术|科学)$/.test(subject.value)) return false;
+    throw new CatalogPayloadError('version.units.subject', `学科无法明确分流：${subject.value}`);
+  });
+  if (!includedKeys.length) throw new CatalogPayloadError('version.units', '没有已确认语文岗位；其他学科仅归档');
+  if (metadata.dataset === 'real') {
+    for (const jobKey of includedKeys) {
+      for (const name of ['education', 'major', 'teacher_cert', 'age']) {
+        if (!effectiveValue(fields, jobKey, name)) {
+          throw new CatalogPayloadError(`version.units.${jobKey}.${name}`, '正式发布缺少已审核资格条件，不得静默省略');
+        }
+      }
+    }
+  }
+  const units = includedKeys.map((jobKey, index) =>
     buildUnit(fields, jobKey, metadata.announcementId, ctx.versionId, region, index, ctx.publishedAt),
   );
 

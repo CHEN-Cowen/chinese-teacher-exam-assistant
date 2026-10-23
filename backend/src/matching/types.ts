@@ -87,6 +87,7 @@ export interface EvidenceAnchor {
   excerpt?: string;
   state: EvidenceReviewState;
   checkedAt: string;
+  locatorData?: Record<string, unknown>;
 }
 
 export type RequirementDimension =
@@ -175,6 +176,10 @@ export interface ApplicationUnit {
    * 真实台账中人数、学历、专业等结构化字段以此定位到官方岗位表具体行。
    */
   sourceRow?: EvidenceAnchor;
+  /** 招聘机构原文，不等同于最终任教学校。 */
+  recruitmentOrganization?: string;
+  /** 公共/岗位字段的完整官方证据链。 */
+  fieldEvidence?: Record<string, EvidenceAnchor[]>;
   /**
    * 报名材料清单（模块 6）：按公告要求生成的最小材料项。
    * 每项必须有可追溯来源（EvidenceAnchor）；无法从公告确定的不列为必填。

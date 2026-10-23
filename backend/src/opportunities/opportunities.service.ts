@@ -99,7 +99,9 @@ export class OpportunitiesService {
     now: Date = new Date(),
   ): Promise<readonly RecruitmentAnnouncement[]> {
     if (isDbCatalogEnabled()) {
-      return this.catalogRepository.listPublished(now);
+      // 正式目录只消费明确 real；demo/test 仍可存档，但不能混入正式用户匹配。
+      return (await this.catalogRepository.listPublished(now))
+        .filter((announcement) => announcement.dataset === 'real');
     }
     return [
       ...getRollingCatalogAnnouncements(),

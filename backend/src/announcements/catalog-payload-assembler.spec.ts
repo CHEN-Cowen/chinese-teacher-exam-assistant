@@ -11,6 +11,7 @@ import {
 } from './catalog-payload-assembler.js';
 import type { ExtractionCandidate } from './domain.js';
 import type { CandidateField } from './domain.js';
+import { projectCatalogVersion } from '../catalog/publication-projector.js';
 
 function anchoredJob(
   field: string,
@@ -100,6 +101,63 @@ function twoJobsFields(): CandidateField[] {
   ];
 }
 
+describe('S2 正式发布与岗位完善', () => {
+  it('正式数据缺复核身份不得发布', () => {
+    expect(() => buildCatalogPayload(makeCandidate(twoJobsFields()),
+      makeMetadata({ dataset: 'real' }), makeCtx())).toThrow(/复核/);
+  });
+
+  it('公共资格继承、岗位资格覆盖且各项保留证据，复杂条件人工确认', () => {
+    const fields = twoJobsFields().filter((f) => f.field !== 'education');
+    fields.push(anchoredAnn('education', '本科及以上'),
+      anchoredJob('education', '仅硕士', 'job-B-3301A02'),
+      anchoredAnn('teacher_cert', '具有相应教师资格证'),
+      anchoredAnn('age', '35周岁以下，博士可放宽'),
+      anchoredAnn('age_basis_date', '2026-10-01'),
+      anchoredAnn('degree', '学士学位'),
+      anchoredAnn('hukou', '不限'),
+      anchoredAnn('work_experience', '两年相关经历'));
+    const units = buildCatalogPayload(makeCandidate(fields), makeMetadata(), makeCtx()).version.units;
+    expect(units[0]!.requirements.find((r) => r.dimension === 'education')!.criterion)
+      .toEqual({ kind: 'education', minLevel: 'bachelor' });
+    expect(units[1]!.requirements.find((r) => r.dimension === 'education')!.criterion)
+      .toEqual({ kind: 'other', manualReview: true });
+    for (const unit of units) {
+      expect(unit.requirements.map((r) => r.dimension)).toEqual(expect.arrayContaining(['age', 'teacher_cert', 'degree', 'hukou', 'work_experience']));
+      expect(unit.requirements.every((r) => !!r.evidence.locator)).toBe(true);
+    }
+  });
+
+  it('招聘机构与岗位区县独立，未知用工不猜事业编，保留多来源证据', () => {
+    const fields = twoJobsFields();
+    const region = anchoredJob('region', JSON.stringify({ code: '330106', province: '浙江省', city: '杭州市', district: '西湖区' }), 'job-A-3301A01');
+    region.anchor = { field: 'region', locator: { kind: 'url', url: 'https://www.example.gov.cn/a', anchor: 'job-a' }, locatorData: { snapshotId: 'snap-1' } };
+    region.anchors = [region.anchor, { field: 'region', locator: { kind: 'worksheet', fileId: 'f1', fileName: '岗位表.xlsx', sheet: '岗位', cell: 'A2' } }];
+    fields.push(region);
+    fields.find((f) => f.field === 'employment_nature')!.value = '未说明';
+    const [a, b] = buildCatalogPayload(makeCandidate(fields), makeMetadata(), makeCtx()).version.units;
+    expect(a!.region.district).toBe('西湖区');
+    expect(b!.region.district).toBeUndefined();
+    expect(a!.recruitmentOrganization).toBe('示例市第一中学');
+    expect(a!.employmentNature).toEqual({ code: 'other', officialName: '未说明' });
+    const evidence = Object.values(a!.fieldEvidence!).flat();
+    expect(evidence.some((e) => e.locator.kind === 'url' && e.locator.anchor === 'job-a' && e.locatorData?.snapshotId === 'snap-1')).toBe(true);
+    expect(evidence.some((e) => e.locator.kind === 'worksheet' && e.locator.cell === 'A2')).toBe(true);
+    expect(a!.allocation.code).toBe('other');
+    const payload = buildCatalogPayload(makeCandidate(fields), makeMetadata(), makeCtx());
+    const projected = projectCatalogVersion({ id: 'ann-1-v1', announcementId: 'ann-1', versionNumber: 1, status: 'published', payload }, new Date());
+    expect(projected.version.units[0]!.fieldEvidence).toEqual(a!.fieldEvidence);
+    expect(projected.version.units[0]!.recruitmentOrganization).toBe(a!.recruitmentOrganization);
+  });
+
+  it('只有其他学科或学科不明确不能发布语文机会', () => {
+    for (const value of ['数学', '语文或英语']) {
+      const fields = twoJobsFields().map((f) => f.field === 'subject' ? { ...f, value } : f);
+      expect(() => buildCatalogPayload(makeCandidate(fields), makeMetadata(), makeCtx())).toThrow(CatalogPayloadError);
+    }
+  });
+});
+
 describe('buildCatalogPayload：合法构造', () => {
   it('两个已审核岗位构成两个 units，projector 可接受的结构', () => {
     const payload = buildCatalogPayload(
@@ -143,7 +201,7 @@ describe('buildCatalogPayload：合法构造', () => {
 
   it('real dataset 附带 human_reviewed 与复核人', () => {
     const payload = buildCatalogPayload(
-      makeCandidate(twoJobsFields()),
+      makeCandidate([...twoJobsFields(), anchoredAnn('teacher_cert', '具有相应教师资格'), anchoredAnn('age', '35周岁及以下')]),
       makeMetadata({ dataset: 'real', reviewedBy: 'reviewer-9', reviewedAt: '2026-10-20T01:00:00.000Z' }),
       makeCtx(),
     );
@@ -215,13 +273,14 @@ describe('buildCatalogPayload：结构化失败（不猜值、不编默认）', 
     ).toThrow(CatalogPayloadError);
   });
 
-  it('学科非语文（不在开放范围）→ CatalogPayloadError', () => {
+  it('混合学科只发布语文，其他学科保留在候选归档', () => {
     const fields = twoJobsFields();
     const subjectB = fields.find((f) => f.field === 'subject' && f.scope === 'job' && f.jobScope?.key === 'job-B-3301A02');
     subjectB!.value = '数学';
-    expect(() =>
-      buildCatalogPayload(makeCandidate(fields), makeMetadata(), makeCtx()),
-    ).toThrow(CatalogPayloadError);
+    const result = buildCatalogPayload(makeCandidate(fields), makeMetadata(), makeCtx());
+    expect(result.version.units).toHaveLength(1);
+    expect(result.version.units[0]!.subject).toBe('chinese');
+    expect(fields.find((f) => f === subjectB)?.value).toBe('数学');
   });
 });
 

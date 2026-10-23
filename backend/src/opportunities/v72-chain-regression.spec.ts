@@ -111,7 +111,7 @@ const DB_PUBLISHED_ROW = {
   supersededAt: null,
 };
 
-function createService() {
+function createService(rows = [DB_PUBLISHED_ROW]) {
   const followRows = new Map<string, Record<string, unknown>>();
   let seq = 0;
   let dbReads = 0;
@@ -135,7 +135,7 @@ function createService() {
     publishedAnnouncementVersion: {
       findMany: async () => {
         dbReads += 1;
-        return [DB_PUBLISHED_ROW];
+        return rows;
       },
     },
   };
@@ -146,6 +146,22 @@ function createService() {
   const service = new OpportunitiesService(prisma as never, profileService, scheduleService);
   return { service, dbReads: () => dbReads };
 }
+
+describe('S2 正式目录隔离', () => {
+  it.each(['demo', 'test'])('数据库中的 %s 不进入正式机会', async (dataset) => {
+    const row = structuredClone(DB_PUBLISHED_ROW);
+    row.payload.dataset = dataset;
+    const { service } = createService([row]);
+    const previous = process.env.FF_DB_CATALOG;
+    try {
+      process.env.FF_DB_CATALOG = 'on';
+      expect(JSON.stringify(await service.match(PROFILE))).not.toContain('fx-unit-db-priority');
+    } finally {
+      if (previous === undefined) delete process.env.FF_DB_CATALOG;
+      else process.env.FF_DB_CATALOG = previous;
+    }
+  });
+});
 
 describe('链路③：后台发布 → DB 已发布版本 → 用户匹配结果', () => {
   it('现状固化：匹配目录不读数据库，DB 中的已发布单元不出现在结果里（WP3 落地时必须反转本测试）', async () => {

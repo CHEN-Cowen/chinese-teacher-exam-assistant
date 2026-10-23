@@ -446,17 +446,25 @@ function ReviewOverlay({ onClose, children }: { onClose: () => void; children: R
 // ==================== 发布按钮 ====================
 
 function PublishButton({ runId, onPublished }: { runId: string; onPublished: () => void }) {
+  const [dataset, setDataset] = useState<"demo" | "real">("demo");
   const [publishing, setPublishing] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
+      <select aria-label="发布数据集" value={dataset} disabled={publishing}
+        className="rounded border border-slate-300 bg-white p-1 text-sm text-slate-900"
+        onChange={(event) => setDataset(event.target.value as "demo" | "real")}>
+        <option value="demo">演示数据（demo）</option>
+        <option value="real">正式数据（real）</option>
+      </select>
+      <span className="text-xs text-slate-600">{dataset === "real" ? "正式发布需有效人工审核与官方证据" : "演示数据不进入正式机会匹配"}</span>
       <Button
         size="sm"
         onClick={async () => {
           setPublishing(true);
           setErr(null);
           try {
-            await announcementsPipelineApi.publish(runId);
+            await announcementsPipelineApi.publish(runId, dataset);
             onPublished();
           } catch (e) {
             setErr(e instanceof Error ? e.message : "发布失败");
