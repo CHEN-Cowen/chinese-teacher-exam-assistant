@@ -56,6 +56,30 @@ export class SourceDocumentStore {
     return row ?? null;
   }
 
+  async getDocument(documentId: string): Promise<{
+    id: string;
+    sourceId: string;
+    canonicalUrl: string;
+    kind: string;
+    parentDocumentId: string | null;
+    latestSnapshotId: string | null;
+    relationType: string | null;
+  } | null> {
+    const row = await this.prisma.sourceDocument.findUnique({
+      where: { id: documentId },
+      select: {
+        id: true,
+        sourceId: true,
+        canonicalUrl: true,
+        kind: true,
+        parentDocumentId: true,
+        latestSnapshotId: true,
+        relationType: true,
+      },
+    });
+    return row ?? null;
+  }
+
   /** 已存在同哈希快照直接返回；否则新建（唯一约束兜底并发） */
   async upsertSnapshot(input: {
     sourceId: string;

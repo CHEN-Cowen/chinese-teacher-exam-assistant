@@ -10,7 +10,7 @@ import { readParseLimits } from '../../document-processing/parse-guard.js';
 import { buildXlsxFixture } from '../../document-processing/testing/fixture-builders.js';
 import { AnnouncementExtractService } from './announcement-extract.service.js';
 
-const PARSER_VERSION = 'rule-field-extractor@1.0.0';
+const PARSER_VERSION = 'rule-field-extractor@2.0.0';
 
 function makeService() {
   const prisma = new FakePrisma();
@@ -20,7 +20,11 @@ function makeService() {
 }
 
 /** 预置一条 parsed 的解析记录（用真实表格解析器产出 blocks/表头） */
-async function seedParsedRun(ctx: ReturnType<typeof makeService>, snapshotId: string) {
+async function seedParsedRun(
+  ctx: ReturnType<typeof makeService>,
+  snapshotId: string,
+  documentId?: string,
+) {
   const parsed = await new SpreadsheetDocumentParser(readParseLimits({})).parse({
     snapshotId,
     sourceUrl: 'https://example.gov.cn/p.xlsx',
@@ -32,6 +36,7 @@ async function seedParsedRun(ctx: ReturnType<typeof makeService>, snapshotId: st
   });
   const { run } = await ctx.parseStore.ensureRun({
     snapshotId,
+    documentId,
     format: 'unknown',
     parserVersion: 'spreadsheet-parser@1.0.0',
     contentHash: 'abc123',
@@ -109,6 +114,51 @@ describe('AnnouncementExtractService.handle', () => {
       expect(data.snapshotId).toBe('snap-x');
       expect(data.contentHash).toBe('abc123');
     }
+  });
+
+  it('自动材料包：正文与附件统一复核，并绑定稳定公告身份与材料指纹', async () => {
+    const ctx = makeService();
+    const bodySnapshot = ctx.prisma.seedSnapshot({
+      sourceId: 'src-1',
+      contentHash: 'body-hash',
+      officialUrl: 'https://example.gov.cn/announcement.html',
+    });
+    const attachmentSnapshot = ctx.prisma.seedSnapshot({
+      sourceId: 'src-1',
+      contentHash: 'attachment-hash',
+      officialUrl: 'https://example.gov.cn/jobs.xlsx',
+      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    const bodyDocument = ctx.prisma.seedDocument({
+      sourceId: 'src-1',
+      canonicalUrl: 'https://example.gov.cn/announcement.html',
+      latestSnapshotId: bodySnapshot.id,
+      contentHash: bodySnapshot.contentHash,
+    });
+    const attachmentDocument = ctx.prisma.seedDocument({
+      sourceId: 'src-1',
+      canonicalUrl: 'https://example.gov.cn/jobs.xlsx',
+      kind: 'attachment',
+      latestSnapshotId: attachmentSnapshot.id,
+      contentHash: attachmentSnapshot.contentHash,
+      parentDocumentId: bodyDocument.id,
+    });
+    await seedParsedRun(ctx, bodySnapshot.id, bodyDocument.id);
+    await seedParsedRun(ctx, attachmentSnapshot.id, attachmentDocument.id);
+
+    const outcome = await ctx.service.handle({
+      snapshotId: bodySnapshot.id,
+      documentId: bodyDocument.id,
+      parserVersion: PARSER_VERSION,
+    });
+
+    expect(outcome.status).toBe('pending_review');
+    const run = ctx.prisma.extractionRuns[0];
+    expect(run.announcementId).toBe(bodyDocument.id);
+    expect(run.materialFingerprint).toBeTruthy();
+    const candidate = run.candidate as { rawJson?: { files?: unknown[]; reconciliation?: unknown } };
+    expect(candidate.rawJson?.files).toHaveLength(2);
+    expect(candidate.rawJson?.reconciliation).toBeTruthy();
   });
 
   it('重跑同版本 → 幂等替换锚点，已有候选不降级', async () => {

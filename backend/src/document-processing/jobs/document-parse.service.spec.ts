@@ -76,8 +76,15 @@ describe('DocumentParseService.handle', () => {
       'Hangzhou Municipal Education Bureau 2026 teacher recruitment announcement with detailed content.',
       'Education requirement: Bachelor degree or above with teacher qualification certificate.',
     ]));
+    const document = ctx.prisma.seedDocument({
+      sourceId: 'src-1',
+      canonicalUrl: 'https://example.gov.cn/a.pdf',
+      latestSnapshotId: snapshot.id,
+      contentHash: snapshot.contentHash,
+    });
 
     const outcome = await ctx.service.handle({
+      documentId: document.id,
       snapshotId: snapshot.id,
       documentParserVersion: VERSION_A,
     });
@@ -89,7 +96,9 @@ describe('DocumentParseService.handle', () => {
     expect(run.format).toBe('pdf');
     expect(ctx.queue.count('announcement.extract')).toBe(1);
     const extractJob = ctx.queue.enqueued.find((j) => j.name === 'announcement.extract');
-    expect(extractJob?.jobId).toBe(`extract-${snapshot.id}-rule-field-extractor@1.0.0`);
+    expect(extractJob?.jobId).toBe(`extract-${snapshot.id}-rule-field-extractor@2.0.0`);
+    expect(extractJob).toBeTruthy();
+    expect((extractJob!.payload as { documentId?: string }).documentId).toBe(document.id);
   });
 
   it('同快照同版本重放 → already_parsed（不重复解析、不覆盖成功记录）', async () => {

@@ -60,11 +60,15 @@ export interface DocumentFetchPayload {
 
 export interface DocumentParsePayload {
   snapshotId: string;
+  /** 逻辑文档身份，供材料包聚合回溯正文/附件关系 */
+  documentId?: string;
   documentParserVersion: string;
 }
 
 export interface AnnouncementExtractPayload {
   snapshotId: string;
+  /** 当前解析所属逻辑文档；用于回溯公告材料包 */
+  documentId?: string;
   parserVersion: string;
 }
 

@@ -26,7 +26,7 @@ import type { DocumentParseStatus } from '../parsed-document.js';
  * 业务抽取版本（与格式解析版本独立：解析器升级不重跑业务抽取，
  * 业务规则升级不重跑解析）。
  */
-export const EXTRACTION_JOB_VERSION = 'rule-field-extractor@1.0.0';
+export const EXTRACTION_JOB_VERSION = 'rule-field-extractor@2.0.0';
 
 export interface DocumentParseOutcome {
   status: 'parsed' | 'pending_manual' | 'unsupported_format' | 'failed' | 'already_parsed';
@@ -61,6 +61,7 @@ export class DocumentParseService {
 
     const { run } = await this.parseStore.ensureRun({
       snapshotId: snapshot.id,
+      documentId: payload.documentId ?? null,
       format: 'unknown',
       parserVersion: payload.documentParserVersion,
       contentHash: snapshot.contentHash,
@@ -117,11 +118,7 @@ export class DocumentParseService {
 
       // 成功与待人工都投递业务抽取：pending_manual 会生成诚实的"待人工"提取记录
       if (parsed.blocks.length > 0 || pendingManual) {
-        await this.queue.enqueue(
-          'announcement.extract',
-          { snapshotId: snapshot.id, parserVersion: EXTRACTION_JOB_VERSION },
-          { jobId: extractJobId(snapshot.id, EXTRACTION_JOB_VERSION) },
-        );
+        await this.enqueueExtraction(payload.documentId, snapshot.id);
       }
       return {
         status,
@@ -153,13 +150,27 @@ export class DocumentParseService {
       });
       // 待人工（如加密 PDF）也投递业务抽取：生成诚实的"待人工"提取记录，供人工跟进
       if (status === 'pending_manual') {
-        await this.queue.enqueue(
-          'announcement.extract',
-          { snapshotId: snapshot.id, parserVersion: EXTRACTION_JOB_VERSION },
-          { jobId: extractJobId(snapshot.id, EXTRACTION_JOB_VERSION) },
-        );
+        await this.enqueueExtraction(payload.documentId, snapshot.id);
       }
       return { status, parseRunId: run.id, errorSummary: summary };
     }
+  }
+
+  private async enqueueExtraction(documentId: string | undefined, snapshotId: string): Promise<void> {
+    const document = documentId ? await this.documentStore.getDocument(documentId) : null;
+    const rootDocumentId = document?.parentDocumentId ?? document?.id ?? documentId;
+    const rootSnapshotId = rootDocumentId
+      ? (await this.documentStore.getDocument(rootDocumentId))?.latestSnapshotId
+      : undefined;
+    const extractionSnapshotId = rootSnapshotId ?? snapshotId;
+    await this.queue.enqueue(
+      'announcement.extract',
+      {
+        snapshotId: extractionSnapshotId,
+        parserVersion: EXTRACTION_JOB_VERSION,
+        documentId: rootDocumentId,
+      },
+      { jobId: extractJobId(extractionSnapshotId, EXTRACTION_JOB_VERSION) },
+    );
   }
 }

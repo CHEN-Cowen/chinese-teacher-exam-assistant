@@ -299,6 +299,16 @@ export class FakePrisma {
   };
 
   readonly sourceDocument = {
+    findUnique: async ({
+      where,
+      select,
+    }: {
+      where: { id: string };
+      select?: Record<string, boolean>;
+    }) => {
+      const row = this.documents.find((d) => d.id === where.id) ?? null;
+      return row ? pickSelect(row, select) : null;
+    },
     upsert: async ({
       where,
       create,
@@ -597,7 +607,7 @@ export class FakePrisma {
 
 export class FakeCrawlTaskQueue implements CrawlTaskQueue {
   readonly jobs = new Map<string, { name: string; payload: unknown }>();
-  readonly enqueued: Array<{ name: CrawlTaskName; jobId: string }> = [];
+  readonly enqueued: Array<{ name: CrawlTaskName; jobId: string; payload: unknown }> = [];
   /** false 模拟 Redis 暂时不可达 */
   available = true;
 
@@ -611,7 +621,7 @@ export class FakeCrawlTaskQueue implements CrawlTaskQueue {
       return { jobId: options.jobId, deduplicated: true };
     }
     this.jobs.set(options.jobId, { name, payload });
-    this.enqueued.push({ name, jobId: options.jobId });
+    this.enqueued.push({ name, jobId: options.jobId, payload });
     return { jobId: options.jobId, deduplicated: false };
   }
 

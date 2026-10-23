@@ -238,7 +238,11 @@ export class DocumentFetchService {
     // 投递解析任务（独立解析器版本，幂等键 snapshotId + version）
     await this.queue.enqueue(
       'document.parse',
-      { snapshotId: snapshot.id, documentParserVersion: DOCUMENT_PARSER_VERSION },
+      {
+        snapshotId: snapshot.id,
+        documentId: document.id,
+        documentParserVersion: DOCUMENT_PARSER_VERSION,
+      },
       { jobId: parseJobId(snapshot.id, DOCUMENT_PARSER_VERSION) },
     );
 
