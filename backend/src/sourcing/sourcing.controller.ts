@@ -77,7 +77,7 @@ export class SourcingController {
     return { document };
   }
 
-  /** 幂等登记首批三个来源（对照真实官网核对栏目 URL 后调用） */
+  /** 幂等登记 S4 首批四个来源（对照真实官网核对栏目 URL 后调用） */
   @Post('seed')
   @UseGuards(StrictAdminGuard)
   async seed() {

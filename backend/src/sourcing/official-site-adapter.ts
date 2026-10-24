@@ -103,6 +103,8 @@ export function normalizeUrl(url: string): string {
     if (/^utm_/i.test(key)) tracking.push(key);
   });
   for (const key of tracking) parsed.searchParams.delete(key);
+  // 页面锚点只影响浏览器定位，不代表不同官方文档；对账和去重时必须忽略。
+  parsed.hash = '';
   return parsed.toString();
 }
 

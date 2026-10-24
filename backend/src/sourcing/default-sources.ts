@@ -1,5 +1,5 @@
 /**
- * v7.2 工作包 4：首批三个官方来源的登记数据。
+ * v7.2 工作包 4 / S4：首批四个官方来源的登记数据。
  *
  * 只登记“来源 → 适配器”的静态配置（域名、适配器键、轮询周期），
  * 不含任何解析逻辑（解析逻辑在 adapters/*.adapter.ts，且必须是纯函数）。
@@ -53,7 +53,8 @@ export const DEFAULT_CRAWL_SOURCES: readonly DefaultCrawlSource[] = [
     publisher: '宁波市教育局',
     regionCode: '330200',
     officialUrl: 'https://jyj.ningbo.gov.cn/',
-    listUrls: [],
+    // S4 核实入口；动态 AuthorizedRead 列表尚待适配，200 不代表发现成功。
+    listUrls: ['https://jyj.ningbo.gov.cn/col/col1229166692/index.html?number='],
     allowedHosts: ['jyj.ningbo.gov.cn'],
     pollEveryMinutes: 60,
   },
@@ -62,7 +63,8 @@ export const DEFAULT_CRAWL_SOURCES: readonly DefaultCrawlSource[] = [
     publisher: '宁波市鄞州区人民政府',
     regionCode: '330212',
     officialUrl: 'https://www.nbyz.gov.cn/',
-    listUrls: [],
+    // S4 核实入口；动态 AuthorizedRead 列表尚待适配，不能标为正常监测。
+    listUrls: ['https://www.nbyz.gov.cn/col/col1229108032/jszp/index.html'],
     allowedHosts: ['www.nbyz.gov.cn'],
     pollEveryMinutes: 60,
   },
