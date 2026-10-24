@@ -33,11 +33,14 @@ import {
 } from '../intervention.js';
 import {
   fetchJobId,
+  isTransientFetchFailure,
   type CrawlTaskQueue,
   type DocumentFetchPayload,
   type SourceDiscoverPayload,
 } from './task-queue.js';
 import { CRAWL_TASK_QUEUE } from '../sourcing.tokens.js';
+import { OBJECT_STORE } from '../storage/storage.tokens.js';
+import type { ObjectStore } from '../storage/object-store.js';
 
 export interface DiscoverOutcome {
   status:
@@ -46,7 +49,8 @@ export interface DiscoverOutcome {
     | 'zero_suspect'
     | 'structure_changed'
     | 'blocked'
-    | 'failed';
+    | 'failed'
+    | 'partial';
   discoveredCount: number;
   downloadedCount: number;
   unchangedCount: number;
@@ -69,14 +73,38 @@ export class SourceDiscoverService {
     private readonly fetcherFactory: SafeFetcherFactory,
     private readonly registry: AdapterRegistry,
     @Inject(CRAWL_TASK_QUEUE) private readonly queue: CrawlTaskQueue,
+    @Inject(OBJECT_STORE) private readonly objectStore: ObjectStore,
     // 可选指标出口：测试缺省不传则完全不产生日志
     @Optional() private readonly metrics?: SourcingMetrics,
   ) {}
 
-  async handle(payload: SourceDiscoverPayload): Promise<DiscoverOutcome> {
+  async handle(
+    payload: SourceDiscoverPayload,
+    attemptsRemaining = 0,
+  ): Promise<DiscoverOutcome> {
     const startedAt = Date.now();
     const telemetry: FetchTelemetry = { notModified: false };
-    const outcome = await this.execute(payload, telemetry);
+    let outcome: DiscoverOutcome;
+    try {
+      outcome = await this.execute(payload, telemetry);
+    } catch (error) {
+      await this.runStore.completeDiscovery(payload.runId, {
+        status: attemptsRemaining > 0 ? 'retrying' : 'failed',
+        errorSummary: 'discovery_delivery_failed',
+      });
+      throw error;
+    }
+    if (
+      attemptsRemaining > 0 &&
+      isTransientFetchFailure(outcome.errorSummary)
+    ) {
+      await this.runStore.completeDiscovery(payload.runId, {
+        status: 'retrying',
+        discoveredCount: outcome.discoveredCount,
+        failedCount: outcome.failedCount,
+        errorSummary: outcome.errorSummary,
+      });
+    }
     // 来源检查完成统一出口（成功 / 异常零结果 / 失败都记录）
     this.metrics?.sourceCheckCompleted({
       sourceId: payload.sourceId,
@@ -128,29 +156,33 @@ export class SourceDiscoverService {
         ? source.listUrls
         : [source.officialUrl];
     const fetcher = this.fetcherFactory.create(source);
-    const prevHint = `${source.etag ?? ''}|${source.lastModified ?? ''}`;
 
     const discovered = new Map<string, DiscoveredDocument>();
     const errors: string[] = [];
     let structureMismatch: string | null = null;
     let intervention: InterventionReason | null = null;
-    let listVersionHint = prevHint;
-    let newEtag = source.etag;
-    let newLastModified = source.lastModified;
     // 实际拿回 200 并交给适配器解析的栏目页数（304 不算“抓取到内容”）
     let fetchedPages = 0;
 
     for (const listUrl of listUrls) {
       let result;
+      let cache;
       try {
+        cache = await this.documentStore.getUrlCache(source.id, listUrl);
         result = await fetcher.fetch(listUrl, {
-          ifNoneMatch: source.etag ?? undefined,
-          ifModifiedSince: source.lastModified ?? undefined,
+          ifNoneMatch: cache?.etag ?? undefined,
+          ifModifiedSince: cache?.lastModified ?? undefined,
         });
+        if (result.status === 304) {
+          if (!cache) throw new Error('not_modified_without_snapshot');
+        }
         telemetry.httpStatus = result.status;
         if (result.status === 304) telemetry.notModified = true;
       } catch (error) {
-        if (error instanceof SafeFetchError && typeof error.status === 'number') {
+        if (
+          error instanceof SafeFetchError &&
+          typeof error.status === 'number'
+        ) {
           telemetry.httpStatus = error.status;
         }
         // 验证码 / 登录 / 封禁：转人工，不计入普通失败
@@ -162,7 +194,23 @@ export class SourceDiscoverService {
         errors.push(this.describeFetchError(listUrl, error));
         continue;
       }
-      if (result.status === 304) continue; // 栏目未变化
+      if (result.status === 304) {
+        try {
+          const body = await this.objectStore.get(cache!.snapshot.storageKey);
+          const items = adapter.discover({
+            url: result.finalUrl,
+            mimeType: cache!.snapshot.mimeType,
+            content: body,
+            fetchedAt: cache!.snapshot.fetchedAt.toISOString(),
+          });
+          for (const item of items) discovered.set(item.url, item);
+        } catch (error) {
+          if (error instanceof AdapterParseError)
+            structureMismatch = error.message;
+          else errors.push(this.describeFetchError(listUrl, error));
+        }
+        continue;
+      }
 
       // 挑战页（成功返回但要求人机验证）：转人工，不解析
       const pageSignal = interventionFromBody(result.body, result.mimeType);
@@ -172,12 +220,6 @@ export class SourceDiscoverService {
       }
 
       fetchedPages += 1;
-      listVersionHint =
-        result.headers.etag || result.headers.lastModified
-          ? `${result.headers.etag ?? ''}|${result.headers.lastModified ?? ''}`
-          : result.contentHash;
-      newEtag = result.headers.etag ?? newEtag;
-      newLastModified = result.headers.lastModified ?? newLastModified;
       try {
         const items = adapter.discover({
           url: result.finalUrl,
@@ -188,6 +230,26 @@ export class SourceDiscoverService {
         for (const item of items) {
           discovered.set(item.url, item);
         }
+        const storageKey = await this.objectStore.put({
+          content: result.body,
+          mimeType: result.mimeType,
+          contentHash: result.contentHash,
+        });
+        const { snapshot } = await this.documentStore.upsertSnapshot({
+          sourceId: source.id,
+          officialUrl: result.finalUrl,
+          storageKey,
+          mimeType: result.mimeType,
+          contentHash: result.contentHash,
+          fetchedAt: now,
+          httpStatus: result.status,
+        });
+        await this.documentStore.updateUrlCache(
+          source.id,
+          listUrl,
+          snapshot.id,
+          result.headers,
+        );
       } catch (error) {
         if (error instanceof AdapterParseError) {
           structureMismatch = error.message;
@@ -196,12 +258,6 @@ export class SourceDiscoverService {
         }
       }
     }
-
-    // 栏目页条件请求缓存推进（即使本轮有错误仍推进已成功获取的部分）
-    await this.runStore.updateConditionalHeaders(source.id, {
-      etag: newEtag ?? null,
-      lastModified: newLastModified ?? null,
-    });
 
     // 人工介入优先：验证码/登录/封禁需要停止自动化，交由管理员处理
     if (intervention) {
@@ -242,7 +298,7 @@ export class SourceDiscoverService {
       };
     }
 
-    if (discovered.size === 0 && errors.length > 0) {
+    if (discovered.size === 0 && errors.length > 0 && fetchedPages === 0) {
       const summary = errors.join('; ').slice(0, 500);
       await this.runStore.recordFailure(source.id, {
         checkedAt: now,
@@ -271,12 +327,12 @@ export class SourceDiscoverService {
           countTowardsSource: true,
         });
         await this.runStore.finishRun(payload.runId, {
-          status: 'zero_suspect',
+          status: errors.length > 0 ? 'partial' : 'zero_suspect',
           discoveredCount: 0,
           errorSummary: SUSPECTED_ZERO_RESULTS,
         });
         return {
-          status: 'zero_suspect',
+          status: errors.length > 0 ? 'partial' : 'zero_suspect',
           discoveredCount: 0,
           downloadedCount: 0,
           unchangedCount: 0,
@@ -286,51 +342,77 @@ export class SourceDiscoverService {
       }
     }
 
-    // 栏目版本是否变化：决定是否需要重新检查已有文档
-    const listChanged = listVersionHint !== prevHint;
+    // 栏目未变也不能推断正文或附件未变；每轮恢复已知文档检查。
+    const known = await this.documentStore.listDocuments(source.id);
+    const checks = new Map(
+      known.map((document) => [
+        document.canonicalUrl,
+        {
+          url: document.canonicalUrl,
+          kind: document.kind as DocumentFetchPayload['kind'],
+          parentDocumentId: document.parentDocumentId ?? undefined,
+        },
+      ]),
+    );
+    for (const item of discovered.values())
+      checks.set(item.url, {
+        url: item.url,
+        kind: item.kind,
+        parentDocumentId: undefined,
+      });
 
-    let enqueued = 0;
-    let unchanged = 0;
-    for (const item of discovered.values()) {
-      const document = await this.documentStore.upsertDocument({
+    for (const item of checks.values()) {
+      await this.documentStore.upsertDocument({
         sourceId: source.id,
         canonicalUrl: item.url,
         kind: item.kind,
       });
-      const shouldFetch = document.latestSnapshotId === null || listChanged;
-      if (!shouldFetch) {
-        unchanged += 1;
-        continue;
-      }
       const fetchPayload: DocumentFetchPayload = {
         sourceId: source.id,
         runId: payload.runId,
         canonicalUrl: item.url,
         kind: item.kind,
+        parentDocumentId: item.parentDocumentId,
       };
-      const jobId = fetchJobId(source.id, item.url, listVersionHint);
-      await this.queue.enqueue('document.fetch', fetchPayload, { jobId });
-      enqueued += 1;
+      const jobId = fetchJobId(source.id, item.url, payload.runId);
+      await this.runStore.recordFetchOutcome(payload.runId, item.url, 'queued');
+      try {
+        await this.queue.enqueue('document.fetch', fetchPayload, { jobId });
+      } catch {
+        await this.runStore.recordFetchOutcome(
+          payload.runId,
+          item.url,
+          'failed',
+          'queue_enqueue_failed',
+        );
+        throw new Error('queue_enqueue_failed');
+      }
     }
 
     const status = discovered.size > 0 ? 'succeeded' : 'no_new';
-    await this.runStore.recordSuccess(source.id, {
-      checkedAt: now,
-      nextCheckAt: this.runStore.nextCheckAt(now, source.pollEveryMinutes),
-    });
-    await this.runStore.finishRun(payload.runId, {
-      status,
+    if (errors.length > 0) {
+      await this.runStore.recordFailure(source.id, {
+        checkedAt: now,
+        nextCheckAt: this.runStore.nextCheckAt(now, source.pollEveryMinutes),
+        reason: errors.join('; ').slice(0, 500),
+      });
+    } else {
+      await this.runStore.recordSuccess(source.id, {
+        checkedAt: now,
+        nextCheckAt: this.runStore.nextCheckAt(now, source.pollEveryMinutes),
+      });
+    }
+    await this.runStore.completeDiscovery(payload.runId, {
+      status: errors.length > 0 ? 'partial' : status,
       discoveredCount: discovered.size,
-      downloadedCount: enqueued,
-      unchangedCount: unchanged,
       errorSummary: errors.length > 0 ? errors.join('; ').slice(0, 500) : null,
       failedCount: errors.length,
     });
     return {
-      status,
+      status: errors.length > 0 ? 'partial' : status,
       discoveredCount: discovered.size,
-      downloadedCount: enqueued,
-      unchangedCount: unchanged,
+      downloadedCount: 0,
+      unchangedCount: 0,
       failedCount: errors.length,
       errorSummary: errors.length > 0 ? errors.join('; ') : undefined,
     };

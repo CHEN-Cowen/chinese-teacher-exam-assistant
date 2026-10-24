@@ -52,6 +52,7 @@ describe('SafeFetcherFactory Nest 注入（UnknownDependenciesException 回归�
   });
   afterEach(() => {
     vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
   });
 
   it('作为 provider 被 Nest 编译并实例化，不注入运行时 Object', async () => {
@@ -82,6 +83,85 @@ describe('SafeFetcherFactory Nest 注入（UnknownDependenciesException 回归�
     expect(configOf(factory).maxRedirects).toBe(9);
     expect(configOf(factory).concurrency).toBe(4);
     await moduleRef.close();
+  });
+
+  it('不同 factory 创建的 fetcher 共享同 host 并发上限', async () => {
+    vi.stubEnv('CRAWL_CONCURRENCY', '1');
+    const firstFactory = new SafeFetcherFactory();
+    const secondFactory = new SafeFetcherFactory();
+    let active = 0;
+    let peak = 0;
+    const fetchImpl: typeof fetch = async () => {
+      active += 1;
+      peak = Math.max(peak, active);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      active -= 1;
+      return new Response('<html>ok</html>', {
+        headers: { 'content-type': 'text/html' },
+      });
+    };
+    vi.stubGlobal('fetch', fetchImpl);
+    vi.stubEnv('CRAWL_MAX_REDIRECTS', '3');
+    const source = {
+      officialUrl: 'https://93.184.216.34/',
+      allowedHosts: ['93.184.216.34'],
+    } as never;
+    const fetchers = [
+      firstFactory.create(source),
+      secondFactory.create(source),
+    ];
+
+    await Promise.all(
+      fetchers.map((fetcher) => fetcher.fetch('https://93.184.216.34/')),
+    );
+    expect(peak).toBe(1);
+  });
+
+  it('同 host 许可持续覆盖响应体读取', async () => {
+    vi.stubEnv('CRAWL_CONCURRENCY', '1');
+    let finishBody!: () => void;
+    let bodyStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      bodyStarted = resolve;
+    });
+    const bodyReady = new Promise<void>((resolve) => {
+      finishBody = resolve;
+    });
+    let requests = 0;
+    vi.stubGlobal('fetch', async () => {
+      requests += 1;
+      if (requests > 1)
+        return new Response('<html>second</html>', {
+          headers: { 'content-type': 'text/html' },
+        });
+      return new Response(
+        new ReadableStream({
+          async pull(controller) {
+            bodyStarted();
+            await bodyReady;
+            controller.enqueue(new TextEncoder().encode('<html>first</html>'));
+            controller.close();
+          },
+        }),
+        { headers: { 'content-type': 'text/html' } },
+      );
+    });
+    const source = {
+      officialUrl: 'https://93.184.216.34/',
+      allowedHosts: ['93.184.216.34'],
+    } as never;
+    const factory = new SafeFetcherFactory();
+    const first = factory.create(source).fetch('https://93.184.216.34/first');
+    await started;
+    const second = factory.create(source).fetch('https://93.184.216.34/second');
+    try {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(requests).toBe(1);
+    } finally {
+      finishBody();
+      await Promise.all([first, second]);
+    }
+    expect(requests).toBe(2);
   });
 
   it('OfflineFetcherFactory 测试替身仍可继承构造', () => {

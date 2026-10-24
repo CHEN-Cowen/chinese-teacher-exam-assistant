@@ -21,7 +21,14 @@ const UUID = 'f0a42c15-603d-4fd8-9219-9fad7a8b2534';
 describe('抓取任务 jobId（BullMQ 兼容性）', () => {
   it.each([
     ['discover', discoverJobId(UUID, '1792605492957-bg67ce70')],
-    ['fetch', fetchJobId(UUID, 'https://edu.nanjing.gov.cn/bsfw/zpzk/202601/t20260109_123.html', 'etag-1')],
+    [
+      'fetch',
+      fetchJobId(
+        UUID,
+        'https://edu.nanjing.gov.cn/bsfw/zpzk/202601/t20260109_123.html',
+        'etag-1',
+      ),
+    ],
     ['parse', parseJobId(UUID, 'pdf-parser@1.0.0')],
     ['extract', extractJobId(UUID, 'rule-field-extractor@2.0.0')],
     ['project', projectJobId(UUID, 'projector@1.0.0')],
@@ -35,6 +42,16 @@ describe('抓取任务 jobId（BullMQ 兼容性）', () => {
     const urlB = 'https://edu.nanjing.gov.cn/b.html';
     expect(fetchJobId(UUID, urlA, '')).toBe(fetchJobId(UUID, urlA, ''));
     expect(fetchJobId(UUID, urlA, '')).not.toBe(fetchJobId(UUID, urlB, ''));
+  });
+
+  it('版本提示经过哈希，特殊字符不会进入 BullMQ jobId', () => {
+    const id = fetchJobId(UUID, 'https://x.example/a', 'etag:with:colons');
+    expect(id).not.toContain(':');
+    expect(id).toMatch(/^fetch-.+-[a-f0-9]{32}-[a-f0-9]{32}$/);
+    expect(fetchJobId(UUID, 'https://x.example/a', 'etag:with:colons')).toBe(
+      id,
+    );
+    expect(fetchJobId(UUID, 'https://x.example/a', 'etag:other')).not.toBe(id);
   });
 
   it('version hint 缺省回退noversion，不影响幂等语义', () => {

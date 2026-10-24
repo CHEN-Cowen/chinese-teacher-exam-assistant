@@ -20,6 +20,23 @@
 import { createHash } from 'node:crypto';
 import type { DocumentKind } from '../official-site-adapter.js';
 
+const TRANSIENT_FETCH_CODES = new Set([
+  'TIMEOUT',
+  'NETWORK_ERROR',
+  'DNS_FAILED',
+]);
+const TRANSIENT_HTTP_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
+
+export function isTransientFetchFailure(errorSummary?: string): boolean {
+  if (!errorSummary) return false;
+  return errorSummary.split('; ').some((part) => {
+    const code = part.match(/^(TIMEOUT|NETWORK_ERROR|DNS_FAILED)(?::|@)/)?.[1];
+    if (code && TRANSIENT_FETCH_CODES.has(code)) return true;
+    const status = part.match(/^HTTP_ERROR(?::|@.+:)(\d+)$/)?.[1];
+    return status !== undefined && TRANSIENT_HTTP_STATUSES.has(Number(status));
+  });
+}
+
 /** 触发方式：只接受 schedule / admin / retry */
 export type CrawlTrigger = 'schedule' | 'admin' | 'retry';
 
@@ -129,9 +146,8 @@ export function fetchJobId(
   canonicalUrl: string,
   remoteVersionHint: string,
 ): string {
-  return `fetch-${sourceId}-${sha256(canonicalUrl).slice(0, 32)}-${
-    remoteVersionHint || 'noversion'
-  }`;
+  const versionHash = sha256(remoteVersionHint || 'noversion').slice(0, 32);
+  return `fetch-${sourceId}-${sha256(canonicalUrl).slice(0, 32)}-${versionHash}`;
 }
 
 export function parseJobId(
@@ -141,7 +157,10 @@ export function parseJobId(
   return `parse-${snapshotId}-${documentParserVersion}`;
 }
 
-export function extractJobId(snapshotId: string, parserVersion: string): string {
+export function extractJobId(
+  snapshotId: string,
+  parserVersion: string,
+): string {
   return `extract-${snapshotId}-${parserVersion}`;
 }
 

@@ -27,7 +27,13 @@ import type {
 
 /** 取出构造 CrawlProcessor 所需的依赖（内存替身） */
 function makeProcessor() {
-  const discover = { handle: vi.fn(async () => ({ status: 'succeeded' })) };
+  const discover = {
+    handle: vi.fn(
+      async (): Promise<{ status: string; errorSummary?: string }> => ({
+        status: 'succeeded',
+      }),
+    ),
+  };
   const fetch = { handle: vi.fn(async () => ({ status: 'downloaded' })) };
   const parse = { handle: vi.fn(async () => ({ status: 'parsed' })) };
   const extract = { handle: vi.fn(async () => ({ status: 'pending_review' })) };
@@ -70,6 +76,87 @@ describe('CrawlProcessor.process（任务分派）', () => {
     expect(result).toEqual({ status: 'succeeded' });
   });
 
+  it.each(['failed', 'partial'])(
+    '真实 HTTP 摘要 %s → 抛错交给 BullMQ attempts 重试',
+    async (status) => {
+      const { processor, discover } = makeProcessor();
+      discover.handle.mockResolvedValue({
+        status,
+        errorSummary: 'HTTP_ERROR@https://host/path:503',
+      });
+
+      await expect(
+        processor.process(
+          discoverJob({
+            sourceId: 'src-hz',
+            runId: 'run-1',
+            trigger: 'schedule',
+            checkWindow: 'w1',
+          }),
+        ),
+      ).rejects.toThrow(/HTTP_ERROR/);
+    },
+  );
+
+  it('有剩余 attempts 时透传上下文，耗尽时仍使用单参数调用', async () => {
+    const { processor, discover, fetch } = makeProcessor();
+    const discovery = {
+      sourceId: 'src-hz',
+      runId: 'run-1',
+      trigger: 'schedule' as const,
+      checkWindow: 'w1',
+    };
+    const document: DocumentFetchPayload = {
+      sourceId: 'src-hz',
+      runId: 'run-1',
+      canonicalUrl: 'https://host/path',
+      kind: 'announcement',
+    };
+
+    await processor.process({
+      name: 'source.discover',
+      data: discovery,
+      opts: { attempts: 4 },
+      attemptsMade: 1,
+    } as unknown as Job);
+    await processor.process({
+      name: 'document.fetch',
+      data: document,
+      opts: { attempts: 4 },
+      attemptsMade: 1,
+    } as unknown as Job);
+    await processor.process({
+      name: 'source.discover',
+      data: discovery,
+      opts: { attempts: 2 },
+      attemptsMade: 1,
+    } as unknown as Job);
+
+    expect(discover.handle).toHaveBeenNthCalledWith(1, discovery, 2);
+    expect(fetch.handle).toHaveBeenCalledWith(document, 2);
+    expect(discover.handle).toHaveBeenNthCalledWith(2, discovery);
+  });
+
+  it.each([
+    { status: 'blocked', errorSummary: 'forbidden' },
+    { status: 'structure_changed', errorSummary: 'selector missing' },
+    { status: 'failed', errorSummary: 'HOST_NOT_ALLOWED:' },
+    { status: 'failed', errorSummary: 'source_not_found' },
+  ])('%s 不触发 BullMQ 自动重试', async (outcome) => {
+    const { processor, discover } = makeProcessor();
+    discover.handle.mockResolvedValue(outcome as never);
+    await expect(
+      processor.process(
+        discoverJob({
+          sourceId: 'src-hz',
+          runId: 'run-1',
+          trigger: 'schedule',
+          checkWindow: 'w1',
+        }),
+      ),
+    ).resolves.toEqual(outcome);
+  });
+
   it('document.fetch → 交给下载处理器，并透传其返回值', async () => {
     const { processor, discover, fetch } = makeProcessor();
     const data: DocumentFetchPayload = {
@@ -93,7 +180,10 @@ describe('CrawlProcessor.process（任务分派）', () => {
       documentParserVersion: 'wp4-v1',
     };
 
-    const result = await processor.process({ name: 'document.parse', data } as unknown as Job);
+    const result = await processor.process({
+      name: 'document.parse',
+      data,
+    } as unknown as Job);
 
     expect(parse.handle).toHaveBeenCalledWith(data);
     expect(result).toEqual({ status: 'parsed' });
@@ -123,7 +213,10 @@ describe('CrawlProcessor.process（任务分派）', () => {
       data: {},
     } as unknown as Job);
 
-    expect(result).toEqual({ status: 'not_implemented', name: 'catalog.project' });
+    expect(result).toEqual({
+      status: 'not_implemented',
+      name: 'catalog.project',
+    });
   });
 
   it('未知任务 → 抛错（部署不一致必须显式失败，不静默丢弃）', async () => {
@@ -233,10 +326,13 @@ describe('CrawlScheduler.tick（定时投递）', () => {
     const blocked = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const { scheduler, orchestrator } = makeScheduler([dueSource('a')], async () => {
-      await blocked;
-      return { status: 'queued' };
-    });
+    const { scheduler, orchestrator } = makeScheduler(
+      [dueSource('a')],
+      async () => {
+        await blocked;
+        return { status: 'queued' };
+      },
+    );
 
     const first = scheduler.tick();
     const second = scheduler.tick(); // 立即返回，不重复扫描
@@ -279,7 +375,10 @@ describe('CrawlScheduler.tick（定时投递）', () => {
 /** ---------- 结构性保证：API 主进程不执行耗时解析 ---------- */
 
 function readSource(relative: string): string {
-  return readFileSync(fileURLToPath(new URL(relative, import.meta.url)), 'utf8');
+  return readFileSync(
+    fileURLToPath(new URL(relative, import.meta.url)),
+    'utf8',
+  );
 }
 
 describe('拓扑分离（静态保证）', () => {

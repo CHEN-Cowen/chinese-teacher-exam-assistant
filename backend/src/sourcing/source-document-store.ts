@@ -5,7 +5,11 @@
  * - SourceSnapshot：某一时刻的不可变字节版本（contentHash 在同一来源下唯一）；
  * - 相同来源 + 文档 + 哈希保持幂等：命中已有快照时复用，不新建、不重复解析。
  */
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma.service.js';
 import type { DocumentKind } from './official-site-adapter.js';
 import {
@@ -95,8 +99,62 @@ export class SourceDocumentStore {
       input.contentHash,
     );
     if (existing) return { snapshot: existing, created: false };
-    const row = await this.prisma.sourceSnapshot.create({ data: input });
-    return { snapshot: row, created: true };
+    try {
+      const row = await this.prisma.sourceSnapshot.create({ data: input });
+      return { snapshot: row, created: true };
+    } catch (error) {
+      if ((error as { code?: string }).code === 'P2002') {
+        const winner = await this.findSnapshotByHash(
+          input.sourceId,
+          input.contentHash,
+        );
+        if (winner) return { snapshot: winner, created: false };
+      }
+      throw error;
+    }
+  }
+
+  async getUrlCache(sourceId: string, canonicalUrl: string) {
+    const cache = await this.prisma.sourceUrlCache.findUnique({
+      where: { sourceId_canonicalUrl: { sourceId, canonicalUrl } },
+    });
+    if (cache) {
+      const snapshot = await this.getSnapshot(cache.snapshotId);
+      if (snapshot?.sourceId === sourceId) {
+        return { snapshot, etag: cache.etag, lastModified: cache.lastModified };
+      }
+    }
+    const document = await this.prisma.sourceDocument.findUnique({
+      where: { sourceId_canonicalUrl: { sourceId, canonicalUrl } },
+      select: { latestSnapshotId: true },
+    });
+    const snapshot = document?.latestSnapshotId
+      ? await this.getSnapshot(document.latestSnapshotId)
+      : null;
+    return snapshot?.sourceId === sourceId
+      ? { snapshot, etag: null, lastModified: null }
+      : null;
+  }
+
+  async updateUrlCache(
+    sourceId: string,
+    canonicalUrl: string,
+    snapshotId: string,
+    headers: {
+      etag?: string | null;
+      lastModified?: string | null;
+    },
+  ): Promise<void> {
+    const data = {
+      snapshotId,
+      etag: headers.etag ?? null,
+      lastModified: headers.lastModified ?? null,
+    };
+    await this.prisma.sourceUrlCache.upsert({
+      where: { sourceId_canonicalUrl: { sourceId, canonicalUrl } },
+      create: { sourceId, canonicalUrl, ...data },
+      update: data,
+    });
   }
 
   /** 按 canonicalUrl upsert 逻辑文档，返回文档记录 */

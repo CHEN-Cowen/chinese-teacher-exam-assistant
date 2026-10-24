@@ -234,6 +234,7 @@ model Source {
   snapshots       SourceSnapshot[]
   crawlRuns       CrawlRun[]
   sourceDocuments SourceDocument[]
+  urlCaches       SourceUrlCache[]
 
   @@map("sources")
 }
@@ -261,6 +262,8 @@ model CrawlRun {
   unchangedCount   Int       @default(0) @map("unchanged_count")
   failedCount      Int       @default(0) @map("failed_count")
   errorSummary     String?   @map("error_summary")
+  /** URL 结果账本与发现状态；按 run 行锁串行更新，重放不重复计数 */
+  fetchAudit      Json?     @map("fetch_audit")
   /** 本次运行使用的适配器版本标识 */
   adapterVersion   String?   @map("adapter_version")
   createdAt        DateTime  @default(now()) @map("created_at")
@@ -269,6 +272,20 @@ model CrawlRun {
   @@index([sourceId, startedAt])
   @@index([status])
   @@map("crawl_runs")
+}
+
+/** URL 级条件请求缓存：同一来源不同 URL 独立保存验证头。 */
+model SourceUrlCache {
+  id           String  @id @default(uuid())
+  sourceId     String  @map("source_id")
+  source       Source  @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  canonicalUrl String  @map("canonical_url")
+  snapshotId   String  @map("snapshot_id")
+  etag         String?
+  lastModified String? @map("last_modified")
+
+  @@unique([sourceId, canonicalUrl])
+  @@map("source_url_caches")
 }
 
 /**

@@ -25,7 +25,9 @@ function intFromEnv(value: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
 }
 
-export function readCrawlEnv(env: NodeJS.ProcessEnv = process.env): CrawlEnvConfig {
+export function readCrawlEnv(
+  env: NodeJS.ProcessEnv = process.env,
+): CrawlEnvConfig {
   return {
     maxRedirects: intFromEnv(env.CRAWL_MAX_REDIRECTS, 3),
     connectTimeoutMs: intFromEnv(env.CRAWL_CONNECT_TIMEOUT_MS, 5000),
@@ -37,6 +39,40 @@ export function readCrawlEnv(env: NodeJS.ProcessEnv = process.env): CrawlEnvConf
     retryBaseDelayMs: intFromEnv(env.CRAWL_RETRY_BASE_DELAY_MS, 200),
     concurrency: intFromEnv(env.CRAWL_CONCURRENCY, 1),
   };
+}
+
+type PermitWaiter = { resolve: (release: () => void) => void };
+const hostPermits = new Map<
+  string,
+  { active: number; waiters: PermitWaiter[] }
+>();
+
+function acquireHostPermit(
+  host: string,
+  concurrency: number,
+): Promise<() => void> {
+  let state = hostPermits.get(host);
+  if (!state) {
+    state = { active: 0, waiters: [] };
+    hostPermits.set(host, state);
+  }
+  if (state.active < concurrency) {
+    state.active += 1;
+    return Promise.resolve(() => releaseHostPermit(host, state!));
+  }
+  return new Promise((resolve) => state!.waiters.push({ resolve }));
+}
+
+function releaseHostPermit(
+  host: string,
+  state: { active: number; waiters: PermitWaiter[] },
+): void {
+  const next = state.waiters.shift();
+  if (next) next.resolve(() => releaseHostPermit(host, state));
+  else {
+    state.active -= 1;
+    if (state.active === 0) hostPermits.delete(host);
+  }
 }
 
 export function hostOf(url: string): string | null {
@@ -72,6 +108,8 @@ export class SafeFetcherFactory {
     return new SafeFetcher({
       allowedHosts: resolveAllowedHosts(source),
       ...this.limits(),
+      acquireHostPermit,
+      hostConcurrency: this.config.concurrency,
     });
   }
 
@@ -80,6 +118,8 @@ export class SafeFetcherFactory {
     return new SafeFetcher({
       allowedHosts: resolveAllowedHosts(source),
       ...this.limits(),
+      acquireHostPermit,
+      hostConcurrency: this.config.concurrency,
       expect: 'any',
       accept: '*/*',
     });

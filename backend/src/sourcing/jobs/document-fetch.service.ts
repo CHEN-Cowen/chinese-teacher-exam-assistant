@@ -4,7 +4,7 @@
  * 职责（在独立 Worker 内执行）：
  * 1. 安全下载公告正文/附件页；
  * 2. 304 不创建快照；
- * 3. 相同内容哈希不重复创建快照、不重复解析；
+ * 3. 相同内容哈希复用快照，幂等补投解析与附件检查；
  * 4. 新内容写入对象存储并绑定到逻辑文档，投递解析任务；
  * 5. 公告页调用 Adapter.locateArticle 校验结构并发现附件，附件再进入下载；
  * 6. 失败只累加计数，绝不覆盖已存在的旧数据。
@@ -29,6 +29,7 @@ import {
 } from '../intervention.js';
 import {
   fetchJobId,
+  isTransientFetchFailure,
   parseJobId,
   type CrawlTaskQueue,
   type DocumentFetchPayload,
@@ -39,7 +40,8 @@ import { CRAWL_TASK_QUEUE } from '../sourcing.tokens.js';
 export const DOCUMENT_PARSER_VERSION = 'wp4-v1';
 
 export interface FetchOutcome {
-  status: 'downloaded' | 'unchanged' | 'structure_changed' | 'blocked' | 'failed';
+  status:
+    'downloaded' | 'unchanged' | 'structure_changed' | 'blocked' | 'failed';
   snapshotId?: string;
   contentHash?: string;
   errorSummary?: string;
@@ -65,15 +67,46 @@ export class DocumentFetchService {
     @Optional() private readonly metrics?: SourcingMetrics,
   ) {}
 
-  async handle(payload: DocumentFetchPayload): Promise<FetchOutcome> {
+  async handle(
+    payload: DocumentFetchPayload,
+    attemptsRemaining = 0,
+  ): Promise<FetchOutcome> {
+    await this.runStore.recordFetchOutcome(
+      payload.runId,
+      payload.canonicalUrl,
+      'queued',
+    );
+    try {
+      const outcome = await this.execute(payload);
+      await this.runStore.recordFetchOutcome(
+        payload.runId,
+        payload.canonicalUrl,
+        attemptsRemaining > 0 &&
+          outcome.status === 'failed' &&
+          isTransientFetchFailure(outcome.errorSummary)
+          ? 'retrying'
+          : outcome.status,
+        outcome.errorSummary,
+      );
+      return outcome;
+    } catch (error) {
+      await this.runStore.recordFetchOutcome(
+        payload.runId,
+        payload.canonicalUrl,
+        attemptsRemaining > 0 ? 'retrying' : 'failed',
+        'downstream_delivery_failed',
+      );
+      throw error;
+    }
+  }
+
+  private async execute(payload: DocumentFetchPayload): Promise<FetchOutcome> {
     const source = await this.runStore.getSource(payload.sourceId);
     if (!source) {
-      await this.markFailed(payload.runId, 'source_not_found');
       return { status: 'failed', errorSummary: 'source_not_found' };
     }
     const adapter = this.registry.get(source.adapterKey);
     if (!adapter) {
-      await this.markFailed(payload.runId, 'adapter_not_configured');
       return { status: 'failed', errorSummary: 'adapter_not_configured' };
     }
 
@@ -81,9 +114,39 @@ export class DocumentFetchService {
       payload.kind === 'attachment'
         ? this.fetcherFactory.createForAttachment(source)
         : this.fetcherFactory.create(source);
+    const document = await this.documentStore.upsertDocument({
+      sourceId: source.id,
+      canonicalUrl: payload.canonicalUrl,
+      kind: payload.kind,
+      parentDocumentId: payload.parentDocumentId ?? null,
+    });
+    const cache = await this.documentStore.getUrlCache(
+      source.id,
+      payload.canonicalUrl,
+    );
     let result;
     try {
-      result = await fetcher.fetch(payload.canonicalUrl);
+      result = await fetcher.fetch(payload.canonicalUrl, {
+        ifNoneMatch: cache?.etag ?? undefined,
+        ifModifiedSince: cache?.lastModified ?? undefined,
+      });
+      if (result.status === 304) {
+        if (!cache) throw new Error('not_modified_without_snapshot');
+        const bodyBytes =
+          payload.kind === 'attachment'
+            ? await this.objectStore.getBinary(cache.snapshot.storageKey)
+            : Buffer.from(
+                await this.objectStore.get(cache.snapshot.storageKey),
+                'utf8',
+              );
+        result = {
+          ...result,
+          bodyBytes,
+          body: bodyBytes.toString('utf8'),
+          mimeType: cache.snapshot.mimeType,
+          contentHash: cache.snapshot.contentHash,
+        };
+      }
     } catch (error) {
       // 验证码 / 登录 / 封禁：转人工并暂停自动化，不计入普通失败
       const signal = interventionFromError(error);
@@ -99,46 +162,25 @@ export class DocumentFetchService {
         error instanceof SafeFetchError
           ? `${error.code}:${error.status ?? ''}`
           : (error as Error).message;
-      await this.markFailed(payload.runId, summary);
       return { status: 'failed', errorSummary: summary };
-    }
-
-    if (result.status === 304) {
-      await this.runStore.incrementRunCounters(payload.runId, { unchanged: 1 });
-      return { status: 'unchanged' };
     }
 
     // 挑战页（成功返回但要求人机验证）：转人工，不建快照、不解析
     const pageSignal = interventionFromBody(result.body, result.mimeType);
     if (pageSignal) {
-      await this.runStore.setHealth(source.id, 'blocked', `人工介入（${pageSignal}）`);
+      await this.runStore.setHealth(
+        source.id,
+        'blocked',
+        `人工介入（${pageSignal}）`,
+      );
       return { status: 'blocked', errorSummary: pageSignal };
     }
 
-    const document = await this.documentStore.upsertDocument({
-      sourceId: source.id,
-      canonicalUrl: payload.canonicalUrl,
-      kind: payload.kind,
-      parentDocumentId: payload.parentDocumentId ?? null,
-    });
-
-    // 相同内容哈希：复用已有快照，不新建、不重复解析
+    // 已有快照只复用存储对象；仍执行下方结构校验及幂等下游补投，恢复中断任务。
     const existing = await this.documentStore.findSnapshotByHash(
       source.id,
       result.contentHash,
     );
-    if (existing) {
-      await this.documentStore.attachSnapshot(document.id, {
-        snapshotId: existing.id,
-        contentHash: result.contentHash,
-      });
-      await this.runStore.incrementRunCounters(payload.runId, { unchanged: 1 });
-      return {
-        status: 'unchanged',
-        snapshotId: existing.id,
-        contentHash: result.contentHash,
-      };
-    }
 
     // 新内容：写对象存储 + 建快照 + 绑定文档
     // 附件走二进制通道并用 magic bytes 判定真实格式（不信任声明 Content-Type）；
@@ -152,46 +194,53 @@ export class DocumentFetchService {
           ? detected.mime
           : result.mimeType || 'application/octet-stream';
     }
-    const storageKey = isAttachment
-      ? await this.objectStore.putBinary({
-          content: result.bodyBytes,
+    const storageKey =
+      existing?.storageKey ??
+      (isAttachment
+        ? await this.objectStore.putBinary({
+            content: result.bodyBytes,
+            mimeType,
+            contentHash: result.contentHash,
+          })
+        : await this.objectStore.put({
+            content: result.body,
+            mimeType,
+            contentHash: result.contentHash,
+          }));
+    const { snapshot, created } = existing
+      ? { snapshot: existing, created: false }
+      : await this.documentStore.upsertSnapshot({
+          sourceId: source.id,
+          officialUrl: result.finalUrl,
+          storageKey,
           mimeType,
           contentHash: result.contentHash,
-        })
-      : await this.objectStore.put({
-          content: result.body,
-          mimeType,
-          contentHash: result.contentHash,
+          fetchedAt: new Date(),
+          httpStatus: result.status,
         });
-    const { snapshot, created } = await this.documentStore.upsertSnapshot({
-      sourceId: source.id,
-      officialUrl: result.finalUrl,
-      storageKey,
-      mimeType,
-      contentHash: result.contentHash,
-      fetchedAt: new Date(),
-      httpStatus: result.status,
-    });
-    if (!created) {
-      // 并发竞态：其他任务已写入同哈希快照，视为未变化
-      await this.documentStore.attachSnapshot(document.id, {
-        snapshotId: snapshot.id,
-        contentHash: result.contentHash,
-      });
-      await this.runStore.incrementRunCounters(payload.runId, { unchanged: 1 });
-      return { status: 'unchanged', snapshotId: snapshot.id };
-    }
     await this.documentStore.attachSnapshot(document.id, {
       snapshotId: snapshot.id,
       contentHash: result.contentHash,
     });
-    await this.runStore.incrementRunCounters(payload.runId, { downloaded: 1 });
+    await this.documentStore.updateUrlCache(
+      source.id,
+      payload.canonicalUrl,
+      snapshot.id,
+      {
+        etag:
+          result.headers.etag ?? (result.status === 304 ? cache?.etag : null),
+        lastModified:
+          result.headers.lastModified ??
+          (result.status === 304 ? cache?.lastModified : null),
+      },
+    );
     // 新快照创建：contentHash 只记前 12 字符前缀（脱敏边界）
-    this.metrics?.snapshotCreated({
-      sourceId: source.id,
-      documentId: document.id,
-      contentHashPrefix: result.contentHash.slice(0, 12),
-    });
+    if (created)
+      this.metrics?.snapshotCreated({
+        sourceId: source.id,
+        documentId: document.id,
+        contentHashPrefix: result.contentHash.slice(0, 12),
+      });
 
     // 公告类页面：校验结构并发现附件
     if (ARTICLE_KINDS.has(payload.kind)) {
@@ -221,17 +270,32 @@ export class DocumentFetchService {
           kind: 'attachment',
           parentDocumentId: document.id,
         });
-        await this.queue.enqueue(
-          'document.fetch',
-          {
-            sourceId: source.id,
-            runId: payload.runId,
-            canonicalUrl: attachment.url,
-            kind: 'attachment',
-            parentDocumentId: document.id,
-          },
-          { jobId: fetchJobId(source.id, attachment.url, result.contentHash) },
+        await this.runStore.recordFetchOutcome(
+          payload.runId,
+          attachment.url,
+          'queued',
         );
+        try {
+          await this.queue.enqueue(
+            'document.fetch',
+            {
+              sourceId: source.id,
+              runId: payload.runId,
+              canonicalUrl: attachment.url,
+              kind: 'attachment',
+              parentDocumentId: document.id,
+            },
+            { jobId: fetchJobId(source.id, attachment.url, payload.runId) },
+          );
+        } catch (error) {
+          await this.runStore.recordFetchOutcome(
+            payload.runId,
+            attachment.url,
+            'failed',
+            'queue_enqueue_failed',
+          );
+          throw error;
+        }
       }
     }
 
@@ -247,14 +311,9 @@ export class DocumentFetchService {
     );
 
     return {
-      status: 'downloaded',
+      status: result.status === 304 || !created ? 'unchanged' : 'downloaded',
       snapshotId: snapshot.id,
       contentHash: result.contentHash,
     };
-  }
-
-  private async markFailed(runId: string, summary: string): Promise<void> {
-    await this.runStore.incrementRunCounters(runId, { failed: 1 });
-    void summary;
   }
 }

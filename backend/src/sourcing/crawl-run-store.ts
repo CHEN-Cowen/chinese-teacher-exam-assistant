@@ -10,11 +10,7 @@ import { PrismaService } from '../prisma.service.js';
 import { SourcingMetrics } from './observability.js';
 
 export type SourceHealthStatus =
-  | 'healthy'
-  | 'degraded'
-  | 'structure_changed'
-  | 'blocked'
-  | 'paused';
+  'healthy' | 'degraded' | 'structure_changed' | 'blocked' | 'paused';
 
 /** 连续失败达到该阈值即降级，暂停自动扩散 */
 export const CONSECUTIVE_FAILURE_THRESHOLD = 3;
@@ -106,7 +102,9 @@ export interface SourceHealthSummary {
 
 function toStringArray(value: unknown): string[] | null {
   if (!Array.isArray(value)) return null;
-  const items = value.filter((item): item is string => typeof item === 'string');
+  const items = value.filter(
+    (item): item is string => typeof item === 'string',
+  );
   return items.length > 0 ? items : null;
 }
 
@@ -154,7 +152,9 @@ export class CrawlRunStore {
   ) {}
 
   async getSource(sourceId: string): Promise<SourceRecord | null> {
-    const row = await this.prisma.source.findUnique({ where: { id: sourceId } });
+    const row = await this.prisma.source.findUnique({
+      where: { id: sourceId },
+    });
     return row ? toSourceRecord(row) : null;
   }
 
@@ -248,19 +248,143 @@ export class CrawlRunStore {
     });
   }
 
+  /** 锁住运行行后更新 URL 账本；并发 worker 与重放均不会丢失结果或重复累计。 */
+  async recordFetchOutcome(
+    runId: string,
+    url: string,
+    status: string,
+    errorSummary?: string,
+  ): Promise<void> {
+    await this.updateFetchAudit(runId, (audit) => {
+      const previous = audit.urls[url];
+      if (status === 'queued' && previous) return;
+      audit.urls[url] = {
+        status:
+          previous?.status === 'downloaded' && status === 'unchanged'
+            ? 'downloaded'
+            : status,
+        ...(errorSummary ? { error: errorSummary.slice(0, 500) } : {}),
+      };
+    });
+  }
+
+  async completeDiscovery(runId: string, patch: CrawlRunPatch): Promise<void> {
+    await this.updateFetchAudit(runId, (audit) => {
+      audit.discovery = {
+        status: patch.status,
+        count: patch.discoveredCount ?? 0,
+        failed: patch.failedCount ?? 0,
+        error: patch.errorSummary ?? null,
+      };
+    });
+  }
+
+  private async updateFetchAudit(
+    runId: string,
+    mutate: (audit: {
+      urls: Record<string, { status: string; error?: string }>;
+      discovery?: {
+        status: string;
+        count: number;
+        failed: number;
+        error: string | null;
+      };
+    }) => void,
+  ): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      // UPDATE takes a PostgreSQL row lock for the duration of this transaction.
+      const run = await tx.crawlRun.update({
+        where: { id: runId },
+        data: { updatedAt: new Date() },
+      });
+      const audit = (run.fetchAudit ?? { urls: {} }) as {
+        urls: Record<string, { status: string; error?: string }>;
+        discovery?: {
+          status: string;
+          count: number;
+          failed: number;
+          error: string | null;
+        };
+      };
+      mutate(audit);
+      const results = Object.values(audit.urls);
+      const pending = results.some((item) =>
+        ['queued', 'retrying'].includes(item.status),
+      );
+      const failures = results.filter((item) =>
+        ['failed', 'blocked', 'structure_changed'].includes(item.status),
+      );
+      const complete =
+        Boolean(audit.discovery) &&
+        audit.discovery?.status !== 'retrying' &&
+        !pending;
+      const problem = failures.length > 0 || (audit.discovery?.failed ?? 0) > 0;
+      const terminal = failures.some((item) => item.status === 'blocked')
+        ? 'blocked'
+        : failures.some((item) => item.status === 'structure_changed')
+          ? 'structure_changed'
+          : problem
+            ? 'partial'
+            : (audit.discovery?.status ?? 'running');
+      await tx.crawlRun.update({
+        where: { id: runId },
+        data: {
+          fetchAudit: audit,
+          status: complete ? terminal : 'running',
+          finishedAt: complete ? new Date() : null,
+          discoveredCount: audit.discovery?.count ?? run.discoveredCount,
+          downloadedCount: results.filter(
+            (item) => item.status === 'downloaded',
+          ).length,
+          unchangedCount: results.filter((item) => item.status === 'unchanged')
+            .length,
+          failedCount: failures.length + (audit.discovery?.failed ?? 0),
+          errorSummary:
+            [audit.discovery?.error, ...failures.map((item) => item.error)]
+              .filter(Boolean)
+              .join('; ')
+              .slice(0, 500) || null,
+        },
+      });
+    });
+  }
+
   /** 下载阶段在同一次运行上累加计数器（下载/未变化/失败） */
-  async incrementRunCounters(
+  async recordRunFailure(runId: string, summary: string): Promise<void> {
+    await this.prisma.crawlRun.update({
+      where: { id: runId },
+      data: {
+        failedCount: { increment: 1 },
+        errorSummary: summary.slice(0, 500),
+      },
+    });
+  }
+
+  async recordRunCounters(
     runId: string,
     counters: CrawlRunCounters,
   ): Promise<void> {
     await this.prisma.crawlRun.update({
       where: { id: runId },
       data: {
-        ...(counters.downloaded ? { downloadedCount: { increment: counters.downloaded } } : {}),
-        ...(counters.unchanged ? { unchangedCount: { increment: counters.unchanged } } : {}),
-        ...(counters.failed ? { failedCount: { increment: counters.failed } } : {}),
+        ...(counters.downloaded
+          ? { downloadedCount: { increment: counters.downloaded } }
+          : {}),
+        ...(counters.unchanged
+          ? { unchangedCount: { increment: counters.unchanged } }
+          : {}),
+        ...(counters.failed
+          ? { failedCount: { increment: counters.failed } }
+          : {}),
       },
     });
+  }
+
+  async incrementRunCounters(
+    runId: string,
+    counters: CrawlRunCounters,
+  ): Promise<void> {
+    await this.recordRunCounters(runId, counters);
   }
 
   /** 记录一次检查发生（不等于成功发现），并安排下次检查 */

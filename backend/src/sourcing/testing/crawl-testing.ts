@@ -45,7 +45,10 @@ interface SourceRow extends Record<string, unknown> {
   lastModified: string | null;
 }
 
-function applyUpdate(target: Record<string, unknown>, data: Record<string, unknown>) {
+function applyUpdate(
+  target: Record<string, unknown>,
+  data: Record<string, unknown>,
+) {
   for (const [key, value] of Object.entries(data)) {
     if (
       value &&
@@ -53,7 +56,8 @@ function applyUpdate(target: Record<string, unknown>, data: Record<string, unkno
       'increment' in (value as Record<string, unknown>)
     ) {
       const current = Number(target[key] ?? 0);
-      target[key] = current + Number((value as { increment: number }).increment);
+      target[key] =
+        current + Number((value as { increment: number }).increment);
     } else {
       target[key] = value;
     }
@@ -80,13 +84,22 @@ export class FakePrisma {
   documents: Array<Record<string, unknown> & { id: string }> = [];
   snapshots: Array<Record<string, unknown> & { id: string }> = [];
   private seq = 0;
+  private transactionTail: Promise<unknown> = Promise.resolve();
+
+  $transaction<T>(operation: (tx: FakePrisma) => Promise<T>): Promise<T> {
+    const result = this.transactionTail.then(() => operation(this));
+    this.transactionTail = result.catch(() => undefined);
+    return result;
+  }
 
   private nextId(prefix: string): string {
     this.seq += 1;
     return `${prefix}-${this.seq}`;
   }
 
-  seedSource(partial: Partial<SourceRow> & { publisher: string; officialUrl: string }): SourceRow {
+  seedSource(
+    partial: Partial<SourceRow> & { publisher: string; officialUrl: string },
+  ): SourceRow {
     const row: SourceRow = {
       id: partial.id ?? this.nextId('src'),
       publisher: partial.publisher,
@@ -94,7 +107,9 @@ export class FakePrisma {
       enabled: partial.enabled ?? true,
       // null 是合法取值（表示未配置适配器），必须与“未传参”区分
       adapterKey:
-        partial.adapterKey !== undefined ? partial.adapterKey : 'hangzhou-education',
+        partial.adapterKey !== undefined
+          ? partial.adapterKey
+          : 'hangzhou-education',
       listUrls: partial.listUrls ?? null,
       allowedHosts: partial.allowedHosts ?? null,
       pollEveryMinutes: partial.pollEveryMinutes ?? 60,
@@ -159,7 +174,9 @@ export class FakePrisma {
       this.sources.find((s) => s.id === where.id) ?? null,
     findFirst: async ({ where }: { where: { officialUrl?: string } }) =>
       this.sources.find(
-        (s) => where.officialUrl === undefined || s.officialUrl === where.officialUrl,
+        (s) =>
+          where.officialUrl === undefined ||
+          s.officialUrl === where.officialUrl,
       ) ?? null,
     findMany: async ({
       where,
@@ -176,7 +193,8 @@ export class FakePrisma {
     } = {}) => {
       void orderBy;
       let rows = [...this.sources];
-      if (where?.enabled !== undefined) rows = rows.filter((s) => s.enabled === where.enabled);
+      if (where?.enabled !== undefined)
+        rows = rows.filter((s) => s.enabled === where.enabled);
       if (where?.healthStatus?.not) {
         rows = rows.filter((s) => s.healthStatus !== where.healthStatus!.not);
       }
@@ -190,7 +208,8 @@ export class FakePrisma {
             if ('nextCheckAt' in clause && clause.nextCheckAt === null) {
               return s.nextCheckAt === null;
             }
-            const lte = (clause as { nextCheckAt: { lte: Date } }).nextCheckAt?.lte;
+            const lte = (clause as { nextCheckAt: { lte: Date } }).nextCheckAt
+              ?.lte;
             return s.nextCheckAt !== null && s.nextCheckAt <= lte;
           }),
         );
@@ -303,10 +322,19 @@ export class FakePrisma {
       where,
       select,
     }: {
-      where: { id: string };
+      where: {
+        id?: string;
+        sourceId_canonicalUrl?: { sourceId: string; canonicalUrl: string };
+      };
       select?: Record<string, boolean>;
     }) => {
-      const row = this.documents.find((d) => d.id === where.id) ?? null;
+      const key = where.sourceId_canonicalUrl;
+      const row =
+        this.documents.find((d) =>
+          key
+            ? d.sourceId === key.sourceId && d.canonicalUrl === key.canonicalUrl
+            : d.id === where.id,
+        ) ?? null;
       return row ? pickSelect(row, select) : null;
     },
     upsert: async ({
@@ -314,7 +342,9 @@ export class FakePrisma {
       create,
       update,
     }: {
-      where: { sourceId_canonicalUrl: { sourceId: string; canonicalUrl: string } };
+      where: {
+        sourceId_canonicalUrl: { sourceId: string; canonicalUrl: string };
+      };
       create: Record<string, unknown>;
       update: Record<string, unknown>;
     }) => {
@@ -368,9 +398,12 @@ export class FakePrisma {
     }) => {
       void orderBy;
       let rows = [...this.documents];
-      if (where.sourceId) rows = rows.filter((d) => d.sourceId === where.sourceId);
+      if (where.sourceId)
+        rows = rows.filter((d) => d.sourceId === where.sourceId);
       if (where.parentDocumentId !== undefined) {
-        rows = rows.filter((d) => d.parentDocumentId === where.parentDocumentId);
+        rows = rows.filter(
+          (d) => d.parentDocumentId === where.parentDocumentId,
+        );
       }
       if (where.kind) rows = rows.filter((d) => d.kind === where.kind);
       return rows;
@@ -385,7 +418,9 @@ export class FakePrisma {
       let row: Record<string, unknown> | null = null;
       if (where.latestSnapshotId !== undefined) {
         row =
-          this.documents.find((d) => d.latestSnapshotId === where.latestSnapshotId) ?? null;
+          this.documents.find(
+            (d) => d.latestSnapshotId === where.latestSnapshotId,
+          ) ?? null;
       } else if (where.sourceId) {
         row = this.documents.find((d) => d.sourceId === where.sourceId) ?? null;
       }
@@ -393,22 +428,84 @@ export class FakePrisma {
     },
   };
 
+  urlCaches: Array<Record<string, unknown>> = [];
+
+  readonly sourceUrlCache = {
+    findUnique: async ({
+      where,
+    }: {
+      where: {
+        sourceId_canonicalUrl: { sourceId: string; canonicalUrl: string };
+      };
+    }) => {
+      const key = where.sourceId_canonicalUrl;
+      return (
+        this.urlCaches.find(
+          (row) =>
+            row.sourceId === key.sourceId &&
+            row.canonicalUrl === key.canonicalUrl,
+        ) ?? null
+      );
+    },
+    upsert: async ({
+      where,
+      create,
+      update,
+    }: {
+      where: {
+        sourceId_canonicalUrl: { sourceId: string; canonicalUrl: string };
+      };
+      create: Record<string, unknown>;
+      update: Record<string, unknown>;
+    }) => {
+      const key = where.sourceId_canonicalUrl;
+      let row = this.urlCaches.find(
+        (row) =>
+          row.sourceId === key.sourceId &&
+          row.canonicalUrl === key.canonicalUrl,
+      );
+      if (row) Object.assign(row, update);
+      else {
+        row = { ...create };
+        this.urlCaches.push(row);
+      }
+      return row;
+    },
+  };
+
   readonly sourceSnapshot = {
     findUnique: async ({
       where,
     }: {
-      where: { id?: string; sourceId_contentHash?: { sourceId: string; contentHash: string } };
+      where: {
+        id?: string;
+        sourceId_contentHash?: { sourceId: string; contentHash: string };
+      };
     }) => {
-      if (where.id) return this.snapshots.find((s) => s.id === where.id) ?? null;
+      if (where.id)
+        return this.snapshots.find((s) => s.id === where.id) ?? null;
       const key = where.sourceId_contentHash!;
       return (
         this.snapshots.find(
-          (s) => s.sourceId === key.sourceId && s.contentHash === key.contentHash,
+          (s) =>
+            s.sourceId === key.sourceId && s.contentHash === key.contentHash,
         ) ?? null
       );
     },
     create: async ({ data }: { data: Record<string, unknown> }) => {
-      const row = { id: this.nextId('snap'), ...data } as Record<string, unknown> & {
+      if (
+        this.snapshots.some(
+          (row) =>
+            row.sourceId === data.sourceId &&
+            row.contentHash === data.contentHash,
+        )
+      ) {
+        throw Object.assign(new Error('快照唯一约束冲突'), { code: 'P2002' });
+      }
+      const row = { id: this.nextId('snap'), ...data } as Record<
+        string,
+        unknown
+      > & {
         id: string;
       };
       this.snapshots.push(row);
@@ -425,7 +522,9 @@ export class FakePrisma {
 
   parseRuns: Array<Record<string, unknown> & { id: string }> = [];
   extractionRuns: Array<Record<string, unknown> & { id: string }> = [];
-  evidenceAnchors: Array<Record<string, unknown> & { id: string; runId: string }> = [];
+  evidenceAnchors: Array<
+    Record<string, unknown> & { id: string; runId: string }
+  > = [];
   private modelSeq = 0;
 
   private nextModelId(prefix: string): string {
@@ -443,15 +542,23 @@ export class FakePrisma {
     findUnique: async ({
       where,
     }: {
-      where: { id?: string; snapshotId_parserVersion?: { snapshotId: string; parserVersion: string } };
+      where: {
+        id?: string;
+        snapshotId_parserVersion?: {
+          snapshotId: string;
+          parserVersion: string;
+        };
+      };
     }) => {
-      if (where.id) return this.parseRuns.find((r) => r.id === where.id) ?? null;
+      if (where.id)
+        return this.parseRuns.find((r) => r.id === where.id) ?? null;
       const key = where.snapshotId_parserVersion;
       if (!key) return null;
       return (
         this.parseRuns.find(
           (r) =>
-            r.snapshotId === key.snapshotId && r.parserVersion === key.parserVersion,
+            r.snapshotId === key.snapshotId &&
+            r.parserVersion === key.parserVersion,
         ) ?? null
       );
     },
@@ -472,12 +579,16 @@ export class FakePrisma {
       const sourceId = where.snapshot?.sourceId;
       if (sourceId) {
         const snapshotIds = new Set(
-          this.snapshots.filter((s) => s.sourceId === sourceId).map((s) => s.id),
+          this.snapshots
+            .filter((s) => s.sourceId === sourceId)
+            .map((s) => s.id),
         );
         rows = rows.filter((r) => snapshotIds.has(String(r.snapshotId)));
       }
       const sorted = this.sortDesc(
-        rows as Array<Record<string, unknown> & { id: string; createdAt?: Date }>,
+        rows as Array<
+          Record<string, unknown> & { id: string; createdAt?: Date }
+        >,
       );
       void orderBy;
       const row = sorted[0] ?? null;
@@ -490,9 +601,15 @@ export class FakePrisma {
       where: { snapshotId: string; status?: string };
       take?: number;
     }) => {
-      let rows = this.parseRuns.filter((r) => r.snapshotId === where.snapshotId);
+      let rows = this.parseRuns.filter(
+        (r) => r.snapshotId === where.snapshotId,
+      );
       if (where.status) rows = rows.filter((r) => r.status === where.status);
-      const sorted = this.sortDesc(rows as Array<Record<string, unknown> & { id: string; createdAt?: Date }>);
+      const sorted = this.sortDesc(
+        rows as Array<
+          Record<string, unknown> & { id: string; createdAt?: Date }
+        >,
+      );
       return take ? sorted.slice(0, take) : sorted;
     },
     create: async ({ data }: { data: Record<string, unknown> }) => {
@@ -527,13 +644,18 @@ export class FakePrisma {
       include?: { snapshot?: boolean };
     }) => {
       let row: Record<string, unknown> | null = null;
-      if (where.id) row = this.extractionRuns.find((r) => r.id === where.id) ?? null;
+      if (where.id)
+        row = this.extractionRuns.find((r) => r.id === where.id) ?? null;
       else if (where.idempotencyKey) {
-        row = this.extractionRuns.find((r) => r.idempotencyKey === where.idempotencyKey) ?? null;
+        row =
+          this.extractionRuns.find(
+            (r) => r.idempotencyKey === where.idempotencyKey,
+          ) ?? null;
       }
       if (!row) return null;
       if (include?.snapshot) {
-        const snapshot = this.snapshots.find((s) => s.id === row!.snapshotId) ?? null;
+        const snapshot =
+          this.snapshots.find((s) => s.id === row!.snapshotId) ?? null;
         return { ...row, snapshot };
       }
       return row;
@@ -549,7 +671,9 @@ export class FakePrisma {
       const sourceId = where.snapshot?.sourceId;
       if (sourceId) {
         const snapshotIds = new Set(
-          this.snapshots.filter((s) => s.sourceId === sourceId).map((s) => s.id),
+          this.snapshots
+            .filter((s) => s.sourceId === sourceId)
+            .map((s) => s.id),
         );
         rows = rows.filter((r) => snapshotIds.has(String(r.snapshotId)));
       }
@@ -581,7 +705,9 @@ export class FakePrisma {
   readonly evidenceAnchor = {
     deleteMany: async ({ where }: { where: { runId: string } }) => {
       const before = this.evidenceAnchors.length;
-      this.evidenceAnchors = this.evidenceAnchors.filter((a) => a.runId !== where.runId);
+      this.evidenceAnchors = this.evidenceAnchors.filter(
+        (a) => a.runId !== where.runId,
+      );
       return { count: before - this.evidenceAnchors.length };
     },
     createMany: async ({
@@ -607,7 +733,11 @@ export class FakePrisma {
 
 export class FakeCrawlTaskQueue implements CrawlTaskQueue {
   readonly jobs = new Map<string, { name: string; payload: unknown }>();
-  readonly enqueued: Array<{ name: CrawlTaskName; jobId: string; payload: unknown }> = [];
+  readonly enqueued: Array<{
+    name: CrawlTaskName;
+    jobId: string;
+    payload: unknown;
+  }> = [];
   /** false 模拟 Redis 暂时不可达 */
   available = true;
 
@@ -625,8 +755,11 @@ export class FakeCrawlTaskQueue implements CrawlTaskQueue {
     return { jobId: options.jobId, deduplicated: false };
   }
 
-  payloadOf<T extends CrawlTaskName>(jobId: string): CrawlTaskPayloadByName[T] | undefined {
-    return this.jobs.get(jobId)?.payload as CrawlTaskPayloadByName[T] | undefined;
+  payloadOf<T extends CrawlTaskName>(
+    jobId: string,
+  ): CrawlTaskPayloadByName[T] | undefined {
+    return this.jobs.get(jobId)?.payload as
+      CrawlTaskPayloadByName[T] | undefined;
   }
 
   count(name: CrawlTaskName): number {
@@ -648,7 +781,10 @@ export class FakeObjectStore implements ObjectStore {
     });
   }
 
-  async putBinary(input: { content: Buffer; contentHash: string }): Promise<string> {
+  async putBinary(input: {
+    content: Buffer;
+    contentHash: string;
+  }): Promise<string> {
     const key = snapshotStorageKey(input.contentHash);
     if (!this.binaries.has(key)) {
       this.binaries.set(key, input.content);
@@ -674,7 +810,9 @@ export class FakeObjectStore implements ObjectStore {
 /** ---------- 离线抓取工厂 ---------- */
 
 export interface OfflineRoute {
-  [url: string]: string | { status: number; headers?: Record<string, string>; body?: string };
+  [url: string]:
+    | string
+    | { status: number; headers?: Record<string, string>; body?: string };
 }
 
 /** 304/204/205 属“无响应体”状态：Node fetch 不允许携带 body */
@@ -692,6 +830,7 @@ export type OfflineResponder = (
  */
 export class OfflineFetcherFactory extends SafeFetcherFactory {
   readonly calls: string[] = [];
+  readonly requestHeaders: Headers[] = [];
   private callCount = 0;
 
   constructor(
@@ -704,8 +843,20 @@ export class OfflineFetcherFactory extends SafeFetcherFactory {
   }
 
   override create(source: SourceRecord): SafeFetcher {
+    return this.createOfflineFetcher(source, false);
+  }
+
+  override createForAttachment(source: SourceRecord): SafeFetcher {
+    return this.createOfflineFetcher(source, true);
+  }
+
+  private createOfflineFetcher(
+    source: SourceRecord,
+    attachment: boolean,
+  ): SafeFetcher {
     const routes = this.routes;
-    const fetchImpl: typeof fetch = async (input) => {
+    const fetchImpl: typeof fetch = async (input, init) => {
+      this.requestHeaders.push(new Headers(init?.headers));
       const url =
         typeof input === 'string'
           ? input
@@ -734,7 +885,10 @@ export class OfflineFetcherFactory extends SafeFetcherFactory {
       const body = NO_BODY_STATUS.has(route.status) ? null : (route.body ?? '');
       return new Response(body, {
         status: route.status,
-        headers: { 'content-type': 'text/html; charset=utf-8', ...route.headers },
+        headers: {
+          'content-type': 'text/html; charset=utf-8',
+          ...route.headers,
+        },
       });
     };
     const routeHosts = Object.keys(routes)
@@ -756,6 +910,7 @@ export class OfflineFetcherFactory extends SafeFetcherFactory {
       resolveDns: async () => ['203.0.113.10'],
       fetchImpl,
       sleep: async () => {},
+      ...(attachment ? { expect: 'any' as const, accept: '*/*' } : {}),
       ...this.overrides,
     });
   }
@@ -769,7 +924,13 @@ export type GoldenSource = 'hangzhou' | 'ningbo' | 'yinzhou';
 export function resolveGoldenDir(source: GoldenSource): string {
   let dir = process.cwd();
   for (let depth = 0; depth < 8; depth += 1) {
-    const candidate = path.join(dir, 'tests', 'fixtures', 'golden-sources', source);
+    const candidate = path.join(
+      dir,
+      'tests',
+      'fixtures',
+      'golden-sources',
+      source,
+    );
     if (existsSync(candidate)) return candidate;
     const parent = path.dirname(dir);
     if (parent === dir) break;
@@ -778,6 +939,9 @@ export function resolveGoldenDir(source: GoldenSource): string {
   throw new Error(`未找到 tests/fixtures/golden-sources/${source} 目录`);
 }
 
-export function readGolden(source: GoldenSource, file: 'list.html' | 'detail.html'): string {
+export function readGolden(
+  source: GoldenSource,
+  file: 'list.html' | 'detail.html',
+): string {
   return readFileSync(path.join(resolveGoldenDir(source), file), 'utf8');
 }

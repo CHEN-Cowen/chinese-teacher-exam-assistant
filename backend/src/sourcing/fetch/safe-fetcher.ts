@@ -93,6 +93,12 @@ export interface SafeFetcherOptions {
   sleep?: (ms: number) => Promise<void>;
   /** 日志出口（默认丢弃）；只接收已脱敏文案 */
   log?: (line: string) => void;
+  /** 跨 SafeFetcher 实例共享的进程内 host permit；不跨进程同步 */
+  acquireHostPermit?: (
+    host: string,
+    concurrency: number,
+  ) => Promise<() => void>;
+  hostConcurrency?: number;
 }
 
 const REDIRECT_STATUS = new Set([301, 302, 303, 307, 308]);
@@ -117,7 +123,8 @@ export function isBlockedIp(ip: string): boolean {
     return false;
   }
   const parts = value.split('.').map((n) => Number(n));
-  if (parts.length !== 4 || parts.some((n) => !Number.isInteger(n))) return false;
+  if (parts.length !== 4 || parts.some((n) => !Number.isInteger(n)))
+    return false;
   const [a, b] = parts;
   if (a === 0 || a === 10 || a === 127) return true; // 0.0.0.0/8,10/8,127/8
   if (a === 169 && b === 254) return true; // link-local + 169.254.169.254 元数据
@@ -152,6 +159,8 @@ export class SafeFetcher {
   private readonly retry: { attempts: number; baseDelayMs: number };
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly log: (line: string) => void;
+  private readonly acquireHostPermit?: SafeFetcherOptions['acquireHostPermit'];
+  private readonly hostConcurrency: number;
 
   constructor(options: SafeFetcherOptions) {
     this.allowedHosts = options.allowedHosts.map((h) => h.toLowerCase());
@@ -167,7 +176,10 @@ export class SafeFetcher {
     this.resolveDns =
       options.resolveDns ??
       (async (host) => {
-        const records = await defaultLookup(host, { all: true, verbatim: true });
+        const records = await defaultLookup(host, {
+          all: true,
+          verbatim: true,
+        });
         return records.map((r) => r.address);
       });
     this.retry = options.retry ?? { attempts: 3, baseDelayMs: 200 };
@@ -175,6 +187,8 @@ export class SafeFetcher {
       options.sleep ??
       ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.log = options.log ?? (() => undefined);
+    this.acquireHostPermit = options.acquireHostPermit;
+    this.hostConcurrency = options.hostConcurrency ?? 1;
   }
 
   async fetch(
@@ -236,77 +250,93 @@ export class SafeFetcher {
       const parsed = this.validateUrl(currentUrl);
       await this.assertHostSafe(parsed.hostname, deadline);
 
-      const response = await this.doFetch(currentUrl, deadline, conditional);
-      const status = response.status;
+      const releasePermit = this.acquireHostPermit
+        ? await this.acquireHostPermit(
+            parsed.hostname.toLowerCase(),
+            this.hostConcurrency,
+          )
+        : undefined;
+      try {
+        if (Date.now() >= deadline)
+          throw new SafeFetchError('TIMEOUT', '等待同域许可超时');
+        const response = await this.doFetch(
+          currentUrl,
+          deadline,
+          currentUrl === startUrl ? conditional : {},
+        );
+        const status = response.status;
 
-      if (REDIRECT_STATUS.has(status)) {
-        const location = response.headers.get('location');
-        if (!location) {
+        if (REDIRECT_STATUS.has(status)) {
+          const location = response.headers.get('location');
+          if (!location) {
+            throw new SafeFetchError(
+              'HTTP_ERROR',
+              `重定向响应缺少 Location（${status}）`,
+              status,
+            );
+          }
+          redirects += 1;
+          if (redirects > this.maxRedirects) {
+            throw new SafeFetchError(
+              'TOO_MANY_REDIRECTS',
+              `重定向超过上限 ${this.maxRedirects} 次`,
+            );
+          }
+          currentUrl = this.resolveRedirect(currentUrl, location);
+          this.log(`重定向 ${redirects} 次 → ${redactUrl(currentUrl)}`);
+          continue;
+        }
+
+        if (status === 304) {
+          return {
+            status,
+            finalUrl: currentUrl,
+            headers: this.pickHeaders(response),
+            body: '',
+            bodyBytes: Buffer.alloc(0),
+            contentHash: sha256(''),
+            mimeType: '',
+            durationMs: Date.now() - startedAt,
+            redirects,
+            bytes: 0,
+          };
+        }
+
+        if (!response.ok) {
+          const retryAfterMs = parseRetryAfter(
+            response.headers.get('retry-after'),
+          );
           throw new SafeFetchError(
             'HTTP_ERROR',
-            `重定向响应缺少 Location（${status}）`,
+            `上游返回 ${status}`,
             status,
+            retryAfterMs,
           );
         }
-        redirects += 1;
-        if (redirects > this.maxRedirects) {
-          throw new SafeFetchError(
-            'TOO_MANY_REDIRECTS',
-            `重定向超过上限 ${this.maxRedirects} 次`,
-          );
-        }
-        currentUrl = this.resolveRedirect(currentUrl, location);
-        this.log(`重定向 ${redirects} 次 → ${redactUrl(currentUrl)}`);
-        continue;
-      }
 
-      if (status === 304) {
+        const { buffer, body, bytes } = await this.readBody(response, deadline);
+        const headers = this.pickHeaders(response);
+        const mimeType = (headers.contentType ?? '')
+          .split(';')[0]
+          .trim()
+          .toLowerCase();
+        this.assertContentLooksHtml(body, mimeType);
+
         return {
           status,
           finalUrl: currentUrl,
-          headers: this.pickHeaders(response),
-          body: '',
-          bodyBytes: Buffer.alloc(0),
-          contentHash: sha256(''),
-          mimeType: '',
+          headers,
+          body,
+          bodyBytes: buffer,
+          contentHash: sha256(buffer),
+          mimeType,
           durationMs: Date.now() - startedAt,
           redirects,
-          bytes: 0,
+          bytes,
         };
+      } finally {
+        releasePermit?.();
       }
-
-      if (!response.ok) {
-        const retryAfterMs = parseRetryAfter(
-          response.headers.get('retry-after'),
-        );
-        throw new SafeFetchError(
-          'HTTP_ERROR',
-          `上游返回 ${status}`,
-          status,
-          retryAfterMs,
-        );
-      }
-
-      const { buffer, body, bytes } = await this.readBody(response, deadline);
-      const headers = this.pickHeaders(response);
-      const mimeType = (headers.contentType ?? '')
-        .split(';')[0]
-        .trim()
-        .toLowerCase();
-      this.assertContentLooksHtml(body, mimeType);
-
-      return {
-        status,
-        finalUrl: currentUrl,
-        headers,
-        body,
-        bodyBytes: buffer,
-        contentHash: sha256(buffer),
-        mimeType,
-        durationMs: Date.now() - startedAt,
-        redirects,
-        bytes,
-      };
     }
   }
 
@@ -328,10 +358,16 @@ export class SafeFetcher {
     }
     const host = url.hostname.toLowerCase();
     if (BLOCKED_HOSTNAMES.has(host) || host.endsWith('.localhost')) {
-      throw new SafeFetchError('BLOCKED_HOST', `禁止访问本地/元数据主机：${host}`);
+      throw new SafeFetchError(
+        'BLOCKED_HOST',
+        `禁止访问本地/元数据主机：${host}`,
+      );
     }
     if (!this.hostAllowed(host)) {
-      throw new SafeFetchError('HOST_NOT_ALLOWED', `host 不在 allowlist：${host}`);
+      throw new SafeFetchError(
+        'HOST_NOT_ALLOWED',
+        `host 不在 allowlist：${host}`,
+      );
     }
     return url;
   }
@@ -362,7 +398,10 @@ export class SafeFetcher {
     }
     for (const address of addresses) {
       if (isBlockedIp(address)) {
-        throw new SafeFetchError('BLOCKED_IP', `解析到受限地址 ${address}（${host}）`);
+        throw new SafeFetchError(
+          'BLOCKED_IP',
+          `解析到受限地址 ${address}（${host}）`,
+        );
       }
     }
   }
@@ -425,7 +464,8 @@ export class SafeFetcher {
     response: Response,
     deadline: number,
   ): Promise<{ buffer: Buffer; body: string; bytes: number }> {
-    const stream = response.body as ReadableStream<Uint8Array> | null | undefined;
+    const stream = response.body as
+      ReadableStream<Uint8Array> | null | undefined;
     const chunks: Uint8Array[] = [];
     let total = 0;
 
@@ -433,7 +473,10 @@ export class SafeFetcher {
       const reader = stream.getReader();
       try {
         for (;;) {
-          const { done, value } = await this.withDeadline(reader.read(), deadline);
+          const { done, value } = await this.withDeadline(
+            reader.read(),
+            deadline,
+          );
           if (done) break;
           if (!value) continue;
           total += value.byteLength;
@@ -496,7 +539,10 @@ export class SafeFetcher {
     };
   }
 
-  private async withDeadline<T>(promise: Promise<T>, deadline: number): Promise<T> {
+  private async withDeadline<T>(
+    promise: Promise<T>,
+    deadline: number,
+  ): Promise<T> {
     const remaining = deadline - Date.now();
     if (remaining <= 0) {
       throw new SafeFetchError('TIMEOUT', '整体请求超时');

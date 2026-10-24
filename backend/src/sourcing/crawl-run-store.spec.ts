@@ -53,7 +53,9 @@ describe('CrawlRunStore 来源健康', () => {
         reason: `boom-${i}`,
       });
     }
-    expect(prisma.sources[0].consecutiveFailures).toBe(CONSECUTIVE_FAILURE_THRESHOLD);
+    expect(prisma.sources[0].consecutiveFailures).toBe(
+      CONSECUTIVE_FAILURE_THRESHOLD,
+    );
     expect(prisma.sources[0].healthStatus).toBe('degraded');
 
     await store.recordSuccess(source.id, { checkedAt: now, nextCheckAt: next });
@@ -97,7 +99,11 @@ describe('CrawlRunStore 来源健康', () => {
     const now = new Date('2026-10-13T01:00:00.000Z');
     const next = new Date(now.getTime() + 60_000);
 
-    await store.recordFailure(source.id, { checkedAt: now, nextCheckAt: next, reason: 'boom' });
+    await store.recordFailure(source.id, {
+      checkedAt: now,
+      nextCheckAt: next,
+      reason: 'boom',
+    });
     expect(calls).toEqual([{ sourceId: source.id, count: 1 }]);
 
     await store.recordFailure(source.id, {
@@ -171,7 +177,9 @@ describe('CrawlRunStore.upsertSource', () => {
     expect(prisma.sources).toHaveLength(1);
     expect(second.id).toBe(first.id);
     expect(second.pollEveryMinutes).toBe(30);
-    expect(second.listUrls).toEqual(['https://jyj.ningbo.gov.cn/col/col1/index.html']);
+    expect(second.listUrls).toEqual([
+      'https://jyj.ningbo.gov.cn/col/col1/index.html',
+    ]);
   });
 });
 
@@ -219,7 +227,12 @@ describe('CrawlRunStore.findActiveRun / hasHistoryDiscovery', () => {
 
     // 历史运行 discoveredCount>0 → 有历史
     await prisma.crawlRun.create({
-      data: { sourceId: source.id, trigger: 'schedule', status: 'succeeded', discoveredCount: 2 },
+      data: {
+        sourceId: source.id,
+        trigger: 'schedule',
+        status: 'succeeded',
+        discoveredCount: 2,
+      },
     });
     expect(await store.hasHistoryDiscovery(source.id)).toBe(true);
 
@@ -228,7 +241,10 @@ describe('CrawlRunStore.findActiveRun / hasHistoryDiscovery', () => {
       publisher: 'B',
       officialUrl: 'https://b.gov.cn/',
     });
-    prisma.seedDocument({ sourceId: fresh.id, canonicalUrl: 'https://b.gov.cn/x.html' });
+    prisma.seedDocument({
+      sourceId: fresh.id,
+      canonicalUrl: 'https://b.gov.cn/x.html',
+    });
     expect(await store.hasHistoryDiscovery(fresh.id)).toBe(true);
   });
 });
@@ -265,12 +281,22 @@ describe('CrawlRunStore.listHealth 聚合', () => {
       publisher: '宁波市教育局',
       officialUrl: 'https://jyj.ningbo.gov.cn/',
     });
-    const otherSnapshot = prisma.seedSnapshot({ sourceId: 'src-2', contentHash: 'h-other' });
+    const otherSnapshot = prisma.seedSnapshot({
+      sourceId: 'src-2',
+      contentHash: 'h-other',
+    });
 
     const older = await prisma.crawlRun.create({
-      data: { sourceId: 'src-1', trigger: 'schedule', status: 'succeeded', discoveredCount: 3 },
+      data: {
+        sourceId: 'src-1',
+        trigger: 'schedule',
+        status: 'succeeded',
+        discoveredCount: 3,
+      },
     });
-    prisma.runs.find((r) => r.id === older.id)!.startedAt = new Date('2026-10-12T01:00:00.000Z');
+    prisma.runs.find((r) => r.id === older.id)!.startedAt = new Date(
+      '2026-10-12T01:00:00.000Z',
+    );
     const newer = await prisma.crawlRun.create({
       data: {
         sourceId: 'src-1',
@@ -281,9 +307,14 @@ describe('CrawlRunStore.listHealth 聚合', () => {
         adapterVersion: 'hangzhou-education@wp4-v1',
       },
     });
-    prisma.runs.find((r) => r.id === newer.id)!.startedAt = new Date('2026-10-13T01:00:00.000Z');
+    prisma.runs.find((r) => r.id === newer.id)!.startedAt = new Date(
+      '2026-10-13T01:00:00.000Z',
+    );
 
-    const snapshot = prisma.seedSnapshot({ sourceId: 'src-1', contentHash: 'h-1' });
+    const snapshot = prisma.seedSnapshot({
+      sourceId: 'src-1',
+      contentHash: 'h-1',
+    });
     await prisma.documentParseRun.create({
       data: {
         snapshotId: snapshot.id,
@@ -314,14 +345,29 @@ describe('CrawlRunStore.listHealth 聚合', () => {
     });
 
     await prisma.extractionRun.create({
-      data: { snapshotId: snapshot.id, parserVersion: 'ev1', idempotencyKey: 'k1', status: 'pending_review' },
+      data: {
+        snapshotId: snapshot.id,
+        parserVersion: 'ev1',
+        idempotencyKey: 'k1',
+        status: 'pending_review',
+      },
     });
     await prisma.extractionRun.create({
-      data: { snapshotId: snapshot.id, parserVersion: 'ev1', idempotencyKey: 'k2', status: 'approved' },
+      data: {
+        snapshotId: snapshot.id,
+        parserVersion: 'ev1',
+        idempotencyKey: 'k2',
+        status: 'approved',
+      },
     });
     // 其他来源的待审核不应计入 src-1
     await prisma.extractionRun.create({
-      data: { snapshotId: otherSnapshot.id, parserVersion: 'ev1', idempotencyKey: 'k3', status: 'pending_review' },
+      data: {
+        snapshotId: otherSnapshot.id,
+        parserVersion: 'ev1',
+        idempotencyKey: 'k3',
+        status: 'pending_review',
+      },
     });
 
     const summaries = await store.listHealth();
@@ -338,5 +384,157 @@ describe('CrawlRunStore.listHealth 聚合', () => {
 
     expect(other.parserVersion).toBe('pv-other');
     expect(other.pendingReviewCount).toBe(1);
+  });
+});
+
+describe('CrawlRunStore URL JSON 账本', () => {
+  it('发现完成前后写入 URL 结果时，异步计数不会互相覆盖', async () => {
+    const { prisma, store } = makeStore();
+    const source = prisma.seedSource({
+      publisher: 'A',
+      officialUrl: 'https://a.gov.cn/',
+    });
+    const before = await store.createRun({
+      sourceId: source.id,
+      trigger: 'admin',
+    });
+    await Promise.all([
+      store.completeDiscovery(before.id, {
+        status: 'succeeded',
+        discoveredCount: 2,
+      }),
+      store.recordFetchOutcome(
+        before.id,
+        'https://a.gov.cn/one.pdf',
+        'downloaded',
+      ),
+    ]);
+    expect(prisma.findRun(before.id)).toMatchObject({
+      status: 'succeeded',
+      discoveredCount: 2,
+      downloadedCount: 1,
+    });
+
+    const after = await store.createRun({
+      sourceId: source.id,
+      trigger: 'admin',
+    });
+    await Promise.all([
+      store.recordFetchOutcome(
+        after.id,
+        'https://a.gov.cn/two.pdf',
+        'unchanged',
+      ),
+      store.completeDiscovery(after.id, {
+        status: 'succeeded',
+        discoveredCount: 3,
+      }),
+    ]);
+    expect(prisma.findRun(after.id)).toMatchObject({
+      status: 'succeeded',
+      discoveredCount: 3,
+      unchangedCount: 1,
+    });
+  });
+
+  it('重复写入 downloaded 后 unchanged，仍只保留一次下载', async () => {
+    const { prisma, store } = makeStore();
+    const source = prisma.seedSource({
+      publisher: 'A',
+      officialUrl: 'https://a.gov.cn/',
+    });
+    const run = await store.createRun({
+      sourceId: source.id,
+      trigger: 'admin',
+    });
+    await store.recordFetchOutcome(
+      run.id,
+      'https://a.gov.cn/file.pdf',
+      'downloaded',
+    );
+    await store.recordFetchOutcome(
+      run.id,
+      'https://a.gov.cn/file.pdf',
+      'unchanged',
+    );
+    await store.completeDiscovery(run.id, { status: 'succeeded' });
+    expect(prisma.findRun(run.id)).toMatchObject({
+      downloadedCount: 1,
+      unchangedCount: 0,
+    });
+  });
+
+  it('同 URL 失败后重试成功会恢复为成功计数', async () => {
+    const { prisma, store } = makeStore();
+    const source = prisma.seedSource({
+      publisher: 'A',
+      officialUrl: 'https://a.gov.cn/',
+    });
+    const run = await store.createRun({
+      sourceId: source.id,
+      trigger: 'admin',
+    });
+    await store.recordFetchOutcome(
+      run.id,
+      'https://a.gov.cn/file.pdf',
+      'failed',
+      'timeout',
+    );
+    await store.recordFetchOutcome(
+      run.id,
+      'https://a.gov.cn/file.pdf',
+      'downloaded',
+    );
+    await store.completeDiscovery(run.id, { status: 'succeeded' });
+    expect(prisma.findRun(run.id)).toMatchObject({
+      status: 'succeeded',
+      downloadedCount: 1,
+      failedCount: 0,
+    });
+  });
+
+  it('发现完成后仍有 queued 附件时，运行保持 running', async () => {
+    const { prisma, store } = makeStore();
+    const source = prisma.seedSource({
+      publisher: 'A',
+      officialUrl: 'https://a.gov.cn/',
+    });
+    const run = await store.createRun({
+      sourceId: source.id,
+      trigger: 'admin',
+    });
+    await store.completeDiscovery(run.id, { status: 'succeeded' });
+    await store.recordFetchOutcome(
+      run.id,
+      'https://a.gov.cn/file.pdf',
+      'queued',
+    );
+    expect(prisma.findRun(run.id)).toMatchObject({
+      status: 'running',
+      finishedAt: null,
+    });
+  });
+
+  it('blocked URL 不会把运行判为成功', async () => {
+    const { prisma, store } = makeStore();
+    const source = prisma.seedSource({
+      publisher: 'A',
+      officialUrl: 'https://a.gov.cn/',
+    });
+    const run = await store.createRun({
+      sourceId: source.id,
+      trigger: 'admin',
+    });
+    await store.recordFetchOutcome(
+      run.id,
+      'https://a.gov.cn/file.pdf',
+      'blocked',
+      'captcha',
+    );
+    await store.completeDiscovery(run.id, { status: 'succeeded' });
+    expect(prisma.findRun(run.id)).toMatchObject({
+      status: 'blocked',
+      failedCount: 1,
+    });
   });
 });
