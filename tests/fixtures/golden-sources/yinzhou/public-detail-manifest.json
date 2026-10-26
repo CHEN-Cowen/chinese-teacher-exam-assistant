@@ -1,0 +1,13 @@
+{
+  "capturedAt": "2026-10-24T14:26:56.106Z",
+  "sourceKind": "official-live-snapshot",
+  "scope": "article-and-attachment-links-only",
+  "stableMonitoringVerified": false,
+  "files": [
+    {
+      "name": "public-detail.html",
+      "url": "https://www.nbyz.gov.cn/col/col1229117192/art/2026/art_8f2e87adf2fa4eb1a544f6693151914f.html",
+      "sha256": "f22cc1234a32d5fb1989ddcc4e15f80b5d942a0f64816ea2ef931153fbeaba3b"
+    }
+  ]
+}

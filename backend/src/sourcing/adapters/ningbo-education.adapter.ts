@@ -9,6 +9,7 @@
  * 关联黄金样本：tests/fixtures/golden-sources/ningbo/{list,detail}.html
  */
 import { load } from 'cheerio';
+import { discoverPublicColumn, locatePublicArticle } from '../public-column.js';
 import {
   AdapterParseError,
   classifyDocumentKind,
@@ -35,10 +36,14 @@ export class NingboEducationAdapter implements OfficialSiteAdapter {
   readonly key = NINGBO_ADAPTER_KEY;
 
   discover(input: ListPageSnapshot): DiscoveredDocument[] {
+    if (input.content.trimStart().startsWith('{'))
+      return discoverPublicColumn(input.url, input.content, 'ningbo');
     const $ = load(input.content);
     const container = $('table.news-table');
     if (container.length === 0) {
-      throw mismatch('宁波列表页未找到 table.news-table 容器，页面结构可能已改版');
+      throw mismatch(
+        '宁波列表页未找到 table.news-table 容器，页面结构可能已改版',
+      );
     }
     const items: DiscoveredDocument[] = [];
     container.find('tr.news-row').each((_index, row) => {
@@ -47,7 +52,9 @@ export class NingboEducationAdapter implements OfficialSiteAdapter {
       const dateCell = $(row).find('td.news-date').first();
       const href = link.attr('href');
       if (titleCell.length === 0 || link.length === 0 || !href) {
-        throw mismatch('宁波列表行缺少 td.news-title > a[href] 链接，页面结构可能已改版');
+        throw mismatch(
+          '宁波列表行缺少 td.news-title > a[href] 链接，页面结构可能已改版',
+        );
       }
       if (dateCell.length === 0) {
         throw mismatch('宁波列表行缺少 td.news-date 节点，页面结构可能已改版');
@@ -55,24 +62,37 @@ export class NingboEducationAdapter implements OfficialSiteAdapter {
       const title = stripTags(link.html() ?? '');
       items.push({
         title,
-        publishedAt: extractDate(stripTags(dateCell.html() ?? ''), '列表行 td.news-date'),
+        publishedAt: extractDate(
+          stripTags(dateCell.html() ?? ''),
+          '列表行 td.news-date',
+        ),
         url: resolveUrl(input.url, href),
         kind: classifyDocumentKind(title),
       });
     });
     if (items.length === 0) {
-      throw mismatch('宁波列表页 table.news-table 内没有任何行（静默 0 条视为故障）');
+      throw mismatch(
+        '宁波列表页 table.news-table 内没有任何行（静默 0 条视为故障）',
+      );
     }
     return items;
   }
 
   locateArticle(input: ArticlePageSnapshot): LocatedArticle {
+    const article = locatePublicArticle(input.url, input.content);
+    if (article) return article;
     const $ = load(input.content);
     const titleNode = $('h2.xl_title').first();
     const infoNode = $('div.xl_info').first();
     const bodyNode = $('div.xl_con').first();
-    if (titleNode.length === 0 || infoNode.length === 0 || bodyNode.length === 0) {
-      throw mismatch('宁波正文页缺少 .xl_title/.xl_info/.xl_con，页面结构可能已改版');
+    if (
+      titleNode.length === 0 ||
+      infoNode.length === 0 ||
+      bodyNode.length === 0
+    ) {
+      throw mismatch(
+        '宁波正文页缺少 .xl_title/.xl_info/.xl_con，页面结构可能已改版',
+      );
     }
     const attachments: LocatedAttachment[] = [];
     const attachContainer = $('div.xl_fj');
@@ -88,7 +108,10 @@ export class NingboEducationAdapter implements OfficialSiteAdapter {
     return {
       canonicalUrl: normalizeUrl(resolveUrl(input.url, input.url)),
       title: stripTags(titleNode.html() ?? ''),
-      publishedAt: extractDate(stripTags(infoNode.html() ?? ''), '正文页 .xl_info'),
+      publishedAt: extractDate(
+        stripTags(infoNode.html() ?? ''),
+        '正文页 .xl_info',
+      ),
       bodyText: stripTags(bodyNode.html() ?? ''),
       attachments,
     };

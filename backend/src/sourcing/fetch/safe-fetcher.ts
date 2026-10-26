@@ -75,6 +75,16 @@ export interface ConditionalHeaders {
   ifModifiedSince?: string;
 }
 
+/**
+ * 额外请求头：部分官网（如常州市教育局）的附件下载会校验 Referer，
+ * 缺失时把 302 跳回首页，返回 HTML 而非真实二进制。
+ * 仅允许安全头名，且 Referer 必须同源白名单内，不得任意外发。
+ */
+export interface ExtraRequestHeaders {
+  /** 同源 Referer（页面地址），用于通过官网的附件防盗链 */
+  referer?: string;
+}
+
 export interface SafeFetcherOptions {
   /** 来源 host allowlist；host 等于或为其子域时放行 */
   allowedHosts: readonly string[];
@@ -194,6 +204,7 @@ export class SafeFetcher {
   async fetch(
     input: string,
     conditional: ConditionalHeaders = {},
+    extraHeaders: ExtraRequestHeaders = {},
   ): Promise<FetchResult> {
     const startedAt = Date.now();
     const deadline = startedAt + this.totalTimeoutMs;
@@ -203,7 +214,13 @@ export class SafeFetcher {
     for (let attempt = 0; attempt < attempts; attempt += 1) {
       try {
         return await this.withDeadline(
-          this.followOnce(input, deadline, startedAt, conditional),
+          this.followOnce(
+            input,
+            deadline,
+            startedAt,
+            conditional,
+            extraHeaders,
+          ),
           deadline,
         );
       } catch (error) {
@@ -242,6 +259,7 @@ export class SafeFetcher {
     deadline: number,
     startedAt: number,
     conditional: ConditionalHeaders,
+    extraHeaders: ExtraRequestHeaders = {},
   ): Promise<FetchResult> {
     let currentUrl = startUrl;
     let redirects = 0;
@@ -263,6 +281,7 @@ export class SafeFetcher {
           currentUrl,
           deadline,
           currentUrl === startUrl ? conditional : {},
+          extraHeaders,
         );
         const status = response.status;
 
@@ -418,6 +437,7 @@ export class SafeFetcher {
     url: string,
     deadline: number,
     conditional: ConditionalHeaders = {},
+    extraHeaders: ExtraRequestHeaders = {},
   ): Promise<Response> {
     const remaining = deadline - Date.now();
     if (remaining <= 0) {
@@ -440,6 +460,7 @@ export class SafeFetcher {
           ...(conditional.ifModifiedSince
             ? { 'if-modified-since': conditional.ifModifiedSince }
             : {}),
+          ...this.refererHeader(url, extraHeaders),
         },
       });
     } catch (error) {
@@ -457,6 +478,33 @@ export class SafeFetcher {
       );
     } finally {
       clearTimeout(timer);
+    }
+  }
+
+  /**
+   * Referer 只允许与目标同源（协议+主机+端口一致），防止把本站路径
+   * 泄露给外部域；不合规时直接忽略该头，不静默改成外发请求。
+   */
+  private refererHeader(
+    url: string,
+    extraHeaders: ExtraRequestHeaders,
+  ): Record<string, string> {
+    if (!extraHeaders.referer) return {};
+    try {
+      const target = new URL(url);
+      const referer = new URL(extraHeaders.referer);
+      if (
+        target.protocol !== referer.protocol ||
+        target.hostname !== referer.hostname ||
+        target.port !== referer.port
+      ) {
+        this.log('忽略非同源 Referer');
+        return {};
+      }
+      return { referer: referer.href };
+    } catch {
+      this.log('忽略非法 Referer');
+      return {};
     }
   }
 

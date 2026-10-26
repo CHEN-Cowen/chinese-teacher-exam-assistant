@@ -18,6 +18,11 @@ import {
 } from '../official-site-adapter.js';
 import { AdapterRegistry } from '../adapter-registry.js';
 import {
+  publicColumnRequest,
+  publicColumnPages,
+  staticListPages,
+} from '../public-column.js';
+import {
   CrawlRunStore,
   SUSPECTED_ZERO_RESULTS,
   shouldAlertZeroResults,
@@ -153,7 +158,7 @@ export class SourceDiscoverService {
 
     const listUrls =
       source.listUrls && source.listUrls.length > 0
-        ? source.listUrls
+        ? [...source.listUrls]
         : [source.officialUrl];
     const fetcher = this.fetcherFactory.create(source);
 
@@ -169,7 +174,13 @@ export class SourceDiscoverService {
       let cache;
       try {
         cache = await this.documentStore.getUrlCache(source.id, listUrl);
-        result = await fetcher.fetch(listUrl, {
+        // 仅已验证的公开栏目 API 使用 JSON 通道，仍复用全部 DNS/重定向/大小/并发限制。
+        const requestFetcher =
+          new URL(listUrl).pathname ===
+          '/api-gateway/jpaas-publish-server/front/page/build/unit'
+            ? this.fetcherFactory.createForAttachment(source)
+            : fetcher;
+        result = await requestFetcher.fetch(listUrl, {
           ifNoneMatch: cache?.etag ?? undefined,
           ifModifiedSince: cache?.lastModified ?? undefined,
         });
@@ -197,12 +208,21 @@ export class SourceDiscoverService {
       if (result.status === 304) {
         try {
           const body = await this.objectStore.get(cache!.snapshot.storageKey);
-          const items = adapter.discover({
-            url: result.finalUrl,
-            mimeType: cache!.snapshot.mimeType,
-            content: body,
-            fetchedAt: cache!.snapshot.fetchedAt.toISOString(),
-          });
+          const publicUrl = publicColumnRequest(result.finalUrl, body);
+          if (publicUrl && !listUrls.includes(publicUrl))
+            listUrls.push(publicUrl);
+          for (const page of publicColumnPages(result.finalUrl, body))
+            if (!listUrls.includes(page)) listUrls.push(page);
+          for (const page of staticListPages(result.finalUrl, body))
+            if (!listUrls.includes(page)) listUrls.push(page);
+          const items = publicUrl
+            ? []
+            : adapter.discover({
+                url: result.finalUrl,
+                mimeType: cache!.snapshot.mimeType,
+                content: body,
+                fetchedAt: cache!.snapshot.fetchedAt.toISOString(),
+              });
           for (const item of items) discovered.set(item.url, item);
         } catch (error) {
           if (error instanceof AdapterParseError)
@@ -221,12 +241,21 @@ export class SourceDiscoverService {
 
       fetchedPages += 1;
       try {
-        const items = adapter.discover({
-          url: result.finalUrl,
-          mimeType: result.mimeType,
-          content: result.body,
-          fetchedAt: new Date().toISOString(),
-        });
+        const publicUrl = publicColumnRequest(result.finalUrl, result.body);
+        if (publicUrl && !listUrls.includes(publicUrl))
+          listUrls.push(publicUrl);
+        for (const page of publicColumnPages(result.finalUrl, result.body))
+          if (!listUrls.includes(page)) listUrls.push(page);
+        for (const page of staticListPages(result.finalUrl, result.body))
+          if (!listUrls.includes(page)) listUrls.push(page);
+        const items = publicUrl
+          ? []
+          : adapter.discover({
+              url: result.finalUrl,
+              mimeType: result.mimeType,
+              content: result.body,
+              fetchedAt: new Date().toISOString(),
+            });
         for (const item of items) {
           discovered.set(item.url, item);
         }
@@ -298,7 +327,9 @@ export class SourceDiscoverService {
       };
     }
 
-    if (discovered.size === 0 && errors.length > 0 && fetchedPages === 0) {
+    // 外壳页 200 不代表动态列表读取成功；没有发现结果且存在读取错误时，
+    // 必须记录失败，不能落入冷启动 no_new 或掩盖错误的 zero_suspect。
+    if (discovered.size === 0 && errors.length > 0) {
       const summary = errors.join('; ').slice(0, 500);
       await this.runStore.recordFailure(source.id, {
         checkedAt: now,

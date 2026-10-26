@@ -1,0 +1,13 @@
+{
+  "capturedAt": "2026-10-26T02:09:31.002Z",
+  "sourceKind": "official-live-snapshot",
+  "scope": "first-page-discovery-only",
+  "stableMonitoringVerified": false,
+  "files": [
+    {
+      "name": "public-shell.html",
+      "url": "https://jyj.sx.gov.cn/col/col1489173/index.html",
+      "sha256": "482f3466238f25a02e90b820dcb424c98f1b0a550c8abbea43d573cd5fb5fa9a"
+    }
+  ]
+}

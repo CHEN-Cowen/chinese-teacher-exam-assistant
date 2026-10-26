@@ -14,6 +14,11 @@ import { HangzhouEducationAdapter } from '../adapters/hangzhou-education.adapter
 import { NingboEducationAdapter } from '../adapters/ningbo-education.adapter.js';
 import { YinzhouGovernmentAdapter } from '../adapters/yinzhou-government.adapter.js';
 import { NanjingEducationAdapter } from '../adapters/nanjing-education.adapter.js';
+import { ShaoxingEducationAdapter } from '../adapters/shaoxing-education.adapter.js';
+import { JiaxingEducationAdapter } from '../adapters/jiaxing-education.adapter.js';
+import { SuzhouEducationAdapter } from '../adapters/suzhou-education.adapter.js';
+import { ChangzhouEducationAdapter } from '../adapters/changzhou-education.adapter.js';
+import { LishuiEducationAdapter } from '../adapters/lishui-education.adapter.js';
 import { DocumentFetchService } from './document-fetch.service.js';
 import type { DocumentFetchPayload } from './task-queue.js';
 import {
@@ -64,6 +69,11 @@ async function setup(
     new NingboEducationAdapter(),
     new YinzhouGovernmentAdapter(),
     new NanjingEducationAdapter(),
+    new ShaoxingEducationAdapter(),
+    new JiaxingEducationAdapter(),
+    new SuzhouEducationAdapter(),
+    new ChangzhouEducationAdapter(),
+    new LishuiEducationAdapter(),
   );
   const service = new DocumentFetchService(
     runStore,
@@ -409,5 +419,46 @@ describe('DocumentFetchService.handle', () => {
     expect(prisma.sources[0].healthStatus).toBe('blocked');
     expect(prisma.snapshots).toHaveLength(0);
     expect(objectStore.writes).toHaveLength(0);
+  });
+
+  it('附件下载携带父公告页 Referer（附件防盗链）', async () => {
+    const { prisma, factory, service, payload } = await setup({
+      [DETAIL_URL]: readGolden('hangzhou', 'detail.html'),
+      [ATTACHMENT_URL]: { status: 200, body: 'attachment-v1' },
+    });
+
+    await service.handle(payload);
+    const parentDoc = prisma.documents.find(
+      (d) => d.canonicalUrl === DETAIL_URL,
+    );
+    expect(parentDoc).toBeDefined();
+    await service.handle({
+      ...payload,
+      canonicalUrl: ATTACHMENT_URL,
+      kind: 'attachment',
+      parentDocumentId: parentDoc!.id,
+    });
+
+    const attachmentRequest = factory.requestHeaders.find((headers) =>
+      headers.get('referer'),
+    );
+    expect(attachmentRequest?.get('referer')).toBe(DETAIL_URL);
+  });
+
+  it('附件无父文档时不带 Referer，仍能正常下载', async () => {
+    const { factory, service, payload } = await setup({
+      [ATTACHMENT_URL]: { status: 200, body: 'attachment-v1' },
+    });
+
+    const outcome = await service.handle({
+      ...payload,
+      canonicalUrl: ATTACHMENT_URL,
+      kind: 'attachment',
+    });
+
+    expect(outcome.status).toBe('downloaded');
+    expect(
+      factory.requestHeaders.some((headers) => headers.get('referer')),
+    ).toBe(false);
   });
 });

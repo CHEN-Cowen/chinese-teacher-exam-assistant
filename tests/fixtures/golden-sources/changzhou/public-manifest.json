@@ -1,0 +1,18 @@
+{
+  "capturedAt": "2026-10-26T02:47:27.596Z",
+  "sourceKind": "official-live-snapshot",
+  "scope": "first-page-discovery-only",
+  "stableMonitoringVerified": false,
+  "files": [
+    {
+      "name": "public-shell.html",
+      "url": "https://jyj.changzhou.gov.cn/class/QFJEPCBL",
+      "sha256": "a7be96a170f619add10017cb22ee21998a49753f689c2f43d3fe3a547d98843e"
+    },
+    {
+      "name": "public-page2.html",
+      "url": "https://jyj.changzhou.gov.cn/class/QFJEPCBL/2",
+      "sha256": "b65451a45b03361dd59de7db6396c15d2a749f411b07c097d9807e4c2a9b333c"
+    }
+  ]
+}

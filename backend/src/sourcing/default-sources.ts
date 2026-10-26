@@ -44,7 +44,9 @@ export const DEFAULT_CRAWL_SOURCES: readonly DefaultCrawlSource[] = [
     publisher: '杭州市教育局',
     regionCode: '330100',
     officialUrl: 'https://edu.hangzhou.gov.cn/',
-    listUrls: [],
+    // S5 真实核验（2026-10-26）：「教师招聘」专栏外壳页声明同源 jpaas 公开列表接口，
+    // 列表与正文均已离线回放通过；具体栏目路径已对照真实官网核实。
+    listUrls: ['https://edu.hangzhou.gov.cn/col/col1228921906/index.html'],
     allowedHosts: ['edu.hangzhou.gov.cn'],
     pollEveryMinutes: 60,
   },
@@ -54,7 +56,9 @@ export const DEFAULT_CRAWL_SOURCES: readonly DefaultCrawlSource[] = [
     regionCode: '330200',
     officialUrl: 'https://jyj.ningbo.gov.cn/',
     // S4 核实入口；动态 AuthorizedRead 列表尚待适配，200 不代表发现成功。
-    listUrls: ['https://jyj.ningbo.gov.cn/col/col1229166692/index.html?number='],
+    listUrls: [
+      'https://jyj.ningbo.gov.cn/col/col1229166692/index.html?number=',
+    ],
     allowedHosts: ['jyj.ningbo.gov.cn'],
     pollEveryMinutes: 60,
   },

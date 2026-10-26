@@ -13,7 +13,13 @@ import { HangzhouEducationAdapter } from '../adapters/hangzhou-education.adapter
 import { NingboEducationAdapter } from '../adapters/ningbo-education.adapter.js';
 import { YinzhouGovernmentAdapter } from '../adapters/yinzhou-government.adapter.js';
 import { NanjingEducationAdapter } from '../adapters/nanjing-education.adapter.js';
+import { ShaoxingEducationAdapter } from '../adapters/shaoxing-education.adapter.js';
+import { JiaxingEducationAdapter } from '../adapters/jiaxing-education.adapter.js';
+import { SuzhouEducationAdapter } from '../adapters/suzhou-education.adapter.js';
+import { ChangzhouEducationAdapter } from '../adapters/changzhou-education.adapter.js';
+import { LishuiEducationAdapter } from '../adapters/lishui-education.adapter.js';
 import { SourceDiscoverService } from './source-discover.service.js';
+import { publicColumnRequest, publicColumnPages } from '../public-column.js';
 import type { SourceDiscoverPayload } from './task-queue.js';
 import {
   FakeCrawlTaskQueue,
@@ -50,6 +56,11 @@ async function setup(
     new NingboEducationAdapter(),
     new YinzhouGovernmentAdapter(),
     new NanjingEducationAdapter(),
+    new ShaoxingEducationAdapter(),
+    new JiaxingEducationAdapter(),
+    new SuzhouEducationAdapter(),
+    new ChangzhouEducationAdapter(),
+    new LishuiEducationAdapter(),
   );
   const factory = new OfflineFetcherFactory(routes);
   const service = new SourceDiscoverService(
@@ -85,6 +96,110 @@ function fetchUrls(queue: FakeCrawlTaskQueue): string[] {
 }
 
 describe('SourceDiscoverService.handle', () => {
+  it('公开动态列表走安全抓取和独立快照，栏目及接口304仍恢复发现', async () => {
+    const list = 'https://jyj.ningbo.gov.cn/col/index.html';
+    const shell = `<script src="/cms_files/default/script/AuthorizedRead/unitbuild.js" url="/api-gateway/jpaas-publish-server/front/page/build/unit" queryData="{'parseType':'bulidstatic','webId':'3505','tplSetId':'t','pageType':'column','tagId':'列表','editType':'null','pageId':'1'}"></script>`;
+    const api = publicColumnRequest(list, shell)!;
+    const response = JSON.stringify({
+      success: true,
+      data: {
+        html: '<div class="page-content"><table><tr><td class="car_tl"><a href="/a.html" title="教师招聘">教师...</a></td><td class="car_time">2026-07-09</td></tr></table></div>',
+      },
+    });
+    const routes: OfflineRoute = {
+      [list]: { status: 200, body: shell, headers: { etag: 'shell' } },
+      [api]: { status: 200, body: response, headers: { etag: 'api' } },
+    };
+    const context = await setup(routes, {
+      officialUrl: list,
+      listUrls: [list],
+      adapterKey: 'ningbo-education',
+      allowedHosts: ['jyj.ningbo.gov.cn'],
+    });
+    const outcome = await context.service.handle(context.payload);
+    expect(outcome.errorSummary).toBeUndefined();
+    expect(outcome).toMatchObject({ status: 'succeeded', discoveredCount: 1 });
+    expect(context.prisma.snapshots).toHaveLength(2);
+    expect(fetchUrls(context.queue)).toContain(
+      'https://jyj.ningbo.gov.cn/a.html',
+    );
+    routes[list] = { status: 304 };
+    routes[api] = { status: 304 };
+    expect(
+      (await context.service.handle(context.payload)).discoveredCount,
+    ).toBe(1);
+    expect(context.source.listUrls).toEqual([list]);
+  });
+  it('外壳200但动态接口503：冷启动也记录失败，重试时保持运行中', async () => {
+    const list = 'https://jyj.ningbo.gov.cn/col/index.html';
+    const shell = `<script src="/cms_files/default/script/AuthorizedRead/unitbuild.js" url="/api-gateway/jpaas-publish-server/front/page/build/unit" queryData="{'parseType':'bulidstatic','webId':'3505','tplSetId':'t','pageType':'column','tagId':'列表','editType':'null','pageId':'1'}"></script>`;
+    const api = publicColumnRequest(list, shell)!;
+    const { service, payload, prisma, queue } = await setup(
+      {
+        [list]: { status: 200, body: shell },
+        [api]: { status: 503 },
+      },
+      {
+        officialUrl: list,
+        listUrls: [list],
+        adapterKey: 'ningbo-education',
+        allowedHosts: ['jyj.ningbo.gov.cn'],
+      },
+    );
+    const outcome = await service.handle(payload, 1);
+    expect(outcome).toMatchObject({
+      status: 'failed',
+      discoveredCount: 0,
+      failedCount: 1,
+    });
+    expect(outcome.errorSummary).toContain(api);
+    expect(prisma.findRun(payload.runId)!.status).toBe('running');
+    expect(queue.enqueued).toHaveLength(0);
+    expect((await service.handle(payload)).status).toBe('failed');
+    expect(prisma.findRun(payload.runId)!.finishedAt).not.toBeNull();
+    expect(prisma.sources[0].lastSuccessAt).toBeFalsy();
+  });
+
+  it('动态栏目遍历后续页，次页读取失败保留部分发现且不报完整成功', async () => {
+    const list = 'https://jyj.ningbo.gov.cn/col/index.html';
+    const shell = `<script src="/cms_files/default/script/AuthorizedRead/unitbuild.js" url="/api-gateway/jpaas-publish-server/front/page/build/unit" queryData="{'parseType':'bulidstatic','webId':'3505','tplSetId':'t','pageType':'column','tagId':'列表','editType':'null','pageId':'1'}"></script>`;
+    const api = publicColumnRequest(list, shell)!;
+    const response = (page: number) =>
+      JSON.stringify({
+        success: true,
+        data: {
+          html: `<div class="page-content"><table><tr><td class="car_tl"><a href="/a${page}.html" title="教师招聘${page}">教师招聘</a></td><td class="car_time">2026-07-09</td></tr></table></div><table class="pagination" querydata="{}" rows="1" count="2" pageNo="${page}"></table>`,
+        },
+      });
+    const page2 = publicColumnPages(api, response(1))[0];
+    const routes: OfflineRoute = {
+      [list]: { status: 200, body: shell },
+      [api]: { status: 200, body: response(1) },
+      [page2]: { status: 200, body: response(2) },
+    };
+    const { service, payload, queue, prisma } = await setup(routes, {
+      officialUrl: list,
+      listUrls: [list],
+      adapterKey: 'ningbo-education',
+      allowedHosts: ['jyj.ningbo.gov.cn'],
+    });
+    expect(await service.handle(payload)).toMatchObject({
+      status: 'succeeded',
+      discoveredCount: 2,
+    });
+    expect(fetchUrls(queue)).toEqual([
+      'https://jyj.ningbo.gov.cn/a1.html',
+      'https://jyj.ningbo.gov.cn/a2.html',
+    ]);
+    expect(prisma.snapshots).toHaveLength(3);
+    routes[page2] = { status: 503 };
+    expect(await service.handle(payload)).toMatchObject({
+      status: 'partial',
+      discoveredCount: 1,
+      failedCount: 1,
+    });
+  });
+
   it('黄金样本：发现 1 条公告并投递 document.fetch，运行记为 succeeded', async () => {
     const { prisma, queue, service, payload } = await setup({
       [LIST_URL]: readGolden('hangzhou', 'list.html'),
@@ -224,6 +339,11 @@ describe('SourceDiscoverService.handle', () => {
         new NingboEducationAdapter(),
         new YinzhouGovernmentAdapter(),
         new NanjingEducationAdapter(),
+        new ShaoxingEducationAdapter(),
+        new JiaxingEducationAdapter(),
+        new SuzhouEducationAdapter(),
+        new ChangzhouEducationAdapter(),
+        new LishuiEducationAdapter(),
       ),
       queue,
       objectStore,
@@ -292,6 +412,11 @@ describe('SourceDiscoverService.handle', () => {
         new NingboEducationAdapter(),
         new YinzhouGovernmentAdapter(),
         new NanjingEducationAdapter(),
+        new ShaoxingEducationAdapter(),
+        new JiaxingEducationAdapter(),
+        new SuzhouEducationAdapter(),
+        new ChangzhouEducationAdapter(),
+        new LishuiEducationAdapter(),
       ),
       queue,
       objects,

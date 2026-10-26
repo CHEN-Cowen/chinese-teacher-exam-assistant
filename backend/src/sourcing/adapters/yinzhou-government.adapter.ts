@@ -9,6 +9,7 @@
  * 关联黄金样本：tests/fixtures/golden-sources/yinzhou/{list,detail}.html
  */
 import { load } from 'cheerio';
+import { discoverPublicColumn, locatePublicArticle } from '../public-column.js';
 import {
   AdapterParseError,
   classifyDocumentKind,
@@ -35,10 +36,14 @@ export class YinzhouGovernmentAdapter implements OfficialSiteAdapter {
   readonly key = YINZHOU_ADAPTER_KEY;
 
   discover(input: ListPageSnapshot): DiscoveredDocument[] {
+    if (input.content.trimStart().startsWith('{'))
+      return discoverPublicColumn(input.url, input.content, 'yinzhou');
     const $ = load(input.content);
     const container = $('ul#announcement-list');
     if (container.length === 0) {
-      throw mismatch('鄞州列表页未找到 ul#announcement-list 容器，页面结构可能已改版');
+      throw mismatch(
+        '鄞州列表页未找到 ul#announcement-list 容器，页面结构可能已改版',
+      );
     }
     const items: DiscoveredDocument[] = [];
     container.find('li.item').each((_index, element) => {
@@ -46,7 +51,9 @@ export class YinzhouGovernmentAdapter implements OfficialSiteAdapter {
       const link = $(element).find('a[href]').first();
       const href = link.attr('href');
       if (dateNode.length === 0) {
-        throw mismatch('鄞州列表条目缺少 span.item-date 节点，页面结构可能已改版');
+        throw mismatch(
+          '鄞州列表条目缺少 span.item-date 节点，页面结构可能已改版',
+        );
       }
       if (link.length === 0 || !href) {
         throw mismatch('鄞州列表条目缺少 href 链接，页面结构可能已改版');
@@ -54,24 +61,39 @@ export class YinzhouGovernmentAdapter implements OfficialSiteAdapter {
       const title = stripTags(link.html() ?? '');
       items.push({
         title,
-        publishedAt: extractDate(stripTags(dateNode.html() ?? ''), '列表条目 .item-date'),
+        publishedAt: extractDate(
+          stripTags(dateNode.html() ?? ''),
+          '列表条目 .item-date',
+        ),
         url: resolveUrl(input.url, href),
         kind: classifyDocumentKind(title),
       });
     });
     if (items.length === 0) {
-      throw mismatch('鄞州列表页 ul#announcement-list 内没有任何条目（静默 0 条视为故障）');
+      throw mismatch(
+        '鄞州列表页 ul#announcement-list 内没有任何条目（静默 0 条视为故障）',
+      );
     }
     return items;
   }
 
   locateArticle(input: ArticlePageSnapshot): LocatedArticle {
     const $ = load(input.content);
+    if (!$('div.title-box').length) {
+      const article = locatePublicArticle(input.url, input.content);
+      if (article) return article;
+    }
     const titleNode = $('div.title-box h1').first();
     const infoNode = $('div.title-box p.info span');
     const bodyNode = $('div.content-box').first();
-    if (titleNode.length === 0 || infoNode.length === 0 || bodyNode.length === 0) {
-      throw mismatch('鄞州正文页缺少 .title-box h1/.info span/.content-box，页面结构可能已改版');
+    if (
+      titleNode.length === 0 ||
+      infoNode.length === 0 ||
+      bodyNode.length === 0
+    ) {
+      throw mismatch(
+        '鄞州正文页缺少 .title-box h1/.info span/.content-box，页面结构可能已改版',
+      );
     }
     const infoText = infoNode
       .map((_index, element) => stripTags($(element).html() ?? ''))

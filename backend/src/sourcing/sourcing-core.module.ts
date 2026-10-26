@@ -22,18 +22,28 @@ import { REDIS_CLIENT, createRedisClient } from './redis.js';
 import { SafeFetcherFactory } from './fetch/safe-fetcher-factory.js';
 import { AdapterRegistry } from './adapter-registry.js';
 import { HangzhouEducationAdapter } from './adapters/hangzhou-education.adapter.js';
+import { LishuiEducationAdapter } from './adapters/lishui-education.adapter.js';
 import { NingboEducationAdapter } from './adapters/ningbo-education.adapter.js';
 import { YinzhouGovernmentAdapter } from './adapters/yinzhou-government.adapter.js';
 import { NanjingEducationAdapter } from './adapters/nanjing-education.adapter.js';
+import { ShaoxingEducationAdapter } from './adapters/shaoxing-education.adapter.js';
+import { JiaxingEducationAdapter } from './adapters/jiaxing-education.adapter.js';
+import { SuzhouEducationAdapter } from './adapters/suzhou-education.adapter.js';
+import { ChangzhouEducationAdapter } from './adapters/changzhou-education.adapter.js';
 import { BullmqTaskQueue } from './jobs/bullmq-task-queue.js';
 
 @Module({
   imports: [BullModule.registerQueue({ name: CRAWL_QUEUE_NAME })],
   providers: [
     HangzhouEducationAdapter,
+    LishuiEducationAdapter,
     NingboEducationAdapter,
     YinzhouGovernmentAdapter,
     NanjingEducationAdapter,
+    ShaoxingEducationAdapter,
+    JiaxingEducationAdapter,
+    SuzhouEducationAdapter,
+    ChangzhouEducationAdapter,
     AdapterRegistry,
     SafeFetcherFactory,
     CrawlRunStore,

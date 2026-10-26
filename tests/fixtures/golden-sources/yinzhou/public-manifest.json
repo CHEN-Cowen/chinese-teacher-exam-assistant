@@ -1,0 +1,18 @@
+{
+  "capturedAt": "2026-10-24T14:14:37.901Z",
+  "sourceKind": "official-live-snapshot",
+  "scope": "first-page-discovery-only",
+  "stableMonitoringVerified": false,
+  "files": [
+    {
+      "name": "public-shell.html",
+      "url": "https://www.nbyz.gov.cn/col/col1229108032/jszp/index.html",
+      "sha256": "161aceb6c7ed204c850bb98bbf29bfa4e221797156596905c77b7a6bd0718b65"
+    },
+    {
+      "name": "public-list.json",
+      "url": "https://www.nbyz.gov.cn/api-gateway/jpaas-publish-server/front/page/build/unit?parseType=bulidstatic&webId=3597&tplSetId=y205MrmgOHxJgkKUsCYOb&pageType=column&tagId=%E5%BD%93%E5%89%8D%E6%A0%8F%E7%9B%AElist&editType=null&pageId=CZ59m22A2Y6sUlEejsWQD",
+      "sha256": "896f41a06ec9b0b8d3c09c63800f5e3a8748789bc2dffb8f9fb48a1fa1b7377a"
+    }
+  ]
+}

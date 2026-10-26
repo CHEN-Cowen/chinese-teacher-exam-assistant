@@ -1,0 +1,13 @@
+{
+  "capturedAt": "2026-10-26T02:09:32.033Z",
+  "sourceKind": "official-live-snapshot",
+  "scope": "first-page-discovery-only",
+  "stableMonitoringVerified": false,
+  "files": [
+    {
+      "name": "public-shell.html",
+      "url": "https://jyj.jiaxing.gov.cn/col/col1569769/index.html",
+      "sha256": "d240e4ae98026350f2959f6a654263bcf2bc59b9f62ee8d4158ac7e3e4d2c6ea"
+    }
+  ]
+}

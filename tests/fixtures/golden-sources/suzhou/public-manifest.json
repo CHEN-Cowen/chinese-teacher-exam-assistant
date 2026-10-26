@@ -1,0 +1,13 @@
+{
+  "capturedAt": "2026-10-26T02:09:32.869Z",
+  "sourceKind": "official-live-snapshot",
+  "scope": "first-page-discovery-only",
+  "stableMonitoringVerified": false,
+  "files": [
+    {
+      "name": "public-shell.html",
+      "url": "https://jyj.suzhou.gov.cn/szjyj/rsxx/xxgk_list.shtml",
+      "sha256": "8bd35c3f1d23adeb9b5611fc0fa97465693b7191e089ca3b6b01d1731df095b1"
+    }
+  ]
+}

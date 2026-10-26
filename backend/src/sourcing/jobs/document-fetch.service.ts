@@ -21,7 +21,10 @@ import { SourcingMetrics } from '../observability.js';
 import type { ObjectStore } from '../storage/object-store.js';
 import { OBJECT_STORE } from '../storage/storage.tokens.js';
 import { SafeFetcherFactory } from '../fetch/safe-fetcher-factory.js';
-import { SafeFetchError } from '../fetch/safe-fetcher.js';
+import {
+  SafeFetchError,
+  type ExtraRequestHeaders,
+} from '../fetch/safe-fetcher.js';
 import { detectFormat } from '../../document-processing/format-detector.js';
 import {
   interventionFromBody,
@@ -124,12 +127,19 @@ export class DocumentFetchService {
       source.id,
       payload.canonicalUrl,
     );
+    // 部分官网（如常州市教育局）对附件做 Referer 防盗链校验：缺失时 302 跳回首页，
+    // 返回 HTML 而非真实二进制。这里用父公告页 URL 作为同源 Referer。
+    const extraHeaders = await this.attachmentHeaders(payload);
     let result;
     try {
-      result = await fetcher.fetch(payload.canonicalUrl, {
-        ifNoneMatch: cache?.etag ?? undefined,
-        ifModifiedSince: cache?.lastModified ?? undefined,
-      });
+      result = await fetcher.fetch(
+        payload.canonicalUrl,
+        {
+          ifNoneMatch: cache?.etag ?? undefined,
+          ifModifiedSince: cache?.lastModified ?? undefined,
+        },
+        extraHeaders,
+      );
       if (result.status === 304) {
         if (!cache) throw new Error('not_modified_without_snapshot');
         const bodyBytes =
@@ -315,5 +325,21 @@ export class DocumentFetchService {
       snapshotId: snapshot.id,
       contentHash: result.contentHash,
     };
+  }
+
+  /**
+   * 附件请求头：Referer 指向父公告页。
+   * 只有父文档存在且 URL 合法时才带；缺父文档不影响其余流程。
+   */
+  private async attachmentHeaders(
+    payload: DocumentFetchPayload,
+  ): Promise<ExtraRequestHeaders> {
+    if (payload.kind !== 'attachment') return {};
+    if (!payload.parentDocumentId) return {};
+    const parent = await this.documentStore.getDocument(
+      payload.parentDocumentId,
+    );
+    if (!parent) return {};
+    return { referer: parent.canonicalUrl };
   }
 }

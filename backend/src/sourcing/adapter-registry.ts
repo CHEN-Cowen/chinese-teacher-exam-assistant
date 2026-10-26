@@ -7,9 +7,14 @@
 import { Injectable } from '@nestjs/common';
 import type { OfficialSiteAdapter } from './official-site-adapter.js';
 import { HangzhouEducationAdapter } from './adapters/hangzhou-education.adapter.js';
+import { LishuiEducationAdapter } from './adapters/lishui-education.adapter.js';
 import { NingboEducationAdapter } from './adapters/ningbo-education.adapter.js';
 import { YinzhouGovernmentAdapter } from './adapters/yinzhou-government.adapter.js';
 import { NanjingEducationAdapter } from './adapters/nanjing-education.adapter.js';
+import { ShaoxingEducationAdapter } from './adapters/shaoxing-education.adapter.js';
+import { JiaxingEducationAdapter } from './adapters/jiaxing-education.adapter.js';
+import { SuzhouEducationAdapter } from './adapters/suzhou-education.adapter.js';
+import { ChangzhouEducationAdapter } from './adapters/changzhou-education.adapter.js';
 
 @Injectable()
 export class AdapterRegistry {
@@ -20,8 +25,23 @@ export class AdapterRegistry {
     ningbo: NingboEducationAdapter,
     yinzhou: YinzhouGovernmentAdapter,
     nanjing: NanjingEducationAdapter,
+    shaoxing: ShaoxingEducationAdapter,
+    jiaxing: JiaxingEducationAdapter,
+    suzhou: SuzhouEducationAdapter,
+    changzhou: ChangzhouEducationAdapter,
+    lishui: LishuiEducationAdapter,
   ) {
-    const adapters = [hangzhou, ningbo, yinzhou, nanjing];
+    const adapters = [
+      hangzhou,
+      ningbo,
+      yinzhou,
+      nanjing,
+      shaoxing,
+      jiaxing,
+      suzhou,
+      changzhou,
+      lishui,
+    ];
     this.byKey = new Map(adapters.map((adapter) => [adapter.key, adapter]));
   }
 

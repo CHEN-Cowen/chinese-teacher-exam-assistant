@@ -26,9 +26,19 @@ import type {
   CrawlTaskQueue,
   QueueJobCounts,
 } from './jobs/task-queue.js';
-import { DEFAULT_CRAWL_SOURCES } from './default-sources.js';
+import {
+  SOURCE_CATALOG,
+  SOURCE_MONITORING_RECORDS,
+  getCatalogSourceKeys,
+  getSeedableSources,
+  validateSourceCatalog,
+} from './source-catalog.js';
+import { summarizeAllMonitoring } from './source-monitoring.js';
 import { CRAWL_TASK_QUEUE } from './sourcing.tokens.js';
-import { CONFIRMED_RELATION_TYPES, type RelationKind } from '../announcements/relation.domain.js';
+import {
+  CONFIRMED_RELATION_TYPES,
+  type RelationKind,
+} from '../announcements/relation.domain.js';
 
 /** 人工触发只允许 admin / retry；schedule 只由定时器产生 */
 const MANUAL_TRIGGERS: readonly CrawlTrigger[] = ['admin', 'retry'];
@@ -77,12 +87,37 @@ export class SourcingController {
     return { document };
   }
 
-  /** 幂等登记 S4 首批四个来源（对照真实官网核对栏目 URL 后调用） */
+  /**
+   * 候选目录不等于已监测覆盖；只读返回核验状态。
+   *
+   * 每个来源附带 `monitoring`（来源级检查记录推导出的状态），
+   * 便于直接看出“核验通过”与“已在持续监测”的差别——两者不是一回事。
+   */
+  @Get('catalog')
+  @UseGuards(AdminGuard)
+  catalog() {
+    const monitoring = summarizeAllMonitoring(
+      SOURCE_MONITORING_RECORDS,
+      getCatalogSourceKeys(),
+    );
+    const byKey = new Map(monitoring.map((entry) => [entry.sourceKey, entry]));
+    return {
+      entries: SOURCE_CATALOG.map((entry) => ({
+        ...entry,
+        monitoring: byKey.get(entry.sourceKey)!,
+      })),
+      validationErrors: validateSourceCatalog(),
+    };
+  }
+
+  /** 仅登记通过配置核验门禁的来源，不启用未核验候选。 */
   @Post('seed')
   @UseGuards(StrictAdminGuard)
   async seed() {
+    const errors = validateSourceCatalog();
+    if (errors.length) throw new BadRequestException(errors.join('; '));
     const registered = [];
-    for (const source of DEFAULT_CRAWL_SOURCES) {
+    for (const source of getSeedableSources()) {
       registered.push(
         await this.store.upsertSource({
           publisher: source.publisher,
