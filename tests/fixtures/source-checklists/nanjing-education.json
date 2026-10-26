@@ -1,0 +1,215 @@
+{
+  "sourceKey": "nanjing-education",
+  "listUrl": "https://edu.nanjing.gov.cn/bsfw/zpzk/index.html",
+  "window": {
+    "from": "2026-01-01",
+    "to": "2026-10-26"
+  },
+  "verification": "pending",
+  "checkedAt": "2026-10-26T09:55:00.000Z",
+  "entries": [
+    {
+      "url": "https://edu.nanjing.gov.cn/bsfw/zpzk/202609/t20260914_5909891.html",
+      "title": "南京市教育局部分直属学校2026年7月公开招聘高层次人才、紧缺人才拟聘用人员名单公示（二）",
+      "publishedAt": "2026-09-14",
+      "disposition": "excluded",
+      "reason": "笔试成绩、面试、体检、考察或拟聘公示，属于后续流程，不纳入首期岗位发现"
+    },
+    {
+      "url": "https://edu.nanjing.gov.cn/bsfw/zpzk/202609/t20260908_5907126.html",
+      "title": "南京市教育系统部分事业单位2025年11月公开招聘教师拟聘用人员名单公示（五）",
+      "publishedAt": "2026-09-08",
+      "disposition": "excluded",
+      "reason": "笔试成绩、面试、体检、考察或拟聘公示，属于后续流程，不纳入首期岗位发现"
+    },
+    {
+      "url": "https://edu.nanjing.gov.cn/bsfw/zpzk/202608/t20260813_5893273.html",
+      "title": "南京市教育局部分直属学校2026年7月公开招聘高层次人才、紧缺人才拟聘用人员名单公示（一）",
+      "publishedAt": "2026-08-13",
+      "disposition": "excluded",
+      "reason": "笔试成绩、面试、体检、考察或拟聘公示，属于后续流程，不纳入首期岗位发现"
+    },
+    {
+      "url": "https://edu.nanjing.gov.cn/bsfw/zpzk/202607/t20260731_5886673.html",
+      "title": "南京市教育局直属学校2026年1月公开招聘教师拟聘用人员名单公示（三）",
+      "publishedAt": "2026-07-31",
+      "disposition": "excluded",
+      "reason": "笔试成绩、面试、体检、考察或拟聘公示，属于后续流程，不纳入首期岗位发现"
+    },
+    {
+      "url": "https://edu.nanjing.gov.cn/bsfw/zpzk/202607/t20260731_5886668.html",
+      "title": "南京市教育系统部分事业单位2025年11月公开招聘教师拟聘用人员名单公示（四）",
+      "publishedAt": "2026-07-31",
+      "disposition": "excluded",
+      "reason": "笔试成绩、面试、体检、考察或拟聘公示，属于后续流程，不纳入首期岗位发现"
+    },
+    {
+      "url": "https://edu.nanjing.gov.cn/bsfw/zpzk/202607/t20260729_5885327.html",
+      "title": "2026年南京市教育系统专项招聘复硕培养试点毕业生拟聘用人员名单公示",
+      "publishedAt": "2026-07-29",
+      "disposition": "excluded",
+      "reason": "笔试成绩、面试、体检、考察或拟聘公示，属于后续流程，不纳入首期岗位发现"
+    },
+    {
+      "url": "https://edu.nanjing.gov.cn/bsfw/zpzk/202607/t20260713_5875855.html",
+      "title": "南京市教育局所属事业单位2026年公开招聘拟聘用人员名单公示（一）",
+      "publishedAt": "2026-07-14",
+      "disposition": "excluded",
+      "reason": "笔试成绩、面试、体检、考察或拟聘公示，属于后续流程，不纳入首期岗位发现"
+    },
+    {
+      "url": "https://edu.nanjing.gov.cn/bsfw/zpzk/202607/t20260713_5875841.html",
+      "title": "关于南京市教育局部分直属学校2026年7月公开招聘高层次人才、紧缺人才部分岗位取消、核减招聘计划的公告",
+      "publishedAt": "2026-07-13",
+      "disposition": "target",
+      "reason": "取消或核减招聘计划，属于高影响变更，单独纳入"
+    },
+    {
+      "url": "https://edu.nanjing.gov.cn/bsfw/zpzk/202607/t20260701_5869258.html",
+      "title": "南京市教育局部分直属学校2026年7月公开招聘高层次人才、紧缺人才公告",
+      "publishedAt": "2026-07-01",
+      "disposition": "target",
+      "reason": "教师或教育工作人员公开招聘/引进/选聘初始公告"
+    },
+    {
+      "url": "https://edu.nanjing.gov.cn/bsfw/zpzk/202606/t20260630_5868068.html",
+      "title": "南京市教育局直属学校2026年1月公开招聘教师拟聘用人员名单公示（二）",
+      "publishedAt": "2026-06-30",
+      "disposition": "excluded",
+      "reason": "笔试成绩、面试、体检、考察或拟聘公示，属于后续流程，不纳入首期岗位发现"
+    },
+    {
+      "url": "https://edu.nanjing.gov.cn/bsfw/zpzk/202606/t20260616_5860306.html",
+      "title": "2026年南京市教育系统专项招聘复硕培养试点毕业生公告",
+      "publishedAt": "2026-06-18",
+      "disposition": "target",
+      "reason": "教师或教育工作人员公开招聘/引进/选聘初始公告"
+    },
+    {
+      "url": "https://edu.nanjing.gov.cn/bsfw/zpzk/202606/t20260610_5855476.html",
+      "title": "南京市教育局所属事业单位2026年统一公开招聘工作人员成绩公布",
+      "publishedAt": "2026-06-10",
+      "disposition": "excluded",
+      "reason": "笔试成绩、面试、体检、考察或拟聘公示，属于后续流程，不纳入首期岗位发现"
+    },
+    {
+      "url": "https://edu.nanjing.gov.cn/bsfw/zpzk/202606/t20260608_5853960.html",
+      "title": "南京市教育系统部分事业单位2025年11月公开招聘教师拟聘用人员名单公示（三）",
+      "publishedAt": "2026-06-08",
+      "disposition": "excluded",
+      "reason": "笔试成绩、面试、体检、考察或拟聘公示，属于后续流程，不纳入首期岗位发现"
+    },
+    {
+      "url": "https://edu.nanjing.gov.cn/bsfw/zpzk/202605/t20260527_5847229.html",
+      "title": "南京市教育局所属事业单位2026年公开招聘进入面试人员名单",
+      "publishedAt": "2026-05-28",
+      "disposition": "excluded",
+      "reason": "笔试成绩、面试、体检、考察或拟聘公示，属于后续流程，不纳入首期岗位发现"
+    },
+    {
+      "url": "https://edu.nanjing.gov.cn/bsfw/zpzk/202603/t20260326_5812978.html",
+      "title": "南京市教育系统部分事业单位2025年11月公开招聘教师拟聘用人员名单公示（二）",
+      "publishedAt": "2026-03-26",
+      "disposition": "excluded",
+      "reason": "笔试成绩、面试、体检、考察或拟聘公示，属于后续流程，不纳入首期岗位发现"
+    },
+    {
+      "url": "https://rsj.nanjing.gov.cn/njsrlzyhshbzj/202603/t20260318_5807842.html",
+      "title": "南京市2026年事业单位统一公开招聘工作人员公告",
+      "publishedAt": "2026-03-18",
+      "disposition": "target",
+      "reason": "教师或教育工作人员公开招聘/引进/选聘初始公告"
+    },
+    {
+      "url": "https://edu.nanjing.gov.cn/bsfw/zpzk/202602/t20260202_5785091.html",
+      "title": "南京市教育系统部分事业单位2025年11月公开招聘教师拟聘用人员名单公示（一）",
+      "publishedAt": "2026-02-02",
+      "disposition": "excluded",
+      "reason": "笔试成绩、面试、体检、考察或拟聘公示，属于后续流程，不纳入首期岗位发现"
+    },
+    {
+      "url": "https://edu.nanjing.gov.cn/bsfw/zpzk/202601/t20260121_5775038.html",
+      "title": "关于南京市教育局直属学校2026年1月公开招聘教师部分岗位取消、核减招聘计划的公告",
+      "publishedAt": "2026-01-22",
+      "disposition": "target",
+      "reason": "取消或核减招聘计划，属于高影响变更，单独纳入"
+    },
+    {
+      "url": "https://edu.nanjing.gov.cn/bsfw/zpzk/202601/t20260109_5762078.html",
+      "title": "南京江北新区2026年1月公开招聘教师公告",
+      "publishedAt": "2026-01-09",
+      "disposition": "target",
+      "reason": "教师或教育工作人员公开招聘/引进/选聘初始公告"
+    },
+    {
+      "url": "https://edu.nanjing.gov.cn/bsfw/zpzk/202601/t20260109_5762008.html",
+      "title": "南京市溧水区教育局所属事业单位2026年1月公开招聘教师公告",
+      "publishedAt": "2026-01-09",
+      "disposition": "target",
+      "reason": "教师或教育工作人员公开招聘/引进/选聘初始公告"
+    },
+    {
+      "url": "https://edu.nanjing.gov.cn/bsfw/zpzk/202601/t20260109_5761809.html",
+      "title": "南京市雨花台区教育局所属学校2026年公开招聘教师公告",
+      "publishedAt": "2026-01-09",
+      "disposition": "target",
+      "reason": "教师或教育工作人员公开招聘/引进/选聘初始公告"
+    },
+    {
+      "url": "https://edu.nanjing.gov.cn/bsfw/zpzk/202601/t20260109_5761685.html",
+      "title": "南京市玄武区教育局所属学校2026年公开招聘教师公告",
+      "publishedAt": "2026-01-09",
+      "disposition": "target",
+      "reason": "教师或教育工作人员公开招聘/引进/选聘初始公告"
+    },
+    {
+      "url": "https://edu.nanjing.gov.cn/bsfw/zpzk/202601/t20260108_5759945.html",
+      "title": "2026年南京市六合区教育局所属事业单位公开招聘教师公告",
+      "publishedAt": "2026-01-09",
+      "disposition": "target",
+      "reason": "教师或教育工作人员公开招聘/引进/选聘初始公告"
+    },
+    {
+      "url": "https://edu.nanjing.gov.cn/bsfw/zpzk/202601/t20260109_5761561.html",
+      "title": "南京市建邺区教育局所属学校2026年公开招聘教师公告",
+      "publishedAt": "2026-01-09",
+      "disposition": "target",
+      "reason": "教师或教育工作人员公开招聘/引进/选聘初始公告"
+    },
+    {
+      "url": "https://edu.nanjing.gov.cn/bsfw/zpzk/202601/t20260109_5761506.html",
+      "title": "南京市鼓楼区教育局所属学校2026年1月公开招聘新教师公告",
+      "publishedAt": "2026-01-09",
+      "disposition": "target",
+      "reason": "教师或教育工作人员公开招聘/引进/选聘初始公告"
+    },
+    {
+      "url": "https://edu.nanjing.gov.cn/bsfw/zpzk/202601/t20260109_5761503.html",
+      "title": "南京市秦淮区教育局所属学校2026年1月公开招聘教师公告",
+      "publishedAt": "2026-01-09",
+      "disposition": "target",
+      "reason": "教师或教育工作人员公开招聘/引进/选聘初始公告"
+    },
+    {
+      "url": "https://edu.nanjing.gov.cn/bsfw/zpzk/202601/t20260109_5761403.html",
+      "title": "南京市栖霞区2026年公开招聘教师公告",
+      "publishedAt": "2026-01-09",
+      "disposition": "target",
+      "reason": "教师或教育工作人员公开招聘/引进/选聘初始公告"
+    },
+    {
+      "url": "https://edu.nanjing.gov.cn/bsfw/zpzk/202601/t20260108_5760923.html",
+      "title": "南京市江宁区2026年1月公开招聘教师公告",
+      "publishedAt": "2026-01-08",
+      "disposition": "target",
+      "reason": "教师或教育工作人员公开招聘/引进/选聘初始公告"
+    },
+    {
+      "url": "https://edu.nanjing.gov.cn/bsfw/zpzk/202601/t20260108_5759566.html",
+      "title": "南京市教育局直属学校2026年1月公开招聘教师公告",
+      "publishedAt": "2026-01-08",
+      "disposition": "target",
+      "reason": "教师或教育工作人员公开招聘/引进/选聘初始公告"
+    }
+  ]
+}
