@@ -5,6 +5,8 @@
 
 南京、杭州、宁波、鄞州四个来源的样本在 S4 建立；S5 追加绍兴、嘉兴、苏州、常州、丽水，
 并为全部 9 个 ready 来源补齐 `public-*` 真实快照（外壳页 / 列表 / 分页 / 正文 + manifest）。
+S5 遗留任务 1 补源再追加蚌埠、萧山（对应 `public-*` 快照 + manifest），
+当前 ready 来源共 11 个。
 
 ## 脱敏与使用规则
 
@@ -33,12 +35,14 @@
 | 苏州 | `suzhou/` | `public-*` 真实快照 | 苏州市教育局人事信息公示 |
 | 常州 | `changzhou/` | `public-*` 真实快照 | 常州市教育局教师招聘栏目 |
 | 丽水 | `lishui/` | `public-*` 真实快照 | 丽水市教育局「人事招聘」专栏 |
+| 蚌埠 | `bengbu/` | `public-*` 真实快照 | 蚌埠市教育局「教师招聘」专栏 |
+| 萧山 | `xiaoshan/` | `public-*` 真实快照 | 杭州市萧山区人民政府「教师招考」专栏（jpaas 公开接口） |
 
 ## `public-*` 真实快照说明（S5）
 
 | 文件 | 内容 |
 |---|---|
-| `public-shell.html` | 栏目外壳页（含 jpaas 公开接口的 queryData） |
+| `public-shell.html` | 栏目外壳页（含 jpaas 公开接口的 queryData，或服务端渲染静态列表） |
 | `public-list.json` / `public-list.html` | 首屏列表真实响应 |
 | `public-page2.json` / `public-page2.html` | 第 2 页真实响应（验证分页协议） |
 | `public-detail.html` | 公告正文真实页面 |
@@ -50,9 +54,10 @@ manifest 顶层字段：
 - `capturedAt`：真实抓取时间（ISO 8601），各来源不同；
 - `sourceKind`：`official-live-snapshot`；
 - `scope`：快照覆盖范围（如 `first-page-discovery-only`），不夸大覆盖；
-- `stableMonitoringVerified`：**当前全部为 `false`**。
-  只完成了一次真实采样，尚无连续检查记录，**不得对外声称"正常监测"**。
-  监测状态的推导规则见 `backend/src/sourcing/source-monitoring.ts`。
+- `stableMonitoringVerified`：快照文件本身只证明「那一次抓到了什么」，
+  **不**等于来源已在持续监测。来源能不能声称正常监测，只看
+  `backend/src/sourcing/source-monitoring.ts` 从检查记录推导的状态。
+  2026-10-26 第二次真实采样之后，11 个 ready 来源的检查记录已达连续成功阈值。
 
 ## Adapter 开发约定（WP4 实施时阅读）
 

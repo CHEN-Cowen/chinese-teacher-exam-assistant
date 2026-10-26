@@ -2,20 +2,25 @@ import { describe, expect, it } from 'vitest';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
+import { AdapterParseError } from './official-site-adapter.js';
 import {
   columnTablePages,
   discoverColumnTable,
   discoverPublicColumn,
+  discoverServerRenderedList,
   discoverStaticList,
   locateOfficialArticle,
   publicColumnPages,
   publicColumnRequest,
+  serverRenderedListPages,
   staticListPages,
 } from './public-column.js';
 import { ShaoxingEducationAdapter } from './adapters/shaoxing-education.adapter.js';
 import { JiaxingEducationAdapter } from './adapters/jiaxing-education.adapter.js';
 import { SuzhouEducationAdapter } from './adapters/suzhou-education.adapter.js';
 import { ChangzhouEducationAdapter } from './adapters/changzhou-education.adapter.js';
+import { BengbuEducationAdapter } from './adapters/bengbu-education.adapter.js';
+import { XiaoshanEducationAdapter } from './adapters/xiaoshan-education.adapter.js';
 import { HangzhouEducationAdapter } from './adapters/hangzhou-education.adapter.js';
 import { LishuiEducationAdapter } from './adapters/lishui-education.adapter.js';
 
@@ -198,6 +203,68 @@ describe('S5 新增官方来源真实样本回放', () => {
     expect(article.attachments[0].name).toContain('体检人选名单');
   });
 
+  it('蚌埠市教育局教师招聘列表、分页与正文按官方协议解析', () => {
+    const shell = readFixture('bengbu', 'public-shell.html');
+    const items = discoverServerRenderedList(
+      'https://jyj.bengbu.gov.cn/xwdt/kszp/',
+      shell,
+      /\/xwdt\/kszp\/\d+\.html$/,
+    );
+    expect(items.length).toBeGreaterThan(5);
+    expect(
+      items.every((item) => /^\d{4}-\d{2}-\d{2}$/.test(item.publishedAt)),
+    ).toBe(true);
+    expect(items.some((item) => item.title.includes('教师'))).toBe(true);
+    // 条目 URL 必须落在官方教师招聘栏目路径下
+    expect(
+      items.every((item) =>
+        /^https:\/\/jyj\.bengbu\.gov\.cn\/xwdt\/kszp\/\d+\.html$/.test(
+          item.url,
+        ),
+      ),
+    ).toBe(true);
+
+    // 官方 pageCount 分页：后续页为 /content/column/<id>?pageIndex=N
+    const pages = serverRenderedListPages(
+      'https://jyj.bengbu.gov.cn/xwdt/kszp/',
+      shell,
+      '6820881',
+      'https://jyj.bengbu.gov.cn',
+    );
+    expect(pages.length).toBeGreaterThan(0);
+    expect(pages[0]).toBe(
+      'https://jyj.bengbu.gov.cn/content/column/6820881?pageIndex=2',
+    );
+
+    // 第 2 页样本独立回放，验证分页结构一致
+    const page2 = readFixture('bengbu', 'public-page2.html');
+    const page2Items = discoverServerRenderedList(
+      'https://jyj.bengbu.gov.cn/content/column/6820881?pageIndex=2',
+      page2,
+      /\/xwdt\/kszp\/\d+\.html$/,
+    );
+    expect(page2Items.length).toBeGreaterThan(3);
+
+    const detail = readManifest('bengbu', 'public-detail-manifest.json');
+    const detailFile = detail.files[0];
+    const detailBytes = readFileSync(
+      path.join(fixtureDir('bengbu'), detailFile.name),
+    );
+    expect(createHash('sha256').update(detailBytes).digest('hex')).toBe(
+      detailFile.sha256,
+    );
+    const article = locateOfficialArticle(
+      detailFile.url,
+      detailBytes.toString('utf8'),
+    );
+    expect(article.title).toContain('教师');
+    expect(article.publishedAt).toBe('2026-08-07');
+    expect(article.bodyText.length).toBeGreaterThan(100);
+    // 官方附件走站点内 /group4/ 对象存储链接
+    expect(article.attachments.length).toBeGreaterThanOrEqual(1);
+    expect(article.attachments[0].url).toContain('/group4/');
+  });
+
   it('三个新适配器在真实样本上不抛 DOM 失配', () => {
     const shaoxingList = readFixture('shaoxing', 'public-list.json');
     const jiaxingList = readFixture('jiaxing', 'public-list.json');
@@ -226,6 +293,123 @@ describe('S5 新增官方来源真实样本回放', () => {
         fetchedAt: '2026-10-26T00:00:00.000Z',
       }).length,
     ).toBeGreaterThan(5);
+  });
+
+  it('蚌埠适配器在真实样本上不抛 DOM 失配', () => {
+    const adapter = new BengbuEducationAdapter();
+    const shell = readFixture('bengbu', 'public-shell.html');
+    const items = adapter.discover({
+      url: 'https://jyj.bengbu.gov.cn/xwdt/kszp/',
+      mimeType: 'text/html',
+      content: shell,
+      fetchedAt: '2026-10-26T08:47:12.061Z',
+    });
+    expect(items.length).toBeGreaterThan(5);
+    expect(
+      adapter.paginationListings('https://jyj.bengbu.gov.cn/xwdt/kszp/', shell)
+        .length,
+    ).toBeGreaterThan(0);
+    // 该来源是服务端渲染静态列表，误传公开接口 JSON 必须显式失败
+    expect(() =>
+      adapter.discover({
+        url: 'https://jyj.bengbu.gov.cn/xwdt/kszp/',
+        mimeType: 'application/json',
+        content: '{"success":true,"data":{"html":"<ul></ul>"}}',
+        fetchedAt: '2026-10-26T08:47:12.061Z',
+      }),
+    ).toThrow(AdapterParseError);
+  });
+
+  it('萧山区教育局教师招考列表、分页与正文按官方协议解析', () => {
+    const manifest = readManifest('xiaoshan', 'public-manifest.json');
+    const listFile = manifest.files.find((file) =>
+      file.name.endsWith('public-list.json'),
+    )!;
+    const bytes = readFileSync(
+      path.join(fixtureDir('xiaoshan'), listFile.name),
+    );
+    expect(createHash('sha256').update(bytes).digest('hex')).toBe(
+      listFile.sha256,
+    );
+    const items = discoverPublicColumn(
+      listFile.url,
+      bytes.toString('utf8'),
+      'xiaoshan',
+    );
+    expect(items.length).toBeGreaterThan(5);
+    // 萧山是区县级来源，条目必须落在官方 /art/ 正文路径下
+    expect(
+      items.every((item) =>
+        /^https:\/\/www\.xiaoshan\.gov\.cn\/col\/col1228964830\/art\/\d{4}\/art_[\da-f]+\.html$/.test(
+          item.url,
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      items.every((item) => /^\d{4}-\d{2}-\d{2}$/.test(item.publishedAt)),
+    ).toBe(true);
+    expect(items.some((item) => item.title.includes('教师'))).toBe(true);
+
+    // 官方 paramJson 分页协议：rows=15 / count=173 → 共 12 页
+    const pages = publicColumnPages(listFile.url, bytes.toString('utf8'));
+    expect(pages.length).toBe(11);
+    expect(pages[0]).toContain(
+      encodeURIComponent('{"pageNo":2,"pageSize":"15"}'),
+    );
+
+    // 第 2 页样本独立回放，验证分页结构一致
+    const page2 = readFixture('xiaoshan', 'public-page2.json');
+    const page2Items = discoverPublicColumn(pages[0], page2, 'xiaoshan');
+    expect(page2Items.length).toBeGreaterThan(3);
+    // 第 2 页请求带 paramJson 时不得再生成后续页（避免重复抓取）
+    expect(publicColumnPages(pages[0], page2)).toHaveLength(0);
+
+    const detail = readManifest('xiaoshan', 'public-detail-manifest.json');
+    const detailFile = detail.files[0];
+    const detailBytes = readFileSync(
+      path.join(fixtureDir('xiaoshan'), detailFile.name),
+    );
+    expect(createHash('sha256').update(detailBytes).digest('hex')).toBe(
+      detailFile.sha256,
+    );
+    const article = locateOfficialArticle(
+      detailFile.url,
+      detailBytes.toString('utf8'),
+    );
+    expect(article.title).toContain('教师');
+    expect(article.publishedAt).toBe('2026-07-20');
+    expect(article.bodyText.length).toBeGreaterThan(100);
+    expect(article.attachments.length).toBeGreaterThanOrEqual(1);
+    expect(article.attachments[0].url).toContain('/document/download');
+  });
+
+  it('萧山适配器在真实样本上不抛 DOM 失配', () => {
+    const adapter = new XiaoshanEducationAdapter();
+    const list = readFixture('xiaoshan', 'public-list.json');
+    const items = adapter.discover({
+      url: 'https://www.xiaoshan.gov.cn/api-gateway/jpaas-publish-server/front/page/build/unit?parseType=bulidstatic&webId=2243&tplSetId=GazmxWZitZXDWHJedYwxo&pageType=column&tagId=%E5%BD%93%E5%89%8D%E6%A0%8F%E7%9B%AE%E5%88%97%E8%A1%A8&editType=null&pageId=1228964830',
+      mimeType: 'application/json',
+      content: list,
+      fetchedAt: '2026-10-26T08:50:44.919Z',
+    });
+    expect(items.length).toBeGreaterThan(5);
+    expect(
+      adapter.pages({
+        url: 'https://www.xiaoshan.gov.cn/api-gateway/jpaas-publish-server/front/page/build/unit?parseType=bulidstatic&webId=2243&tplSetId=GazmxWZitZXDWHJedYwxo&pageType=column&tagId=%E5%BD%93%E5%89%8D%E6%A0%8F%E7%9B%AE%E5%88%97%E8%A1%A8&editType=null&pageId=1228964830',
+        mimeType: 'application/json',
+        content: list,
+        fetchedAt: '2026-10-26T08:50:44.919Z',
+      }).length,
+    ).toBe(11);
+    // 栏目外壳页本身不含列表数据，误传必须显式失败而不是静默返回 0 条
+    expect(() =>
+      adapter.discover({
+        url: 'https://www.xiaoshan.gov.cn/col/col1228964830/index.html',
+        mimeType: 'text/html',
+        content: readFixture('xiaoshan', 'public-shell.html'),
+        fetchedAt: '2026-10-26T08:50:44.919Z',
+      }),
+    ).toThrow(AdapterParseError);
   });
 
   it('常州适配器在真实样本上不抛 DOM 失配', () => {
@@ -553,6 +737,8 @@ const MANIFEST_SOURCES = [
   'changzhou',
   'hangzhou',
   'lishui',
+  'bengbu',
+  'xiaoshan',
 ] as const;
 
 describe('S5 真实快照 manifest schema 统一', () => {
@@ -603,6 +789,23 @@ describe('S5 真实快照 manifest schema 统一', () => {
       ) as { scope?: string };
       expect(manifest.scope, key).toBe('article-and-attachment-links-only');
     }
+  });
+
+  it('快照目录声明 -text，保证 Git blob 字节与 manifest 哈希一致', () => {
+    // manifest 记录的是官网真实响应的 sha256。若 Git 在 checkout 时做行尾转换，
+    // Linux / CI 上工作区字节会与哈希失配，回放测试必然失败。
+    // 因此快照目录必须用 .gitattributes 把 * 标记为 -text（不做任何转换）。
+    const root = path.resolve(
+      process.cwd(),
+      '../tests/fixtures/golden-sources',
+    );
+    const attr = path.join(root, '.gitattributes');
+    expect(
+      existsSync(attr),
+      '缺少 tests/fixtures/golden-sources/.gitattributes',
+    ).toBe(true);
+    const text = readFileSync(attr, 'utf8');
+    expect(text).toMatch(/^\*\s+-text\s*$/m);
   });
 });
 

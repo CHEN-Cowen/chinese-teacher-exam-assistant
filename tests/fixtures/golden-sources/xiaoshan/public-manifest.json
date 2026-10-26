@@ -1,0 +1,23 @@
+{
+  "capturedAt": "2026-10-26T08:50:44.919Z",
+  "sourceKind": "official-live-snapshot",
+  "scope": "first-page-discovery-only",
+  "stableMonitoringVerified": false,
+  "files": [
+    {
+      "name": "public-shell.html",
+      "url": "https://www.xiaoshan.gov.cn/col/col1228964830/index.html",
+      "sha256": "7ba44f53da82978f4b0a84e819ad27c86cfcb671b06690abcfaa98c4ed206b38"
+    },
+    {
+      "name": "public-list.json",
+      "url": "https://www.xiaoshan.gov.cn/api-gateway/jpaas-publish-server/front/page/build/unit?parseType=bulidstatic&webId=2243&tplSetId=GazmxWZitZXDWHJedYwxo&pageType=column&tagId=%E5%BD%93%E5%89%8D%E6%A0%8F%E7%9B%AE%E5%88%97%E8%A1%A8&editType=null&pageId=1228964830",
+      "sha256": "3e78ff48c0f1744c954f64a778f1ea6396a849ae2337ed98bb21e74416bbad9f"
+    },
+    {
+      "name": "public-page2.json",
+      "url": "https://www.xiaoshan.gov.cn/api-gateway/jpaas-publish-server/front/page/build/unit?parseType=bulidstatic&webId=2243&tplSetId=GazmxWZitZXDWHJedYwxo&pageType=column&tagId=%E5%BD%93%E5%89%8D%E6%A0%8F%E7%9B%AE%E5%88%97%E8%A1%A8&editType=null&pageId=1228964830&paramJson=%7B%22pageNo%22%3A2%2C%22pageSize%22%3A%2215%22%7D",
+      "sha256": "042641564bd2f112bf9a92d99b90ba8edb1ec433551af75369f9e84233651828"
+    }
+  ]
+}

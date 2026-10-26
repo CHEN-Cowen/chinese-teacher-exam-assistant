@@ -1,0 +1,18 @@
+{
+  "capturedAt": "2026-10-26T08:47:12.061Z",
+  "sourceKind": "official-live-snapshot",
+  "scope": "first-page-discovery-only",
+  "stableMonitoringVerified": false,
+  "files": [
+    {
+      "name": "public-shell.html",
+      "url": "https://jyj.bengbu.gov.cn/xwdt/kszp/",
+      "sha256": "a6fd560127776600f8c61a2f78b8adf3da6be844a50f1df24f1a09404adc0323"
+    },
+    {
+      "name": "public-page2.html",
+      "url": "https://jyj.bengbu.gov.cn/content/column/6820881?pageIndex=2",
+      "sha256": "415406d6d9abc6b1843b97abe71e6f8db7657a80e225eb510d0a9fb723b6fded"
+    }
+  ]
+}

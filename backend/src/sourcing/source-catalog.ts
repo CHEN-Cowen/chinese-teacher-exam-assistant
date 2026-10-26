@@ -98,8 +98,8 @@ export const SOURCE_CATALOG: readonly SourceCatalogEntry[] = [
         ? source.adapterKey === 'nanjing-education'
           ? '南京市教育局教师招聘栏目，含分页；已完成历史材料离线回放。'
           : source.adapterKey === 'hangzhou-education'
-            ? '「教师招聘」专栏真实核验（2026-10-26）：jpaas 公开接口列表 + 分页、正文与官方附件下载链接离线回放通过；持续监测未验证。'
-            : '真实栏目与正文/附件已离线回放通过；持续监测未验证。'
+            ? '「教师招聘」专栏真实核验（2026-10-26）：jpaas 公开接口列表 + 分页、正文与官方附件下载链接离线回放通过；持续监测见检查记录。'
+            : '真实栏目与正文/附件已离线回放通过；持续监测见检查记录。'
         : '已登记测试样本和适配器草案；真实栏目、附件和独立清单仍待核验。',
     };
   }) as SourceCatalogEntry[]),
@@ -116,7 +116,7 @@ export const SOURCE_CATALOG: readonly SourceCatalogEntry[] = [
     verifiedAt: '2026-10-26',
     sampleRef: 'tests/fixtures/golden-sources/shaoxing',
     coverageNote:
-      '「教师招聘」专栏真实核验（2026-10-26）：jpaas 公开接口列表 + 正文与附件离线回放通过；持续监测未验证。',
+      '「教师招聘」专栏真实核验（2026-10-26）：jpaas 公开接口列表 + 正文与附件离线回放通过；持续监测见检查记录。',
   },
   {
     sourceKey: 'jiaxing-education',
@@ -131,7 +131,7 @@ export const SOURCE_CATALOG: readonly SourceCatalogEntry[] = [
     verifiedAt: '2026-10-26',
     sampleRef: 'tests/fixtures/golden-sources/jiaxing',
     coverageNote:
-      '「人才招聘」专栏真实核验（2026-10-26）：公开接口列表 + 正文与附件离线回放通过；列表日期为短格式，年份取自官方文章路径；持续监测未验证。',
+      '「人才招聘」专栏真实核验（2026-10-26）：公开接口列表 + 正文与附件离线回放通过；列表日期为短格式，年份取自官方文章路径；持续监测见检查记录。',
   },
   {
     sourceKey: 'suzhou-education',
@@ -222,7 +222,7 @@ export const SOURCE_CATALOG: readonly SourceCatalogEntry[] = [
     verifiedAt: '2026-10-26',
     sampleRef: 'tests/fixtures/golden-sources/changzhou',
     coverageNote:
-      '「教师招考」专栏真实核验（2026-10-26）：静态表格列表 + 官方 FX_PageDiv 分页、正文与官方附件下载链接回放通过；附件需同源 Referer（已落地到下载链路）；持续监测未验证。',
+      '「教师招考」专栏真实核验（2026-10-26）：静态表格列表 + 官方 FX_PageDiv 分页、正文与官方附件下载链接回放通过；附件需同源 Referer（已落地到下载链路）；持续监测见检查记录。',
   },
   {
     sourceKey: 'lishui-education',
@@ -237,7 +237,37 @@ export const SOURCE_CATALOG: readonly SourceCatalogEntry[] = [
     verifiedAt: '2026-10-26',
     sampleRef: 'tests/fixtures/golden-sources/lishui',
     coverageNote:
-      '「人事招聘」专栏真实核验（2026-10-26）：jpaas 公开接口列表（文字列表页app / ajax分页双单元）+ initJpage 分页、正文与官方 xlsx 附件下载链接回放通过；持续监测未验证。',
+      '「人事招聘」专栏真实核验（2026-10-26）：jpaas 公开接口列表（文字列表页app / ajax分页双单元）+ initJpage 分页、正文与官方 xlsx 附件下载链接回放通过；持续监测见检查记录。',
+  },
+  {
+    sourceKey: 'bengbu-education',
+    publisher: '蚌埠市教育局',
+    regionCode: '340300',
+    authorityLevel: 'city',
+    officialUrl: 'https://jyj.bengbu.gov.cn/',
+    listUrls: ['https://jyj.bengbu.gov.cn/xwdt/kszp/'],
+    allowedHosts: ['jyj.bengbu.gov.cn'],
+    adapterKey: 'bengbu-education',
+    status: 'ready',
+    verifiedAt: '2026-10-26',
+    sampleRef: 'tests/fixtures/golden-sources/bengbu',
+    coverageNote:
+      '「教师招聘」专栏真实核验（2026-10-26）：服务端渲染静态列表 + 官方 pageCount/pageIndex 分页（实测 18 页 / 267 条）、正文与官方 /group4/ 附件下载链接离线回放通过；市级栏目按 S0 规范 6.2 不能替代市县覆盖；持续监测见检查记录。',
+  },
+  {
+    sourceKey: 'xiaoshan-education',
+    publisher: '杭州市萧山区教育局',
+    regionCode: '330109',
+    authorityLevel: 'district',
+    officialUrl: 'https://www.xiaoshan.gov.cn/',
+    listUrls: ['https://www.xiaoshan.gov.cn/col/col1228964830/index.html'],
+    allowedHosts: ['www.xiaoshan.gov.cn'],
+    adapterKey: 'xiaoshan-education',
+    status: 'ready',
+    verifiedAt: '2026-10-26',
+    sampleRef: 'tests/fixtures/golden-sources/xiaoshan',
+    coverageNote:
+      '「教师招考」专栏真实核验（2026-10-26）：jpaas 公开动态接口列表（rows=15 / count=173）+ 官方 paramJson 分页、正文 #zoom 与官方附件下载链接离线回放通过；本来源为区县级层级，按 S0 规范 6.2 独立于杭州市级来源提供区县覆盖；持续监测见检查记录。',
   },
 ] as const;
 
@@ -333,13 +363,18 @@ export function validateSourceCatalog(
  * 重要口径（S0 规范「来源台账状态」）：
  * > “正常监测”必须有来源级检查记录，不能仅凭代码中存在适配器判断。
  *
- * 因此：首批 9 个来源虽然都完成了真实栏目核验 + 离线回放（`status: 'ready'`），
- * 但**持续监测尚未验证**——真实抓取只执行过一次（首次采样），
- * 还没有形成「连续多次成功」的记录，所以这里只登记**首次采样**这一条，
- * 状态会停在 `verifying`，对外不能声称“正常监测”。
+ * 因此：首批来源虽然都完成了真实栏目核验 + 离线回放（`status: 'ready'`），
+ * 持续监测要靠**另一次真实检查**才能成立。
+ *
+ * 2026-10-26 17:00–17:03（UTC 09:00–09:03）对 11 个 ready 来源做了第二次采样：
+ * 只再抓栏目入口与实际列表，与第一次黄金样本的条目（标题/日期/链接）比对，
+ * **不覆盖**已核验的黄金样本。
+ * - 南京：首屏 15 条全部更换（最新由 2026-03-18 变为 2026-09-14），记 `succeeded`；
+ * - 其余 10 个：列表条目与第一次完全一致，记 `no_new`（算成功，不算新内容）。
+ * 连续成功达到阈值后，状态由记录推导为 `monitoring`，不在这里手写。
  *
  * 后续由真实调度 Worker 产生的检查结果应追加到这里（或落库后由
- * `summarizeAllMonitoring` 汇总），达到连续成功阈值才允许声明 monitoring。
+ * `summarizeAllMonitoring` 汇总）。
  */
 export const SOURCE_MONITORING_RECORDS: readonly SourceMonitoringRecord[] = [
   {
@@ -351,6 +386,14 @@ export const SOURCE_MONITORING_RECORDS: readonly SourceMonitoringRecord[] = [
         discoveredCount: null,
         contentHash: null,
         note: '首次真实采样：列表页与正文页抓取成功并落离线样本；未做条目级计数与指纹留痕。',
+      },
+      {
+        checkedAt: '2026-10-26T09:02:59.964Z',
+        outcome: 'succeeded',
+        discoveredCount: 15,
+        contentHash:
+          '2dabaabf6b9e545d02e2aebe7dc378ffd40cb41dc0964bcaf4c1a3617da960c4',
+        note: '第二次真实采样（距首次 5 天）：栏目 HTTP 200，首屏 15 条与 2026-10-21 黄金样本全部不同，最新公告由 2026-03-18 变为 2026-09-14。指纹为标题+日期+链接的 sha256。',
       },
     ],
   },
@@ -364,6 +407,14 @@ export const SOURCE_MONITORING_RECORDS: readonly SourceMonitoringRecord[] = [
         contentHash: null,
         note: '首次真实采样：jpaas 公开接口列表（含分页）与正文、官方附件下载链接回放通过。',
       },
+      {
+        checkedAt: '2026-10-26T09:02:06.075Z',
+        outcome: 'no_new',
+        discoveredCount: 30,
+        contentHash:
+          'e00bc18be4a11d4105a5ac6f95ccc60556301d5f4373fb76f5572ed630a13b4c',
+        note: '第二次真实采样（距首次约 5.5 小时）：栏目 HTTP 200，公开列表 30 条标题/日期/链接与首次黄金样本完全一致。',
+      },
     ],
   },
   {
@@ -375,6 +426,14 @@ export const SOURCE_MONITORING_RECORDS: readonly SourceMonitoringRecord[] = [
         discoveredCount: null,
         contentHash: null,
         note: '首次真实采样：公开接口列表与正文回放通过。',
+      },
+      {
+        checkedAt: '2026-10-26T09:02:06.660Z',
+        outcome: 'no_new',
+        discoveredCount: 15,
+        contentHash:
+          'f8615b0ff6a008cb78a0ac79af7fdef86a7e4027e67bf8d6b5e5cdfd8c93d3d1',
+        note: '第二次真实采样（距首次约 43 小时）：栏目 HTTP 200，公开列表 15 条与首次黄金样本完全一致。',
       },
     ],
   },
@@ -388,6 +447,14 @@ export const SOURCE_MONITORING_RECORDS: readonly SourceMonitoringRecord[] = [
         contentHash: null,
         note: '首次真实采样：公开接口列表与正文回放通过。',
       },
+      {
+        checkedAt: '2026-10-26T09:02:07.293Z',
+        outcome: 'no_new',
+        discoveredCount: 30,
+        contentHash:
+          'b37c74514ca17505624025860d7501110bb5ecabd5ea19def7ed9dcb3cb089db',
+        note: '第二次真实采样（距首次约 43 小时）：栏目 HTTP 200，公开列表 30 条与首次黄金样本完全一致。',
+      },
     ],
   },
   {
@@ -399,6 +466,14 @@ export const SOURCE_MONITORING_RECORDS: readonly SourceMonitoringRecord[] = [
         discoveredCount: null,
         contentHash: null,
         note: '首次真实采样：jpaas 公开接口列表、正文与官方附件下载链接回放通过。',
+      },
+      {
+        checkedAt: '2026-10-26T09:02:07.875Z',
+        outcome: 'no_new',
+        discoveredCount: 18,
+        contentHash:
+          '059893224eae7986235232163f8c19ae959716212741ab6b5c7eea2e4532e782',
+        note: '第二次真实采样（距首次约 7 小时）：栏目 HTTP 200，公开列表 18 条与首次黄金样本完全一致。',
       },
     ],
   },
@@ -412,6 +487,14 @@ export const SOURCE_MONITORING_RECORDS: readonly SourceMonitoringRecord[] = [
         contentHash: null,
         note: '首次真实采样：公开接口列表、正文与官方附件下载链接回放通过。',
       },
+      {
+        checkedAt: '2026-10-26T09:02:08.423Z',
+        outcome: 'no_new',
+        discoveredCount: 20,
+        contentHash:
+          '6d125b8e5bd6609598f6cbe2aac6b24924a368301b42cf0fc7d681e0583adb3b',
+        note: '第二次真实采样（距首次约 7 小时）：栏目 HTTP 200，公开列表 20 条与首次黄金样本完全一致。',
+      },
     ],
   },
   {
@@ -423,6 +506,14 @@ export const SOURCE_MONITORING_RECORDS: readonly SourceMonitoringRecord[] = [
         discoveredCount: null,
         contentHash: null,
         note: '首次真实采样：公开列表接口、正文与官方附件下载链接回放通过。',
+      },
+      {
+        checkedAt: '2026-10-26T09:02:09.003Z',
+        outcome: 'no_new',
+        discoveredCount: 57,
+        contentHash:
+          '16d11564f8958a51c25f703f3179659c93054214cdf50d8db0648427e47720d9',
+        note: '第二次真实采样（距首次约 7 小时）：栏目 HTTP 200，静态列表 57 条与首次黄金样本完全一致。外壳页有 1 字节差，条目本身未变。',
       },
     ],
   },
@@ -436,6 +527,14 @@ export const SOURCE_MONITORING_RECORDS: readonly SourceMonitoringRecord[] = [
         contentHash: null,
         note: '首次真实采样：公开列表接口、正文与官方附件下载链接回放通过。',
       },
+      {
+        checkedAt: '2026-10-26T09:02:09.281Z',
+        outcome: 'no_new',
+        discoveredCount: 20,
+        contentHash:
+          '210bcc4a76fa21c5bd5cf2da6b6841c0b42066f9dc31eb3e2aefbb2630ba81fb',
+        note: '第二次真实采样（距首次约 6 小时）：栏目 HTTP 200，表格列表 20 条与首次黄金样本完全一致。外壳页字节有差，条目本身未变。',
+      },
     ],
   },
   {
@@ -447,6 +546,54 @@ export const SOURCE_MONITORING_RECORDS: readonly SourceMonitoringRecord[] = [
         discoveredCount: null,
         contentHash: null,
         note: '首次真实采样：jpaas 公开接口列表（initJpage 分页）、正文与官方 xlsx 附件下载链接回放通过。',
+      },
+      {
+        checkedAt: '2026-10-26T09:02:09.491Z',
+        outcome: 'no_new',
+        discoveredCount: 10,
+        contentHash:
+          '10e0a95f7718de43ed55507dca5006cdb7904ae264e4f037eea1ed91bbc0c74c',
+        note: '第二次真实采样（距首次约 5 小时）：栏目 HTTP 200，公开列表 10 条与首次黄金样本完全一致。',
+      },
+    ],
+  },
+  {
+    sourceKey: 'bengbu-education',
+    checks: [
+      {
+        checkedAt: '2026-10-26T08:47:12.061Z',
+        outcome: 'succeeded',
+        discoveredCount: 9,
+        contentHash: null,
+        note: '首次真实采样：服务端渲染静态列表（首屏 9 条）+ 官方 pageCount 分页（18 页 / 267 条）、正文与官方 /group4/ 附件下载链接回放通过。',
+      },
+      {
+        checkedAt: '2026-10-26T09:05:49.593Z',
+        outcome: 'no_new',
+        discoveredCount: 9,
+        contentHash:
+          'afff501d5e942a01c74e4dcac582a372e388915a7ecb16b0c805332581072aab',
+        note: '第二次真实采样（距首次约 18 分钟）：栏目 HTTP 200，教师招聘路径下 9 条与首次黄金样本完全一致。',
+      },
+    ],
+  },
+  {
+    sourceKey: 'xiaoshan-education',
+    checks: [
+      {
+        checkedAt: '2026-10-26T08:50:44.919Z',
+        outcome: 'succeeded',
+        discoveredCount: 15,
+        contentHash: null,
+        note: '首次真实采样：jpaas 公开动态接口列表（rows=15 / count=173）、官方 paramJson 分页、正文 #zoom 与官方附件下载链接回放通过。',
+      },
+      {
+        checkedAt: '2026-10-26T09:05:49.593Z',
+        outcome: 'no_new',
+        discoveredCount: 15,
+        contentHash:
+          '305e3f75f4c007f03f15fbf4c833c5f0faf5132a61569e9578ecfd9b38de3c29',
+        note: '第二次真实采样（距首次约 15 分钟）：栏目 HTTP 200，教师招考列表 15 条与首次黄金样本完全一致。',
       },
     ],
   },

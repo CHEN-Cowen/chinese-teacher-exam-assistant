@@ -15,6 +15,13 @@ import { ShaoxingEducationAdapter } from './adapters/shaoxing-education.adapter.
 import { JiaxingEducationAdapter } from './adapters/jiaxing-education.adapter.js';
 import { SuzhouEducationAdapter } from './adapters/suzhou-education.adapter.js';
 import { ChangzhouEducationAdapter } from './adapters/changzhou-education.adapter.js';
+import { BengbuEducationAdapter } from './adapters/bengbu-education.adapter.js';
+import { XiaoshanEducationAdapter } from './adapters/xiaoshan-education.adapter.js';
+
+/** 过滤掉未注入的可选适配器（保持类型收窄） */
+function defined<T>(value: T | undefined): value is T {
+  return value !== undefined;
+}
 
 @Injectable()
 export class AdapterRegistry {
@@ -30,8 +37,12 @@ export class AdapterRegistry {
     suzhou: SuzhouEducationAdapter,
     changzhou: ChangzhouEducationAdapter,
     lishui: LishuiEducationAdapter,
+    // 新适配器一律追加到末尾，且保持**可选**：
+    // 既有测试按位置传前 9 个适配器，新增参数不能让它们变成 undefined。
+    bengbu?: BengbuEducationAdapter,
+    xiaoshan?: XiaoshanEducationAdapter,
   ) {
-    const adapters = [
+    const adapters: OfficialSiteAdapter[] = [
       hangzhou,
       ningbo,
       yinzhou,
@@ -41,7 +52,9 @@ export class AdapterRegistry {
       suzhou,
       changzhou,
       lishui,
-    ];
+      bengbu,
+      xiaoshan,
+    ].filter(defined);
     this.byKey = new Map(adapters.map((adapter) => [adapter.key, adapter]));
   }
 

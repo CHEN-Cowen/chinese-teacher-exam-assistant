@@ -25,7 +25,9 @@ describe('S5 来源目录', () => {
 
   it('只有完成入口、适配器、样本和人工核验的来源才能进入 seed', () => {
     const seedable = getSeedableSources();
-    // S5 真实核验通过：南京、宁波、鄞州、杭州、绍兴、嘉兴、苏州、常州、丽水
+    // S5 真实核验通过：南京、宁波、鄞州、杭州、绍兴、嘉兴、苏州、常州、丽水；
+    // S5 遗留任务 1 补入：蚌埠（服务端渲染静态列表 + pageIndex 分页）、
+    // 萧山（区县级 jpaas 公开接口 + paramJson 分页）。
     expect(seedable.map((source) => source.adapterKey)).toEqual([
       'nanjing-education',
       'hangzhou-education',
@@ -36,6 +38,8 @@ describe('S5 来源目录', () => {
       'suzhou-education',
       'changzhou-education',
       'lishui-education',
+      'bengbu-education',
+      'xiaoshan-education',
     ]);
     expect(
       SOURCE_CATALOG.filter((entry) => entry.status === 'candidate'),
@@ -152,30 +156,36 @@ describe('S5 来源目录', () => {
     expect(verifiedAtOf('suzhou-education')).toBe('2026-10-26');
     expect(verifiedAtOf('changzhou-education')).toBe('2026-10-26');
     expect(verifiedAtOf('lishui-education')).toBe('2026-10-26');
+    expect(verifiedAtOf('bengbu-education')).toBe('2026-10-26');
+    expect(verifiedAtOf('xiaoshan-education')).toBe('2026-10-26');
   });
 });
 
 describe('S5 来源级检查记录与监测状态', () => {
-  it('ready 来源必须登记检查记录，没有记录就不是「在监测」', () => {
+  it('ready 来源完成两次真实检查后，才可声称正常监测', () => {
     const ready = SOURCE_CATALOG.filter((entry) => entry.status === 'ready');
-    expect(ready.length).toBe(9);
+    expect(ready.length).toBe(11);
     for (const entry of ready) {
       const record = getSourceMonitoringRecord(entry.sourceKey);
-      expect(
-        record.checks.length,
-        `${entry.sourceKey} 缺少来源级检查记录`,
-      ).toBeGreaterThan(0);
-    }
-  });
-
-  it('首批来源只完成一次真实采样，尚不能声称正常监测', () => {
-    // S0 规范：“正常监测”必须有来源级检查记录，不能仅凭存在适配器判断。
-    // 9 个来源都只做过首次真实采样，连续成功次数未达阈值，
-    // 因此状态只能是 verifying，不得对外声称 monitoring。
-    for (const record of SOURCE_MONITORING_RECORDS) {
+      expect(record.checks.length, entry.sourceKey).toBe(2);
       const summary = summarizeMonitoring(record);
-      expect(summary.state, record.sourceKey).toBe('verifying');
-      expect(canClaimMonitoring(summary), record.sourceKey).toBe(false);
+      expect(summary.state, entry.sourceKey).toBe('monitoring');
+      expect(summary.currentStreak, entry.sourceKey).toBe(2);
+      expect(canClaimMonitoring(summary), entry.sourceKey).toBe(true);
+      expect(record.checks[1]?.contentHash, entry.sourceKey).toMatch(
+        /^[0-9a-f]{64}$/,
+      );
+    }
+    // 只有南京第二次发现了新公告；其余 10 个列表条目未变，记 no_new 仍算成功。
+    expect(
+      getSourceMonitoringRecord('nanjing-education').checks[1]?.outcome,
+    ).toBe('succeeded');
+    const unchanged = SOURCE_MONITORING_RECORDS.filter(
+      (record) => record.sourceKey !== 'nanjing-education',
+    );
+    expect(unchanged).toHaveLength(10);
+    for (const record of unchanged) {
+      expect(record.checks[1]?.outcome, record.sourceKey).toBe('no_new');
     }
   });
 
@@ -195,6 +205,9 @@ describe('S5 来源级检查记录与监测状态', () => {
     const checkedAtOf = (key: string) =>
       getSourceMonitoringRecord(key).checks[0]?.checkedAt;
     expect(checkedAtOf('nanjing-education')).toBe('2026-10-21T00:00:00.000Z');
+    expect(
+      getSourceMonitoringRecord('nanjing-education').checks[1]?.checkedAt,
+    ).toBe('2026-10-26T09:02:59.964Z');
     expect(checkedAtOf('hangzhou-education')).toBe('2026-10-26T03:29:35.478Z');
     expect(checkedAtOf('ningbo-education')).toBe('2026-10-24T14:14:37.873Z');
     expect(checkedAtOf('yinzhou-government')).toBe('2026-10-24T14:14:37.901Z');
@@ -203,14 +216,17 @@ describe('S5 来源级检查记录与监测状态', () => {
     expect(checkedAtOf('suzhou-education')).toBe('2026-10-26T02:09:32.869Z');
     expect(checkedAtOf('changzhou-education')).toBe('2026-10-26T02:47:27.596Z');
     expect(checkedAtOf('lishui-education')).toBe('2026-10-26T04:08:21.242Z');
+    expect(checkedAtOf('bengbu-education')).toBe('2026-10-26T08:47:12.061Z');
+    expect(checkedAtOf('xiaoshan-education')).toBe('2026-10-26T08:50:44.919Z');
   });
 
-  it('补录第二次成功检查后，来源才可判定为正常监测', () => {
+  it('补录检查是纯函数，追加后连续成功次数加一且不改原记录', () => {
+    const before = getSourceMonitoringRecord('lishui-education');
     const next = appendSourceCheck(
       SOURCE_MONITORING_RECORDS,
       'lishui-education',
       {
-        checkedAt: '2026-10-26T05:00:00.000Z',
+        checkedAt: '2026-10-27T05:00:00.000Z',
         outcome: 'succeeded',
         discoveredCount: 2,
         contentHash: 'def456',
@@ -220,10 +236,11 @@ describe('S5 来源级检查记录与监测状态', () => {
       getSourceMonitoringRecord('lishui-education', next),
     );
     expect(summary.state).toBe('monitoring');
-    expect(summary.currentStreak).toBe(2);
+    expect(summary.currentStreak).toBe(before.checks.length + 1);
     expect(canClaimMonitoring(summary)).toBe(true);
-    // 原始记录不被修改（纯函数）。
-    expect(getSourceMonitoringRecord('lishui-education').checks.length).toBe(1);
+    expect(getSourceMonitoringRecord('lishui-education').checks.length).toBe(
+      before.checks.length,
+    );
   });
 
   it('目录 sourceKey 列表覆盖全部登记来源', () => {

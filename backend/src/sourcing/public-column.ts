@@ -49,10 +49,17 @@ export function extractArticlePathDate(text: string, url: string): string {
  * - shaoxing：li，日期在 span.bt-data-time（带方括号）；
  * - jiaxing：li，日期在 div.time（短格式，年份取自官方文章路径）；
  * - hangzhou：li，日期在 span.suffixContent[origintime]（毫秒时间戳）；
- * - lishui：li，日期在同级 span（方括号包裹的 YYYY-MM-DD）。
+ * - lishui：li，日期在同级 span（方括号包裹的 YYYY-MM-DD）；
+ * - xiaoshan：li，日期在同级 span.info-time（YYYY-MM-DD）。
  */
 export type PublicColumnKind =
-  'ningbo' | 'yinzhou' | 'shaoxing' | 'jiaxing' | 'hangzhou' | 'lishui';
+  | 'ningbo'
+  | 'yinzhou'
+  | 'shaoxing'
+  | 'jiaxing'
+  | 'hangzhou'
+  | 'lishui'
+  | 'xiaoshan';
 
 /** 只读取官网声明的同源公开列表接口，不执行脚本，不接受任意跨域地址。 */
 export function publicColumnRequest(
@@ -275,13 +282,14 @@ export function locatePublicArticle(
   };
 }
 
-/** 正文容器候选顺序：#zoom 为主，实测嘉兴/绍兴亦同，苏州为 .article-content，常州为 .NewsText。 */
+/** 正文容器候选顺序：#zoom 为主，实测嘉兴/绍兴亦同，苏州为 .article-content，常州为 .NewsText，蚌埠为 .j-fontContent。 */
 const ARTICLE_BODY_SELECTORS = [
   '#zoom',
   '.article-content',
   '.NewsText',
   '.bt_content',
   '.art_con',
+  '.j-fontContent',
 ] as const;
 
 /**
@@ -306,7 +314,7 @@ export function locateOfficialArticle(
   if (!body.length)
     throw new AdapterParseError(
       'DOM_MISMATCH',
-      '公开正文未找到容器（#zoom/.article-content/.NewsText/.bt_content/.art_con）',
+      '公开正文未找到容器（#zoom/.article-content/.NewsText/.bt_content/.art_con/.j-fontContent）',
     );
   if (!title || !date || !body.text().trim())
     throw new AdapterParseError('DOM_MISMATCH', '公开正文缺少标题、日期或正文');
@@ -417,6 +425,12 @@ export function discoverPublicColumn(
       // 丽水两种单元的日期都在同级的 span / 独立日期单元格内，
       // 方括号包裹（如 [2026-09-23]）由 extractDate 提取 YYYY-MM-DD。
       publishedAt = extractDate(lishuiRowDate($, e), '丽水公开栏目日期');
+    } else if (kind === 'xiaoshan') {
+      // 萧山条目日期在同级 span.info-time（YYYY-MM-DD）。
+      publishedAt = extractDate(
+        $(e).find('span.info-time').first().text(),
+        '萧山公开栏目日期',
+      );
     } else {
       const date =
         kind === 'ningbo'
@@ -567,6 +581,85 @@ export function columnTablePages(
   // 官方后续页形如 <栏目路径>/<页码>（/class/QFJEPCBL/2），页码直接追加到路径末尾。
   for (let next = 2; next <= total; next += 1) {
     urls.push(`${baseUrl.replace(/\/+$/, '')}/${next}`);
+  }
+  return urls;
+}
+
+/**
+ * 蚌埠市教育局「教师招聘」栏目（/xwdt/kszp/）：
+ * 服务端渲染的静态 HTML 列表，与常州表格、苏州静态列表同族但结构不同。
+ * 实测结构：li 内 a[title]（标题即 title 属性）+ 同级 span.right.date（YYYY-MM-DD）；
+ * 后续页为 /content/column/<columnId>?pageIndex=N（首屏即栏目路径自身）。
+ */
+export function discoverServerRenderedList(
+  baseUrl: string,
+  content: string,
+  detailPathPattern: RegExp,
+): DiscoveredDocument[] {
+  const $ = load(content);
+  const items: DiscoveredDocument[] = [];
+  const seen = new Set<string>();
+  $('a[href]').each((_i, e) => {
+    const href = $(e).attr('href');
+    const title = ($(e).attr('title') ?? '').trim();
+    if (!href || !title) return;
+    const url = resolveUrl(baseUrl, href);
+    if (!detailPathPattern.test(url)) return;
+    if (seen.has(url)) return;
+    const date = $(e)
+      .closest('li')
+      .find('span.right.date')
+      .first()
+      .text()
+      .trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      throw new AdapterParseError(
+        'DOM_MISMATCH',
+        `服务端渲染列表条目缺少发布日期（YYYY-MM-DD）: ${title}`,
+      );
+    }
+    seen.add(url);
+    items.push({
+      title,
+      publishedAt: extractDate(date, '服务端渲染列表日期'),
+      url: normalizeUrl(url),
+      kind: classifyDocumentKind(title),
+    });
+  });
+  if (!items.length)
+    throw new AdapterParseError(
+      'DOM_MISMATCH',
+      '服务端渲染列表未找到条目（a[title] + span.right.date）',
+    );
+  return items;
+}
+
+/**
+ * 蚌埠官方分页：总页数写在服务端渲染的内联 `Ls.pagination(...)`
+ * 配置里（pageCount），后续页为 /content/column/<columnId>?pageIndex=N。
+ * columnId 由来源配置传入（不在 DOM 上），拿不到就按单页处理。
+ */
+export function serverRenderedListPages(
+  baseUrl: string,
+  content: string,
+  columnId: string,
+  origin: string,
+  maxPages = 20,
+): string[] {
+  const text = content;
+  const pageCountMatch = text.match(/pageCount\s*:\s*(\d+)/);
+  if (!pageCountMatch) return [];
+  const total = Number(pageCountMatch[1]);
+  if (!Number.isSafeInteger(total) || total < 1)
+    throw new AdapterParseError('DOM_MISMATCH', '服务端渲染列表分页参数无效');
+  if (total > maxPages)
+    throw new AdapterParseError(
+      'DOM_MISMATCH',
+      '服务端渲染列表分页超出预算，需调整检查范围',
+    );
+  const urls: string[] = [];
+  for (let next = 2; next <= total; next += 1) {
+    urls.push(`${origin}/content/column/${columnId}?pageIndex=${next}`);
   }
   return urls;
 }
