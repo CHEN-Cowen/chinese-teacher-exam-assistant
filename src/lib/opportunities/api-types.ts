@@ -217,14 +217,35 @@ export interface MetaDTO {
   evaluatedAt: string;
 }
 
-/** 真实监测覆盖说明（覆盖地区/核对时间/当前在报数） */
+/**
+ * M01/F1-F2 统一覆盖投影（与后端 coverage-projection.ts 同构）。
+ *
+ * 访客与登录用户共用同一接口、同一事实来源：
+ * - 来源级状态区分已登记/核验通过/近期检查正常/检查失败/暂停/核验不可用；
+ * - 省级状态区分未收录/已登记/已核验/监测中无在报/监测中在报/暂停；
+ * - caliber 携带统计口径、生成时间与非实时回退标注。
+ */
+export type CoverageSourceStateDTO =
+  | "registered"
+  | "verified"
+  | "recently_healthy"
+  | "check_failed"
+  | "paused"
+  | "blocked";
+
 export interface CoverageSourceDTO {
+  /** 台账 sourceKey */
   id: string;
   name: string;
   url: string;
-  lastCheckedAt: string;
-  ok: boolean;
-  failReason?: string | null;
+  /** 6 位行政区划代码 */
+  regionCode: string;
+  authorityLevel: string;
+  state: CoverageSourceStateDTO;
+  /** 最近一次来源级检查时间；无检查记录为 null */
+  lastCheckedAt: string | null;
+  /** 人类可读的判定依据 */
+  note: string;
 }
 
 export interface CoverageRegionDTO {
@@ -235,20 +256,39 @@ export interface CoverageRegionDTO {
 }
 
 export type CoverageStatusDTO =
+  | "not_started"
+  /** 已登记官方入口，等待核验 */
+  | "registered"
+  /** 已核验通过，但近期检查未运行/未达阈值/已超窗 */
+  | "verified"
   | "monitoring_no_open"
   | "open_batch_exists"
-  | "paused"
-  /** 尚未开始监测的省份：只允许表达「暂未收录·待接入」，无城市无来源 */
-  | "not_started";
+  | "paused";
 
 /** 逐省覆盖口径：用户选择省时只能看到该省实际监测的城市 */
 export interface ProvinceScopeDTO {
   code: string;
   label: string;
   status: CoverageStatusDTO;
-  /** 该省已实际监测的市级代码；not_started 省份为空数组 */
+  /** 该省已登记市/区县级来源的地区代码；省级候选不计入 */
   monitoredRegionCodes: string[];
   scopeNote: string;
+}
+
+/** 统计口径：说明「按什么口径统计、何时生成、是否为非实时回退」。 */
+export interface CoverageCaliberDTO {
+  generatedAt: string;
+  version: string;
+  registeredSources: number;
+  verifiedSources: number;
+  recentlyHealthySources: number;
+  failedSources: number;
+  pausedSources: number;
+  blockedSources: number;
+  publishedOpenUnits: number;
+  /** 运行状态不可用、使用台账静态投影回退（非实时） */
+  isFallback: boolean;
+  fallbackNote: string | null;
 }
 
 export interface CoverageDTO {
@@ -258,10 +298,13 @@ export interface CoverageDTO {
   status: CoverageStatusDTO;
   provinces: ProvinceScopeDTO[];
   regions: CoverageRegionDTO[];
+  /** 扁平来源列表（含状态与判定依据），与 regions 内 sources 同构 */
+  sources: CoverageSourceDTO[];
   lastCheckedAt: string;
   openOpportunityCount: number;
   nextWindowNote: string;
   scopeNote: string;
+  caliber: CoverageCaliberDTO;
 }
 
 /**

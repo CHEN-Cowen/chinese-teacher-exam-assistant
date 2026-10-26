@@ -1,7 +1,10 @@
 import type { CoverageDTO } from "@/lib/opportunities/api-types";
 import {
+  SOURCE_STATE_LABELS,
   buildProvinceScopeViews,
+  coverageFallbackNote,
   coverageProvinceLine,
+  sourceStateTone,
 } from "@/lib/opportunities/coverage-view";
 
 /** "YYYY-MM-DD..." → "M月D日"；无法解析时原样返回 */
@@ -12,13 +15,16 @@ function formatDay(iso: string): string {
 }
 
 /**
- * 真实监测覆盖说明（模块 1 / M0 逐省口径）：
- * 逐省说清「实际监测哪些城市、有哪些官方来源、最近核对时间、当前是否有在报批次」；
- * 尚未监测的省份（江苏）只能显示「暂未收录（待接入）」，不列城市不列来源，
- * 避免把「暂未收录」误读成「当地无招聘」或「全省已覆盖」。
+ * 官方监测覆盖说明（M01/F1-F2 统一覆盖投影）：
+ * 逐省说清「实际监测哪些城市、有哪些官方来源、各来源检查状态、
+ * 最近核对时间、当前是否有在报批次」；
+ * 尚未登记的省份只显示「暂未收录（待接入）」，不列城市不列来源；
+ * 已登记/核验通过不等于已有在报岗位；
+ * 非实时回退（caliber.isFallback）必须明示，不冒充实时监测。
  */
 export function CoverageBanner({ coverage }: { coverage: CoverageDTO }) {
   const provinceViews = buildProvinceScopeViews(coverage);
+  const fallbackNote = coverageFallbackNote(coverage);
   return (
     <details
       aria-label="官方监测覆盖说明"
@@ -105,30 +111,38 @@ export function CoverageBanner({ coverage }: { coverage: CoverageDTO }) {
               <>
                 <ul className="mt-1.5 space-y-1.5 text-xs text-ink-muted">
                   {province.monitoredRegions.flatMap((region) =>
-                    region.sources.map((source) => (
-                      <li
-                        key={source.id}
-                        className="flex flex-wrap items-center gap-x-2 gap-y-0.5"
-                      >
-                        <span
-                          aria-hidden="true"
-                          className={
-                            source.ok
-                              ? "inline-block h-1.5 w-1.5 rounded-full bg-success"
-                              : "inline-block h-1.5 w-1.5 rounded-full bg-danger"
-                          }
-                        />
-                        <span>
-                          {region.label} · {source.name}
-                        </span>
-                        <span>
-                          {source.ok
-                            ? "来源可访问"
-                            : `来源异常：${source.failReason ?? "未知原因"}`}
-                        </span>
-                        <span>核对于 {formatDay(source.lastCheckedAt)}</span>
-                      </li>
-                    )),
+                    region.sources.map((source) => {
+                      const tone = sourceStateTone(source.state);
+                      return (
+                        <li
+                          key={source.id}
+                          className="flex flex-wrap items-center gap-x-2 gap-y-0.5"
+                        >
+                          <span
+                            aria-hidden="true"
+                            className={
+                              tone === "ok"
+                                ? "inline-block h-1.5 w-1.5 rounded-full bg-success"
+                                : tone === "bad"
+                                  ? "inline-block h-1.5 w-1.5 rounded-full bg-danger"
+                                  : "inline-block h-1.5 w-1.5 rounded-full bg-canvas ring-1 ring-line"
+                            }
+                          />
+                          <span>
+                            {region.label} · {source.name}
+                          </span>
+                          <span>{SOURCE_STATE_LABELS[source.state]}</span>
+                          {source.state === "check_failed" ? (
+                            <span>原因：{source.note}</span>
+                          ) : null}
+                          <span>
+                            {source.lastCheckedAt
+                              ? `核对于 ${formatDay(source.lastCheckedAt)}`
+                              : "暂无来源级检查记录"}
+                          </span>
+                        </li>
+                      );
+                    }),
                   )}
                 </ul>
                 <p className="mt-1.5 text-xs leading-5 text-ink-muted">
@@ -139,6 +153,14 @@ export function CoverageBanner({ coverage }: { coverage: CoverageDTO }) {
           </section>
         ))}
 
+        {fallbackNote ? (
+          <p
+            className="mt-3 rounded-xl bg-warning-soft px-3 py-2 text-xs leading-5 text-ink"
+            data-testid="coverage-fallback-note"
+          >
+            {fallbackNote}
+          </p>
+        ) : null}
         <p className="mt-3 border-t border-line pt-3 text-xs leading-relaxed text-ink-muted">
           {coverage.scopeNote}
           AI 初核且尚待人工复核的记录不会进入推荐。覆盖版本 {coverage.version}。

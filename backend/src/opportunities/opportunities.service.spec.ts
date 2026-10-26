@@ -9,6 +9,7 @@ import {
   MATCH_RULE_VERSION,
 } from '../matching/engine.js';
 import { CATALOG_VERSION } from '../matching/catalog.js';
+import { COVERAGE_PROJECTION_VERSION } from './coverage-projection.js';
 import {
   REAL_ANNOUNCEMENT_IDS,
   REAL_CATALOG_VERSION,
@@ -289,9 +290,13 @@ describe('OpportunitiesService：匹配响应', () => {
     expect(response.meta.catalogVersion).toBe(CATALOG_VERSION);
     expect(response.meta.realCatalogVersion).toBe(REAL_CATALOG_VERSION);
     expect(response.meta.evaluatedAt).toBeTruthy();
-    // 真实监测覆盖随响应返回：0 在报、最近核对时间可展示
+    // M01/F2 统一覆盖投影随响应返回：0 在报、口径字段齐备（静态回退口径）
+    expect(response.coverage.version).toBe(COVERAGE_PROJECTION_VERSION);
     expect(response.coverage.openOpportunityCount).toBe(0);
-    expect(response.coverage.lastCheckedAt).toMatch(/^2026-10-06/);
+    // 台账最近核对时间为 ISO 日期时间；静态模式下显式标注非实时回退
+    expect(response.coverage.lastCheckedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(response.coverage.caliber.isFallback).toBe(true);
+    expect(response.coverage.caliber.fallbackNote).toContain('非实时');
 
     const all = [
       ...response.groups.preliminary,

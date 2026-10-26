@@ -54,6 +54,21 @@ describe('SessionAuthGuard（invited 模式）', () => {
     ).resolves.toBe(true);
   });
 
+  it('M01/F1：无会话时放行公开覆盖摘要 /opportunities/coverage', async () => {
+    const guard = new SessionAuthGuard(authService);
+    await expect(guard.canActivate(mockContext('/opportunities/coverage'))).resolves.toBe(true);
+  });
+
+  it('M01/F1：公开路径为精确匹配，类似前缀不得误放行', async () => {
+    const guard = new SessionAuthGuard(authService);
+    await expect(
+      guard.canActivate(mockContext('/opportunities/coverage-other')),
+    ).resolves.toBe(false);
+    await expect(
+      guard.canActivate(mockContext('/opportunities/coverage/admin')),
+    ).resolves.toBe(false);
+  });
+
   it('v7.1 M8：无会话时仍拦截需登录的机会接口（关注/订阅/目标/纠错）', async () => {
     const guard = new SessionAuthGuard(authService);
     await expect(guard.canActivate(mockContext('/opportunities/follows'))).resolves.toBe(false);

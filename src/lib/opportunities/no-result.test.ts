@@ -73,7 +73,7 @@ function makeUnit(
 
 function emptyCoverage(): CoverageDTO {
   return {
-    version: "kb-monitoring-coverage-1.1.0",
+    version: "coverage-projection-2.0.0",
     subject: "chinese",
     subjectLabel: "语文",
     status: "monitoring_no_open",
@@ -96,17 +96,44 @@ function emptyCoverage(): CoverageDTO {
             id: "src-hz",
             name: "杭州教育网招聘栏目",
             url: "https://edu.hangzhou.gov.cn/x",
+            regionCode: "330100",
+            authorityLevel: "city",
+            state: "recently_healthy",
             lastCheckedAt: "2026-10-12T08:00:00+08:00",
-            ok: true,
-            failReason: null,
+            note: "检查正常",
           },
         ],
+      },
+    ],
+    sources: [
+      {
+        id: "src-hz",
+        name: "杭州教育网招聘栏目",
+        url: "https://edu.hangzhou.gov.cn/x",
+        regionCode: "330100",
+        authorityLevel: "city",
+        state: "recently_healthy",
+        lastCheckedAt: "2026-10-12T08:00:00+08:00",
+        note: "检查正常",
       },
     ],
     lastCheckedAt: "2026-10-12T08:00:00+08:00",
     openOpportunityCount: 0,
     nextWindowNote: "",
     scopeNote: "暂未收录不代表当地无招聘。",
+    caliber: {
+      generatedAt: "2026-10-12T08:00:00+08:00",
+      version: "coverage-projection-2.0.0",
+      registeredSources: 1,
+      verifiedSources: 0,
+      recentlyHealthySources: 1,
+      failedSources: 0,
+      pausedSources: 0,
+      blockedSources: 0,
+      publishedOpenUnits: 0,
+      isFallback: false,
+      fallbackNote: null,
+    },
   };
 }
 

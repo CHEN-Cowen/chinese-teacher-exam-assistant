@@ -8,13 +8,7 @@
  */
 import { CATALOG_VERSION } from '../matching/catalog.js';
 import { REAL_CATALOG_VERSION } from '../matching/real-catalog.js';
-import {
-  COVERAGE_VERSION,
-  REAL_COVERAGE,
-  type MonitoredRegion,
-  type MonitoringStatus,
-  type ProvinceCoverage,
-} from '../matching/coverage.js';
+import type { UnifiedCoverageProjection } from './coverage-projection.js';
 import {
   MAJOR_ALIAS_VERSION,
   MATCH_RULE_VERSION,
@@ -47,20 +41,12 @@ export interface MetaDTO {
   evaluatedAt: string;
 }
 
-/** 真实监测覆盖说明（前台如实展示覆盖地区/核对时间/在报数量） */
-export interface CoverageDTO {
-  version: string;
-  subject: string;
-  subjectLabel: string;
-  status: MonitoringStatus;
-  /** 逐省覆盖口径：选择省时只能看到该省实际监测城市与来源 */
-  provinces: ProvinceCoverage[];
-  regions: MonitoredRegion[];
-  lastCheckedAt: string;
-  openOpportunityCount: number;
-  nextWindowNote: string;
-  scopeNote: string;
-}
+/**
+ * 真实覆盖说明（M01/F2）：直接采用统一服务端覆盖投影类型。
+ * 访客与登录用户共用同一事实来源；投影内部区分登记/核验/近期健康/已发布岗位，
+ * 并携带统计口径、生成时间与版本（见 coverage-projection.ts）。
+ */
+export type CoverageDTO = UnifiedCoverageProjection;
 
 export interface FollowDTO {
   id: string;
@@ -194,34 +180,6 @@ export function buildMeta(now: Date): MetaDTO {
     catalogVersion: CATALOG_VERSION,
     realCatalogVersion: REAL_CATALOG_VERSION,
     evaluatedAt: now.toISOString(),
-  };
-}
-
-export function buildCoverage(overrides: {
-  openOpportunityCount?: number;
-  lastCheckedAt?: string;
-} = {}): CoverageDTO {
-  const openOpportunityCount =
-    overrides.openOpportunityCount ?? REAL_COVERAGE.openOpportunityCount;
-  return {
-    version: COVERAGE_VERSION,
-    subject: REAL_COVERAGE.subject,
-    subjectLabel: REAL_COVERAGE.subjectLabel,
-    status: openOpportunityCount > 0 ? 'open_batch_exists' : REAL_COVERAGE.status,
-    provinces: REAL_COVERAGE.provinces.map((province) => ({
-      ...province,
-      status:
-        province.status === 'not_started'
-          ? province.status
-          : openOpportunityCount > 0
-            ? 'open_batch_exists'
-            : 'monitoring_no_open',
-    })),
-    regions: REAL_COVERAGE.regions,
-    lastCheckedAt: overrides.lastCheckedAt ?? REAL_COVERAGE.lastCheckedAt,
-    openOpportunityCount,
-    nextWindowNote: REAL_COVERAGE.nextWindowNote,
-    scopeNote: REAL_COVERAGE.scopeNote,
   };
 }
 
@@ -378,13 +336,16 @@ function buildConsultationTemplates(
 /**
  * 列表分组：默认只展示“初步符合”；需要补充（按缺失维度分组）、
  * 建议人工确认、明确不符合与闸门失败（已截止等）分别进入二级分组。
+ *
+ * M01/F2：coverage 由调用方（服务层）传入统一投影——match 响应与公开
+ * coverage 接口共用同一事实来源，本函数不再从静态 REAL_COVERAGE 拼装。
  */
 export function buildMatchResponse(
   candidates: readonly OpportunityCandidate[],
   profile: UserRecruitmentProfile,
   follows: readonly FollowRecord[],
   now: Date,
-  coverage?: { openOpportunityCount?: number; lastCheckedAt?: string },
+  coverage: CoverageDTO,
 ): MatchResponse {
   // M5 合规过滤：普通用户端不返回 test 样本与 AI 初核待人工复核的真实记录。
   // 已人工复核（human_reviewed）的真实岗位照常进入；管理端复核走独立 API。
@@ -439,7 +400,7 @@ export function buildMatchResponse(
 
   return {
     meta: buildMeta(now),
-    coverage: buildCoverage(coverage),
+    coverage,
     primaryTargetUnitId: primary?.unitId ?? null,
     groups,
     follows: followsDTO,

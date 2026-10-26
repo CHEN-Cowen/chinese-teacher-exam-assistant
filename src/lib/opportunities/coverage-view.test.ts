@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { CoverageDTO } from "./api-types";
 import {
   PROVINCE_STATUS_LABELS,
+  SOURCE_STATE_LABELS,
   buildProvinceScopeViews,
   coverageProvinceLine,
+  sourceStateTone,
 } from "./coverage-view";
 
 function coverage(
@@ -11,16 +13,30 @@ function coverage(
   regions: CoverageDTO["regions"],
 ): CoverageDTO {
   return {
-    version: "test",
+    version: "coverage-projection-2.0.0",
     subject: "chinese",
     subjectLabel: "语文",
     status: "monitoring_no_open",
     provinces,
     regions,
+    sources: regions.flatMap((region) => region.sources),
     lastCheckedAt: "2026-10-06T11:30:00+08:00",
     openOpportunityCount: 0,
     nextWindowNote: "",
     scopeNote: "暂未收录不代表当地没有招聘",
+    caliber: {
+      generatedAt: "2026-10-06T11:30:00+08:00",
+      version: "coverage-projection-2.0.0",
+      registeredSources: 0,
+      verifiedSources: 0,
+      recentlyHealthySources: 0,
+      failedSources: 0,
+      pausedSources: 0,
+      blockedSources: 0,
+      publishedOpenUnits: 0,
+      isFallback: false,
+      fallbackNote: null,
+    },
   };
 }
 
@@ -102,5 +118,18 @@ describe("coverage-view：逐省覆盖视图", () => {
       ),
     );
     expect(views[0]!.monitoredRegions.map((r) => r.code)).toEqual(["330100"]);
+  });
+
+  it("M01：新增省级状态与来源状态标签逐字区分，来源健康点色分级", () => {
+    expect(PROVINCE_STATUS_LABELS.registered).toBe("已登记 · 核验中");
+    expect(PROVINCE_STATUS_LABELS.verified).toBe("已核验 · 检查待运行");
+    expect(SOURCE_STATE_LABELS.recently_healthy).toBe("近期检查正常");
+    expect(SOURCE_STATE_LABELS.check_failed).toBe("检查失败 · 待处理");
+    expect(sourceStateTone("recently_healthy")).toBe("ok");
+    expect(sourceStateTone("check_failed")).toBe("bad");
+    expect(sourceStateTone("blocked")).toBe("bad");
+    expect(sourceStateTone("registered")).toBe("neutral");
+    expect(sourceStateTone("verified")).toBe("neutral");
+    expect(sourceStateTone("paused")).toBe("neutral");
   });
 });

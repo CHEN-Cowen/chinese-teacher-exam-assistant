@@ -52,7 +52,6 @@ import {
 } from './corrections.domain.js';
 import {
   buildGoals,
-  buildCoverage,
   buildMatchResponse,
   buildQualificationSnapshot,
   buildUnitDetail,
@@ -64,6 +63,15 @@ import {
   type SubscriptionSyncDTO,
   type UnitDetailResponse,
 } from './view.js';
+import {
+  buildCoverageProjection,
+  type RuntimeSourceState,
+  type UnifiedCoverageProjection,
+} from './coverage-projection.js';
+import {
+  SOURCE_CATALOG,
+  SOURCE_MONITORING_RECORDS,
+} from '../sourcing/source-catalog.js';
 import {
   deriveSubscriptionCriteria,
   planOpportunityNotices,
@@ -142,14 +150,75 @@ export class OpportunitiesService {
       valid,
       now.toISOString(),
     );
-    return this.assemble(candidates, valid, userId, catalog, now);
+    const coverage = await this.buildUnifiedCoverage(now, catalog);
+    return this.assemble(candidates, valid, userId, coverage);
   }
 
-  /** 公开覆盖摘要：首页与机会列表共用当前已发布目录口径。 */
-  async coverage() {
+  /**
+   * 公开覆盖摘要（M01/F1/F2）：匿名可读，与 match 响应共用统一覆盖投影。
+   */
+  async coverage(): Promise<UnifiedCoverageProjection> {
     const now = new Date();
     const catalog = await this.loadCatalog(now);
-    return buildCoverage({ openOpportunityCount: this.countOpenRealUnits(catalog, now) });
+    return this.buildUnifiedCoverage(now, catalog);
+  }
+
+  /**
+   * 统一覆盖投影（M01/F2）：来源台账 + 监测记录 + 运行时 Source 状态
+   * + 已发布目录岗位，单一事实来源；访客与登录用户一致。
+   *
+   * 运行时 Source 表仅在数据库目录模式（ff_db_catalog 开）下读取；
+   * 读取失败回退台账静态投影并显式标注非实时（caliber.isFallback）。
+   */
+  private async buildUnifiedCoverage(
+    now: Date,
+    catalog: readonly RecruitmentAnnouncement[],
+  ): Promise<UnifiedCoverageProjection> {
+    const publishedOpenUnits = this.countOpenRealUnits(catalog, now);
+    const publishedProvinceCodes = new Set<string>();
+    const timestamp = now.getTime();
+    for (const announcement of catalog) {
+      if (announcement.dataset !== 'real') continue;
+      const version = currentVersion(announcement);
+      if (version.units.length === 0) continue;
+      const start = version.timeline.registrationStart
+        ? new Date(version.timeline.registrationStart).getTime()
+        : Number.NEGATIVE_INFINITY;
+      const end = version.timeline.registrationEnd
+        ? new Date(version.timeline.registrationEnd).getTime()
+        : Number.NEGATIVE_INFINITY;
+      if (start <= timestamp && timestamp <= end) {
+        publishedProvinceCodes.add(announcement.region.code.slice(0, 2));
+      }
+    }
+
+    let runtimeSources: RuntimeSourceState[] | null = null;
+    if (isDbCatalogEnabled()) {
+      try {
+        const rows = await this.prisma.source.findMany({
+          select: {
+            adapterKey: true,
+            enabled: true,
+            lastSuccessAt: true,
+            lastCheckedAt: true,
+            consecutiveFailures: true,
+          },
+        });
+        runtimeSources = rows;
+      } catch {
+        // 运行状态不可读：回退台账静态投影，投影内显式标注非实时。
+        runtimeSources = null;
+      }
+    }
+
+    return buildCoverageProjection({
+      now,
+      sourceCatalog: SOURCE_CATALOG,
+      monitoringRecords: SOURCE_MONITORING_RECORDS,
+      runtimeSources,
+      publishedOpenUnits,
+      publishedProvinceCodes: [...publishedProvinceCodes],
+    });
   }
 
   /** 机会详情（v7.1 M8：userId 可选，访客无关注记录） */
@@ -176,17 +245,16 @@ export class OpportunitiesService {
   private async assemble(
     candidates: ReturnType<typeof buildCandidates>,
     profile: UserRecruitmentProfile,
-    userId?: string,
-    catalog?: readonly RecruitmentAnnouncement[],
-    now: Date = new Date(),
+    userId: string | undefined,
+    coverage: UnifiedCoverageProjection,
   ): Promise<MatchResponse> {
     const follows = await this.listFollowRecords(userId);
-    return buildMatchResponse(candidates, profile, follows, now, {
-      openOpportunityCount: catalog ? this.countOpenRealUnits(catalog, now) : undefined,
-    });
+    return buildMatchResponse(candidates, profile, follows, new Date(), coverage);
   }
 
-  /** 覆盖数来自当前目录的报名时间窗口，不再依赖静态手填数量。 */
+  /**
+   * 覆盖数来自当前目录的报名时间窗口，不再依赖静态手填数量。
+   */
   private countOpenRealUnits(
     catalog: readonly RecruitmentAnnouncement[],
     now: Date,
