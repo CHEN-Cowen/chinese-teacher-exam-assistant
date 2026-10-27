@@ -132,6 +132,9 @@ describe('resetPassword（M05/F7）', () => {
   it('已使用令牌 → false（单次使用）', async () => {
     const prisma = new FakeResetPrisma();
     prisma.users.set('user@b.com', { id: 'user-1' });
+    // 首次 reset 会在事务操作里更新凭证行；缺行会产生 unhandled rejection
+    // （假 $transaction 只记录操作，急切创建的 update Promise 无人认领）。
+    prisma.credentials.set('user-1', { passwordHash: 'old-hash' });
     const service = makeService(prisma);
     const token = await service.createPasswordResetToken('user@b.com');
     await service.resetPassword(token!, 'newpass123');

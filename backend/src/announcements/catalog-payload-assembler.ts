@@ -599,11 +599,19 @@ function buildTimeline(
   const text = regField.value;
   // 形如「2026-10-20 至 2026-11-05 17:00」或「2026年10月20日…2026年11月5日」
   const dates = text.match(/\d{4}[-年]\d{1,2}[-月]\d{1,2}日?/g) ?? [];
-  if (dates.length >= 1) {
-    timeline.registrationStart = normalizeDateIso(dates[0]!);
-  }
   if (dates.length >= 2) {
+    timeline.registrationStart = normalizeDateIso(dates[0]!);
     timeline.registrationEnd = normalizeDateIso(dates[1]!);
+  } else if (dates.length === 1) {
+    // 只有一个明确日期时按上下文分类，不臆造另一端：
+    // 「…至2026年7月16日 / 7月16日截止」是截止日；否则视为开始日。
+    const idx = text.indexOf(dates[0]!);
+    const prev = text.slice(Math.max(0, idx - 4), idx);
+    if (/至|截止/.test(prev)) {
+      timeline.registrationEnd = normalizeDateIso(dates[0]!);
+    } else {
+      timeline.registrationStart = normalizeDateIso(dates[0]!);
+    }
   }
   return timeline;
 }

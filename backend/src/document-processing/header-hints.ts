@@ -11,7 +11,7 @@
 /** 表头候选关键词 → 建议字段 */
 export const HEADER_HINTS: Array<{ keywords: string[]; field: string }> = [
   { keywords: ['岗位代码', '职位代码', '代码'], field: 'position_code' },
-  { keywords: ['招聘单位', '用人单位', '单位名称', '主管部门'], field: 'employer' },
+  { keywords: ['招聘单位', '用人单位', '单位名称', '主管部门'], field: 'unit_name' },
   { keywords: ['岗位', '职位名称', '招聘岗位'], field: 'position_name' },
   { keywords: ['学科', '科目'], field: 'subjects' },
   { keywords: ['人数', '名额', '招聘数'], field: 'headcount' },

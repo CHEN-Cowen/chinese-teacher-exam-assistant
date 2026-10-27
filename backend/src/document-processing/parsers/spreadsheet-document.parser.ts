@@ -254,9 +254,17 @@ export class SpreadsheetDocumentParser implements DocumentParser {
           else if (hint === 'subject') subjectColumnCount += 1;
         }
         // 该行是否算表头行：
-        // (a) 含强表头关键词；或 (b) 全为学科列（≥2 列）且紧跟在已识别表头行之后
-        //     （多级表头：学科子列常在「招聘单位」等一级表头行的下一行）。
-        const isStrongHeader = rowColumns.length >= 2 && strongHeaderCount > 0;
+        // (a) 多数单元格命中强表头关键词；或 (b) 全为学科列（≥2 列）且紧跟在
+        //     已识别表头行之后（多级表头：学科子列常在「招聘单位」等一级
+        //     表头行的下一行）。
+        // 强表头不能只要求「命中 1 个」：真实公告的数据行长文本常偶然含
+        // 「学历/年龄/学科」等词（宁波 2026 公告实测：数据行命中 1-2 个），
+        // 会被误认为表头并占据最大 headerRow，令真正表头列映射被覆盖、
+        // 后续同单位数据行被「重复表头行」规则整批误杀。
+        // 因此要求 ≥2 个强关键词，且命中占比 ≥40%。
+        const strongRatio = rowColumns.length > 0 ? strongHeaderCount / rowColumns.length : 0;
+        const isStrongHeader =
+          rowColumns.length >= 2 && strongHeaderCount >= 2 && strongRatio >= 0.4;
         const isSubjectHeader =
           subjectColumnCount >= 2 && headerCandidates.length > 0;
         if (isStrongHeader || isSubjectHeader) {

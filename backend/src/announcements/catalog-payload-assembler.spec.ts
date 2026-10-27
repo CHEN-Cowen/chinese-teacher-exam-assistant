@@ -107,6 +107,29 @@ describe('S2 正式发布与岗位完善', () => {
       makeMetadata({ dataset: 'real' }), makeCtx())).toThrow(/复核/);
   });
 
+  it('报名时间只有一个明确日期时按上下文分类：截止语义记为 registrationEnd，不臆造开始日', () => {
+    const fields = [
+      ...twoJobsFields().filter((f) => f.field !== 'registration_time'),
+      // 宁波 2026 实例：官方正文只写「自公告发布之日至2026年7月16日」
+      anchoredAnn('registration_time', '自公告发布之日至2026年7月16日'),
+    ];
+    const timeline = buildCatalogPayload(makeCandidate(fields), makeMetadata(), makeCtx())
+      .version.timeline;
+    expect(timeline.registrationEnd).toBe('2026-07-16');
+    expect(timeline.registrationStart).toBeUndefined();
+    // 对照：无截止语义的单日期仍是开始日
+    const startOnly = buildCatalogPayload(
+      makeCandidate([
+        ...twoJobsFields().filter((f) => f.field !== 'registration_time'),
+        anchoredAnn('registration_time', '2026年7月13日开始'),
+      ]),
+      makeMetadata(),
+      makeCtx(),
+    ).version.timeline;
+    expect(startOnly.registrationStart).toBe('2026-07-13');
+    expect(startOnly.registrationEnd).toBeUndefined();
+  });
+
   it('公共资格继承、岗位资格覆盖且各项保留证据，复杂条件人工确认', () => {
     const fields = twoJobsFields().filter((f) => f.field !== 'education');
     fields.push(anchoredAnn('education', '本科及以上'),
