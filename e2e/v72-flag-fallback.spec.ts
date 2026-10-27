@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 /**
- * v7.2 开关关闭回退态浏览器 E2E（跑在 3000，仅 NEXT_PUBLIC_FF_POST_SAVE_NEXT=true）。
+ * v7.2 开关关闭回退态浏览器 E2E（跑在 3001，仅 NEXT_PUBLIC_FF_POST_SAVE_NEXT=true）。
  *
  * 覆盖（PRD 8.4 回退策略）：
  * - `/opportunities` 无 [role=tablist]：走 StackedResultSections 旧式堆叠分组；

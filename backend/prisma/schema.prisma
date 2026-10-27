@@ -15,12 +15,13 @@ model User {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  extractionRuns ExtractionRun[]
-  reviewRecords  ReviewRecord[]
-  credential     Credential?
-  sessions       Session[]
-  profile        UserProfile?
-  passwordResets PasswordResetToken[]
+  extractionRuns  ExtractionRun[]
+  reviewRecords   ReviewRecord[]
+  credential      Credential?
+  sessions        Session[]
+  profile         UserProfile?
+  passwordResets  PasswordResetToken[]
+  membershipGrants MembershipGrant[]
 
   @@map("users")
 }
@@ -76,6 +77,29 @@ model PasswordResetToken {
 
   @@index([userId])
   @@map("password_reset_tokens")
+}
+
+/**
+ * 会员权益授予记录（M11 / 整体方案 11.2）。
+ * - 会员状态独立于 User.role：角色管权限，本表管限期软件权益；
+ * - 一次授予一行；同一用户可多行（续购顺延：新授予 startsAt =
+ *   max(当前时间, 现有最晚 endsAt)，不覆盖历史）；
+ * - orderId 全局唯一：支付渠道回调按订单幂等发放（M12），重复通知不重复计时；
+ * - 到期不删行：用户资料与历史成果保留，仅权益状态变为已到期。
+ */
+model MembershipGrant {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan      String
+  source    String
+  orderId   String?  @unique @map("order_id")
+  startsAt  DateTime @map("starts_at")
+  endsAt    DateTime @map("ends_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId, endsAt])
+  @@map("membership_grants")
 }
 
 /**

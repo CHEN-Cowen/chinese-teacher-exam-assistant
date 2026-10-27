@@ -31,6 +31,10 @@ import type {
 } from "@/lib/opportunities/api-types";
 import type { UserRecruitmentProfile } from "@/lib/profile/types";
 import { buildMyProgressView } from "@/lib/me/progress-view";
+import {
+  fetchMyMembership,
+  type MembershipViewDTO,
+} from "@/lib/membership/api";
 
 const AUTH_MODE_INVITED = AUTH_MODE === "invited";
 
@@ -66,6 +70,9 @@ export default function MePage() {
 
       {/* 当前进度：首屏只推动一个下一步 */}
       <MyProgressCard />
+
+      {/* 会员状态（M11：免费/有效/已到期三态，失败静默不展示） */}
+      <MembershipCard />
 
       {/* 报考信息 */}
       <ProfileCard />
@@ -384,6 +391,68 @@ function MyProgressCard() {
       >
         {view.actionLabel}
       </LinkButton>
+    </Card>
+  );
+}
+
+/**
+ * 会员状态卡片（M11）。
+ * - 三态：免费（当前全部功能免费开放）/ 有效（显示到期日）/ 已到期（权益失效、资料保留）；
+ * - demo 模式显示静态免费态；invited 模式请求失败时静默不展示；
+ * - 链接到 /pricing 查看套餐与透明口径。
+ */
+function MembershipCard() {
+  const [data, setData] = useState<MembershipViewDTO | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchMyMembership()
+      .then((d) => {
+        if (!cancelled) setData(d);
+      })
+      .catch(() => {
+        // 无后端环境（如公开演示）不展示该卡片
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (!data) return null;
+
+  const { status, endsAt } = data.membership;
+
+  return (
+    <Card>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-ink">会员</p>
+          {status === "free" && (
+            <p className="mt-1 text-sm text-ink-muted">
+              当前全部功能免费开放，无需开通会员
+            </p>
+          )}
+          {status === "active" && endsAt && (
+            <p className="mt-1 text-sm text-ink-muted">
+              有效期至 {formatDateTime(endsAt)}；到期后资料与历史成果保留
+            </p>
+          )}
+          {status === "expired" && (
+            <p className="mt-1 text-sm text-ink-muted">
+              会员已到期，权益已失效；你的资料、收藏与历史成果全部保留
+            </p>
+          )}
+        </div>
+        <Badge variant={status === "active" ? "success" : "muted"}>
+          {status === "free" ? "免费" : status === "active" ? "有效" : "已到期"}
+        </Badge>
+      </div>
+      <Link
+        href="/pricing"
+        className="mt-3 inline-block text-sm font-medium text-brand hover:underline"
+      >
+        查看套餐与价格 →
+      </Link>
     </Card>
   );
 }

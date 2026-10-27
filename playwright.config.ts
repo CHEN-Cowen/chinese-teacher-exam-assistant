@@ -4,7 +4,7 @@ import { defineConfig, devices } from "@playwright/test";
  * v7.2 浏览器 E2E（P0 回归：补充信息绝不进入 /onboarding）。
  *
  * 开关态覆盖（NEXT_PUBLIC_* 在 Next 编译期内联，必须随构建进程注入）：
- * - 3000「回退态」：仅开 NEXT_PUBLIC_FF_POST_SAVE_NEXT，其余 v7.2 开关默认关闭，
+ * - 3001「回退态」：仅开 NEXT_PUBLIC_FF_POST_SAVE_NEXT，其余 v7.2 开关默认关闭，
  *   渲染 v7.1 旧首页 / StackedResultSections 旧式结果布局 / 详情页内联 #supplement。
  *   供既有用例 + v72-flag-fallback 使用。
  * - 3123「v7.2 开启态」：production 产物由 `pretest:e2e`
@@ -18,7 +18,10 @@ import { defineConfig, devices } from "@playwright/test";
  * 两个服务并存：next dev 产物在 .next/dev，next build 产物在 .next/，互不覆盖
  * （已实测 dev(3000) 在 build 期间持续可用；生产构建不会删除 .next/dev）。
  */
-const FALLBACK_PORT = 3000;
+// 3000 曾被本机常驻的无关进程（lark-channel-bridge）占用，
+// reuseExistingServer 会把响应该端口的外部服务误当 dev server，legacy 用例全灭；
+// 回退态 dev 迁到 3001（CI 上均为空闲端口，无影响）。
+const FALLBACK_PORT = 3001;
 // 3100 是本机「演示服务」约定端口（scripts/start-demo.ps1），常驻运行会与 E2E 抢占；
 // v7.2 E2E 改用 3123，互不干扰（CI 上均为空闲端口，无影响）。
 const V72_PORT = 3123;
@@ -63,7 +66,7 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: "npm run dev",
+      command: `npx next dev -p ${FALLBACK_PORT}`,
       url: `http://localhost:${FALLBACK_PORT}`,
       reuseExistingServer: true,
       timeout: 120_000,

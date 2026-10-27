@@ -21,6 +21,7 @@ import { AppModule } from './app.module.js';
 import { WorkerAppModule } from './worker-app.module.js';
 import { PrismaService } from './prisma.service.js';
 import { HealthController } from './health.controller.js';
+import { MembershipController } from './membership/membership.controller.js';
 import { CrawlHealthService } from './sourcing/crawl-health.service.js';
 import { CrawlProcessor } from './sourcing/jobs/crawl.worker.js';
 import { AnnouncementExtractService } from './announcements/jobs/announcement-extract.service.js';
@@ -77,6 +78,10 @@ describe('API/Worker 完整模块图 Nest 编译（启动故障回归）', () =>
     );
     expect(moduleRef.get(CrawlHealthService, { strict: false })).toBeInstanceOf(
       CrawlHealthService,
+    );
+    // M11：会员模块挂在 AppModule 上，控制器可经 DI 解析
+    expect(moduleRef.get(MembershipController, { strict: false })).toBeInstanceOf(
+      MembershipController,
     );
     await moduleRef.close();
   });
