@@ -33,6 +33,11 @@ const PUBLIC_PATHS = new Set([
 const PUBLIC_PATTERNS: RegExp[] = [
   /^\/opportunities\/match$/,
   /^\/opportunities\/units\/[^/]+\/detail$/,
+  // M12：支付渠道回调专用路径。匿名可达不等于匿名可信——该路径的认证
+  // 机制是渠道验签（控制器第一道动作即验签，失败 401 不落库不放行），
+  // 其余支付接口仍全部要求登录或管理员身份。`[^/]+` 同时匹配渠道名与
+  // Nest 路由参数形态（:channel）。
+  /^\/payments\/callbacks\/[^/]+$/,
 ];
 
 function isPublicPath(path: string): boolean {

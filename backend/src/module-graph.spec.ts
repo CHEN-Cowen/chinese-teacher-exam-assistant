@@ -22,6 +22,8 @@ import { WorkerAppModule } from './worker-app.module.js';
 import { PrismaService } from './prisma.service.js';
 import { HealthController } from './health.controller.js';
 import { MembershipController } from './membership/membership.controller.js';
+import { PaymentsController } from './payments/payments.controller.js';
+import { PaymentsCallbacksController } from './payments/payments-callbacks.controller.js';
 import { CrawlHealthService } from './sourcing/crawl-health.service.js';
 import { CrawlProcessor } from './sourcing/jobs/crawl.worker.js';
 import { AnnouncementExtractService } from './announcements/jobs/announcement-extract.service.js';
@@ -83,6 +85,13 @@ describe('API/Worker 完整模块图 Nest 编译（启动故障回归）', () =>
     expect(moduleRef.get(MembershipController, { strict: false })).toBeInstanceOf(
       MembershipController,
     );
+    // M12：支付模块（用户侧 + 渠道回调）可经 DI 解析，渠道适配层装配成功
+    expect(moduleRef.get(PaymentsController, { strict: false })).toBeInstanceOf(
+      PaymentsController,
+    );
+    expect(
+      moduleRef.get(PaymentsCallbacksController, { strict: false }),
+    ).toBeInstanceOf(PaymentsCallbacksController);
     await moduleRef.close();
   });
 

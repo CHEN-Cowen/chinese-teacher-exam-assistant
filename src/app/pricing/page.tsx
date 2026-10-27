@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Callout } from "@/components/ui/Callout";
@@ -8,6 +9,14 @@ import {
   fetchMembershipPlans,
   type MembershipPlansDTO,
 } from "@/lib/membership/api";
+import {
+  closePaymentOrder,
+  createPaymentOrder,
+  fetchPaymentOrder,
+  simulateMockSuccess,
+  startPayment,
+  type PaymentOrderDTO,
+} from "@/lib/payments/api";
 import { formatYuan, threeTimesMonthlyCents } from "@/lib/membership/plans";
 import { cn } from "@/lib/utils";
 
@@ -20,9 +29,18 @@ import { cn } from "@/lib/utils";
  * - 365 天年卡未完成商业确认前标注「暂未上架」；
  * - 拟开发权益（多方案/对比/批量/导出/离站通知）未上线前不列为已可用权益；
  * - 售卖总开关默认关闭：只展示价格与权益说明，不产生订单。
+ *
+ * M12 购买流程（仅售卖开通后激活）：
+ * - 下单/支付金额以后端订单为准（服务端定价）；
+ * - mockChannel=true 时支付面板明确标识「模拟支付通道」，不冒充真实微信支付；
+ * - 支付结果以后端订单状态为准：模拟成功/主动刷新都会向渠道查单补账。
  */
 export default function PricingPage() {
   const [data, setData] = useState<MembershipPlansDTO | null>(null);
+  const [activeOrder, setActiveOrder] = useState<PaymentOrderDTO | null>(null);
+  const [payError, setPayError] = useState<string | null>(null);
+  const [needLogin, setNeedLogin] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -36,6 +54,50 @@ export default function PricingPage() {
 
   const plans = data?.plans ?? [];
   const savingsCents = threeTimesMonthlyCents() - 5900;
+
+  async function guard<T>(action: () => Promise<T>): Promise<T | null> {
+    setBusy(true);
+    setPayError(null);
+    try {
+      return await action();
+    } catch (error) {
+      const status = (error as Error & { status?: number }).status;
+      if (status === 401 || status === 403) {
+        setNeedLogin(true);
+      } else {
+        setPayError(error instanceof Error ? error.message : "操作失败，请重试");
+      }
+      return null;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function buy(planKey: string) {
+    const created = await guard(() => createPaymentOrder(planKey));
+    if (!created) return;
+    const paying = await guard(() => startPayment(created.id));
+    setActiveOrder(paying ?? created);
+  }
+
+  async function refreshOrder() {
+    if (!activeOrder) return;
+    const latest = await guard(() => fetchPaymentOrder(activeOrder.id, true));
+    if (latest) setActiveOrder(latest);
+  }
+
+  async function simulateSuccess() {
+    if (!activeOrder) return;
+    const result = await guard(() => simulateMockSuccess(activeOrder.id));
+    if (!result) return;
+    await refreshOrder();
+  }
+
+  async function cancelOrder() {
+    if (!activeOrder) return;
+    await guard(() => closePaymentOrder(activeOrder.id));
+    setActiveOrder(null);
+  }
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 pb-4">
@@ -89,7 +151,14 @@ export default function PricingPage() {
             )}
             <div className="mt-4 flex-1" />
             {plan.purchasable ? (
-              <p className="text-center text-sm text-ink-muted">购买入口即将开放</p>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void buy(plan.key)}
+                className="w-full rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white transition hover:bg-brand/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:opacity-60"
+              >
+                立即购买
+              </button>
             ) : (
               <p className="text-center text-sm text-ink-muted">
                 {plan.key === "365d" ? "暂未上架（待持续服务与商业确认就绪）" : "暂未开售"}
@@ -98,6 +167,85 @@ export default function PricingPage() {
           </Card>
         ))}
       </div>
+
+      {needLogin && (
+        <Callout variant="note" title="请先登录">
+          购买会员需要登录账号，以便订单与权益绑定到你的账号。
+          <Link href="/login" className="ml-1 font-medium text-brand underline">
+            前往登录
+          </Link>
+        </Callout>
+      )}
+      {payError && <Callout variant="ask" title="操作未完成">{payError}</Callout>}
+
+      {/* 支付面板（M12）：订单确认 + 渠道支付状态 */}
+      {activeOrder && (
+        <Card>
+          <CardHeader
+            title="确认订单"
+            description={`订单号 ${activeOrder.id} · 价格版本 ${activeOrder.priceVersion}`}
+          />
+          {activeOrder.status === "paid" ? (
+            <Callout variant="ok" title="支付成功，会员已到账">
+              {activeOrder.planLabel}（{activeOrder.days} 天）已开通。
+              <Link href="/me" className="ml-1 font-medium text-brand underline">
+                前往「我的」查看会员状态
+              </Link>
+            </Callout>
+          ) : (
+            <div className="space-y-4 text-sm">
+              <p className="text-ink">
+                {activeOrder.planLabel}：一次实付{" "}
+                <span className="text-lg font-semibold">{formatYuan(activeOrder.amountCents)}</span>
+                ，有效期 {activeOrder.days} 天
+              </p>
+              {activeOrder.mockChannel && (
+                <Callout variant="ask" title="模拟支付通道">
+                  当前未接入真实微信支付（商户资质待获批）。以下是支付链路的模拟验收通道，
+                  不会产生任何真实扣款；正式开通后将替换为微信官方支付。
+                </Callout>
+              )}
+              {activeOrder.prepay?.codeUrl && (
+                <p className="rounded-lg bg-surface-2 px-3 py-2 font-mono text-xs text-ink-muted">
+                  {activeOrder.mockChannel ? "模拟扫码内容：" : "扫码链接："}
+                  {activeOrder.prepay.codeUrl}
+                </p>
+              )}
+              <div className="flex flex-wrap gap-3">
+                {activeOrder.simulateAllowed && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void simulateSuccess()}
+                    className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white transition hover:bg-brand/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:opacity-60"
+                  >
+                    模拟支付成功
+                  </button>
+                )}
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void refreshOrder()}
+                  className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-ink transition hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:opacity-60"
+                >
+                  我已完成支付，刷新状态
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void cancelOrder()}
+                  className="rounded-lg px-4 py-2 text-sm text-ink-muted transition hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:opacity-60"
+                >
+                  关闭订单
+                </button>
+              </div>
+              <p className="text-xs text-ink-muted">
+                支付结果以后端订单状态为准；刷新状态会向支付渠道主动查单，不以前端页面跳转作为支付凭证。
+              </p>
+            </div>
+          )}
+        </Card>
+      )}
 
       {/* 权益矩阵 */}
       <Card>

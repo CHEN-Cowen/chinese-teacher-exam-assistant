@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service.js';
 import {
   MEMBERSHIP_PLANS,
@@ -43,6 +44,8 @@ export class MembershipService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getMembershipView(userId: string): Promise<MembershipView> {
+    // 查询全部授予（含已回收）：已回收授予不再提供权益，但仍计入
+    // 「曾有过会员」的事实——全额退款后状态为 expired 而非假装从未购买。
     const grants = await this.prisma.membershipGrant.findMany({
       where: { userId },
       orderBy: [{ endsAt: 'desc' }],
@@ -50,8 +53,9 @@ export class MembershipService {
 
     const now = new Date();
     const latest = grants[0] ?? null;
+    // 有效权益：未到期且未被回收（退款）
     const activeGrant =
-      grants.find((grant) => grant.endsAt > now) ?? null;
+      grants.find((grant) => !grant.revokedAt && grant.endsAt > now) ?? null;
 
     const status: MembershipView['membership']['status'] = activeGrant
       ? 'active'
@@ -105,7 +109,9 @@ export class MembershipService {
   /**
    * 发放一份限期权益（支付回调/人工补偿共用）。
    * - orderId 存在时幂等：同一订单重复通知返回既有授予，不重复计时；
-   * - 顺延：与用户现有最晚到期时间衔接（未到期续购从原到期时间起算）。
+   * - 顺延：与用户现有最晚到期时间衔接（未到期续购从原到期时间起算）；
+   *   已回收（退款）的授予不作为顺延基数；
+   * - tx：M12 支付回调在事务内「记账+发放」一并提交/回滚时传入事务客户端。
    */
   async issueGrant(input: {
     userId: string;
@@ -113,15 +119,17 @@ export class MembershipService {
     source: 'payment' | 'manual' | 'compensation';
     orderId?: string | null;
     now?: Date;
+    tx?: Prisma.TransactionClient;
   }): Promise<{ id: string; alreadyIssued: boolean; startsAt: Date; endsAt: Date }> {
     const plan = findPlan(input.plan);
     if (!plan) {
       throw new Error(`未知会员套餐：${input.plan}`);
     }
     const now = input.now ?? new Date();
+    const db: PrismaService | Prisma.TransactionClient = input.tx ?? this.prisma;
 
     if (input.orderId) {
-      const existing = await this.prisma.membershipGrant.findUnique({
+      const existing = await db.membershipGrant.findUnique({
         where: { orderId: input.orderId },
       });
       if (existing) {
@@ -134,9 +142,9 @@ export class MembershipService {
       }
     }
 
-    const currentEndsAt = await this.prisma.membershipGrant
+    const currentEndsAt = await db.membershipGrant
       .findFirst({
-        where: { userId: input.userId },
+        where: { userId: input.userId, revokedAt: null },
         orderBy: [{ endsAt: 'desc' }],
         select: { endsAt: true },
       })
@@ -145,7 +153,7 @@ export class MembershipService {
     const startsAt = renewalStartsAt(now, currentEndsAt);
     const endsAt = addDays(startsAt, plan.days);
 
-    const created = await this.prisma.membershipGrant.create({
+    const created = await db.membershipGrant.create({
       data: {
         userId: input.userId,
         plan: plan.key,

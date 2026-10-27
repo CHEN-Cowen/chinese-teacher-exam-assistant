@@ -14,6 +14,12 @@
 
 export type MembershipPlanKey = '30d' | '90d' | '365d';
 
+/**
+ * 定价配置版本（M12）：订单创建时快照该版本号，
+ * 价格调整后可追溯历史订单适用的定价口径。
+ */
+export const PRICE_VERSION = 'v2026.10.27';
+
 export interface MembershipPlanDef {
   key: MembershipPlanKey;
   /** 有效天数 */

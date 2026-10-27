@@ -14,6 +14,7 @@ import { SessionAuthGuard } from './auth/session.guard.js';
 import { ProfileModule } from './profile/profile.module.js';
 import { PlansModule } from './plans/plans.module.js';
 import { MembershipModule } from './membership/membership.module.js';
+import { PaymentsModule } from './payments/payments.module.js';
 import { TrialModule } from './trial/trial.module.js';
 import { SourcingModule } from './sourcing/sourcing.module.js';
 import { bullRedisConnection } from './sourcing/redis.js';
@@ -30,6 +31,7 @@ import { bullRedisConnection } from './sourcing/redis.js';
     ProfileModule,
     PlansModule,
     MembershipModule,
+    PaymentsModule,
     TrialModule,
     SourcingModule,
   ],

@@ -69,6 +69,26 @@ describe('SessionAuthGuard（invited 模式）', () => {
     ).resolves.toBe(false);
   });
 
+  it('M12：支付回调专用路径匿名可达（渠道验签把关），其余支付路径仍拦截', async () => {
+    const guard = new SessionAuthGuard(authService);
+    // 回调路径放行（控制器第一道动作即验签，失败 401）
+    await expect(
+      guard.canActivate(mockContext('/payments/callbacks/wechat_mock')),
+    ).resolves.toBe(true);
+    // Nest 路由参数形态同样放行（guard 读 route.path 时）
+    await expect(
+      guard.canActivate(mockContext('/payments/callbacks/:channel')),
+    ).resolves.toBe(true);
+    // 其余支付接口一律需要登录/管理员身份
+    await expect(guard.canActivate(mockContext('/payments/orders'))).resolves.toBe(false);
+    await expect(
+      guard.canActivate(mockContext('/payments/mock/simulate-success')),
+    ).resolves.toBe(false);
+    await expect(
+      guard.canActivate(mockContext('/admin/payments/reconciliation/records')),
+    ).resolves.toBe(false);
+  });
+
   it('v7.1 M8：无会话时仍拦截需登录的机会接口（关注/订阅/目标/纠错）', async () => {
     const guard = new SessionAuthGuard(authService);
     await expect(guard.canActivate(mockContext('/opportunities/follows'))).resolves.toBe(false);

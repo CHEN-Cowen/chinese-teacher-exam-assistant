@@ -37,9 +37,16 @@ function createFakePrisma() {
           .sort((a, b) => b.endsAt.getTime() - a.endsAt.getTime()),
       findUnique: async ({ where }: { where: { orderId: string } }) =>
         rows.find((row) => row.orderId === where.orderId) ?? null,
-      findFirst: async ({ where }: { where: { userId: string } }) => {
+      findFirst: async ({ where }: { where: { userId: string; revokedAt?: null } }) => {
         const mine = rows
-          .filter((row) => row.userId === where.userId)
+          .filter((row) => {
+            if (row.userId !== where.userId) return false;
+            // revokedAt: null = 只看未回收；种子行缺省视为未回收
+            if (where.revokedAt === null && (row as { revokedAt?: Date | null }).revokedAt) {
+              return false;
+            }
+            return true;
+          })
           .sort((a, b) => b.endsAt.getTime() - a.endsAt.getTime());
         return mine[0] ? { endsAt: mine[0].endsAt } : null;
       },
@@ -136,6 +143,35 @@ describe('getMembershipView：会员状态三态', () => {
     const service = new MembershipService(fake as never);
     const view = await service.getMembershipView('user-1');
     expect(view.membership.status).toBe('free');
+  });
+
+  it('全额退款回收（M12）：授予被 revoked 后状态为 expired（曾有会员），不假装从未购买', async () => {
+    const fake = createFakePrisma();
+    seedGrant(fake.rows, {
+      endsAt: new Date('2099-01-01T00:00:00.000Z'),
+      revokedAt: new Date('2026-10-27T09:00:00.000Z'),
+    } as never);
+    const service = new MembershipService(fake as never);
+    const view = await service.getMembershipView('user-1');
+    expect(view.membership.status).toBe('expired');
+    expect(view.membership.startsAt).toBeNull();
+    expect(view.membership.endsAt).toBeNull();
+  });
+
+  it('回收的授予不作为续购顺延基数：退款后重购从当前时间起算', async () => {
+    const fake = createFakePrisma();
+    seedGrant(fake.rows, {
+      endsAt: new Date('2099-01-01T00:00:00.000Z'),
+      revokedAt: new Date('2026-10-27T09:00:00.000Z'),
+    } as never);
+    const service = new MembershipService(fake as never);
+    const renewal = await service.issueGrant({
+      userId: 'user-1',
+      plan: '30d',
+      source: 'payment',
+      now: NOW,
+    });
+    expect(renewal.startsAt).toEqual(NOW);
   });
 
   it('诚实原则：activeEntitlements 恒为空——拟开发权益未上线前不列为已可用', async () => {

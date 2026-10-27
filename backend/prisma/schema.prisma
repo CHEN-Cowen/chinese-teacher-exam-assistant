@@ -22,6 +22,7 @@ model User {
   profile         UserProfile?
   passwordResets  PasswordResetToken[]
   membershipGrants MembershipGrant[]
+  paymentOrders   PaymentOrder[]
 
   @@map("users")
 }
@@ -85,18 +86,22 @@ model PasswordResetToken {
  * - 一次授予一行；同一用户可多行（续购顺延：新授予 startsAt =
  *   max(当前时间, 现有最晚 endsAt)，不覆盖历史）；
  * - orderId 全局唯一：支付渠道回调按订单幂等发放（M12），重复通知不重复计时；
- * - 到期不删行：用户资料与历史成果保留，仅权益状态变为已到期。
+ * - 到期不删行：用户资料与历史成果保留，仅权益状态变为已到期；
+ * - revokedAt：全额退款成功后回收该订单对应的授予（M12 售后）；
+ *   被回收的授予不再计入会员状态与续购顺延基数。部分退款不开放，
+ *   不存在"按比例回收"的臆造算法。
  */
 model MembershipGrant {
-  id        String   @id @default(uuid())
-  userId    String   @map("user_id")
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   plan      String
   source    String
-  orderId   String?  @unique @map("order_id")
-  startsAt  DateTime @map("starts_at")
-  endsAt    DateTime @map("ends_at")
-  createdAt DateTime @default(now()) @map("created_at")
+  orderId   String?   @unique @map("order_id")
+  startsAt  DateTime  @map("starts_at")
+  endsAt    DateTime  @map("ends_at")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime  @default(now()) @map("created_at")
 
   @@index([userId, endsAt])
   @@map("membership_grants")
@@ -815,4 +820,159 @@ model TaskFeedback {
   @@unique([userId, taskId])
   @@index([userId, date])
   @@map("task_feedbacks")
+}
+
+/**
+ * 支付订单（M12）。
+ * - 服务端定价：amountCents/currency/days 在创建时从 plans.ts 套餐配置快照，
+ *   客户端传入的金额一律不采信；priceVersion 标记定价配置版本便于追溯；
+ * - 状态机：created → paying → paid；created/paying → closed（用户关闭页面）；
+ *   closed → paid（超时后渠道仍成功扣款：钱已收必须履约，照常发放权益）；
+ *   paid → refunded（全额退款成功，权益回收见 MembershipGrant.revokedAt）；
+ * - grantId 回填发放结果；发放幂等由 membership_grants.order_id 唯一约束保证。
+ */
+model PaymentOrder {
+  id           String    @id @default(uuid())
+  userId       String    @map("user_id")
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan         String
+  priceVersion String    @map("price_version")
+  amountCents  Int       @map("amount_cents")
+  currency     String    @default("CNY")
+  days         Int
+  status       String    @default("created")
+  grantId      String?   @map("grant_id")
+  paidAt       DateTime? @map("paid_at")
+  closedAt     DateTime? @map("closed_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  attempts     PaymentAttempt[]
+  transactions ChannelTransaction[]
+  refunds      Refund[]
+
+  @@index([userId, status])
+  @@map("payment_orders")
+}
+
+/**
+ * 支付尝试（M12）：一次「发起支付」一行。
+ * prepayPayload 存渠道返回的预支付参数（模拟渠道为 codeUrl），不含密钥。
+ */
+model PaymentAttempt {
+  id                String       @id @default(uuid())
+  orderId           String       @map("order_id")
+  order             PaymentOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  channel           String
+  channelOutTradeNo String?      @map("channel_out_trade_no")
+  status            String       @default("created")
+  prepayPayload     Json?        @map("prepay_payload")
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @updatedAt @map("updated_at")
+
+  @@index([orderId])
+  @@map("payment_attempts")
+}
+
+/**
+ * 渠道交易（M12）：渠道侧成功扣款的权威记录，对账的本地侧依据。
+ * channelTransactionId 全局唯一：重复/乱序通知不产生第二条交易。
+ * rawPayload 存回调报文原文用于对账与争议排查。
+ */
+model ChannelTransaction {
+  id                   String       @id @default(uuid())
+  orderId              String       @map("order_id")
+  order                PaymentOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  channel              String
+  channelTransactionId String       @unique @map("channel_transaction_id")
+  amountCents          Int          @map("amount_cents")
+  currency             String
+  status               String
+  paidAt               DateTime     @map("paid_at")
+  rawPayload           Json         @map("raw_payload")
+  createdAt            DateTime     @default(now()) @map("created_at")
+
+  @@index([orderId])
+  @@index([paidAt])
+  @@map("channel_transactions")
+}
+
+/**
+ * 支付渠道回调事件（M12）。
+ * - eventId 全局唯一：重复通知幂等返回，不重复记账/发放；
+ * - status：received（已落库待处理）/ processed / rejected（业务校验失败，
+ *   rejectReason 记录原因）/ failed（内部错误，等待渠道重推或人工重放）；
+ * - 验签失败的请求不落库（报文不可信），只在日志留痕并返回 401；
+ * - 回跳（浏览器 redirect）不作为支付凭证，唯一凭证是验签后的回调与主动查单。
+ */
+model PaymentCallbackEvent {
+  id             String    @id @default(uuid())
+  channel        String
+  eventId        String    @unique @map("event_id")
+  eventType      String    @map("event_type")
+  orderId        String?   @map("order_id")
+  signatureValid Boolean   @map("signature_valid")
+  status         String    @default("received")
+  rejectReason   String?   @map("reject_reason")
+  payload        Json
+  receivedAt     DateTime  @default(now()) @map("received_at")
+  processedAt    DateTime? @map("processed_at")
+
+  @@index([orderId])
+  @@map("payment_callback_events")
+}
+
+/**
+ * 退款（M12）。
+ * - 仅支持全额退款（amountCents = 订单实付）；部分退款策略未与商业确认，
+ *   接口直接拒绝，不臆造按比例回收权益的算法；
+ * - 状态机：requested → succeeded / failed（以验签后的渠道退款回调为准，
+ *   渠道受理回执不直接等于退款成功）；
+ * - entitlementAction：全额退款成功 → revoked（回收该订单对应授予）。
+ */
+model Refund {
+  id                String       @id @default(uuid())
+  orderId           String       @map("order_id")
+  order             PaymentOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  channel           String
+  channelRefundId   String?      @map("channel_refund_id")
+  amountCents       Int          @map("amount_cents")
+  currency          String       @default("CNY")
+  status            String       @default("requested")
+  reason            String?
+  requestedBy       String       @map("requested_by")
+  entitlementAction String?      @map("entitlement_action")
+  rawPayload        Json?        @map("raw_payload")
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @updatedAt @map("updated_at")
+
+  @@index([orderId])
+  @@map("refunds")
+}
+
+/**
+ * 对账差异记录（M12）。
+ * - type：missing_local（渠道有本地无）/ missing_channel（本地有渠道无）/
+ *   amount_mismatch（金额不一致）；
+ * - dedupeKey 全局唯一（date+channel+type+交易号/订单号）：重复跑对账不产生重复差异；
+ * - 差异一律 open 进入人工处理入口，处理结果写 resolution 并记 resolvedBy/resolvedAt。
+ */
+model ReconciliationRecord {
+  id                   String    @id @default(uuid())
+  date                 String
+  channel              String
+  type                 String
+  dedupeKey            String    @unique @map("dedupe_key")
+  orderId              String?   @map("order_id")
+  channelTransactionId String?   @map("channel_transaction_id")
+  localAmountCents     Int?      @map("local_amount_cents")
+  channelAmountCents   Int?      @map("channel_amount_cents")
+  status               String    @default("open")
+  resolution           String?
+  resolvedBy           String?   @map("resolved_by")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  resolvedAt           DateTime? @map("resolved_at")
+
+  @@index([date, status])
+  @@map("reconciliation_records")
 }
