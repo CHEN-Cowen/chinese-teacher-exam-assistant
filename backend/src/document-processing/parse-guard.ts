@@ -18,10 +18,16 @@ export interface ParseLimits {
   maxPdfPages: number;
   maxSheets: number;
   maxBlocks: number;
-  /** 解压后单元格总预算（防压缩炸弹） */
+  /** 解压后单元格总预算（防压缩炸弹；亦即真实单元格访问次数上界） */
   maxCells: number;
   /** 单块文本最大长度（超出截断并告警） */
   maxBlockTextLength: number;
+  /** 单工作表实际使用行跨度上限（M04/F6：防远距离单元格撑爆矩形扫描） */
+  maxSheetRows: number;
+  /** 单工作表实际使用列跨度上限 */
+  maxSheetCols: number;
+  /** 解析墙钟时长上限（解析循环内检查；超时转人工，不做假 Promise 超时） */
+  timeoutMs: number;
 }
 
 export function readParseLimits(env: NodeJS.ProcessEnv = process.env): ParseLimits {
@@ -32,6 +38,9 @@ export function readParseLimits(env: NodeJS.ProcessEnv = process.env): ParseLimi
     maxBlocks: intFromEnv(env.DOC_PARSE_MAX_BLOCKS, 20_000),
     maxCells: intFromEnv(env.DOC_PARSE_MAX_CELLS, 500_000),
     maxBlockTextLength: intFromEnv(env.DOC_PARSE_MAX_BLOCK_TEXT, 4_000),
+    maxSheetRows: intFromEnv(env.DOC_PARSE_MAX_SHEET_ROWS, 100_000),
+    maxSheetCols: intFromEnv(env.DOC_PARSE_MAX_SHEET_COLS, 500),
+    timeoutMs: intFromEnv(env.DOC_PARSE_TIMEOUT_MS, 30_000),
   };
 }
 
@@ -49,7 +58,9 @@ export type GuardErrorCode =
   | 'TOO_MANY_PAGES'
   | 'TOO_MANY_SHEETS'
   | 'CELL_BUDGET_EXCEEDED'
-  | 'BLOCK_BUDGET_EXCEEDED';
+  | 'BLOCK_BUDGET_EXCEEDED'
+  | 'SHEET_SPAN_EXCEEDED'
+  | 'PARSE_TIMEOUT';
 
 export class GuardError extends Error {
   readonly code: GuardErrorCode;
@@ -83,6 +94,28 @@ export class Budget {
       throw new GuardError(
         'CELL_BUDGET_EXCEEDED',
         `解压后内容超过预算上限（${this.max}），疑似压缩炸弹，已终止解析`,
+      );
+    }
+  }
+}
+
+/**
+ * M04/F6：解析墙钟时长守卫。
+ *
+ * 在解析循环内按节拍调用 check()，超时抛 PARSE_TIMEOUT（调用方映射为
+ * 转人工）。这是真实终止我们自己的循环，不是 Promise 超时假象；
+ * 库内部同步调用（如 SheetJS read）无法被本机制打断，其耗时由输入
+ * 字节上限与文件结构约束，残余风险在执行记录中说明。
+ */
+export class ParseDeadline {
+  private readonly startedAt = Date.now();
+  constructor(private readonly timeoutMs: number) {}
+  /** 超时抛错；正常情况开销为一次 Date.now() 比较 */
+  check(): void {
+    if (Date.now() - this.startedAt > this.timeoutMs) {
+      throw new GuardError(
+        'PARSE_TIMEOUT',
+        `解析超过时长上限（${this.timeoutMs}ms），已终止并转人工处理`,
       );
     }
   }

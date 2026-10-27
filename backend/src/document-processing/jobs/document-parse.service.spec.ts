@@ -9,7 +9,7 @@ import { SourceDocumentStore } from '../../sourcing/source-document-store.js';
 import { DocumentParserService } from '../document-parser.service.js';
 import { DocumentParseStore } from '../document-parse-store.js';
 import { DocumentParseService } from './document-parse.service.js';
-import { readParseLimits } from '../parse-guard.js';
+import { GuardError, readParseLimits } from '../parse-guard.js';
 import { readFeatureFlags } from '../feature-flags.js';
 import {
   buildEncryptedPdf,
@@ -213,5 +213,43 @@ describe('DocumentParseService.handle', () => {
 
     expect(outcome.status).toBe('parsed');
     expect(ctx.prisma.parseRuns[0].format).toBe('spreadsheet');
+  });
+});
+
+/**
+ * M04/F6：资源边界超限 → 转人工（pending_manual），记录可理解原因。
+ * 超时与跨度超限属于「文件异常但内容可能合法」，不伪装成功也不当普通失败。
+ */
+describe('DocumentParseService 资源边界映射（M04/F6）', () => {
+  it.each([
+    ['PARSE_TIMEOUT', '解析超过时长上限'],
+    ['SHEET_SPAN_EXCEEDED', '工作表跨度超过上限'],
+  ] as const)('%s → pending_manual 且不产出块', async (code, message) => {
+    const prisma = new FakePrisma();
+    const store = new FakeObjectStore();
+    const queue = new FakeCrawlTaskQueue();
+    const documentStore = new SourceDocumentStore(prisma as never);
+    const parseStore = new DocumentParseStore(prisma as never);
+    const throwingParser = {
+      parse: async () => {
+        throw new GuardError(code, message);
+      },
+    };
+    const service = new DocumentParseService(
+      throwingParser as never,
+      parseStore,
+      documentStore,
+      store,
+      queue,
+    );
+    const snapshot = seedSnapshot({ prisma, store, queue, service, parseStore }, 'aa04', Buffer.from('%PDF-1.4 fake'));
+    const outcome = await service.handle({
+      snapshotId: snapshot.id,
+      documentParserVersion: VERSION_A,
+    });
+    expect(outcome.status).toBe('pending_manual');
+    const run = prisma.parseRuns[0];
+    expect(run.status).toBe('pending_manual');
+    expect(run.errorSummary).toBe(`${code}:${message}`);
   });
 });

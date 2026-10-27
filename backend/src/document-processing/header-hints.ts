@@ -44,6 +44,8 @@ export function isSubjectName(text: string): boolean {
 export function suggestField(headerText: string): string | undefined {
   const t = headerText.replace(/\s+/g, '');
   if (isSubjectName(t)) return 'subject';
+  // 「岗位职责」不是岗位名称。先排除，避免覆盖「招聘岗位」列。
+  if (t.includes('职责')) return undefined;
   const hit = HEADER_HINTS.find((h) =>
     h.keywords.some((kw) => headerText.includes(kw)),
   );

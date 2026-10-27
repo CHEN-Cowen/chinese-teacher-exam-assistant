@@ -1,8 +1,15 @@
 /**
  * v7.2 附件解析：电子表格解析器测试（XLSX/XLSB/ET、多表、合并单元格、
  * 日期与数字格式、公式、压缩炸弹预算、损坏文件）。
+ *
+ * M04/F6：资源边界测试（真实单元格驱动迭代、全空 !ref 跳过、跨度守卫、
+ * 合并展开预算、墙钟时长）。极端工作簿无法经真实 XLSX.write 构造
+ * （写出端同样按范围迭代会挂死），通过 spy XLSX.read 注入内存工作簿
+ * 验证解析器自身逻辑；正常表格回归用真实字节 fixture。
  */
-import { describe, expect, it } from 'vitest';
+import { performance } from 'node:perf_hooks';
+import { describe, expect, it, vi } from 'vitest';
+import * as XLSX from 'xlsx';
 import { GuardError, readParseLimits } from '../parse-guard.js';
 import { SpreadsheetDocumentParser } from './spreadsheet-document.parser.js';
 import {
@@ -10,6 +17,11 @@ import {
   buildXlsbFixture,
   buildXlsxFixture,
 } from '../testing/fixture-builders.js';
+
+vi.mock('xlsx', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('xlsx')>();
+  return { ...actual, read: vi.fn(actual.read) };
+});
 
 const limits = readParseLimits({});
 
@@ -113,5 +125,120 @@ describe('SpreadsheetDocumentParser（异常与防护）', () => {
     const doc = await new SpreadsheetDocumentParser(tinyLimits).parse(input(buildXlsxFixture(), 'xlsx'));
     expect(doc.sheetCount).toBe(1);
     expect(doc.warnings.some((w) => w.includes('工作表数量超过上限'))).toBe(true);
+  });
+});
+
+/**
+ * M04/F6：资源边界。
+ * 极端工作簿经 spy XLSX.read 注入（真实写出端按范围迭代无法构造），
+ * 断言解析器自身按真实单元格驱动、快速终止并产出可理解告警。
+ */
+describe('SpreadsheetDocumentParser 资源边界（M04/F6）', () => {
+  type FakeCell = { t: string; v: string };
+  type FakeSheet = Record<string, unknown>;
+  function injectWorkbook(sheets: Record<string, FakeSheet>): void {
+    const wb = { SheetNames: Object.keys(sheets), Sheets: sheets };
+    vi.mocked(XLSX.read).mockImplementationOnce(() => wb as never);
+  }
+  function cell(text: string): FakeCell {
+    return { t: 's', v: text };
+  }
+
+  it('远距离两个真实单元格（5 万行 × 500 列跨度内）按真实地址快速完成', async () => {
+    injectWorkbook({
+      Positions: {
+        '!ref': 'A1:SF50000',
+        A1: cell('招聘单位'),
+        SF50000: cell('岗位X'),
+      },
+    });
+    const started = performance.now();
+    const doc = await new SpreadsheetDocumentParser(limits).parse(input(buildXlsxFixture(), 'xlsx'));
+    const elapsedMs = performance.now() - started;
+    // 旧矩形扫描需访问 50_000 × 500 = 2500 万地址；真实单元格驱动只访问 2 格
+    expect(elapsedMs).toBeLessThan(3_000);
+    const cells = doc.blocks.filter((b) => b.kind === 'table-cell');
+    expect(cells).toHaveLength(2);
+    expect(cells.map((b) => (b.locator as { cell: string }).cell).sort()).toEqual([
+      'A1',
+      'SF50000',
+    ]);
+    console.info(`[M04证据] 远距离单元格解析耗时 ${elapsedMs.toFixed(1)}ms`);
+  });
+
+  it('全空虚大 !ref（A1:XFD1048576 无内容）→ 跳过该表并告警，不矩形扫描', async () => {
+    injectWorkbook({
+      Empty: { '!ref': 'A1:XFD1048576' },
+    });
+    await expect(
+      new SpreadsheetDocumentParser(limits).parse(input(buildXlsxFixture(), 'xlsx')),
+    ).rejects.toMatchObject({
+      name: 'GuardError',
+      code: 'CORRUPT_FILE',
+      message: expect.stringContaining('没有可读取的内容单元格'),
+    } as Partial<GuardError>);
+  });
+
+  it('极端远距离单元格（超出 10 万行跨度）→ SHEET_SPAN_EXCEEDED 秒级转人工', async () => {
+    injectWorkbook({
+      Extreme: {
+        '!ref': 'A1:XFD1048576',
+        A1: cell('a'),
+        XFD1048576: cell('b'),
+      },
+    });
+    const started = performance.now();
+    await expect(
+      new SpreadsheetDocumentParser(limits).parse(input(buildXlsxFixture(), 'xlsx')),
+    ).rejects.toMatchObject({
+      name: 'GuardError',
+      code: 'SHEET_SPAN_EXCEEDED',
+      message: expect.stringContaining('转人工'),
+    } as Partial<GuardError>);
+    const elapsedMs = performance.now() - started;
+    expect(elapsedMs).toBeLessThan(1_000);
+    console.info(`[M04证据] 跨度守卫终止耗时 ${elapsedMs.toFixed(1)}ms`);
+  });
+
+  it('超大合并范围 → 只登记展开预算内覆盖并显式告警，值取左上角，解析不中断', async () => {
+    injectWorkbook({
+      Merged: {
+        '!ref': 'A1:C3',
+        '!merges': [{ s: { r: 0, c: 0 }, e: { r: 49_999, c: 499 } }],
+        A1: cell('合并标题'),
+        A2: cell('残留值A'),
+        C3: cell('独立值'),
+      },
+    });
+    const doc = await new SpreadsheetDocumentParser(limits).parse(input(buildXlsxFixture(), 'xlsx'));
+    // 展开预算 100_000 < 50_000 × 500 合并跨度 → 显式告警而非逐格展开
+    expect(
+      doc.warnings.some((w) => w.includes('合并范围') && w.includes('未逐格登记覆盖')),
+    ).toBe(true);
+    const cells = doc.blocks.filter((b) => b.kind === 'table-cell');
+    // 左上角 A1 出块；超预算的覆盖范围不登记 → A2/C3 按普通单元格出块
+    expect(cells.length).toBe(3);
+    expect(
+      doc.warnings.some((w) => w.includes('合并单元格 A1:SF50000')),
+    ).toBe(true);
+  });
+
+  it('墙钟超时 → PARSE_TIMEOUT（负值仅测试用于表示必然超时）', async () => {
+    const zeroDeadlineLimits = { ...limits, timeoutMs: -1 };
+    injectWorkbook({
+      Positions: {
+        '!ref': 'A1:B3',
+        A1: cell('单位'),
+        A2: cell('单位A'),
+        A3: cell('单位B'),
+      },
+    });
+    // 每张表开始时的检查点即超时（真实终止，不产出任何块）
+    await expect(
+      new SpreadsheetDocumentParser(zeroDeadlineLimits).parse(input(buildXlsxFixture(), 'xlsx')),
+    ).rejects.toMatchObject({
+      name: 'GuardError',
+      code: 'PARSE_TIMEOUT',
+    } as Partial<GuardError>);
   });
 });

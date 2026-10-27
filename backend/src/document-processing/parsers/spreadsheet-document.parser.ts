@@ -16,6 +16,7 @@ import * as XLSX from 'xlsx';
 import {
   Budget,
   GuardError,
+  ParseDeadline,
   clampText,
   type ParseLimits,
 } from '../parse-guard.js';
@@ -28,7 +29,13 @@ import type {
   TableHeaderCandidate,
 } from '../parsed-document.js';
 
-export const SPREADSHEET_PARSER_VERSION = 'spreadsheet-parser@1.0.0';
+export const SPREADSHEET_PARSER_VERSION = 'spreadsheet-parser@1.2.0';
+
+/** 合并单元格覆盖地址展开总预算（超出则只登记左上角并告警，不逐格展开） */
+const MERGE_EXPANSION_BUDGET = 100_000;
+
+/** 墙钟守卫检查节拍（每处理多少真实单元格检查一次超时） */
+const DEADLINE_CHECK_INTERVAL = 4096;
 
 interface CellRecord {
   v?: unknown;
@@ -48,6 +55,32 @@ interface Workbook {
   Workbook?: { ExternalLinks?: unknown[] };
 }
 
+/** 解码后的真实单元格（v 非空），按 (row, col) 升序 */
+interface RealCell {
+  address: string;
+  row: number;
+  column: number;
+  cell: CellRecord;
+}
+
+/**
+ * 按实际单元格地址收集真实内容单元格（v 非空），一次解码并排序。
+ * 官方 xlsx 可能把 !ref 标到整表（如 A1:XFD1048576），不能据此做
+ * 矩形扫描——M04/F6：遍历一律以真实单元格键为准。
+ */
+function collectRealCells(sheet: Worksheet): RealCell[] {
+  const cells: RealCell[] = [];
+  for (const address of Object.keys(sheet)) {
+    if (address.startsWith('!')) continue;
+    const cell = sheet[address];
+    if (!isCell(cell) || cell.v == null) continue;
+    const decoded = XLSX.utils.decode_cell(address);
+    cells.push({ address, row: decoded.r, column: decoded.c, cell });
+  }
+  cells.sort((a, b) => a.row - b.row || a.column - b.column);
+  return cells;
+}
+
 function isCell(
   value: CellRecord | object | string | undefined,
 ): value is CellRecord {
@@ -56,6 +89,40 @@ function isCell(
     value !== null &&
     ('v' in value || 'f' in value || 'w' in value)
   );
+}
+
+/**
+ * 合并单元格覆盖地址集合（含展开预算）。
+ * 超预算的合并范围不逐格展开：非左上角残留值会按普通单元格出块，
+ * 显式告警说明，不静默丢弃也不无限消耗内存。
+ */
+function expandMergeCoverage(
+  merges: Array<{ s: { r: number; c: number }; e: { r: number; c: number } }>,
+  warnings: string[],
+  sheetName: string,
+): { covered: Set<string>; budgetExceeded: boolean } {
+  const covered = new Set<string>();
+  let budgetExceeded = false;
+  let expanded = 0;
+  for (const merge of merges) {
+    const span =
+      (merge.e.r - merge.s.r + 1) * (merge.e.c - merge.s.c + 1);
+    if (expanded + span > MERGE_EXPANSION_BUDGET) {
+      budgetExceeded = true;
+      warnings.push(
+        `${sheetName} 合并范围 ${XLSX.utils.encode_range(merge)} 过大，未逐格登记覆盖（值仍取左上角）`,
+      );
+      continue;
+    }
+    expanded += span;
+    for (let r = merge.s.r; r <= merge.e.r; r += 1) {
+      for (let c = merge.s.c; c <= merge.e.c; c += 1) {
+        if (r === merge.s.r && c === merge.s.c) continue;
+        covered.add(`${r}:${c}`);
+      }
+    }
+  }
+  return { covered, budgetExceeded };
 }
 
 /** 单元格值安全文本化：基本类型直转，其余 JSON 序列化（绝不 '[object Object]'） */
@@ -119,33 +186,66 @@ export class SpreadsheetDocumentParser implements DocumentParser {
     const blocks: ParsedBlock[] = [];
     const tableHeaders: TableHeaderCandidate[] = [];
     const budget = new Budget(this.limits.maxCells);
+    // M04/F6：解析墙钟守卫（在迭代节拍内真实终止我们的循环）
+    const deadline = new ParseDeadline(this.limits.timeoutMs);
 
     for (const sheetName of sheets) {
+      deadline.check(); // 每张表开始时检查一次（小表也可能因前表耗时超限）
       const sheet = wb.Sheets[sheetName];
-      if (!sheet?.['!ref']) continue;
-      const range = XLSX.utils.decode_range(sheet['!ref']!);
+      if (!sheet) continue;
+      const realCells = collectRealCells(sheet);
+      if (realCells.length === 0) {
+        // 全空虚大 !ref（如 A1:XFD1048576）没有真实内容：跳过并告警，
+        // 绝不按 !ref 做矩形扫描（旧实现会在此处空扫上亿次）。
+        if (sheet['!ref']) {
+          warnings.push(`${sheetName} 声明范围 ${sheet['!ref']} 但无实际内容单元格，已跳过`);
+        }
+        continue;
+      }
+
+      // 跨度守卫：真实单元格的包围盒不得超出合理岗位表规模；
+      // 两个远距离单元格也会把包围盒撑满整表 → 明确转人工，不硬扫。
+      const minRow = realCells[0]!.row;
+      const maxRow = realCells[realCells.length - 1]!.row;
+      const minCol = realCells.reduce((m, c) => Math.min(m, c.column), Number.POSITIVE_INFINITY);
+      const maxCol = realCells.reduce((m, c) => Math.max(m, c.column), -1);
+      if (
+        maxRow - minRow + 1 > this.limits.maxSheetRows ||
+        maxCol - minCol + 1 > this.limits.maxSheetCols
+      ) {
+        throw new GuardError(
+          'SHEET_SPAN_EXCEEDED',
+          `工作表「${sheetName}」实际内容跨度（${maxRow - minRow + 1} 行 × ${maxCol - minCol + 1} 列）超过上限（${this.limits.maxSheetRows} 行 × ${this.limits.maxSheetCols} 列），已转人工处理`,
+        );
+      }
+
       const merges = sheet['!merges'] ?? [];
       const mergedTopLeft = new Set(merges.map((m) => `${m.s.r}:${m.s.c}`));
+      const { covered: mergedCovered } = expandMergeCoverage(merges, warnings, sheetName);
 
-      // 表头识别（支持多级表头）：
-      // 在顶部最多 9 行内，收集所有「含强表头特征」的行（强关键词如招聘单位/
-      // 学历/专业/人数/岗位/序号/电话/备注等；具体学科名不作为判定表头行的依据，
-      // 避免把数据行的专业值「数学」误判成学科表头）。学科列（语文/数学/…）的
-      // subject 映射仅在「已是表头行」的行内生效。
+      // 表头识别（支持多级表头）：只在真实单元格的顶部窗口内做，
+      // 不做矩形扫描。学科列（语文/数学/…）的 subject 映射仅在
+      // 「已是表头行」的行内生效。
+      const headerWindowEnd = Math.min(maxRow, minRow + 9);
+      const headerRows = new Map<number, RealCell[]>();
+      for (const entry of realCells) {
+        if (entry.row > headerWindowEnd) break; // 已按 (row, col) 排序
+        const list = headerRows.get(entry.row);
+        if (list) list.push(entry);
+        else headerRows.set(entry.row, [entry]);
+      }
       const headerCandidates: Array<{ row: number; columns: TableHeaderCandidate['columns'] }> = [];
-      for (let r = range.s.r; r <= Math.min(range.e.r, range.s.r + 9); r += 1) {
+      for (const [r, rowCells] of headerRows) {
         const rowColumns: TableHeaderCandidate['columns'] = [];
         let strongHeaderCount = 0;
         let subjectColumnCount = 0;
-        for (let c = range.s.c; c <= range.e.c; c += 1) {
-          const cell = sheet[XLSX.utils.encode_cell({ r, c })];
-          if (!isCell(cell) || cell.v == null) continue;
-          const headerText = cellText(cell.w ?? cell.v).trim();
+        for (const entry of rowCells) {
+          const headerText = cellText(entry.cell.w ?? entry.cell.v).trim();
           if (!headerText) continue;
           const hint = suggestField(headerText);
           rowColumns.push({
-            column: c + 1,
-            cell: XLSX.utils.encode_cell({ r, c }),
+            column: entry.column + 1,
+            cell: entry.address,
             headerText,
             suggestedField: hint,
           });
@@ -171,59 +271,52 @@ export class SpreadsheetDocumentParser implements DocumentParser {
         });
       }
 
-      for (let r = range.s.r; r <= range.e.r; r += 1) {
-        for (let c = range.s.c; c <= range.e.c; c += 1) {
-          const addr = XLSX.utils.encode_cell({ r, c });
-          const cell = sheet[addr];
-          if (!isCell(cell) || cell.v == null) continue;
-          budget.spend();
-          if (blocks.length >= this.limits.maxBlocks) {
-            warnings.push(`内容块数量超过上限 ${this.limits.maxBlocks}，已截断`);
-            r = range.e.r + 1;
-            break;
-          }
-          // 合并单元格：非左上角不再单独出块（左上角值代表整块）
-          const isMergedNonTopLeft =
-            merges.some(
-              (m) =>
-                r >= m.s.r &&
-                r <= m.e.r &&
-                c >= m.s.c &&
-                c <= m.e.c &&
-                !(r === m.s.r && c === m.s.c),
-            ) ?? false;
-          if (isMergedNonTopLeft) continue;
+      // 逐真实单元格出块：每格只访问一次（无矩形空扫描），
+      // 访问计数与墙钟按节拍推进。
+      let sinceDeadlineCheck = 0;
+      for (const entry of realCells) {
+        sinceDeadlineCheck += 1;
+        if (sinceDeadlineCheck >= DEADLINE_CHECK_INTERVAL) {
+          deadline.check();
+          sinceDeadlineCheck = 0;
+        }
+        budget.spend();
+        if (blocks.length >= this.limits.maxBlocks) {
+          warnings.push(`内容块数量超过上限 ${this.limits.maxBlocks}，已截断`);
+          break;
+        }
+        // 合并单元格：非左上角不再单独出块（左上角值代表整块）
+        if (mergedCovered.has(`${entry.row}:${entry.column}`)) continue;
 
-          const display = cellText(cell.w ?? cell.v).trim();
-          const raw = cellText(cell.v).trim();
-          if (!raw && !display) continue;
-          const [clamped, truncated] = clampText(display || raw, this.limits.maxBlockTextLength);
-          if (truncated) warnings.push(`${sheetName}!${addr} 文本超长已截断`);
-          const locator: DocumentLocator = {
-            kind: 'worksheet',
-            sheet: sheetName,
-            row: r + 1,
-            column: c + 1,
-            cell: addr,
-          };
-          blocks.push({
-            kind: 'table-cell',
-            text: clamped,
-            locator,
-            rawValue: raw,
-            displayValue: display,
-          });
-          if (cell.f) {
-            warnings.push(
-              `${sheetName}!${addr} 含公式（仅保留缓存计算值，不重新求值、不执行）`,
-            );
-          }
-          if (mergedTopLeft.has(`${r}:${c}`)) {
-            const merge = merges.find((m) => m.s.r === r && m.s.c === c)!;
-            warnings.push(
-              `${sheetName} 合并单元格 ${XLSX.utils.encode_range(merge)}（值取左上角 ${addr}）`,
-            );
-          }
+        const display = cellText(entry.cell.w ?? entry.cell.v).trim();
+        const raw = cellText(entry.cell.v).trim();
+        if (!raw && !display) continue;
+        const [clamped, truncated] = clampText(display || raw, this.limits.maxBlockTextLength);
+        if (truncated) warnings.push(`${sheetName}!${entry.address} 文本超长已截断`);
+        const locator: DocumentLocator = {
+          kind: 'worksheet',
+          sheet: sheetName,
+          row: entry.row + 1,
+          column: entry.column + 1,
+          cell: entry.address,
+        };
+        blocks.push({
+          kind: 'table-cell',
+          text: clamped,
+          locator,
+          rawValue: raw,
+          displayValue: display,
+        });
+        if (entry.cell.f) {
+          warnings.push(
+            `${sheetName}!${entry.address} 含公式（仅保留缓存计算值，不重新求值、不执行）`,
+          );
+        }
+        if (mergedTopLeft.has(`${entry.row}:${entry.column}`)) {
+          const merge = merges.find((m) => m.s.r === entry.row && m.s.c === entry.column)!;
+          warnings.push(
+            `${sheetName} 合并单元格 ${XLSX.utils.encode_range(merge)}（值取左上角 ${entry.address}）`,
+          );
         }
       }
     }

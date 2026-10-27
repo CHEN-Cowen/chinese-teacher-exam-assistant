@@ -128,12 +128,16 @@ export class DocumentParseService {
     } catch (error) {
       const summary = error instanceof Error ? error.message : String(error);
       const code = error instanceof GuardError ? error.code : 'PARSE_ERROR';
+      // M04/F6：超时与跨度超限属于「文件异常但内容可能合法」→ 转人工，
+      // 记录可理解原因；不伪装成功也不当普通失败静默丢弃。
       const status: DocumentParseStatus =
         code === 'ENCRYPTED_PDF'
           ? 'pending_manual'
-          : code === 'UNKNOWN_FORMAT'
-            ? 'unsupported_format'
-            : 'failed';
+          : code === 'PARSE_TIMEOUT' || code === 'SHEET_SPAN_EXCEEDED'
+            ? 'pending_manual'
+            : code === 'UNKNOWN_FORMAT'
+              ? 'unsupported_format'
+              : 'failed';
       await this.parseStore.completeRun(run.id, {
         status,
         format: 'unknown',
