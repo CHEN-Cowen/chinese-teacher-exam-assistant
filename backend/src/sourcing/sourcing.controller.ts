@@ -20,6 +20,8 @@ import { AdminGuard, StrictAdminGuard } from '../auth/admin.guard.js';
 import { CrawlOrchestrator } from './crawl-orchestrator.js';
 import { CrawlRunStore } from './crawl-run-store.js';
 import { SourceDocumentStore } from './source-document-store.js';
+import { CrawlHealthService } from './crawl-health.service.js';
+import { SourcingAlertService } from './sourcing-alert.service.js';
 import { SourcingMetrics } from './observability.js';
 import type {
   CrawlTrigger,
@@ -53,6 +55,8 @@ export class SourcingController {
     private readonly documents: SourceDocumentStore,
     @Inject(CRAWL_TASK_QUEUE) private readonly queue: CrawlTaskQueue,
     private readonly metrics: SourcingMetrics,
+    private readonly healthService: CrawlHealthService,
+    private readonly alerts: SourcingAlertService,
   ) {}
 
   // ==================== v7.2：公告关系（补充/延期/取消）人工确认 ====================
@@ -170,15 +174,20 @@ export class SourcingController {
   /**
    * 来源健康概览：连续失败、健康状态、下次检查时间、最近一次运行、
    * 最新解析器版本、待审核积压；queue 为队列积压计数（队列不可用时为 null）。
+   *
+   * M02/F3：补充 worker（Redis 心跳推导）与 activeAlerts（持久化运行告警），
+   * 与公开覆盖投影（coverage-projection）共用 Source 表同一份运行事实。
    */
   @Get('health')
   @UseGuards(AdminGuard)
   async health() {
-    const [sources, queue] = await Promise.all([
+    const [sources, queue, worker, activeAlerts] = await Promise.all([
       this.store.listHealth(),
       this.queueBacklog(),
+      this.healthService.workerStatus().catch(() => null),
+      this.alerts.listActive().catch(() => null),
     ]);
-    return { sources, queue };
+    return { sources, queue, worker, activeAlerts };
   }
 
   /** 队列积压计数：实现不支持或 Redis 不可用时降级为 null（不拖垮健康接口） */

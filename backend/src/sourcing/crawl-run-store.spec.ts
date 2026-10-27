@@ -6,7 +6,11 @@
  * listHealth 聚合（latestRun/parserVersion/pendingReviewCount）、
  * 进行中运行查询与历史发现判定、连续失败指标钩子。
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  ALERT_TYPES,
+  SourcingAlertService,
+} from './sourcing-alert.service.js';
 import {
   CONSECUTIVE_FAILURE_THRESHOLD,
   CrawlRunStore,
@@ -246,6 +250,194 @@ describe('CrawlRunStore.findActiveRun / hasHistoryDiscovery', () => {
       canonicalUrl: 'https://b.gov.cn/x.html',
     });
     expect(await store.hasHistoryDiscovery(fresh.id)).toBe(true);
+  });
+});
+
+describe('CrawlRunStore 失败退避（M02/F3）', () => {
+  it('计入来源的失败按「周期 × 2^(连续失败-1)，封顶 8 倍」推迟下次检查', async () => {
+    const { prisma, store } = makeStore();
+    const source = prisma.seedSource({
+      publisher: 'A',
+      officialUrl: 'https://a.gov.cn/',
+      pollEveryMinutes: 60,
+    });
+    const now = new Date('2026-10-13T01:00:00.000Z');
+    const multipliers = [1, 2, 4, 8, 8]; // 1/2/3/4/5 次连续失败
+    for (let i = 0; i < multipliers.length; i += 1) {
+      await store.recordFailure(source.id, {
+        checkedAt: now,
+        reason: `boom-${i}`,
+      });
+      const expected = new Date(now.getTime() + multipliers[i]! * 60 * 60_000);
+      expect(prisma.sources[0].nextCheckAt).toEqual(expected);
+    }
+  });
+
+  it('显式 nextCheckAt 优先于退避计算', async () => {
+    const { prisma, store } = makeStore();
+    const source = prisma.seedSource({
+      publisher: 'A',
+      officialUrl: 'https://a.gov.cn/',
+      pollEveryMinutes: 60,
+    });
+    const now = new Date('2026-10-13T01:00:00.000Z');
+    const explicit = new Date(now.getTime() + 5 * 60_000);
+    await store.recordFailure(source.id, {
+      checkedAt: now,
+      nextCheckAt: explicit,
+      reason: 'boom',
+    });
+    expect(prisma.sources[0].nextCheckAt).toEqual(explicit);
+  });
+
+  it('不计入来源的失败（countTowardsSource=false）沿用常规周期，不退避不累计', async () => {
+    const { prisma, store } = makeStore();
+    const source = prisma.seedSource({
+      publisher: 'A',
+      officialUrl: 'https://a.gov.cn/',
+      pollEveryMinutes: 60,
+      consecutiveFailures: 2, // 已有 2 次历史失败
+    });
+    const now = new Date('2026-10-13T01:00:00.000Z');
+    await store.recordFailure(source.id, {
+      checkedAt: now,
+      reason: 'queue_unavailable',
+      countTowardsSource: false,
+    });
+    // 常规周期 1x，而不是按历史 2 次失败的 4x 退避
+    expect(prisma.sources[0].nextCheckAt).toEqual(
+      new Date(now.getTime() + 60 * 60_000),
+    );
+    expect(prisma.sources[0].consecutiveFailures).toBe(2);
+  });
+});
+
+describe('CrawlRunStore 持久化告警钩子（M02/F3）', () => {
+  function makeStoreWithAlerts() {
+    const prisma = new FakePrisma();
+    const alerts = {
+      raise: vi.fn(async () => {}),
+      resolveForSource: vi.fn(async () => {}),
+    };
+    const store = new CrawlRunStore(
+      prisma as never,
+      undefined,
+      alerts as unknown as SourcingAlertService,
+    );
+    return { prisma, store, alerts };
+  }
+
+  it('连续失败达到阈值 → raise consecutive_failures critical；成功 → resolveForSource', async () => {
+    const { prisma, store, alerts } = makeStoreWithAlerts();
+    const source = prisma.seedSource({
+      publisher: 'A',
+      officialUrl: 'https://a.gov.cn/',
+    });
+    const now = new Date('2026-10-13T01:00:00.000Z');
+    const next = new Date(now.getTime() + 60_000);
+
+    for (let i = 0; i < CONSECUTIVE_FAILURE_THRESHOLD; i += 1) {
+      await store.recordFailure(source.id, {
+        checkedAt: now,
+        nextCheckAt: next,
+        reason: `boom-${i}`,
+      });
+    }
+    expect(alerts.raise).toHaveBeenCalledTimes(1);
+    expect(alerts.raise).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: ALERT_TYPES.consecutiveFailures,
+        sourceId: source.id,
+        severity: 'critical',
+      }),
+    );
+
+    await store.recordSuccess(source.id, { checkedAt: now, nextCheckAt: next });
+    expect(alerts.resolveForSource).toHaveBeenCalledWith(source.id, now);
+  });
+
+  it('未达阈值不告警；基础设施失败（不计数）不告警', async () => {
+    const { prisma, store, alerts } = makeStoreWithAlerts();
+    const source = prisma.seedSource({
+      publisher: 'A',
+      officialUrl: 'https://a.gov.cn/',
+    });
+    const now = new Date('2026-10-13T01:00:00.000Z');
+    const next = new Date(now.getTime() + 60_000);
+
+    await store.recordFailure(source.id, {
+      checkedAt: now,
+      nextCheckAt: next,
+      reason: 'boom',
+    });
+    expect(alerts.raise).not.toHaveBeenCalled();
+
+    await store.recordFailure(source.id, {
+      checkedAt: now,
+      nextCheckAt: next,
+      reason: 'queue_unavailable',
+      countTowardsSource: false,
+    });
+    expect(alerts.raise).not.toHaveBeenCalled();
+  });
+
+  it('setHealth structure_changed / blocked → 对应类型告警；degraded 不在此告警', async () => {
+    const { prisma, store, alerts } = makeStoreWithAlerts();
+    const source = prisma.seedSource({
+      publisher: 'A',
+      officialUrl: 'https://a.gov.cn/',
+    });
+
+    await store.setHealth(source.id, 'structure_changed', '列表容器缺失');
+    expect(alerts.raise).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: ALERT_TYPES.structureChanged,
+        sourceId: source.id,
+        severity: 'critical',
+      }),
+    );
+
+    await store.setHealth(source.id, 'blocked', 'captcha');
+    expect(alerts.raise).toHaveBeenCalledWith(
+      expect.objectContaining({ type: ALERT_TYPES.blocked, sourceId: source.id }),
+    );
+
+    alerts.raise.mockClear();
+    await store.setHealth(source.id, 'degraded', '连续失败');
+    expect(alerts.raise).not.toHaveBeenCalled();
+  });
+
+  it('告警出口抛错不影响健康记录主流程', async () => {
+    const prisma = new FakePrisma();
+    const alerts = {
+      raise: vi.fn(async () => {
+        throw new Error('alert store down');
+      }),
+      resolveForSource: vi.fn(async () => {
+        throw new Error('alert store down');
+      }),
+    };
+    const store = new CrawlRunStore(
+      prisma as never,
+      undefined,
+      alerts as unknown as SourcingAlertService,
+    );
+    const source = prisma.seedSource({
+      publisher: 'A',
+      officialUrl: 'https://a.gov.cn/',
+    });
+    const now = new Date('2026-10-13T01:00:00.000Z');
+    const next = new Date(now.getTime() + 60_000);
+
+    await store.recordFailure(source.id, {
+      checkedAt: now,
+      nextCheckAt: next,
+      reason: 'boom',
+    });
+    expect(prisma.sources[0].consecutiveFailures).toBe(1);
+
+    await store.recordSuccess(source.id, { checkedAt: now, nextCheckAt: next });
+    expect(prisma.sources[0].healthStatus).toBe('healthy');
   });
 });
 

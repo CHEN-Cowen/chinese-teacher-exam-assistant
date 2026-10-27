@@ -33,21 +33,42 @@ import { summarizeMonitoring } from '../sourcing/source-monitoring.js';
 import type { SourceMonitoringRecord } from '../sourcing/source-monitoring.js';
 
 /** 投影口径版本：来源状态模型或统计口径变化时递增。 */
-export const COVERAGE_PROJECTION_VERSION = 'coverage-projection-2.0.0';
+export const COVERAGE_PROJECTION_VERSION = 'coverage-projection-2.1.0';
 
 /**
- * 「近期检查正常」的新鲜窗口（小时）。
+ * 「近期检查正常」的新鲜窗口。
  *
- * 台账来源默认调度周期为 60 分钟（getSeedableSources 的 pollEveryMinutes）。
- * 窗口取 48 小时：Worker 正常时远小于该值；Worker 停止或来源转为人工采样时，
- * 超过窗口即回落为「已核验·检查待运行」，不能一直显示「近期检查正常」。
- * 可用环境变量 COVERAGE_FRESHNESS_WINDOW_HOURS 覆盖（M02 接调度后按来源周期细化）。
+ * M02/F2 对齐：有运行时 Source 表时，新鲜窗口按来源自己的调度周期计算
+ * （max(2 × pollEveryMinutes, 120 分钟)）——60 分钟周期来源 2 小时未见推进
+ * 即「检查超时/待确认」，每日来源则放宽到 2 小时以上，不再一刀切 48 小时。
+ * 运行时不可用（静态台账回退）时使用 48 小时兜底窗口（台账检查记录的
+ * 采样节奏与线上调度无关）。
  */
 export const DEFAULT_FRESHNESS_WINDOW_HOURS = 48;
+
+/** 运行时按来源周期判定超时的下限（分钟） */
+export const MIN_FRESH_WINDOW_MINUTES = 120;
+
+/** 运行时新鲜窗口 = 周期的倍数 */
+export const FRESH_WINDOW_PERIOD_MULTIPLIER = 2;
 
 export function getFreshnessWindowHours(): number {
   const raw = Number(process.env.COVERAGE_FRESHNESS_WINDOW_HOURS);
   return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_FRESHNESS_WINDOW_HOURS;
+}
+
+/** 按来源调度周期计算新鲜窗口（毫秒）；无周期数据时回退默认小时数 */
+export function freshnessWindowMsForSource(
+  pollEveryMinutes: number | null,
+  fallbackWindowHours: number,
+): number {
+  if (pollEveryMinutes && pollEveryMinutes > 0) {
+    return Math.max(
+      MIN_FRESH_WINDOW_MINUTES,
+      pollEveryMinutes * FRESH_WINDOW_PERIOD_MULTIPLIER,
+    ) * 60_000;
+  }
+  return fallbackWindowHours * 3600_000;
 }
 
 /** 来源级投影状态。 */
@@ -82,6 +103,10 @@ export interface RuntimeSourceState {
   lastSuccessAt: Date | null;
   lastCheckedAt: Date | null;
   consecutiveFailures: number;
+  /** 调度周期（分钟）：M02 起按来源周期判定检查超时；无数据为 null */
+  pollEveryMinutes?: number | null;
+  /** 下次计划检查时间：可用于展示「下次核对」 */
+  nextCheckAt?: Date | null;
 }
 
 export interface ProjectionSource {
@@ -228,6 +253,13 @@ function isFresh(lastCheckedAt: string | null, now: Date, windowHours: number): 
   return now.getTime() - checked <= windowHours * 3600_000;
 }
 
+function isFreshWithinMs(lastCheckedAt: string | null, now: Date, windowMs: number): boolean {
+  if (!lastCheckedAt) return false;
+  const checked = new Date(lastCheckedAt).getTime();
+  if (Number.isNaN(checked)) return false;
+  return now.getTime() - checked <= windowMs;
+}
+
 /**
  * 推导单个来源的投影状态。
  *
@@ -295,12 +327,20 @@ function deriveSourceState(
     return { state: 'paused', note: summary.reason, lastCheckedAt };
   }
   if (summary.state === 'monitoring') {
-    if (isFresh(lastCheckedAt, now, windowHours)) {
+    // M02：有运行时周期数据 → 按来源周期判超时；否则用兜底小时窗口
+    const fresh = runtime?.pollEveryMinutes
+      ? isFreshWithinMs(
+          lastCheckedAt,
+          now,
+          freshnessWindowMsForSource(runtime.pollEveryMinutes, windowHours),
+        )
+      : isFresh(lastCheckedAt, now, windowHours);
+    if (fresh) {
       return { state: 'recently_healthy', note: summary.reason, lastCheckedAt };
     }
     return {
       state: 'verified',
-      note: `检查超时/待确认：最近一次检查在 ${lastCheckedAt}，超过 ${windowHours} 小时新鲜窗口。`,
+      note: `检查超时/待确认：最近一次检查在 ${lastCheckedAt}，超过按来源调度周期（${runtime?.pollEveryMinutes ?? '?'} 分钟）推导的新鲜窗口。`,
       lastCheckedAt,
     };
   }

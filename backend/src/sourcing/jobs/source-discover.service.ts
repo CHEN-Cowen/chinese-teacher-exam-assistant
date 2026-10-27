@@ -333,7 +333,7 @@ export class SourceDiscoverService {
       const summary = errors.join('; ').slice(0, 500);
       await this.runStore.recordFailure(source.id, {
         checkedAt: now,
-        nextCheckAt: this.runStore.nextCheckAt(now, source.pollEveryMinutes),
+        // M02/F3：来源失败启用指数退避（nextCheckAt 由 store 按连续失败计算）
         reason: summary,
         countTowardsSource: true,
       });
@@ -353,7 +353,7 @@ export class SourceDiscoverService {
       if (shouldAlertZeroResults(hasHistory, discovered.size)) {
         await this.runStore.recordFailure(source.id, {
           checkedAt: now,
-          nextCheckAt: this.runStore.nextCheckAt(now, source.pollEveryMinutes),
+          // M02/F3：异常零结果按来源失败退避
           reason: SUSPECTED_ZERO_RESULTS,
           countTowardsSource: true,
         });
@@ -424,7 +424,7 @@ export class SourceDiscoverService {
     if (errors.length > 0) {
       await this.runStore.recordFailure(source.id, {
         checkedAt: now,
-        nextCheckAt: this.runStore.nextCheckAt(now, source.pollEveryMinutes),
+        // M02/F3：部分失败同样按来源失败退避
         reason: errors.join('; ').slice(0, 500),
       });
     } else {

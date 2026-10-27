@@ -9,6 +9,8 @@ function setup() {
     {} as never,
     {} as never,
     {} as never,
+    {} as never, // CrawlHealthService（M02/F3 health 聚合，本用例不触达）
+    {} as never, // SourcingAlertService
   );
   return { controller, upsertSource };
 }

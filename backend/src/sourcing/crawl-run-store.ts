@@ -8,6 +8,7 @@
 import { Injectable, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma.service.js';
 import { SourcingMetrics } from './observability.js';
+import { ALERT_TYPES, SourcingAlertService } from './sourcing-alert.service.js';
 
 export type SourceHealthStatus =
   'healthy' | 'degraded' | 'structure_changed' | 'blocked' | 'paused';
@@ -149,6 +150,8 @@ export class CrawlRunStore {
     private readonly prisma: PrismaService,
     // 可选指标出口：测试缺省不传则完全不产生日志，行为与此前一致
     @Optional() private readonly metrics?: SourcingMetrics,
+    // M02/F3：可选告警出口（持久化 sourcing_alerts）；不注入则只更新健康字段
+    @Optional() private readonly alerts?: SourcingAlertService,
   ) {}
 
   async getSource(sourceId: string): Promise<SourceRecord | null> {
@@ -413,14 +416,29 @@ export class CrawlRunStore {
         consecutiveFailures: 0,
       },
     });
+    // M02/F3：检查成功即解除该来源全部活跃告警（连续失败/结构变化/超期）
+    if (this.alerts) {
+      try {
+        await this.alerts.resolveForSource(sourceId, input.checkedAt);
+      } catch {
+        // 告警解除失败不影响健康记录主流程
+      }
+    }
   }
 
-  /** 失败：累计连续失败；达到阈值降级或按错误类型标注健康状态 */
+  /**
+   * 失败：累计连续失败；达到阈值降级或按错误类型标注健康状态。
+   *
+   * M02/F3 退避：计入来源的失败按「周期 × 2^(连续失败-1)，封顶 8 倍」推迟
+   * 下次检查（1 次→1x、2 次→2x、3 次→4x、4 次以上→8x），避免对故障来源
+   * 每个周期都重击；不计入来源的基础设施失败（countTowardsSource=false）
+   * 沿用调用方给定的常规周期。达到降级阈值时落一条持久化告警。
+   */
   async recordFailure(
     sourceId: string,
     input: {
       checkedAt: Date;
-      nextCheckAt: Date;
+      nextCheckAt?: Date;
       reason: string;
       healthStatus?: SourceHealthStatus;
       /** 不可用基础设施（如 Redis）不应计入来源连续失败 */
@@ -429,24 +447,61 @@ export class CrawlRunStore {
   ): Promise<void> {
     const source = await this.getSource(sourceId);
     const prev = source?.consecutiveFailures ?? 0;
-    const next = (input.countTowardsSource ?? true) ? prev + 1 : prev;
+    const countsTowards = input.countTowardsSource ?? true;
+    const next = countsTowards ? prev + 1 : prev;
     const health =
       input.healthStatus ??
       (next >= CONSECUTIVE_FAILURE_THRESHOLD ? 'degraded' : undefined);
+    const pollEveryMinutes = Math.max(1, source?.pollEveryMinutes ?? 60);
+    // 调用方显式给定的 nextCheckAt 优先（如基础设施失败沿用常规周期）；
+    // 否则计入来源的失败按指数退避，不计入的失败按常规周期。
+    const nextCheckAt =
+      input.nextCheckAt ??
+      (countsTowards
+        ? this.nextRetryCheckAt(input.checkedAt, pollEveryMinutes, next)
+        : this.nextCheckAt(input.checkedAt, pollEveryMinutes));
     await this.prisma.source.update({
       where: { id: sourceId },
       data: {
         lastCheckedAt: input.checkedAt,
-        nextCheckAt: input.nextCheckAt,
+        nextCheckAt,
         lastFailReason: input.reason,
         consecutiveFailures: next,
         ...(health ? { healthStatus: health } : {}),
       },
     });
     // 连续失败增长是告警信号；基础设施不可用（countTowardsSource=false）不重复上报
-    if ((input.countTowardsSource ?? true) && next >= 1) {
+    if (countsTowards && next >= 1) {
       this.metrics?.consecutiveFailures({ sourceId, count: next });
     }
+    // M02/F3：达到降级阈值 → 持久化告警（重启不丢，成功后自动解除）
+    if (countsTowards && next >= CONSECUTIVE_FAILURE_THRESHOLD && this.alerts) {
+      try {
+        await this.alerts.raise({
+          type: ALERT_TYPES.consecutiveFailures,
+          sourceId,
+          severity: 'critical',
+          message: `来源「${source?.publisher ?? sourceId}」连续失败 ${next} 次（最近原因：${input.reason}），已降级待人工关注。`,
+          now: input.checkedAt,
+        });
+      } catch {
+        // 告警写入失败不影响健康记录主流程
+      }
+    }
+  }
+
+  /**
+   * M02/F3：失败退避的下一次检查时间。
+   * 延迟 = 周期 × min(2^(连续失败-1), 8)，下限 1 分钟。
+   */
+  nextRetryCheckAt(
+    now: Date,
+    pollEveryMinutes: number,
+    consecutiveFailures: number,
+  ): Date {
+    const multiplier = Math.min(Math.pow(2, Math.max(1, consecutiveFailures) - 1), 8);
+    const delayMs = Math.max(1, pollEveryMinutes) * multiplier * 60_000;
+    return new Date(now.getTime() + delayMs);
   }
 
   /** 结构变化（DOM 失配）与人工暂停等显式健康状态 */
@@ -455,10 +510,30 @@ export class CrawlRunStore {
     healthStatus: SourceHealthStatus,
     reason: string,
   ): Promise<void> {
+    const source = await this.getSource(sourceId);
     await this.prisma.source.update({
       where: { id: sourceId },
       data: { healthStatus, lastFailReason: reason },
     });
+    // M02/F3：结构变化与转人工都需要人工介入 → 持久化告警
+    if (
+      this.alerts &&
+      (healthStatus === 'structure_changed' || healthStatus === 'blocked')
+    ) {
+      try {
+        await this.alerts.raise({
+          type:
+            healthStatus === 'structure_changed'
+              ? ALERT_TYPES.structureChanged
+              : ALERT_TYPES.blocked,
+          sourceId,
+          severity: 'critical',
+          message: `来源「${source?.publisher ?? sourceId}」${healthStatus === 'structure_changed' ? '页面结构变化，适配器失配' : '被反爬阻断（验证码/登录/封禁），已转人工'}：${reason}`,
+        });
+      } catch {
+        // 告警写入失败不影响健康记录主流程
+      }
+    }
   }
 
   /** 写入栏目页的条件请求缓存（ETag / Last-Modified），供下一轮 304 判断 */

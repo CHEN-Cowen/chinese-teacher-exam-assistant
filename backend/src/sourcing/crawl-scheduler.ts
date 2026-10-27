@@ -12,6 +12,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
 import { CrawlOrchestrator } from './crawl-orchestrator.js';
 import { CrawlRunStore } from './crawl-run-store.js';
+import { SourcingAlertService } from './sourcing-alert.service.js';
 
 function intFromEnv(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
@@ -32,6 +33,8 @@ export class CrawlScheduler {
   constructor(
     private readonly orchestrator: CrawlOrchestrator,
     private readonly store: CrawlRunStore,
+    // M02/F3：运行告警巡检挂在既有调度 tick 上，不新增调度体系
+    private readonly alerts: SourcingAlertService,
   ) {}
 
   @Interval('crawl-due-sources', TICK_INTERVAL_MS)
@@ -39,6 +42,15 @@ export class CrawlScheduler {
     if (!this.enabled || this.ticking) return;
     this.ticking = true;
     try {
+      // 告警巡检先行：来源超期/Worker 停止先落告警，再尝试投递。
+      // 巡检自身失败不应阻塞投递主流程（下一轮 tick 重试）。
+      try {
+        await this.alerts.sweep(new Date());
+      } catch (error) {
+        this.logger.error(
+          `告警巡检失败：${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
       const due = await this.store.listDueSources(new Date(), TICK_BATCH_SIZE);
       for (const source of due) {
         try {

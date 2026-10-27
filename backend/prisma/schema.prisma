@@ -235,6 +235,7 @@ model Source {
   crawlRuns       CrawlRun[]
   sourceDocuments SourceDocument[]
   urlCaches       SourceUrlCache[]
+  alerts          SourcingAlert[]
 
   @@map("sources")
 }
@@ -286,6 +287,37 @@ model SourceUrlCache {
 
   @@unique([sourceId, canonicalUrl])
   @@map("source_url_caches")
+}
+
+/**
+ * 采集运行告警（M02/F3）。
+ *
+ * 告警是必须重启不丢的运行事实：Worker 停止、来源连续失败、结构变化、
+ * 检查超期都落库；Redis/日志不作为告警事实来源。
+ * type：consecutive_failures（连续失败降级）/ structure_changed（DOM 失配）/
+ *   blocked（转人工）/ source_overdue（到期未检查，Worker 可能停止）/
+ *   worker_down（心跳过期）。
+ * 活跃告警 = resolvedAt 为空；重复发生仅累加 occurrences，不新增行。
+ * sourceId 仅来源级告警使用；worker_down 为全局告警（sourceId 为空）。
+ */
+model SourcingAlert {
+  id           String    @id @default(uuid())
+  type         String
+  scope        String // source / global
+  sourceId     String?   @map("source_id")
+  source       Source?   @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  severity     String    @default("warning") // warning / critical
+  message      String
+  occurrences  Int       @default(1)
+  firstSeenAt  DateTime  @default(now()) @map("first_seen_at")
+  lastSeenAt   DateTime  @default(now()) @map("last_seen_at")
+  resolvedAt   DateTime? @map("resolved_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  @@unique([type, sourceId])
+  @@index([resolvedAt, lastSeenAt])
+  @@map("sourcing_alerts")
 }
 
 /**

@@ -202,6 +202,9 @@ export class OpportunitiesService {
             lastSuccessAt: true,
             lastCheckedAt: true,
             consecutiveFailures: true,
+            // M02：按来源调度周期判定检查超时（统一覆盖投影口径）
+            pollEveryMinutes: true,
+            nextCheckAt: true,
           },
         });
         runtimeSources = rows;
