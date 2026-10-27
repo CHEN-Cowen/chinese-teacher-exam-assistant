@@ -23,6 +23,7 @@ import {
 } from "@/lib/guest/guestSession";
 import { stageLabel } from "@/lib/ia/labels";
 import { opportunitiesApi } from "@/lib/opportunities/api";
+import { correctionTicketCode } from "@/lib/opportunities/correction-code";
 import type {
   GoalsResponse,
   OpportunityCorrectionDTO,
@@ -422,6 +423,9 @@ function MyCorrectionsCard() {
             <li key={c.id} className="rounded-lg border border-line p-3">
               <div className="flex items-center justify-between gap-2">
                 <p className="text-sm font-medium text-ink truncate">
+                  <span className="mr-1.5 font-mono text-xs text-ink-muted">
+                    {correctionTicketCode(c.id)}
+                  </span>
                   {c.unitName ?? "岗位已随旧版本移除"} · {c.fieldLabel}
                 </p>
                 <Badge variant={CORRECTION_STATUS_META[c.status].variant}>

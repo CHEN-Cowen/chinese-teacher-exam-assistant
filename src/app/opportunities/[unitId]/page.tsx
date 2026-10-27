@@ -21,6 +21,7 @@ import {
 } from "@/lib/ia/labels";
 import { MATCH_STATUS_LABELS } from "@/lib/matching/types";
 import { opportunitiesApi } from "@/lib/opportunities/api";
+import { correctionTicketCode } from "@/lib/opportunities/correction-code";
 import type {
   FollowStatus,
   MaterialStatus,
@@ -107,7 +108,8 @@ export default function OpportunityDetailPage() {
   const [actionNotice, setActionNotice] = useState<string | null>(null);
   const [correctionOpen, setCorrectionOpen] = useState(false);
   const [correctionSubmitting, setCorrectionSubmitting] = useState(false);
-  const [correctionDone, setCorrectionDone] = useState(false);
+  /** 提交成功后的回执编号（M10）：凭编号可在「我的」页查询状态与结果 */
+  const [correctionDone, setCorrectionDone] = useState<string | null>(null);
   // v7.2：本次会话刚保存成功＝面板绿色强调态；syncedEventCount 仅 follow 响应携带
   const [justSaved, setJustSaved] = useState(false);
   const [syncedEventCount, setSyncedEventCount] = useState<number | undefined>(
@@ -557,9 +559,9 @@ export default function OpportunityDetailPage() {
     setCorrectionSubmitting(true);
     setActionError(null);
     try {
-      await opportunitiesApi.submitCorrection(unitId, input);
+      const receipt = await opportunitiesApi.submitCorrection(unitId, input);
       setCorrectionOpen(false);
-      setCorrectionDone(true);
+      setCorrectionDone(correctionTicketCode(receipt.id));
     } catch (e) {
       setActionError(e instanceof Error ? e.message : "纠错提交失败");
     } finally {
@@ -723,8 +725,9 @@ export default function OpportunityDetailPage() {
         />
       )}
       {correctionDone && (
-        <Callout variant="ok" title="纠错已提交并留痕">
+        <Callout variant="ok" title={`纠错已提交并留痕（编号 ${correctionDone}）`}>
           我们会核对官方原文；如需更正将通过新版本发布，不会直接改动结论。
+          处理状态与结果可在「我的」页的「我的纠错」中查看，不承诺人工即时响应。
         </Callout>
       )}
       {!online && (
@@ -950,7 +953,7 @@ export default function OpportunityDetailPage() {
           <VerificationSection
             detail={detail}
             onOpenCorrection={() => {
-              setCorrectionDone(false);
+              setCorrectionDone(null);
               setCorrectionOpen(true);
             }}
           />
