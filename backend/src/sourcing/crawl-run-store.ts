@@ -93,6 +93,15 @@ export interface SourceHealthSummary {
   lastSuccessAt: Date | null;
   nextCheckAt: Date | null;
   lastFailReason: string | null;
+  /** 来源台账（M08）：地区与负责人/处理入口 */
+  regionCode: string | null;
+  contactInfo: string | null;
+  /** 来源台账（M08）：调度周期（分钟） */
+  pollEveryMinutes: number;
+  /** 来源台账（M08）：材料（快照）累计数量 */
+  snapshotCount: number;
+  /** 来源台账（M08）：当前 status='published' 的公告版本数量 */
+  publishedVersionCount: number;
   /** 最近一次运行（按 startedAt desc）；无运行时为 null */
   latestRun: CrawlRunSummary | null;
   /** 该来源最新一条 DocumentParseRun 的 parserVersion；无则 null */
@@ -614,11 +623,20 @@ export class CrawlRunStore {
         lastSuccessAt: true,
         nextCheckAt: true,
         lastFailReason: true,
+        regionCode: true,
+        contactInfo: true,
+        pollEveryMinutes: true,
       },
     });
     return Promise.all(
       sources.map(async (source) => {
-        const [latestRun, latestParse, pendingReviewCount] = await Promise.all([
+        const [
+          latestRun,
+          latestParse,
+          pendingReviewCount,
+          snapshotCount,
+          publishedVersionCount,
+        ] = await Promise.all([
           this.prisma.crawlRun.findFirst({
             where: { sourceId: source.id },
             orderBy: { startedAt: 'desc' },
@@ -648,12 +666,24 @@ export class CrawlRunStore {
               snapshot: { sourceId: source.id },
             },
           }),
+          // 来源台账（M08）：材料累计与当前有效发布版本
+          this.prisma.sourceSnapshot.count({
+            where: { sourceId: source.id },
+          }),
+          this.prisma.publishedAnnouncementVersion.count({
+            where: {
+              status: 'published',
+              run: { snapshot: { sourceId: source.id } },
+            },
+          }),
         ]);
         return {
           ...source,
           latestRun,
           parserVersion: latestParse?.parserVersion ?? null,
           pendingReviewCount,
+          snapshotCount,
+          publishedVersionCount,
         };
       }),
     );

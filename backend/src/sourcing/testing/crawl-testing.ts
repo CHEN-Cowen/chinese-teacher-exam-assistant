@@ -43,6 +43,8 @@ interface SourceRow extends Record<string, unknown> {
   lastCheckedAt: Date | null;
   etag: string | null;
   lastModified: string | null;
+  regionCode: string | null;
+  contactInfo: string | null;
 }
 
 function applyUpdate(
@@ -119,6 +121,8 @@ export class FakePrisma {
       lastCheckedAt: partial.lastCheckedAt ?? null,
       etag: partial.etag ?? null,
       lastModified: partial.lastModified ?? null,
+      regionCode: partial.regionCode ?? null,
+      contactInfo: partial.contactInfo ?? null,
     };
     this.sources.push(row);
     return row;
@@ -509,6 +513,53 @@ export class FakePrisma {
         id: string;
       };
       this.snapshots.push(row);
+      return row;
+    },
+    /** 来源台账（M08）：按来源统计材料（快照）数量 */
+    count: async ({
+      where,
+    }: {
+      where: { sourceId?: string };
+    }) => {
+      const sourceId = where?.sourceId;
+      if (!sourceId) return this.snapshots.length;
+      return this.snapshots.filter((s) => s.sourceId === sourceId).length;
+    },
+  };
+
+  /** ---------- publishedAnnouncementVersion（M08 来源台账：发布状态计数） ---------- */
+
+  publishedVersions: Array<Record<string, unknown> & { id: string }> = [];
+
+  readonly publishedAnnouncementVersion = {
+    count: async ({
+      where,
+    }: {
+      where: { status?: string; run?: { snapshot?: { sourceId?: string } } };
+    }) => {
+      let rows = [...this.publishedVersions];
+      if (where?.status) rows = rows.filter((r) => r.status === where.status);
+      const sourceId = where?.run?.snapshot?.sourceId;
+      if (sourceId) {
+        const snapshotIds = new Set(
+          this.snapshots.filter((s) => s.sourceId === sourceId).map((s) => s.id),
+        );
+        const runIds = new Set(
+          this.extractionRuns
+            .filter((r) => snapshotIds.has(String(r.snapshotId)))
+            .map((r) => r.id),
+        );
+        rows = rows.filter((r) => runIds.has(String(r.runId)));
+      }
+      return rows.length;
+    },
+    create: async ({ data }: { data: Record<string, unknown> }) => {
+      const row = {
+        id: this.nextModelId('pav'),
+        publishedAt: new Date(),
+        ...data,
+      } as Record<string, unknown> & { id: string };
+      this.publishedVersions.push(row);
       return row;
     },
   };

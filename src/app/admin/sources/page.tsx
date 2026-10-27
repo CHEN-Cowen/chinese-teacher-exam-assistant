@@ -392,6 +392,7 @@ function SourceRow(props: SourceActionProps) {
         <td className="py-2.5 pr-3">
           <p className="font-medium text-slate-800 max-w-[180px] truncate">{s.publisher}</p>
           <p className="text-xs text-slate-400 max-w-[180px] truncate">{urlHost(s.officialUrl)}</p>
+          {s.regionCode && <p className="text-[11px] text-slate-400">地区：{s.regionCode}</p>}
         </td>
         <td className="py-2.5 pr-3">
           <SourceHealthBadge status={s.healthStatus} />
@@ -402,7 +403,8 @@ function SourceRow(props: SourceActionProps) {
         <td className="py-2.5 pr-3 text-xs text-slate-500">
           <p>最近检查：{formatTime(s.lastCheckedAt)}</p>
           <p>最近成功：{formatTime(s.lastSuccessAt)}</p>
-          <p>下次检查：{formatTime(s.nextCheckAt)}</p>
+          <p>下次检查：{formatTime(s.nextCheckAt)}{typeof s.pollEveryMinutes === "number" ? `（每 ${s.pollEveryMinutes} 分钟）` : ""}</p>
+          {s.contactInfo && <p className="text-slate-400">负责人：{s.contactInfo}</p>}
         </td>
         <td className="py-2.5 pr-3">
           <LatestRunCounts source={s} />
@@ -420,6 +422,9 @@ function SourceRow(props: SourceActionProps) {
         <td className="py-2.5 pr-3 text-xs text-slate-500">
           <p>{s.latestRun?.adapterVersion ?? s.adapterKey ?? "—"}</p>
           <p className="text-slate-400">解析器：{s.parserVersion ?? "—"}</p>
+          <p className="text-slate-400">
+            材料：{s.snapshotCount ?? 0} · 已发布：{s.publishedVersionCount ?? 0}
+          </p>
         </td>
         <td className="py-2.5 pr-3">
           <PendingReviewLink count={s.pendingReviewCount} />
@@ -465,6 +470,8 @@ function SourceCard(props: SourceActionProps) {
         </p>
         <p>Adapter：{s.latestRun?.adapterVersion ?? s.adapterKey ?? "—"}</p>
         <p>解析器：{s.parserVersion ?? "—"}</p>
+        <p>材料：{s.snapshotCount ?? 0} · 已发布：{s.publishedVersionCount ?? 0}</p>
+        {s.contactInfo && <p className="col-span-2">负责人：{s.contactInfo}</p>}
       </div>
 
       <div className="flex items-center justify-between gap-2">

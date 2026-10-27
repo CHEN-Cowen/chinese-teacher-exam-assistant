@@ -49,6 +49,12 @@ export interface SourceHealth {
   latestRun?: CrawlRun | null;
   parserVersion?: string | null;
   pendingReviewCount?: number;
+  /** 来源台账（M08）：地区、负责人/处理入口、调度周期、材料与发布状态 */
+  regionCode?: string | null;
+  contactInfo?: string | null;
+  pollEveryMinutes?: number;
+  snapshotCount?: number;
+  publishedVersionCount?: number;
 }
 
 /** 队列积压摘要（后端可观测性注入，可能为空） */

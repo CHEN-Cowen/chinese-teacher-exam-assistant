@@ -458,6 +458,12 @@ describe('CrawlRunStore.listHealth 聚合', () => {
     expect(summary.latestRun).toBeNull();
     expect(summary.parserVersion).toBeNull();
     expect(summary.pendingReviewCount).toBe(0);
+    // 来源台账（M08）：未登记时为 null，材料/发布为 0
+    expect(summary.regionCode).toBeNull();
+    expect(summary.contactInfo).toBeNull();
+    expect(summary.pollEveryMinutes).toBe(60);
+    expect(summary.snapshotCount).toBe(0);
+    expect(summary.publishedVersionCount).toBe(0);
   });
 
   it('聚合 latestRun（按 startedAt 最新）、parserVersion（最新解析运行）与 pendingReviewCount', async () => {
@@ -576,6 +582,69 @@ describe('CrawlRunStore.listHealth 聚合', () => {
 
     expect(other.parserVersion).toBe('pv-other');
     expect(other.pendingReviewCount).toBe(1);
+  });
+
+  it('来源台账：地区/负责人/调度周期随来源返回；材料与发布计数按来源隔离且只计 published', async () => {
+    const { prisma, store } = makeStore();
+    prisma.seedSource({
+      id: 'src-1',
+      publisher: '杭州市教育局',
+      officialUrl: 'https://edu.hangzhou.gov.cn/',
+      regionCode: '330100',
+      contactInfo: '抓取值班：ops@example.gov.cn',
+      pollEveryMinutes: 30,
+    });
+    prisma.seedSource({
+      id: 'src-2',
+      publisher: '宁波市教育局',
+      officialUrl: 'https://jyj.ningbo.gov.cn/',
+    });
+
+    const snapshot = prisma.seedSnapshot({ sourceId: 'src-1', contentHash: 'h-1' });
+    const run = await prisma.extractionRun.create({
+      data: {
+        snapshotId: snapshot.id,
+        parserVersion: 'ev1',
+        idempotencyKey: 'k1',
+        status: 'published',
+      },
+    });
+    // src-1：2 份材料；发布 2 个（1 published + 1 superseded）→ 只计 1
+    prisma.seedSnapshot({ sourceId: 'src-1', contentHash: 'h-2' });
+    await prisma.publishedAnnouncementVersion.create({
+      data: { announcementId: 'a-1', runId: run.id, versionNumber: 1, status: 'published' },
+    });
+    await prisma.publishedAnnouncementVersion.create({
+      data: { announcementId: 'a-1', runId: run.id, versionNumber: 2, status: 'superseded' },
+    });
+
+    // src-2：1 份材料，其运行发布 1 个——不应计入 src-1
+    const otherSnapshot = prisma.seedSnapshot({ sourceId: 'src-2', contentHash: 'h-other' });
+    const otherRun = await prisma.extractionRun.create({
+      data: {
+        snapshotId: otherSnapshot.id,
+        parserVersion: 'ev1',
+        idempotencyKey: 'k2',
+        status: 'published',
+      },
+    });
+    await prisma.publishedAnnouncementVersion.create({
+      data: { announcementId: 'a-2', runId: otherRun.id, versionNumber: 1, status: 'published' },
+    });
+
+    const summaries = await store.listHealth();
+    const summary = summaries.find((s) => s.id === 'src-1')!;
+    const other = summaries.find((s) => s.id === 'src-2')!;
+
+    expect(summary.regionCode).toBe('330100');
+    expect(summary.contactInfo).toBe('抓取值班：ops@example.gov.cn');
+    expect(summary.pollEveryMinutes).toBe(30);
+    expect(summary.snapshotCount).toBe(2);
+    expect(summary.publishedVersionCount).toBe(1);
+
+    expect(other.regionCode).toBeNull();
+    expect(other.snapshotCount).toBe(1);
+    expect(other.publishedVersionCount).toBe(1);
   });
 });
 
