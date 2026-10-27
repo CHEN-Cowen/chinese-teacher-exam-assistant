@@ -265,7 +265,7 @@ export default function Home() {
       </header>
 
       <main className="mx-auto w-full max-w-6xl px-5 pb-12 pt-2 md:px-8 md:pb-16 md:pt-4">
-        {/* Hero：原型 .hero 圆角 2xl + 渐变背景 + 双列布局 */}
+        {/* Hero：原型 .hero 圆角 2xl + 品牌纯色（方案 B 取消渐变） + 双列布局 */}
         <section
           aria-label="产品价值与快速入口"
           className="relative overflow-hidden rounded-2xl p-7 text-on-dark md:p-14"
@@ -390,7 +390,8 @@ export default function Home() {
               href={href}
               className="block rounded-lg border border-line bg-surface p-4 transition-colors hover:border-brand/40 md:p-5"
             >
-              <span className="inline-flex items-center rounded-pill bg-note-bg px-2.5 py-0.5 text-xs font-semibold text-note-ink">
+              {/* 方案 B 点缀：编号 pill 用鼠尾草弱底 + 主文字（11.3:1），不用状态蓝 */}
+              <span className="inline-flex items-center rounded-pill bg-accent-soft px-2.5 py-0.5 text-xs font-semibold text-ink">
                 {no}
               </span>
               <h3 className="mt-2.5 text-[15px] font-bold text-ink">{title}</h3>

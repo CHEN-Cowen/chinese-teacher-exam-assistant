@@ -1,47 +1,53 @@
 @import "tailwindcss";
 
 /*
- * 设计 Token（v7 视觉系统：温暖米白 + 深海军蓝，大圆角、克制阴影）
+ * 设计 Token（v7.2 M09 方案 B：燕麦＋可可棕，大圆角、克制阴影）
  *
- * - 原始值集中在 :root，便于跨场景复用与平滑迁移；
- * - 通过 @theme inline 暴露为 Tailwind 工具类（bg-canvas / bg-surface /
- *   bg-surface-2 / text-ink / text-ink-muted / bg-brand / bg-brand-soft /
- *   border-line / bg-fit / bg-violet / bg-cyan 等）；
- * - 四档匹配状态色（ok/miss/ask/no/note）直接对应资格判断分层表达；
- * - 旧变量（--background / --primary 等）同步更新到新色值，作为历史引用的
- *   兼容层，避免引用 var(--primary) 的旧代码意外回到旧蓝；
+ * - 色板来源：docs/整体方案 12.6 最终选择（docs/design/方案B-燕麦可可棕-2026-10-26.png 仅作气质参考）：
+ *   背景 #F8F4EE / 表面 #FFFFFF / 品牌 #735544 / 弱强调底 #EFE6DD /
+ *   主文字 #332E2B / 次文字 #766D65 / 点缀 #70816A。
+ * - 已取消蓝紫渐变（hero 为品牌纯色）；不做旧、不加纸纹、不做多主题。
+ * - 品牌色（可可棕）与资格状态色（ok/miss/ask/no/note，保留文字+图标）分离；
+ *   状态色为信息语义蓝/绿/琥珀/红，不随品牌变化。
+ * - Token 名保持不变（bg-canvas / bg-brand / text-ink-muted 等），只重定值，
+ *   避免大面积类名迁移破坏既有流程与测试。
+ * - 对比度（WCAG，canvas/surface 上）：ink 12.1:1、ink-muted 4.7:1、brand 6.2:1、
+ *   on-dark on brand 6.5:1，普通文字 ≥4.5:1、大字号/控件 ≥3:1。
  * - 国内网络基线：不加载任何网络字体、不引入远程图标，仅设备自带字体。
  */
 :root {
-  /* 主语义层（对齐 prototype-v7 视觉系统） */
-  --color-canvas: #FCFBF8;        /* 页面主背景：温暖米白 */
+  /* 主语义层（方案 B 燕麦＋可可棕） */
+  --color-canvas: #F8F4EE;        /* 页面主背景：燕麦米白 */
   --color-surface: #FFFFFF;       /* 内容表面：白 */
-  --color-surface-2: #F5F3EE;     /* 次级米白：分组/卡片底 */
-  --color-ink: #071A31;           /* 主深色：深海军蓝 */
-  --color-ink-2: #0E396A;         /* 次级深蓝：强调与链接 */
-  --color-ink-muted: #5F6D77;     /* 正文灰 */
-  --color-brand: #6BB1FF;         /* 品牌浅蓝 */
-  --color-brand-strong: #0E396A;  /* 品牌悬停：深蓝 */
-  --color-brand-soft: #C1DEFE;    /* 产品界面浅蓝 */
-  --color-bar: #84C1FF;           /* 公告栏浅蓝 */
-  --color-line: #D8DCE0;          /* 浅灰边框 */
-  --color-grey-bg: #E4E6E9;       /* 浅灰背景 */
-  --color-fit: #F2F8DE;           /* 辅助浅绿（适配/正向） */
-  --color-violet: #D4C2FF;        /* 辅助浅紫（演示/标记） */
-  --color-cyan: #BAF0EC;          /* 辅助浅青 */
-  --color-on-dark: #FCFBF8;       /* 深色背景上的前景 */
+  --color-surface-2: #F3EDE4;     /* 次级燕麦：分组/卡片底 */
+  --color-ink: #332E2B;           /* 主深色：可可主文字 */
+  --color-ink-2: #5C4232;         /* 次级深可可：强调与链接 */
+  --color-ink-muted: #766D65;     /* 次文字：暖灰棕 */
+  --color-brand: #735544;         /* 品牌：可可棕 */
+  --color-brand-strong: #5C4232;  /* 品牌悬停：深可可 */
+  --color-brand-soft: #EFE6DD;    /* 弱强调底：燕麦浅棕 */
+  --color-accent: #70816A;        /* 点缀：鼠尾草绿（仅大字号≥3:1/非文本元素，不作正文） */
+  --color-accent-soft: #E9F0E4;   /* 点缀弱底 */
+  --color-bar: #E4D8CA;           /* 弱强调 hover 加深档 */
+  --color-line: #E3DACE;          /* 暖浅边框 */
+  --color-grey-bg: #EDE7DD;       /* 暖浅背景 */
+  --color-fit: #E9F0E4;           /* 辅助浅鼠尾草绿（适配/正向） */
+  --color-violet: #E7DBCE;        /* 辅助浅暖土（演示/标记，替代旧浅紫） */
+  --color-cyan: #E3EBE1;          /* 辅助浅绿（替代旧浅青） */
+  --color-on-dark: #F8F4EE;       /* 深色背景上的前景 */
 
-  /* Hero 渐变（仅重点区域使用） */
-  --color-hero: linear-gradient(135deg, #315A9D 0%, #4F8DDE 55%, #C5A8F5 100%);
+  /* Hero：方案 B 取消蓝紫渐变，品牌纯色 */
+  --color-hero: #735544;
 
-  /* 四档匹配状态（资格判断分层表达：建议关注 / 待补充 / 需确认 / 可能不符合） */
+  /* 四档匹配状态（资格判断分层表达：建议关注 / 待补充 / 需确认 / 可能不符合）
+     —— 与品牌色分离的信息语义色，全部保留文字与图标，不单靠颜色 */
   --color-ok-ink: #2F6B2B;    --color-ok-bg: #F2F8DE;    --color-ok-line: #CFE0A8;
   --color-miss-ink: #0E396A;  --color-miss-bg: #E8EEF5;  --color-miss-line: #C7D6E6;
   --color-ask-ink: #8A5A00;   --color-ask-bg: #FDF3DC;   --color-ask-line: #EBD6A6;
   --color-no-ink: #9B3B33;    --color-no-bg: #FBEAE7;    --color-no-line: #EFC9C2;
   --color-note-ink: #0E396A;  --color-note-bg: #C1DEFE;
 
-  /* 语义状态（业务原有 success/warn/danger/info，对齐新色板） */
+  /* 语义状态（业务原有 success/warn/danger/info，对齐状态色） */
   --color-success: #2F6B2B;       --color-success-soft: #F2F8DE;
   --color-warn: #8A5A00;          --color-warn-soft: #FDF3DC;
   --color-danger: #9B3B33;        --color-danger-soft: #FBEAE7;
@@ -57,10 +63,10 @@
   --radius-2xl: 40px;
   --radius-pill: 999px;
 
-  /* 阴影：默认不使用；仅悬浮 / 选中 / 浮层使用 */
-  --shadow-1: 0 1px 2px rgba(7, 26, 49, 0.06);
-  --shadow-2: 0 8px 24px rgba(7, 26, 49, 0.08);
-  --shadow-3: 0 20px 48px rgba(7, 26, 49, 0.12);
+  /* 阴影：默认不使用；仅悬浮 / 选中 / 浮层使用（可可棕基色，替代旧海军蓝） */
+  --shadow-1: 0 1px 2px rgba(51, 46, 43, 0.06);
+  --shadow-2: 0 8px 24px rgba(51, 46, 43, 0.08);
+  --shadow-3: 0 20px 48px rgba(51, 46, 43, 0.12);
 
   /* 动效时长与缓动（尊重 prefers-reduced-motion） */
   --dur-feedback: 240ms;
@@ -97,6 +103,8 @@
   --color-brand: var(--color-brand);
   --color-brand-strong: var(--color-brand-strong);
   --color-brand-soft: var(--color-brand-soft);
+  --color-accent: var(--color-accent);
+  --color-accent-soft: var(--color-accent-soft);
   --color-bar: var(--color-bar);
   --color-line: var(--color-line);
   --color-grey-bg: var(--color-grey-bg);
@@ -206,17 +214,17 @@ samp {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #d8dce0;
+  background: #e3dace;
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #c1c6cc;
+  background: #cbbfaf;
 }
 
-/* 焦点可见：键盘操作清晰，不只靠颜色 */
+/* 焦点可见：键盘操作清晰，不只靠颜色（深可可，canvas 上对比 8.5:1） */
 :focus-visible {
-  outline: 3px solid #2F6DBF;
+  outline: 3px solid #5C4232;
   outline-offset: 2px;
   border-radius: var(--radius-xs);
 }
