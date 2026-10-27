@@ -4,6 +4,7 @@ import {
   ConflictException,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   Post,
   Req,
@@ -12,7 +13,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { Response } from 'express';
-import { AuthService } from './auth.service.js';
+import { AuthService, getAuthMode } from './auth.service.js';
 import { SessionAuthGuard } from './session.guard.js';
 import { PrismaService } from '../prisma.service.js';
 import type { AuthenticatedRequest } from './identity.js';
@@ -33,6 +34,24 @@ function cookieOptions(req: AuthenticatedRequest) {
   };
 }
 
+/**
+ * M03/F5：正式（invited）环境会话必须经可信 HTTPS 链路建立。
+ *
+ * Caddy 终止 TLS 并覆写 X-Forwarded-Proto；Next.js 反代只转发该可信值；
+ * 后端 trust proxy=1 只信任紧邻的 Next.js 一跳——客户端伪造的
+ * X-Forwarded-* 无法穿透这条边界。若 req.secure 仍为 false（TRUST_PROXY
+ * 误配、反代漏转发或直接明文访问后端），拒绝在 HTTP 上签发会话，
+ * 而不是静默下发不安全的 Secure=false cookie。demo 模式仅回环监听，
+ * 保留 HTTP 本地开发例外。
+ */
+function requireSecureSession(req: AuthenticatedRequest): void {
+  if (getAuthMode() === 'invited' && !req.secure) {
+    throw new ForbiddenException(
+      '正式环境会话必须经 HTTPS 建立：请检查 TRUST_PROXY 配置与反代的 X-Forwarded-Proto 转发。',
+    );
+  }
+}
+
 @Controller('auth')
 export class AuthController {
   constructor(
@@ -51,6 +70,7 @@ export class AuthController {
     if (!email || !password) {
       throw new UnauthorizedException('邮箱和密码不能为空');
     }
+    requireSecureSession(req);
     const user = await this.authService.validateCredentials(email, password);
     if (!user) {
       throw new UnauthorizedException('邮箱或密码不正确');
@@ -87,6 +107,7 @@ export class AuthController {
     if (process.env.PUBLIC_REGISTRATION !== 'true') {
       throw new UnauthorizedException('当前环境未开放公开注册');
     }
+    requireSecureSession(req);
     const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
     const password = typeof body.password === 'string' ? body.password : '';
     if (!email || password.length < 6) {

@@ -8,8 +8,10 @@
  * - 密码过短 → 400；
  * - 固定 role=user（客户端传 role 被忽略，防提权）；
  * - 邮箱统一 trim + 小写。
+ *
+ * M03/F5：会话 Cookie 安全属性与正式环境 HTTPS 强制（见底部 describe）。
  */
-import { BadRequestException, ConflictException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { afterEach, describe, expect, it } from 'vitest';
 import { AuthController } from './auth.controller.js';
 import type { AuthService } from './auth.service.js';
@@ -44,27 +46,32 @@ function fakeAuthService() {
       calls.createSession = userId;
       return { token: 'session-token', expiresAt: new Date() };
     },
+    validateCredentials: async () => ({ id: 'user-1', email: 'a@b.com', name: 'x', role: 'user' }),
   } as unknown as AuthService & {
     calls: { createUser?: unknown; createSession?: string };
   };
 }
 
 /** 构造可用的 req（cookie 由 res 替身承接） */
-function makeReq() {
-  return { headers: {}, secure: false } as never;
+function makeReq(overrides: { secure?: boolean } = {}) {
+  return { headers: {}, secure: overrides.secure ?? false } as never;
 }
 function makeRes() {
   const cookies: Record<string, string> = {};
+  const cookieOptions: Record<string, unknown>[] = [];
   return {
     cookies,
-    cookie: (name: string, value: string) => {
+    cookieOptions,
+    cookie: (name: string, value: string, options?: unknown) => {
       cookies[name] = value;
+      cookieOptions.push(options ?? {});
     },
   } as never;
 }
 
 afterEach(() => {
   delete process.env.PUBLIC_REGISTRATION;
+  delete process.env.AUTH_MODE;
 });
 
 describe('POST /auth/register', () => {
@@ -136,5 +143,86 @@ describe('POST /auth/register', () => {
     await expect(
       ctrl.register({ email: '  ', password: '123456' }, makeReq(), makeRes()),
     ).rejects.toThrow(BadRequestException);
+  });
+});
+
+/**
+ * M03/F5：会话 Cookie 安全属性与正式环境 HTTPS 强制。
+ *
+ * 拓扑：Caddy（TLS 终止、覆写 X-Forwarded-Proto）→ Next.js 反代（只转
+ * 发可信值）→ backend（trust proxy=1）。req.secure 由这条可信链推导；
+ * 伪造转发头无法穿透（客户端伪造的 proto 会被 Caddy 覆写）。
+ */
+describe('会话 Cookie 安全（M03/F5）', () => {
+  describe('login', () => {
+    it('HTTPS 链路（req.secure=true）→ Secure + HttpOnly + SameSite=Lax + 7 天', async () => {
+      const ctrl = new AuthController(fakeAuthService() as never, fakePrisma() as never);
+      const res = makeRes();
+      await ctrl.login({ email: 'a@b.com', password: 'pw' }, makeReq({ secure: true }), res);
+      const options = (res as unknown as { cookieOptions: Record<string, unknown>[] })
+        .cookieOptions[0]!;
+      expect(options).toMatchObject({
+        secure: true,
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+      });
+    });
+
+    it('demo 模式明文 HTTP（本地开发例外）→ 仍签发会话，secure=false', async () => {
+      const ctrl = new AuthController(fakeAuthService() as never, fakePrisma() as never);
+      const res = makeRes();
+      await ctrl.login({ email: 'a@b.com', password: 'pw' }, makeReq({ secure: false }), res);
+      const options = (res as unknown as { cookieOptions: Record<string, unknown>[] })
+        .cookieOptions[0]!;
+      expect(options.secure).toBe(false);
+      expect(options.httpOnly).toBe(true);
+    });
+
+    it('invited 模式 + 明文（转发头缺失/伪造未穿透）→ 403，不签发会话', async () => {
+      process.env.AUTH_MODE = 'invited';
+      const auth = fakeAuthService();
+      const ctrl = new AuthController(auth as never, fakePrisma() as never);
+      const res = makeRes();
+      await expect(
+        ctrl.login({ email: 'a@b.com', password: 'pw' }, makeReq({ secure: false }), res),
+      ).rejects.toThrow(ForbiddenException);
+      // 未创建会话、未写 cookie
+      expect(auth.calls.createSession).toBeUndefined();
+      expect((res as unknown as { cookies: Record<string, string> }).cookies.sid).toBeUndefined();
+    });
+
+    it('invited 模式 + req.secure=true → 正常签发', async () => {
+      process.env.AUTH_MODE = 'invited';
+      const ctrl = new AuthController(fakeAuthService() as never, fakePrisma() as never);
+      const res = makeRes();
+      await ctrl.login({ email: 'a@b.com', password: 'pw' }, makeReq({ secure: true }), res);
+      const options = (res as unknown as { cookieOptions: Record<string, unknown>[] })
+        .cookieOptions[0]!;
+      expect(options.secure).toBe(true);
+    });
+
+    it('明文拒绝发生在凭证校验之前（不在 HTTP 上回显凭证有效性）', async () => {
+      process.env.AUTH_MODE = 'invited';
+      const auth = fakeAuthService();
+      const ctrl = new AuthController(auth as never, fakePrisma() as never);
+      await expect(
+        ctrl.login({ email: 'wrong@b.com', password: 'pw' }, makeReq({ secure: false }), makeRes()),
+      ).rejects.toThrow(ForbiddenException);
+      // validateCredentials 未被调用
+      expect((auth as unknown as { calls: Record<string, unknown> }).calls.createSession).toBeUndefined();
+    });
+  });
+
+  describe('register', () => {
+    it('invited 模式 + 明文 → 403', async () => {
+      process.env.AUTH_MODE = 'invited';
+      process.env.PUBLIC_REGISTRATION = 'true';
+      const ctrl = new AuthController(fakeAuthService() as never, fakePrisma() as never);
+      await expect(
+        ctrl.register({ email: 'a@b.com', password: '123456' }, makeReq({ secure: false }), makeRes()),
+      ).rejects.toThrow(ForbiddenException);
+    });
   });
 });
