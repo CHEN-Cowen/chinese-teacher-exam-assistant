@@ -6,6 +6,9 @@ import {
   Delete,
   ForbiddenException,
   Get,
+  HttpException,
+  HttpStatus,
+  Logger,
   Post,
   Req,
   Res,
@@ -16,10 +19,15 @@ import type { Response } from 'express';
 import { AuthService, getAuthMode } from './auth.service.js';
 import { SessionAuthGuard } from './session.guard.js';
 import { PrismaService } from '../prisma.service.js';
+import { validateEmail, validatePassword } from './validation.js';
+import { AuthRateLimiter } from './auth-rate-limiter.js';
+import { MailerService } from './mailer.service.js';
 import type { AuthenticatedRequest } from './identity.js';
 
 const COOKIE_NAME = 'sid';
 const COOKIE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+/** 忘记密码统一响应文案（防账号枚举：注册与否完全一致） */
+const RESET_RESPONSE_MESSAGE = '若该邮箱已注册，将收到一封包含重置链接的邮件';
 
 function cookieOptions(req: AuthenticatedRequest) {
   return {
@@ -54,10 +62,25 @@ function requireSecureSession(req: AuthenticatedRequest): void {
 
 @Controller('auth')
 export class AuthController {
+  private readonly logger = new Logger(AuthController.name);
+
   constructor(
     private readonly authService: AuthService,
     private readonly prisma: PrismaService,
+    private readonly mailer: MailerService,
+    private readonly rateLimiter: AuthRateLimiter,
   ) {}
+
+  /** 客户端标识：trust proxy 启用时 req.ip 已是真实 IP（M03 可信链） */
+  private clientKeys(req: AuthenticatedRequest, email?: string): string[] {
+    const keys = [req.ip ?? req.socket?.remoteAddress ?? 'unknown'];
+    if (email) keys.push(`email:${email.toLowerCase()}`);
+    return keys;
+  }
+
+  private tooManyRequests(): HttpException {
+    return new HttpException('尝试过于频繁，请稍后再试', HttpStatus.TOO_MANY_REQUESTS);
+  }
 
   @Post('login')
   async login(
@@ -69,6 +92,10 @@ export class AuthController {
     const password = typeof body.password === 'string' ? body.password : '';
     if (!email || !password) {
       throw new UnauthorizedException('邮箱和密码不能为空');
+    }
+    // M05/F7：登录限速（IP + 邮箱双键），防撞库
+    if (!this.rateLimiter.tryConsume('login', this.clientKeys(req, email))) {
+      throw this.tooManyRequests();
     }
     requireSecureSession(req);
     const user = await this.authService.validateCredentials(email, password);
@@ -108,21 +135,38 @@ export class AuthController {
       throw new UnauthorizedException('当前环境未开放公开注册');
     }
     requireSecureSession(req);
-    const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
-    const password = typeof body.password === 'string' ? body.password : '';
-    if (!email || password.length < 6) {
-      throw new BadRequestException('邮箱不能为空，密码至少 6 位');
+    const emailCheck = validateEmail(body.email);
+    if (!emailCheck.ok) {
+      throw new BadRequestException(emailCheck.reason);
+    }
+    const passwordCheck = validatePassword(body.password);
+    if (!passwordCheck.ok) {
+      throw new BadRequestException(passwordCheck.reason);
+    }
+    const email = emailCheck.email;
+    // M05/F7：注册限速（IP 键），防批量占号
+    if (!this.rateLimiter.tryConsume('register', this.clientKeys(req))) {
+      throw this.tooManyRequests();
     }
     const existing = await this.prisma.user.findUnique({ where: { email } });
     if (existing) {
       throw new ConflictException('该邮箱已注册，请直接登录');
     }
-    const user = await this.authService.createUser({
-      email,
-      name: typeof body.name === 'string' ? body.name : undefined,
-      role: 'user',
-      password,
-    });
+    let user: { id: string; email: string; name: string | null; role: string };
+    try {
+      user = await this.authService.createUser({
+        email,
+        name: typeof body.name === 'string' ? body.name : undefined,
+        role: 'user',
+        password: passwordCheck.password,
+      });
+    } catch (error) {
+      // M05/F7：并发重复注册竞态——查重与创建之间另一请求已建号（P2002）
+      if ((error as { code?: string }).code === 'P2002') {
+        throw new ConflictException('该邮箱已注册，请直接登录');
+      }
+      throw error;
+    }
     const { token } = await this.authService.createSession(
       user.id,
       req.headers['user-agent'] as string | undefined,
@@ -150,6 +194,82 @@ export class AuthController {
         role: req.user.role,
       },
     };
+  }
+
+  /**
+   * M05/F7：忘记密码（匿名可达，限速 IP+邮箱双键 3 次/10 分钟）。
+   *
+   * 无论邮箱是否注册，响应完全一致（防账号枚举）：「若该邮箱已注册，
+   * 将收到一封包含重置链接的邮件」。
+   * 邮件服务未配置（EMAIL_ENABLED!=true）时不伪装发送成功——令牌不会
+   * 被投递，照常返回统一文案，并在服务端日志记录受控状态。
+   * 找回邮件本身即邮箱所有权验证：能读取该邮箱的人才能完成重置。
+   */
+  @Post('forgot-password')
+  async forgotPassword(
+    @Body() body: { email?: unknown },
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const emailCheck = validateEmail(body.email);
+    if (!emailCheck.ok) {
+      // 与成功响应同文案，不泄露邮箱格式是否命中真实账号
+      return { ok: true, message: RESET_RESPONSE_MESSAGE };
+    }
+    if (!this.rateLimiter.tryConsume('forgotPassword', this.clientKeys(req, emailCheck.email))) {
+      throw this.tooManyRequests();
+    }
+    const token = await this.authService.createPasswordResetToken(emailCheck.email);
+    if (!token) {
+      this.logger.log(`password reset requested for unknown email (suppressed)`);
+      return { ok: true, message: RESET_RESPONSE_MESSAGE };
+    }
+    const result = await this.mailer.send({
+      to: emailCheck.email,
+      subject: '教招有据：重置您的登录密码',
+      text: [
+        '您（或他人）刚刚请求重置教招有据账号密码。',
+        `重置链接（30 分钟内有效，仅可使用一次）：`,
+        `${process.env.PUBLIC_BASE_URL ?? ''}/reset-password?token=${token}`,
+        '',
+        '若非本人操作，请忽略本邮件；您的密码不会被修改。',
+      ].join('\n'),
+    });
+    if (!result.delivered) {
+      // 受控状态：邮件未投递（未配置或投递失败）。令牌已在库中但未送达，
+      // 到期自动失效。日志留痕供运维排查，响应不变。
+      this.logger.warn(
+        `password reset token created but NOT delivered (reason=${result.reason ?? 'unknown'})；email=***`,
+      );
+    }
+    return { ok: true, message: RESET_RESPONSE_MESSAGE };
+  }
+
+  /**
+   * M05/F7：重置密码（匿名可达，令牌限时单次使用）。
+   * 成功后该用户全部旧会话立即失效（含正在用的登录态）。
+   */
+  @Post('reset-password')
+  async resetPassword(
+    @Body() body: { token?: unknown; password?: unknown },
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const token = typeof body.token === 'string' && body.token.length > 0 ? body.token : '';
+    if (!token) {
+      throw new BadRequestException('重置令牌不能为空');
+    }
+    // 令牌本身是 64 位 hex 随机值，重置接口同样限速防爆破
+    if (!this.rateLimiter.tryConsume('login', this.clientKeys(req))) {
+      throw this.tooManyRequests();
+    }
+    const passwordCheck = validatePassword(body.password);
+    if (!passwordCheck.ok) {
+      throw new BadRequestException(passwordCheck.reason);
+    }
+    const ok = await this.authService.resetPassword(token, passwordCheck.password);
+    if (!ok) {
+      throw new BadRequestException('重置链接无效或已过期，请重新申请');
+    }
+    return { ok: true, message: '密码已重置，请使用新密码重新登录' };
   }
 
   @Post('logout')

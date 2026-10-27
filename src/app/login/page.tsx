@@ -242,7 +242,7 @@ function LoginForm() {
                 id="password"
                 type="password"
                 autoComplete="current-password"
-                placeholder={demo ? "演示密码：demo1234" : mode === "register" ? "至少 6 位" : "密码"}
+                placeholder={demo ? "演示密码：demo1234" : mode === "register" ? "至少 8 位，含字母和数字" : "密码"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="h-12 w-full rounded-xl border border-line bg-surface px-3.5 text-sm text-ink transition-colors placeholder:text-ink-muted/60 hover:border-brand/30 focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/10"
@@ -265,6 +265,15 @@ function LoginForm() {
                   : "登录"}
             </Button>
           </form>
+
+          {/* M05/F7：忘记密码入口（仅真实认证模式；demo 无真实密码可找回） */}
+          {!demo && mode === "login" && (
+            <p className="mt-3 text-center text-sm">
+              <a href="/forgot-password" className="text-ink-muted hover:text-brand hover:underline">
+                忘记密码？
+              </a>
+            </p>
+          )}
 
           {/* 公开注册切换入口（仅受邀环境 + 开关开启时显示） */}
           {registrationEnabled && (

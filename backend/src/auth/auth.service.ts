@@ -5,6 +5,8 @@ import { createHash, randomBytes } from 'node:crypto';
 
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const BCRYPT_ROUNDS = 10;
+/** M05/F7：密码重置令牌有效期（30 分钟），单次使用 */
+export const PASSWORD_RESET_TTL_MS = 30 * 60 * 1000;
 
 /** 运行模式：demo 信任 x-user-id 头；invited 走服务端会话 cookie */
 export type AuthMode = 'demo' | 'invited';
@@ -126,6 +128,64 @@ export class AuthService {
     });
     this.logger.log(`created user ${user.id} role=${user.role}`);
     return { id: user.id, email: user.email, name: user.name, role: user.role };
+  }
+
+  /**
+   * M05/F7：发起密码找回。
+   * 邮箱不存在时与存在时同样静默（返回 null），由调用方统一响应防枚举；
+   * 用户存在则创建限时单次令牌（库内存 SHA-256 哈希），原始 token 只在这里
+   * 返回一次（供邮件正文使用），绝不写日志。
+   */
+  async createPasswordResetToken(email: string): Promise<string | null> {
+    const user = await this.prisma.user.findUnique({
+      where: { email: email.toLowerCase() },
+      select: { id: true },
+    });
+    if (!user) return null;
+    const token = randomBytes(32).toString('hex');
+    await this.prisma.passwordResetToken.create({
+      data: {
+        userId: user.id,
+        tokenHash: sha256(token),
+        expiresAt: new Date(Date.now() + PASSWORD_RESET_TTL_MS),
+      },
+    });
+    return token;
+  }
+
+  /**
+   * M05/F7：用令牌重置密码。
+   * - 令牌不存在 / 已用 / 已过期 → null（统一报错，不区分原因）；
+   * - 成功：更新密码哈希、标记令牌已用、撤销该用户全部会话
+   *   （密码变更后旧会话立即失效）。
+   */
+  async resetPassword(rawToken: string, newPassword: string): Promise<boolean> {
+    const tokenHash = sha256(rawToken);
+    const record = await this.prisma.passwordResetToken.findUnique({
+      where: { tokenHash },
+      select: { id: true, userId: true, expiresAt: true, usedAt: true },
+    });
+    if (!record || record.usedAt || record.expiresAt.getTime() < Date.now()) {
+      return false;
+    }
+    const passwordHash = await this.hashPassword(newPassword);
+    await this.prisma.$transaction([
+      this.prisma.credential.update({
+        where: { userId: record.userId },
+        data: { passwordHash },
+      }),
+      this.prisma.passwordResetToken.update({
+        where: { id: record.id },
+        data: { usedAt: new Date() },
+      }),
+      // 密码更新后旧会话全部失效（M05 验收点）
+      this.prisma.session.updateMany({
+        where: { userId: record.userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      }),
+    ]);
+    this.logger.log(`password reset completed for user ${record.userId}`);
+    return true;
   }
 
   async deleteUser(userId: string): Promise<void> {

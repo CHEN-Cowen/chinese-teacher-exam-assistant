@@ -14,6 +14,9 @@ const PUBLIC_PATHS = new Set([
   // 公开注册（比赛现场自助注册体验）：开关 PUBLIC_REGISTRATION 未开启时
   // 由控制器层拒绝（401），守卫只负责放行匿名可达
   '/auth/register',
+  // M05/F7：忘记密码与重置密码（匿名可达；限速与防枚举在控制器内实现）
+  '/auth/forgot-password',
+  '/auth/reset-password',
   // 引导首个管理员的前提是系统尚无任何账号；无人持有会话，必须匿名可达；
   // 安全性由控制器内 ADMIN_BOOTSTRAP_TOKEN 校验 + 已有管理员时接口自动关闭保证
   '/admin/bootstrap-admin',
