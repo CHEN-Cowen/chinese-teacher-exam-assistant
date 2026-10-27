@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 /**
- * v7.2 结果先行首页浏览器 E2E（ff_new_home 开启态，跑在 3100）。
+ * v7.2 结果先行首页浏览器 E2E（ff_new_home 开启态，跑在 3123）。
  *
  * 覆盖（PRD 7.4.1 / 7.2 + UIUX §5）：
  * - 首屏只有一个高强调主按钮「开始匹配岗位」（唯一 data-testid=start-onboarding）；

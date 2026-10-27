@@ -1,6 +1,6 @@
 /**
  * v7.2 E2E 预构建：在 Playwright 启动 webServer 之前，用「v7.2 全开关开启」的
- * 环境变量跑一次 `npm run build`，产出 3100 生产服务所需的编译期开关快照。
+ * 环境变量跑一次 `npm run build`，产出 3123 生产服务所需的编译期开关快照。
  *
  * 为什么不在 playwright.config.ts 的 webServer 里 build：
  * NEXT_PUBLIC_* 在 Next 编译期内联。若构建与 3000 的 `next dev` 并发运行，

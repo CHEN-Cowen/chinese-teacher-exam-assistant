@@ -3,7 +3,7 @@ import { request, type APIRequestContext } from "@playwright/test";
 /**
  * E2E 预构建之后的「预热」步骤（Playwright 保证 globalSetup 在 webServer 就绪后执行）。
  *
- * 背景：`pretest:e2e`（scripts/e2e-prebuild.mjs）只把 3100 的 v7.2 生产产物提前构建好；
+ * 背景：`pretest:e2e`（scripts/e2e-prebuild.mjs）只把 3123 的 v7.2 生产产物提前构建好；
  * 3000 仍是 `next dev`，路由按需冷编译。若 4 个并行 worker 同时首访同一路由，
  * 冷编译成本会累加并触发 60s 测试超时（实测 /opportunities 冷编译 19-20s）。
  *
@@ -12,7 +12,7 @@ import { request, type APIRequestContext } from "@playwright/test";
  */
 
 const FALLBACK_BASE = "http://localhost:3000";
-const V72_BASE = "http://localhost:3100";
+const V72_BASE = "http://localhost:3123";
 
 // 3000（dev，仅 NEXT_PUBLIC_FF_POST_SAVE_NEXT=true）在既有/回退用例中被访问的路由。
 const FALLBACK_ROUTES = [
@@ -26,7 +26,7 @@ const FALLBACK_ROUTES = [
   "/preview/supplement/unit-hangzhou-01",
 ];
 
-// 3100 为预构建产物，预热成本低，做一遍稳妥。
+// 3123 为预构建产物，预热成本低，做一遍稳妥。
 const V72_ROUTES = ["/", "/login", "/opportunities", "/opportunities/unit-hangzhou-01"];
 
 async function warm(ctx: APIRequestContext, base: string, routes: string[]) {

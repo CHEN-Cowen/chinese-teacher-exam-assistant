@@ -7,7 +7,7 @@ import { defineConfig, devices } from "@playwright/test";
  * - 3000「回退态」：仅开 NEXT_PUBLIC_FF_POST_SAVE_NEXT，其余 v7.2 开关默认关闭，
  *   渲染 v7.1 旧首页 / StackedResultSections 旧式结果布局 / 详情页内联 #supplement。
  *   供既有用例 + v72-flag-fallback 使用。
- * - 3100「v7.2 开启态」：production 产物由 `pretest:e2e`
+ * - 3123「v7.2 开启态」：production 产物由 `pretest:e2e`
  *   （scripts/e2e-prebuild.mjs）预先用全开关构建完成，此处只 `next start`。
  *
  * 为何预构建：若在 webServer 内 `npm run build`，它会与 3000 的 `next dev`
@@ -19,7 +19,9 @@ import { defineConfig, devices } from "@playwright/test";
  * （已实测 dev(3000) 在 build 期间持续可用；生产构建不会删除 .next/dev）。
  */
 const FALLBACK_PORT = 3000;
-const V72_PORT = 3100;
+// 3100 是本机「演示服务」约定端口（scripts/start-demo.ps1），常驻运行会与 E2E 抢占；
+// v7.2 E2E 改用 3123，互不干扰（CI 上均为空闲端口，无影响）。
+const V72_PORT = 3123;
 
 export default defineConfig({
   testDir: "./e2e",

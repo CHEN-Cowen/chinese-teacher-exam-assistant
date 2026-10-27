@@ -273,7 +273,7 @@ npm run test:e2e         # 后端 e2e（vitest.config.e2e.ts）
 
 浏览器端到端（[`e2e/`](./e2e/)、[`playwright.config.ts`](./playwright.config.ts)）用**两个服务并存**覆盖开关两态：
 - `3000`「回退态」：`next dev`，仅注入 `NEXT_PUBLIC_FF_POST_SAVE_NEXT=true`，其余开关默认关 → 渲染 v7.1 旧首页 / 旧堆叠结果 / 详情内联补充；
-- `3100`「v7.2 开启态」：由 `pretest:e2e` 预构建的全开关 production 产物 `next start`；
+- `3123`「v7.2 开启态」：由 `pretest:e2e` 预构建的全开关 production 产物 `next start`（3100 为本机演示服务约定端口，E2E 避让）；
 - `e2e/global-setup.ts` 顺序预热关键路由，消除冷编译超时。因 `NEXT_PUBLIC_*` 编译期内联，**开关态必须在进程启动时注入**。
 
 领域测试覆盖的高风险不变量：补充/保存绝不进入 `/onboarding`；三类结果严格互斥；UNKNOWN 不自动转 FAIL；高影响字段无证据锚点不能过审；发布版本只追加不被覆盖；已截止机会退出；关注状态机合法迁移；同一时间线事件/提醒按业务唯一键只生成一条；DB 已发布单元进匹配。

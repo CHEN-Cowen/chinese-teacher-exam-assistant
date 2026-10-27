@@ -83,13 +83,12 @@ jobs:
       - name: Build E2E variants
         run: npm run pretest:e2e
 
-      # 临时门禁降级（2026-10-22）：v7.2 浏览器 e2e 有 13 个既有失败（自 10-14 起一直红，
-      # 与镜像停更同期；与注册功能无关）。比赛演示临近，先允许失败不阻断镜像发布；
-      # 单测（前端 664 / 后端 833）与运行时冒烟门禁仍严格阻断。
-      # TODO: 修复 v7.2 e2e 后移除本行。
+      # M06（2026-10-27）恢复阻断门槛。历史 13-15 个失败已归因修复：
+      # ① 本机 3100 被演示服务/常驻进程占用，v72 用例打到无关应用 → E2E v72 端口迁至 3123；
+      # ② 登录字段在 e9d7518d（现场自助注册）中「账号」改为「邮箱」，E2E 未跟进 → 已同步。
+      # 本地实测 25/25 通过（修复前 24 失败/1 过）。本步失败即阻断镜像发布。
       - name: Browser flow tests
         run: npm run test:e2e
-        continue-on-error: true
 
   publish:
     needs: [verify, frontend-verify]

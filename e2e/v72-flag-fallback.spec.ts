@@ -58,7 +58,7 @@ async function seedGuestProfile(page: Page) {
 async function demoLogin(page: Page) {
   await page.goto("/login");
   await page.waitForLoadState("networkidle");
-  await page.getByLabel("账号").fill("student@demo.app");
+  await page.getByLabel("邮箱").fill("student@demo.app");
   await page.getByLabel("密码").fill("demo1234");
   await page.getByRole("button", { name: "登录", exact: true }).click();
   await page.waitForURL(/\/opportunities$/);
