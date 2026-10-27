@@ -656,7 +656,10 @@ export class FakePrisma {
       if (include?.snapshot) {
         const snapshot =
           this.snapshots.find((s) => s.id === row!.snapshotId) ?? null;
-        return { ...row, snapshot };
+        const source = snapshot
+          ? (this.sources.find((item) => item.id === snapshot.sourceId) ?? null)
+          : null;
+        return { ...row, snapshot: snapshot ? { ...snapshot, source } : null };
       }
       return row;
     },
