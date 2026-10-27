@@ -33,7 +33,7 @@
 | M10 2C 页面与个人报考体验 | 已推送 | `eb72ef52` | 前端 675/675（新增编号单测 3）＋改动文件 lint 干净＋tsc 0 错＋构建过＋E2E 25/25 回归 | A-G 审计：空态区分/资料复用/保存反馈/优先信息/回访直达/覆盖说明 v7.1-v7.2 已实现；补齐纠错闭环回执编号（JC-xxxxxx 提交回执＋我的纠错对账展示＋不承诺人工即时响应文案） |
 | M11 免费权益、限期会员与价格透明 | 已推送 | `78e96b9b` | 后端 membership 20 例全过＋全量 1112 passed / 1 expected fail、lint 0 错、build 过、prisma validate 过；前端 683/683（新增 parity 8 例）、改动文件 lint 干净、tsc 0 错、build 过；E2E 25/25（--workers=2；并行 4 worker 在本机高负载下 dev 冷编译争用 flaky，失败例单跑均过） | F 诚实口径：售卖总开关默认关闭（无已验收可收费增值功能），activeEntitlements 恒空；不把 User.role 当会员状态；issueGrant orderId 幂等＋续购顺延；价格页透明口径由 tests/membership-parity.test.ts 双端锁定（折合价≤实付、90 天省 ¥28 口径）；修复 E2E legacy 端口 3000 被本机无关进程（lark-channel-bridge）占用 → 迁 3001 |
 | M12 微信支付、退款、对账与上线验收 | 已推送 | `c1cdee9a`＋docs `55965c2b` | 后端 payments+membership 59 例全过、全量 1153 passed / 1 expected fail（首轮 2 个 sourcing 用例在高负载下 flaky，重跑及单跑 326/326 全过）、lint 0 错、build 过、prisma validate 过；前端 683/683、改动文件 lint 干净、tsc 0 错、build 过；E2E 25/25（--workers=2） | 渠道适配层 + 模拟渠道完成全链路验收；真实微信支付受阻项如实记录，见下行说明 |
-| 最终端到端验收 | 已提交（待推送核对） | 见备注 | 在最终集成版本 `55965c2b` 重跑：后端 96 文件 1153 通过 / 1 expected fail（v7.2 WP5 `it.fails`）、0 失败 0 unhandled，oxlint 246 文件 0/0、nest build 过、prisma validate 过；前端 tsc 0 错、全部跟踪代码 eslint 0/0、vitest 66 文件 683 通过、next build 27 路由 + 阻断项 0 + 客户端密钥检查过；E2E 25/25（--workers=2，3001 回退态 + 3123 全开态） | 报告 `docs/final-e2e-acceptance-report.md`；真实支付/线上部署/7 天观察窗/真实邮件投递未验证，不宣称商业可上线 |
+| 最终端到端验收 | 已推送 | `dac9c882` | 在最终集成版本 `55965c2b` 重跑：后端 96 文件 1153 通过 / 1 expected fail（v7.2 WP5 `it.fails`）、0 失败 0 unhandled，oxlint 246 文件 0/0、nest build 过、prisma validate 过；前端 tsc 0 错、全部跟踪代码 eslint 0/0、vitest 66 文件 683 通过、next build 27 路由 + 阻断项 0 + 客户端密钥检查过；E2E 25/25（--workers=2，3001 回退态 + 3123 全开态） | 报告 `docs/final-e2e-acceptance-report.md`；真实支付/线上部署/7 天观察窗/真实邮件投递未验证，不宣称商业可上线 |
 
 #### M12 说明（统一交接模板）
 
@@ -49,7 +49,7 @@
 
 #### 最终端到端验收说明
 
-- 验收对象：最终集成提交 `55965c2b`（分支 `codex/modular-development`），不是历史模块结果的汇总。
+- 验收对象：最终集成提交 `55965c2b`（分支 `codex/modular-development`），不是历史模块结果的汇总；报告与同批配置说明提交为 `dac9c882`，远端 SHA 已核对一致。
 - 已完成：后端全量单测、oxlint、nest build、prisma validate；前端 tsc、全部跟踪代码 eslint、vitest、生产构建与外部依赖/密钥检查；两套开关态浏览器 E2E 25/25。按提示词第五节逐条核对了数据闭环、匿名到登录、权益与支付、桌面/移动/键盘/对比度/国内网络、越权/会话/资源边界/迁移兼容/门禁。
 - 变更文件：新增 `docs/final-e2e-acceptance-report.md`；`backend/.env.example` 补齐 M11 售卖开关与 M12 支付变量说明（仅注释占位，无密钥）；本日志补最终验收行与说明。
 - 检查命令/结果：见报告 §3 表格；后端 1153 通过 / 1 expected fail（`v72-chain-regression` 的 WP5 目标行为 `it.fails`，非缺陷）、前端 683 通过、E2E 25/25。
