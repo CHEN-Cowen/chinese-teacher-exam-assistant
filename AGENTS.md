@@ -8,25 +8,14 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 <!-- END:nextjs-agent-rules -->
 
-<!-- BEGIN:v7-docs-pointer -->
+<!-- BEGIN:product-docs-pointer -->
 
-## 当前代码基线：v7.1；下一迭代设计基线：v7.2
+## 当前产品与架构入口
 
-修改产品流程、页面信息架构、路由、领域模型、演示数据或验收标准之前，先读以下文档（路径相对于本仓库根目录），再动代码：
+修改产品流程、页面、路由、领域模型、演示数据、会员或验收标准前，先读根目录 `PRD.md`；它是唯一产品需求基线。技术架构与启动方式见 `README.md`。
 
-- `PRD-教招有据-v7.2-决策体验与可信机会闭环.md` — 下一迭代的实施主文档；代码尚未实现，开始 v7.2 工作时以其范围、顺序和验收为准
-- `docs/prototypes/README.md` — v7.2 原型入口、实施状态与 Coding 工具读取顺序
-- `PRD-教招有据-v7.1-首次体验与报考闭环优化版.md` — 当前已实现代码的需求与验收基线；v7.2 未覆盖行为继续以此为准
-- `PRD-全国教师公开招聘助手-v7.0-研究验证版.md` — 产品定位、资格规则、数据可信度与 v7.1 未覆盖行为的基础事实来源
-- `docs/china-network-accessibility.md` — 国内网络基线、允许域名与验收方法
+涉及外部请求或国内运行依赖，读取 `docs/china-network-accessibility.md`。涉及部署和发布，读取 `DEPLOYMENT.md` 与 `deploy/` 对应手册。核对已完成/待验证状态时，读取 `docs/final-e2e-acceptance-report.md` 和 `docs/m08-source-acceptance-report.md`，历史测试通过不代表当前生产已验收。
 
-涉及历史路由迁移、既有领域对象、公告数据管线或回退策略时，再查阅以下 V6.1 兼容参考：
+`docs/prototypes/`、旧版本技术与实施记录仅作参考；其原型、章节号和阶段判断不覆盖当前 PRD。需求冲突按“用户最新明确要求 → PRD.md → 技术与历史参考”处理。后续直接更新 PRD.md，不新增并行 PRD。
 
-- `PRD-全国教师公开招聘与备考助手-v6.1.md`
-- `docs/v6.1-migration-plan.md`
-- `docs/v6.1-information-architecture.md`
-- `docs/v6.1-data-pipeline.md`
-
-需求冲突时按“用户最新要求 → v7.2 → v7.1 → v7.0 → V6.1”处理。不要把上述文档内容复制进本文件；保持指针简短，文档本身以仓库中的最新版本为准。
-
-<!-- END:v7-docs-pointer -->
+<!-- END:product-docs-pointer -->
