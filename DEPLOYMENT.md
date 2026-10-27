@@ -7,7 +7,7 @@
 | **A. 公开演示环境** | `APP_ENV=demo`（`NEXT_PUBLIC_AUTH_MODE=demo`，默认） | 所有演示业务数据仅保存在当前浏览器 | Vercel（境外平台，仅用于功能展示） | 2026-10-07 已更新 [公开演示地址](https://frontend-exam-test.vercel.app)；线上 P0 25/25、断跨源 7/7、安全冒烟 2/2 通过。境外平台，中国大陆可达性无保障，2026-10-11 从境内网络访问已出现超时 |
 | **B. 少量受邀用户环境** | `APP_ENV=invited`（`NEXT_PUBLIC_AUTH_MODE=invited`） | 阿里云服务器上的 PostgreSQL（公告快照当前落本地卷，对象存储未接入） | 域名 [kbzs.al.qich.top](https://kbzs.al.qich.top)，HTTPS 直连 | ✅ **2026-10-11 已上线**并承接 10 人真实试用：GHCR 镜像 + Docker Compose + Caddy 部署，`GET /api/health` 实测 `{"status":"ok","db":"up"}`，登录页无演示账号、不开放公开注册，`robots.txt` 全站 Disallow。仍待办：页脚 ICP 备案号、合规文件、家庭/蜂窝网络正式冒烟记录 |
 
-> 公开演示环境**不是**受邀试用环境，不得用演示环境承接真实用户试用；受邀环境不得静默回退到 localStorage Mock。两种形态的产品口径见 [`PRD-全国教师公开招聘与备考助手-v6.1.md`](./PRD-全国教师公开招聘与备考助手-v6.1.md)，网络可访问基线见 [`docs/china-network-accessibility.md`](./docs/china-network-accessibility.md)。
+> 公开演示环境**不是**受邀试用环境，不得用演示环境承接真实用户试用；受邀环境不得静默回退到 localStorage Mock。两种形态的产品口径见 [`PRD.md`](./PRD.md)，网络可访问基线见 [`docs/china-network-accessibility.md`](./docs/china-network-accessibility.md)。
 
 > **2026-10-11 部署记录（受邀环境已落地）**：受邀地址 [https://kbzs.al.qich.top](https://kbzs.al.qich.top) 已开放，前端为 invited 模式镜像（GitHub Actions 构建 GHCR，见 [`deploy/README.md`](./deploy/README.md)），NestJS + PostgreSQL 全栈运行，数据库迁移已执行到最新（9 个迁移，含 `20261010174000_follow_progress_tracking`）。账号由管理员预建，不开放注册；真实官方监测范围当前为杭州、宁波，其余为明确分区标注的虚构试用机会。本轮另修复两个线上阻断：受邀用户机会页崩溃、关注跟进字段缺失导致的 Prisma P2022。
 >
