@@ -18,6 +18,7 @@ import {
   draftToProfile,
   guestSessionService,
 } from "@/lib/guest/guestSession";
+import { mergeEducationIntoProfile } from "@/lib/profile/educationStore";
 import type { UserRecruitmentProfile } from "@/lib/profile/types";
 
 /** 条件补问事实（全部可选；空字符串/未选择视为“未提供”） */
@@ -126,5 +127,6 @@ export function buildActiveProfile(
     workExperienceMonths: facts.workExperienceMonths,
     extraAnswers: facts.extraAnswers,
   };
-  return { ready: true, profile };
+  // D01：demo/访客本机补充的分阶段经历，随请求体提交后端重算
+  return { ready: true, profile: mergeEducationIntoProfile(profile) };
 }

@@ -1,8 +1,13 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma.service.js';
+import {
+  normalizeEducationExperiences,
+  validateEducationExperiences,
+} from '../matching/education.js';
 
 /**
  * 用户基础画像服务（模块 8 + v7.2 PATCH）。
@@ -38,11 +43,54 @@ export class ProfileService {
 
   /** 幂等保存：同用户重复 PUT 只更新一条记录，不产生重复 */
   async saveProfile(userId: string, profile: unknown): Promise<void> {
+    const normalized = this.normalizeProfileEducation(profile);
     await this.prisma.userProfile.upsert({
       where: { userId },
-      update: { profile: profile as never },
-      create: { userId, profile: profile as never },
+      update: { profile: normalized as never },
+      create: { userId, profile: normalized as never },
     });
+  }
+
+  /**
+   * D01：分阶段教育经历在服务端规整并校验。
+   * - 只处理 educationExperiences，不改旧单一字段原值；
+   * - 结构非法直接 400，不静默丢数据；
+   * - 未提供该字段的旧画像原样保存。
+   */
+  private normalizeProfileEducation(profile: unknown): unknown {
+    if (
+      typeof profile !== 'object' ||
+      profile === null ||
+      Array.isArray(profile)
+    ) {
+      return profile;
+    }
+    const record = profile as Record<string, unknown>;
+    if (!('educationExperiences' in record)) return profile;
+    if (!Array.isArray(record.educationExperiences)) {
+      throw new BadRequestException({
+        error: 'INVALID_EDUCATION_EXPERIENCES',
+        message: '教育经历必须是数组',
+      });
+    }
+    const experiences = normalizeEducationExperiences(
+      record.educationExperiences,
+    );
+    if (experiences.length !== record.educationExperiences.length) {
+      throw new BadRequestException({
+        error: 'INVALID_EDUCATION_EXPERIENCES',
+        message: '存在结构不完整或阶段不合法的教育经历',
+      });
+    }
+    const issues = validateEducationExperiences(experiences);
+    if (issues.length > 0) {
+      throw new BadRequestException({
+        error: 'INVALID_EDUCATION_EXPERIENCES',
+        message: issues[0].message,
+        issues,
+      });
+    }
+    return { ...record, educationExperiences: experiences };
   }
 
   /**

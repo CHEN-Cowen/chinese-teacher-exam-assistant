@@ -16,6 +16,10 @@
  * 不变量：用户未填写的信息只能得到 UNKNOWN，永远不会被转换成 FAIL。
  */
 import {
+  majorCandidates,
+  resolveEducationFacts,
+} from './education.js';
+import {
   IN_SCOPE_EMPLOYMENT_NATURES,
   OPEN_SUBJECTS,
   type AnnouncementVersion,
@@ -56,6 +60,14 @@ const EDUCATION_RANK: Record<CredentialLevel, number> = {
   bachelor: 2,
   master: 3,
   doctorate: 4,
+};
+
+const EDUCATION_STAGE_LABELS: Record<CredentialLevel, string> = {
+  secondary: '中专/高中',
+  college: '大专',
+  bachelor: '本科',
+  master: '硕士研究生',
+  doctorate: '博士研究生',
 };
 
 /** 专业名归一化：去多余空白、统一全角括号与大小写（不删除“师范”等语义） */
@@ -212,18 +224,24 @@ export function evaluateRequirement(
   const c = req.criterion;
   switch (c.kind) {
     case 'education': {
-      const educationLevel = profile.educationLevel;
+      const facts = resolveEducationFacts(profile);
+      const educationLevel = facts.highestStage ?? profile.educationLevel;
       const rank = educationLevel ? EDUCATION_RANK[educationLevel] : undefined;
       if (rank == null) return unknown(req, '尚未填写最高学历');
       if (rank >= EDUCATION_RANK[c.minLevel]) {
-        return pass(req, '你的学历满足公告要求的最低学历');
+        const fromExperience = facts.adoptedExperienceId
+          ? `（采用${EDUCATION_STAGE_LABELS[educationLevel!]}阶段经历）`
+          : '';
+        return pass(req, `你的学历满足公告要求的最低学历${fromExperience}`);
       }
       return fail(req, '最高学历低于公告要求的最低学历');
     }
     case 'degree': {
-      if (!profile.degree) return unknown(req, '尚未填写学位信息');
+      const facts = resolveEducationFacts(profile);
+      const degree = facts.degree ?? profile.degree;
+      if (!degree) return unknown(req, '尚未填写学位信息');
       if (
-        EDUCATION_RANK[degreeToLevel(profile.degree)] >=
+        EDUCATION_RANK[degreeToLevel(degree)] >=
         EDUCATION_RANK[degreeToLevel(c.requiredDegree)]
       ) {
         return pass(req, '学位满足公告要求');
@@ -231,10 +249,28 @@ export function evaluateRequirement(
       return fail(req, '学位未达到公告要求');
     }
     case 'major': {
-      const profileMajor = normalizeMajor(profile.majorFullName ?? '');
-      if (!profileMajor) return unknown(req, '尚未填写毕业证专业全称');
-      if (majorNameMatches(profile.majorFullName ?? '', c.majorNames)) {
-        return pass(req, '专业与公告列明专业（或已审核等价专业）一致');
+      const candidates = majorCandidates(profile);
+      if (candidates.length === 0)
+        return unknown(req, '尚未填写毕业证专业全称');
+      const matched = candidates.find((candidate) =>
+        majorNameMatches(candidate.majorFullName, c.majorNames),
+      );
+      if (matched) {
+        const stageNote = matched.stage
+          ? `（采用${EDUCATION_STAGE_LABELS[matched.stage]}阶段专业“${matched.majorFullName}”）`
+          : `（采用“${matched.majorFullName}”）`;
+        return pass(
+          req,
+          `专业与公告列明专业（或已审核等价专业）一致${stageNote}`,
+        );
+      }
+      // 迁移来的旧专业尚未确认阶段归属：没有匹配成功时不能断言不符合，
+      // 让用户先确认该专业属于哪一阶段，避免误判。
+      if (candidates.some((candidate) => candidate.stageUnconfirmed)) {
+        return unknown(
+          req,
+          '从旧资料迁移的专业尚未确认所属学历阶段，请先确认后再判断',
+        );
       }
       // 专业目录存在解释空间（“相关专业/师范类方向”等），不得自动判定
       if (c.ambiguous) {
@@ -247,7 +283,9 @@ export function evaluateRequirement(
     }
     case 'graduate_status': {
       if (!c.requireFresh) return pass(req, '公告未限制应届身份');
-      if (!profile.graduationDate)
+      const facts = resolveEducationFacts(profile);
+      const graduationDate = facts.graduationDate ?? profile.graduationDate;
+      if (!graduationDate)
         return unknown(
           req,
           '尚未填写毕业时间，无法按本公告口径判断应届身份',

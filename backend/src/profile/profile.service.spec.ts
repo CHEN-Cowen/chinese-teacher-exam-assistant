@@ -5,7 +5,7 @@
  * - v7.2 PATCH：白名单字段级部分更新 + 乐观锁冲突 409 + 部分合并 + 幂等。
  */
 import { describe, expect, it } from 'vitest';
-import { ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { ProfileService } from './profile.service.js';
 
 function createFakePrisma() {
@@ -259,5 +259,89 @@ describe('PATCH /profile（v7.2 PRD 7.6.1）', () => {
     const meta = await service.getProfileWithMeta('user-1');
     expect(meta.profile).toEqual({ v: 1 });
     expect(meta.updatedAt).toBeTruthy();
+  });
+});
+
+describe('D01 分阶段教育经历持久化', () => {
+  const education = {
+    id: 'bachelor-1',
+    stage: 'bachelor',
+    majorFullName: '汉语言文学（师范）',
+    teacherTraining: 'yes',
+    majorConfirmed: true,
+    source: 'user',
+  };
+
+  it('保存并读回教育经历，旧单一字段原值不被改写', async () => {
+    const prisma = createFakePrisma();
+    const service = new ProfileService(prisma as never);
+    await service.saveProfile('user-1', {
+      educationLevel: 'master',
+      majorFullName: '学科教学（语文）',
+      graduationDate: '2026-06-15',
+      educationExperiences: [education],
+    });
+    const saved = (await service.getProfile('user-1')) as Record<string, unknown>;
+    expect(saved.majorFullName).toBe('学科教学（语文）');
+    expect(saved.educationLevel).toBe('master');
+    expect(saved.graduationDate).toBe('2026-06-15');
+    expect(saved.educationExperiences).toEqual([education]);
+  });
+
+  it('结构不合法（缺 id / 阶段非法）直接 400，不静默丢数据', async () => {
+    const prisma = createFakePrisma();
+    const service = new ProfileService(prisma as never);
+    await expect(
+      service.saveProfile('user-1', {
+        educationExperiences: [{ id: 'x', majorFullName: '汉语言文学', stage: 'phd' }],
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.saveProfile('user-1', {
+        educationExperiences: [{ majorFullName: '汉语言文学' }],
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(await service.getProfile('user-1')).toBeNull();
+  });
+
+  it('业务校验失败（重复阶段/空专业）直接 400', async () => {
+    const prisma = createFakePrisma();
+    const service = new ProfileService(prisma as never);
+    await expect(
+      service.saveProfile('user-1', {
+        educationExperiences: [
+          { ...education, id: 'b1', majorFullName: '汉语言文学' },
+          { ...education, id: 'b2' },
+        ],
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.saveProfile('user-1', {
+        educationExperiences: [{ ...education, id: 'b3', majorFullName: '  ' }],
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('未提供 educationExperiences 的旧画像原样保存（兼容）', async () => {
+    const prisma = createFakePrisma();
+    const service = new ProfileService(prisma as never);
+    const legacy = {
+      educationLevel: 'bachelor',
+      majorFullName: '汉语言文学',
+      graduationDate: '2024-06-30',
+    };
+    await service.saveProfile('user-1', legacy);
+    expect(await service.getProfile('user-1')).toEqual(legacy);
+  });
+
+  it('按用户隔离：不能读到他人的教育经历', async () => {
+    const prisma = createFakePrisma();
+    const service = new ProfileService(prisma as never);
+    await service.saveProfile('user-1', { educationExperiences: [education] });
+    await service.saveProfile('user-2', {
+      educationExperiences: [{ ...education, id: 'other', majorFullName: '小学教育' }],
+    });
+    const other = (await service.getProfile('user-1')) as Record<string, unknown>;
+    expect(other.educationExperiences).toEqual([education]);
   });
 });

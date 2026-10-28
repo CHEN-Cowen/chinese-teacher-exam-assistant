@@ -64,6 +64,56 @@ export type EmploymentNaturePreference =
   | "official_open"
   | "undecided";
 
+/**
+ * 分阶段教育经历（D01）。
+ *
+ * 为什么不再只用单一 `majorFullName`：本科与硕士专业往往不同，公告也可能
+ * 只要求本科阶段专业或要求两个阶段同时满足。分阶段记录让引擎能说明
+ * “采用了哪一段经历”，而不是拿一个字段应对所有阶段。
+ */
+export type EducationStage = CredentialLevel;
+
+export type EducationStatus = "in_progress" | "graduated";
+export type EducationDegreeStatus = "none" | "in_progress" | "obtained";
+export type EducationStudyMode = "full_time" | "part_time" | "other";
+/** 师范背景归属：明确是/不是/未说明；只看该阶段事实，不跨阶段推断 */
+export type TeacherTraining = "yes" | "no" | "unknown";
+
+export interface EducationExperience {
+  /** 稳定 id；同一用户内唯一 */
+  id: string;
+  /** 阶段；旧数据归属未确认时可能缺省 */
+  stage?: EducationStage;
+  schoolName?: string;
+  /** 毕业证专业全称（原文）；旧数据迁移时保留原值 */
+  majorFullName: string;
+  /** 专业代码（按公告/目录版本可追溯时填写） */
+  majorCode?: string;
+  /** 专业目录版本（如“普通高等学校本科专业目录（2024年）”） */
+  majorCatalogVersion?: string;
+  status?: EducationStatus;
+  /** 毕业或预计毕业时间 ISO 日期 */
+  graduationDate?: string;
+  degree?: DegreeCode;
+  degreeStatus?: EducationDegreeStatus;
+  studyMode?: EducationStudyMode;
+  teacherTraining: TeacherTraining;
+  /** 师范背景的补充说明（如“汉语言文学（师范）”原文） */
+  teacherTrainingNote?: string;
+  /** 用户是否确认过专业原文（自动识别/迁移后的原文需要确认） */
+  majorConfirmed: boolean;
+  /** user=用户填写；legacy=从旧单一字段迁移，尚未确认阶段归属 */
+  source: "user" | "legacy";
+  /** 阶段归属是否待用户确认（仅迁移记录可能为 true） */
+  stageNeedsConfirmation?: boolean;
+}
+
+/** 旧单一学历字段的确认状态；确认不改写旧原值 */
+export interface LegacyEducationConfirmation {
+  confirmed: boolean;
+  confirmedAt?: string;
+}
+
 /** 五组基础画像（必填组在采集流程中分步完成） */
 export interface BaseRecruitmentProfile {
   /** 1. 可接受就业地区 */
@@ -72,10 +122,17 @@ export interface BaseRecruitmentProfile {
   educationLevel?: CredentialLevel;
   /** 2. 最高学位（无学位可为 none）；暂不提供时缺省 */
   degree?: DegreeCode;
-  /** 3. 毕业证上的专业全称；暂不提供时缺省 */
+  /**
+   * 3. 毕业证上的专业全称（旧单一字段，保留兼容与历史原值）。
+   * 新数据以 educationExperiences 为准；本字段不自动复制到多个阶段。
+   */
   majorFullName?: string;
   /** 4. 毕业（或预计毕业）时间 ISO 日期 */
   graduationDate?: string;
+  /** 分阶段教育经历（D01）。缺省时按旧单一字段迁移/兼容。 */
+  educationExperiences?: EducationExperience[];
+  /** 旧单一字段迁移后的确认状态；旧原值始终保留。 */
+  legacyEducation?: LegacyEducationConfirmation;
   /** 4. 当前就业状态 */
   employmentStatus?: EmploymentStatus;
   /** 5. 教师资格情况；暂不提供时缺省 */

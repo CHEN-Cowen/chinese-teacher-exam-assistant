@@ -933,6 +933,8 @@ export const STORAGE_KEYS = {
   DEMO_SUBSCRIPTION: "kb_demo_subscription",
   // —— v6.1 模块 5：登录后按机会补问的条件事实（年龄/户籍/社保/经历/特有条件答案），随画像提交后端重算 ——
   PROFILE_SUPPLEMENT_V61: "kb_profile_supplement_v61",
+  // —— D01：分阶段教育经历（demo/访客本机保存；登录后迁移到服务端画像） ——
+  PROFILE_EDUCATION_V1: "kb_profile_education_v1",
   // —— 模块 7：主要目标考试内容的人工确认记录（绑定机会单元 + 公告版本，版本变更即失效） ——
   EXAM_CONTENT_CONFIRMATIONS: "kb_exam_content_confirmations",
 } as const;

@@ -252,6 +252,62 @@ describe('资格匹配引擎：专业匹配只有精确名称/已审核别名/�
     const major = match.dimensions.find((d) => d.dimension === 'major');
     expect(major?.value).toBe('MANUAL_REVIEW');
   });
+
+  it('多阶段经历中任一阶段专业命中即可，并说明采用的阶段', () => {
+    const profile: UserRecruitmentProfile = {
+      ...BASE_PROFILE,
+      majorFullName: undefined,
+      educationLevel: undefined,
+      degree: undefined,
+      educationExperiences: [
+        {
+          id: 'bachelor-1',
+          stage: 'bachelor',
+          majorFullName: '汉语言文学教育',
+          teacherTraining: 'yes',
+          majorConfirmed: true,
+          source: 'user',
+        },
+        {
+          id: 'master-1',
+          stage: 'master',
+          majorFullName: '学科教学（语文）',
+          degree: 'master',
+          teacherTraining: 'no',
+          majorConfirmed: true,
+          source: 'user',
+        },
+      ],
+    };
+    const match = matchOf(candidatesFor(profile), SCENARIO_IDS.eligible);
+    const major = match.dimensions.find((d) => d.dimension === 'major');
+    expect(major?.value).toBe('PASS');
+    expect(major?.reason).toContain('本科');
+    const education = match.dimensions.find((d) => d.dimension === 'education');
+    expect(education?.value).toBe('PASS');
+  });
+
+  it('旧资料迁移后阶段未确认且专业不命中时，不误判 FAIL', () => {
+    const profile: UserRecruitmentProfile = {
+      ...BASE_PROFILE,
+      majorFullName: undefined,
+      educationExperiences: [
+        {
+          id: 'legacy-education',
+          stage: 'master',
+          majorFullName: '中文教育',
+          teacherTraining: 'unknown',
+          majorConfirmed: false,
+          source: 'legacy',
+          stageNeedsConfirmation: true,
+        },
+      ],
+    };
+    const match = matchOf(candidatesFor(profile), SCENARIO_IDS.eligible);
+    const major = match.dimensions.find((d) => d.dimension === 'major');
+    expect(major?.value).toBe('UNKNOWN');
+    expect(major?.reason).toContain('尚未确认');
+  });
 });
 
 describe('资格匹配引擎：排序与缺失维度分组', () => {

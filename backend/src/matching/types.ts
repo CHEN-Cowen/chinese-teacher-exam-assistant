@@ -331,6 +331,40 @@ export type EmploymentNaturePreference =
   | 'official_open'
   | 'undecided';
 
+/**
+ * 分阶段教育经历（D01）。
+ * 与前端 lib/profile/types 同结构；缺省时按旧单一字段兼容。
+ */
+export type EducationStatus = 'in_progress' | 'graduated';
+export type EducationDegreeStatus = 'none' | 'in_progress' | 'obtained';
+export type EducationStudyMode = 'full_time' | 'part_time' | 'other';
+export type TeacherTraining = 'yes' | 'no' | 'unknown';
+
+export interface EducationExperience {
+  id: string;
+  stage?: CredentialLevel;
+  schoolName?: string;
+  majorFullName: string;
+  majorCode?: string;
+  majorCatalogVersion?: string;
+  status?: EducationStatus;
+  graduationDate?: string;
+  degree?: DegreeCode;
+  degreeStatus?: EducationDegreeStatus;
+  studyMode?: EducationStudyMode;
+  teacherTraining: TeacherTraining;
+  teacherTrainingNote?: string;
+  majorConfirmed: boolean;
+  source: 'user' | 'legacy';
+  stageNeedsConfirmation?: boolean;
+}
+
+/** 旧单一字段迁移后的确认状态；旧原值始终保留 */
+export interface LegacyEducationConfirmation {
+  confirmed: boolean;
+  confirmedAt?: string;
+}
+
 /** 匹配接口入参：五组基础画像 + 按需补充的条件事实（未提供即 UNKNOWN） */
 export interface UserRecruitmentProfile {
   regions: RegionPreference[];
@@ -338,6 +372,10 @@ export interface UserRecruitmentProfile {
   degree?: DegreeCode;
   majorFullName?: string;
   graduationDate?: string;
+  /** 分阶段教育经历（D01）；缺省时按旧单一字段兼容 */
+  educationExperiences?: EducationExperience[];
+  /** 旧单一字段的确认状态；不改变旧原值 */
+  legacyEducation?: LegacyEducationConfirmation;
   employmentStatus?: EmploymentStatus;
   teacherCert?: TeacherCertInfo;
   acceptedEmploymentNatures: EmploymentNatureCode[];

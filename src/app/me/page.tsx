@@ -16,7 +16,6 @@ import {
 } from "@/lib/profile/activeProfile";
 import { profileApi } from "@/lib/profile/profileApi";
 import {
-  CREDENTIAL_LEVEL_OPTIONS,
   EMPLOYMENT_STATUS_OPTIONS,
   subjectLabel,
   TEACHER_CERT_STATUS_OPTIONS,
@@ -30,6 +29,10 @@ import type {
   OpportunityCorrectionStatus,
 } from "@/lib/opportunities/api-types";
 import type { UserRecruitmentProfile } from "@/lib/profile/types";
+import {
+  EDUCATION_STAGE_LABELS,
+  resolveEducationFacts,
+} from "@/lib/profile/education";
 import { buildMyProgressView } from "@/lib/me/progress-view";
 import {
   fetchMyMembership,
@@ -87,6 +90,11 @@ export default function MePage() {
           description="不常用的内容统一放在这里"
         />
         <div className="divide-y divide-line">
+          <SettingsRow
+            href="/me/education"
+            title="教育经历"
+            description="按本科、硕士等阶段分别填写专业与师范背景"
+          />
           <SettingsRow
             href="/materials"
             title="学习资料"
@@ -231,7 +239,7 @@ function ProfileCard() {
       label: "学历 / 学位",
       value:
         [
-          CREDENTIAL_LEVEL_OPTIONS.find((o) => o.value === profile.educationLevel)?.label,
+          educationLevelSummary(profile),
           profile.degree && profile.degree !== "none"
             ? { bachelor: "学士", master: "硕士", doctorate: "博士" }[profile.degree]
             : null,
@@ -239,7 +247,10 @@ function ProfileCard() {
           .filter(Boolean)
           .join(" / ") || "未填写",
     },
-    { label: "毕业证专业", value: profile.majorFullName || "未填写" },
+    {
+      label: "毕业证专业",
+      value: educationMajorSummary(profile),
+    },
     {
       label: "毕业与就业状态",
       value:
@@ -455,6 +466,23 @@ function MembershipCard() {
       </Link>
     </Card>
   );
+}
+
+/** D01：最高学历优先取分阶段经历，旧画像回退单一字段 */
+function educationLevelSummary(profile: UserRecruitmentProfile): string | null {
+  const facts = resolveEducationFacts(profile);
+  if (!facts.highestStage) return null;
+  const suffix = facts.hasUnconfirmedLegacy ? "（阶段待确认）" : "";
+  return `${EDUCATION_STAGE_LABELS[facts.highestStage]}${suffix}`;
+}
+
+/** D01：多阶段时展示最高阶段专业与总段数 */
+function educationMajorSummary(profile: UserRecruitmentProfile): string {
+  const facts = resolveEducationFacts(profile);
+  if (!facts.majorFullName) return "未填写";
+  if (facts.fromLegacyFields) return facts.majorFullName;
+  const count = facts.experiences.length;
+  return count > 1 ? `${facts.majorFullName}（共 ${count} 段经历）` : facts.majorFullName;
 }
 
 function MyCorrectionsCard() {
