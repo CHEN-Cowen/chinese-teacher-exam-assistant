@@ -17,6 +17,7 @@ import type {
   MatchResponse,
   MaterialStatus,
   OpportunityCorrectionDTO,
+  OrganizationFollowDTO,
   StaffOpportunityCorrectionDTO,
   StudyTargetRole,
   SubscriptionDTO,
@@ -66,6 +67,40 @@ export const opportunitiesApi = {
   syncSubscription(): Promise<SubscriptionSyncDTO> {
     if (AUTH_MODE === "demo") return demoOpportunitiesApi.syncSubscription();
     return request<SubscriptionSyncDTO>("/subscription/sync", { method: "POST" });
+  },
+
+  // ==================== 单位关注（D07 / PRD 11.8 U07） ====================
+
+  /** 当前用户的单位关注列表 */
+  listOrganizationFollows(): Promise<OrganizationFollowDTO[]> {
+    if (AUTH_MODE === "demo") return demoOpportunitiesApi.listOrganizationFollows();
+    return request<OrganizationFollowDTO[]>("/organization-follows");
+  },
+
+  /**
+   * 关注单位：身份键 = 规范化发布主体名 + 公告级地区码（仅精确匹配，
+   * 同名不同地区不串联，更名/合并不做模糊推断）。重复关注幂等。
+   */
+  followOrganization(input: {
+    publisherName: string;
+    regionCode: string;
+  }): Promise<OrganizationFollowDTO> {
+    if (AUTH_MODE === "demo")
+      return demoOpportunitiesApi.followOrganization(input);
+    return request<OrganizationFollowDTO>("/organization-follows", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+
+  /** 取消单位关注（按身份键；幂等） */
+  unfollowOrganization(identityKey: string): Promise<{ ok: true }> {
+    if (AUTH_MODE === "demo")
+      return demoOpportunitiesApi.unfollowOrganization(identityKey);
+    return request<{ ok: true }>(
+      `/organization-follows/${encodeURIComponent(identityKey)}`,
+      { method: "DELETE" },
+    );
   },
 
   /** 机会列表（按当前画像即时计算，四档分组 + 关注状态 + 版本信息）。

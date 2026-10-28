@@ -56,6 +56,24 @@ describe('关注状态机', () => {
     expect(canTransition('closed', 'preparing')).toBe(false);
   });
 
+  it('等待考试（D07）：只能从已报名进入，只能去向已结束/不再考虑', () => {
+    expect(canTransition('registered', 'waiting_exam')).toBe(true);
+    expect(canTransition('waiting_exam', 'closed')).toBe(true);
+    expect(canTransition('waiting_exam', 'abandoned')).toBe(true);
+    // 不允许跳过报名直接等待考试，也不允许从等待考试退回在报状态
+    expect(canTransition('considering', 'waiting_exam')).toBe(false);
+    expect(canTransition('preparing', 'waiting_exam')).toBe(false);
+    expect(canTransition('waiting_exam', 'considering')).toBe(false);
+    expect(canTransition('waiting_exam', 'preparing')).toBe(false);
+    const waiting = transitionFollow(
+      makeFollow({ status: 'registered' }),
+      'waiting_exam',
+      NOW,
+    );
+    expect(waiting.status).toBe('waiting_exam');
+    expect(waiting.statusHistory).toHaveLength(2);
+  });
+
   it('放弃时记录原因，再恢复关注时清空原因', () => {
     const abandoned = transitionFollow(
       makeFollow(),

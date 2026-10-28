@@ -69,7 +69,12 @@ const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 const URGENT_WINDOW_MS = 72 * HOUR_MS;
 const FINISHED_MATERIAL_STATUSES = new Set(["done", "not_applicable"]);
-const INACTIVE_FOLLOW_STATUSES = new Set(["registered", "abandoned", "closed"]);
+const INACTIVE_FOLLOW_STATUSES = new Set([
+  "registered",
+  "waiting_exam",
+  "abandoned",
+  "closed",
+]);
 /** Tier 5 待通知节点的固定 kind 优先序，其余 kind 按 events 数组顺序兜底 */
 const AWAIT_PRIORITY = [
   "registration_end",

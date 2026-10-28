@@ -34,6 +34,7 @@ const NEXT_BUTTONS: Array<{
   // considering 区的唯一主按钮是 SavedNextActionPanel 的主动作；流转只用次按钮
   { status: "preparing", variant: "outline" },
   { status: "registered", variant: "secondary" },
+  { status: "waiting_exam", variant: "outline" },
   { status: "considering", variant: "outline" },
   { status: "abandoned", variant: "ghost" },
   { status: "closed", variant: "ghost" },
@@ -164,11 +165,13 @@ export function FollowControls({
                 ? "标记为准备报名"
                 : status === "registered"
                   ? "我已完成报名"
-                  : status === "considering"
-                    ? "移回考虑中"
-                    : status === "closed"
-                      ? "标记为已结束"
-                      : "放弃这个机会"}
+                  : status === "waiting_exam"
+                    ? "报名已通过，等待考试"
+                    : status === "considering"
+                      ? "移回考虑中"
+                      : status === "closed"
+                        ? "标记为已结束"
+                        : "放弃这个机会"}
             </Button>
           ))}
         </div>

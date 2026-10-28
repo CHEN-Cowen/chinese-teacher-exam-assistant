@@ -164,6 +164,33 @@ export class OpportunitiesController {
     return this.service.listGoals(req.user!.id);
   }
 
+  /** 当前用户的单位关注列表（D07 / PRD 11.8 U07） */
+  @Get('organization-follows')
+  @UseGuards(UserGuard)
+  listOrganizationFollows(@Req() req: AuthenticatedRequest) {
+    return this.service.listOrganizationFollows(req.user!.id);
+  }
+
+  /** 关注单位：身份键 = 规范化发布主体名 + 地区码（仅精确匹配；重复关注幂等） */
+  @Post('organization-follows')
+  @UseGuards(UserGuard)
+  followOrganization(
+    @Body() body: { publisherName?: unknown; regionCode?: unknown },
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.service.followOrganization(req.user!.id, body ?? {});
+  }
+
+  /** 取消单位关注（按身份键；幂等） */
+  @Delete('organization-follows/:identityKey')
+  @UseGuards(UserGuard)
+  unfollowOrganization(
+    @Param('identityKey') identityKey: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.service.unfollowOrganization(req.user!.id, identityKey);
+  }
+
   /** 关注（初始恒为"考虑中"，收藏不自动等于准备报名） */
   @Post('units/:unitId/follow')
   @UseGuards(UserGuard)

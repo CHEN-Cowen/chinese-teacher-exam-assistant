@@ -45,6 +45,7 @@ import { ConditionRows } from "@/components/opportunities/ConditionRows";
 import { useCurrentUser } from "@/lib/auth";
 import { upsertGuestFollow } from "@/lib/guest/guestFollows";
 import { FollowControls } from "@/components/opportunities/FollowControls";
+import { OrganizationFollowButton } from "@/components/opportunities/OrganizationFollowButton";
 import { SupplementForm } from "@/components/opportunities/SupplementForm";
 import {
   OfficialSourceSection,
@@ -611,6 +612,11 @@ export default function OpportunityDetailPage() {
           {unit.announcement.publisher} · 报名
           {closed ? "" : deadline.text}
         </p>
+        {/* D07：单位关注入口（身份键=发布主体+公告级地区码，仅精确匹配） */}
+        <OrganizationFollowButton
+          publisherName={unit.announcement.publisher}
+          regionCode={unit.announcement.region.code}
+        />
         {/* 任教学校（v7.1 M4）：逐校列明才给校名和市区；录用后选岗/统一调配给官方口径，
             招聘单位与岗位组名不等于最终任教学校 */}
         <p className="text-sm text-ink-muted" data-testid="school-placement">

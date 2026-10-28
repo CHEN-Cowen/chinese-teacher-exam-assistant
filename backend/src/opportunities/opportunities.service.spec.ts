@@ -252,6 +252,69 @@ function createFakePrisma() {
     },
   };
 
+  // D07：单位关注（内存版）
+  const orgFollows: Array<Record<string, unknown>> = [];
+  const followedOrganization = {
+    findMany: async ({
+      where,
+      orderBy,
+    }: {
+      where: { userId: string };
+      orderBy?: { followedAt: 'asc' | 'desc' };
+    }) => {
+      const list = orgFollows.filter((r) => r.userId === where.userId);
+      if (orderBy?.followedAt === 'asc') {
+        list.sort(
+          (a, b) =>
+            (a.followedAt as Date).getTime() - (b.followedAt as Date).getTime(),
+        );
+      }
+      return list;
+    },
+    upsert: async ({
+      where,
+      create,
+      update,
+    }: {
+      where: { userId_identityKey: { userId: string; identityKey: string } };
+      create: Record<string, unknown>;
+      update: Record<string, unknown>;
+    }) => {
+      const { userId, identityKey } = where.userId_identityKey;
+      const existing = orgFollows.find(
+        (r) => r.userId === userId && r.identityKey === identityKey,
+      );
+      if (existing) {
+        Object.assign(existing, update);
+        return existing;
+      }
+      const row = {
+        id: `org-${++seq}`,
+        followedAt: new Date(),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        ...create,
+      };
+      orgFollows.push(row);
+      return row;
+    },
+    deleteMany: async ({
+      where,
+    }: {
+      where: { userId: string; identityKey: string };
+    }) => {
+      let count = 0;
+      for (let i = orgFollows.length - 1; i >= 0; i -= 1) {
+        const r = orgFollows[i]!;
+        if (r.userId === where.userId && r.identityKey === where.identityKey) {
+          orgFollows.splice(i, 1);
+          count += 1;
+        }
+      }
+      return { count };
+    },
+  };
+
   return {
     prisma: {
       followedOpportunity,
@@ -259,6 +322,7 @@ function createFakePrisma() {
       notificationRecord,
       opportunitySubscription,
       opportunityNoticeLog,
+      followedOrganization,
       user,
       $transaction: async (ops: Array<Promise<unknown>>) => Promise.all(ops),
     } as never,
@@ -267,6 +331,7 @@ function createFakePrisma() {
     notifications,
     subscriptions,
     noticeLogs,
+    orgFollows,
   };
 }
 
@@ -1045,5 +1110,108 @@ describe('OpportunitiesService：新机会订阅（v7.1 M6）', () => {
     // B 的回填不产生通知，A 的状态未被影响
     expect(fake.notifications).toHaveLength(0);
     expect(fake.noticeLogs.filter((r) => r.userId === 'user-2')).toHaveLength(aLogs);
+  });
+});
+
+describe('OpportunitiesService：单位关注（D07 / PRD 11.8 U07）', () => {
+  let fake: ReturnType<typeof createFakePrisma>;
+  let service: OpportunitiesService;
+
+  beforeEach(() => {
+    fake = createFakePrisma();
+    service = new OpportunitiesService(fake.prisma, fakeProfileService, fakeScheduleService);
+  });
+
+  it('关注/列表/取消：身份键精确匹配，重复关注幂等，取消费等', async () => {
+    const created = await service.followOrganization('user-1', {
+      publisherName: '杭州市教育局',
+      regionCode: '330000',
+    });
+    expect(created.identityKey).toBe('杭州市教育局@330000');
+
+    // 首尾空白不影响身份键（NFKC + 折叠空白）
+    const again = await service.followOrganization('user-1', {
+      publisherName: '  杭州市教育局  ',
+      regionCode: '330000',
+    });
+    expect(again.id).toBe(created.id);
+    expect(again.followedAt).toBe(created.followedAt);
+    expect(fake.orgFollows).toHaveLength(1);
+
+    const list = await service.listOrganizationFollows('user-1');
+    expect(list).toHaveLength(1);
+    expect(list[0]?.publisherName).toBe('杭州市教育局');
+
+    await service.unfollowOrganization('user-1', created.identityKey);
+    expect(await service.listOrganizationFollows('user-1')).toHaveLength(0);
+    // 重复取消幂等
+    await expect(
+      service.unfollowOrganization('user-1', created.identityKey),
+    ).resolves.toEqual({ ok: true });
+  });
+
+  it('参数校验：缺发布主体、地区码非法、空身份键均 400', async () => {
+    await expect(
+      service.followOrganization('user-1', { publisherName: '', regionCode: '330000' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.followOrganization('user-1', { publisherName: 'x', regionCode: '330' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.unfollowOrganization('user-1', ''),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('首次同步基线回填不通知；重复同步幂等；无订阅也能同步单位关注', async () => {
+    await service.followOrganization('user-1', {
+      publisherName: '杭州市教育局',
+      regionCode: '330000',
+    });
+    const first = await service.syncSubscription('user-1');
+    expect(first.subscribed).toBe(false); // 未开启订阅
+    expect(first.orgBackfilled).toBeGreaterThan(0);
+    expect(first.orgNewNotices).toBe(0);
+    expect(fake.notifications).toHaveLength(0);
+    expect(
+      fake.noticeLogs.filter(
+        (r) => r.userId === 'user-1' && String(r.dedupKey).startsWith('org:'),
+      ).length,
+    ).toBe(first.orgBackfilled);
+
+    const again = await service.syncSubscription('user-1');
+    expect(again.orgBackfilled).toBe(0);
+    expect(again.orgNewNotices).toBe(0);
+    expect(fake.notifications).toHaveLength(0);
+  });
+
+  it('订阅关闭只停订阅提醒，单位关注同步照常回填', async () => {
+    await service.upsertSubscription('user-1', {
+      regions: [{ code: '330000', province: '浙江省' }],
+      enabled: false,
+    });
+    await service.followOrganization('user-1', {
+      publisherName: '杭州市教育局',
+      regionCode: '330000',
+    });
+    const result = await service.syncSubscription('user-1');
+    expect(result.enabled).toBe(false);
+    expect(result.backfilled).toBe(0);
+    expect(result.orgBackfilled).toBeGreaterThan(0);
+  });
+
+  it('账号隔离：同名单位不同用户各自独立回填', async () => {
+    await service.followOrganization('user-1', {
+      publisherName: '杭州市教育局',
+      regionCode: '330000',
+    });
+    await service.followOrganization('user-2', {
+      publisherName: '杭州市教育局',
+      regionCode: '330000',
+    });
+    const a = await service.syncSubscription('user-1');
+    expect(a.orgBackfilled).toBeGreaterThan(0);
+    const b = await service.syncSubscription('user-2');
+    expect(b.orgBackfilled).toBe(a.orgBackfilled);
+    expect(fake.notifications).toHaveLength(0);
   });
 });

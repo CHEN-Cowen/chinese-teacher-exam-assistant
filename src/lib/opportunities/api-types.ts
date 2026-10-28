@@ -17,6 +17,8 @@ export type FollowStatus =
   | "considering"
   | "preparing"
   | "registered"
+  /** D07：报名完成、等待考试（只能由 registered 进入，只能去 closed/abandoned） */
+  | "waiting_exam"
   | "abandoned"
   | "closed";
 
@@ -183,6 +185,8 @@ export interface UnitMatchDTO {
     publisher: string;
     organizationType: string;
     officialUrl: string;
+    /** 公告级地区（单位关注身份键匹配用，D07） */
+    region: RegionRefDTO;
     /** demo=演示数据；real=真实监测台账数据 */
     dataset: "demo" | "real";
     reviewStatus: "ai_reviewed_pending" | "human_reviewed";
@@ -579,4 +583,17 @@ export interface SubscriptionSyncDTO {
   subscribed: boolean;
   newNotices: number;
   backfilled: number;
+  /** D07：本次单位关注新提醒数（无单位关注时为 0） */
+  orgNewNotices: number;
+  /** D07：本次单位关注基线回填数 */
+  orgBackfilled: number;
+}
+
+/** 单位关注（D07 / PRD 11.8 U07）：身份键仅精确匹配，展示名原样保存 */
+export interface OrganizationFollowDTO {
+  id: string;
+  identityKey: string;
+  publisherName: string;
+  regionCode: string;
+  followedAt: string;
 }

@@ -91,6 +91,11 @@ export default function MePage() {
         />
         <div className="divide-y divide-line">
           <SettingsRow
+            href="/follows"
+            title="我的关注"
+            description="岗位进度、关注单位与地区的新公告动态"
+          />
+          <SettingsRow
             href="/me/education"
             title="教育经历"
             description="按本科、硕士等阶段分别填写专业与师范背景"

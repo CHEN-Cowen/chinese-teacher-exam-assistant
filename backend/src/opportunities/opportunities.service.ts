@@ -59,6 +59,7 @@ import {
   type FollowDTO,
   type GoalsResponse,
   type MatchResponse,
+  type OrganizationFollowDTO,
   type SubscriptionDTO,
   type SubscriptionSyncDTO,
   type UnitDetailResponse,
@@ -86,6 +87,10 @@ import {
   type NaturePreferenceCode,
   type SubscriptionCriteria,
 } from './subscription.domain.js';
+import {
+  organizationIdentityKey,
+  planOrganizationNotices,
+} from './organization-follow.domain.js';
 
 /**
  * 目录来源（v7.2 工作包 3）：
@@ -435,11 +440,17 @@ export class OpportunitiesService {
    * - 新版本发布：新 dedupKey 允许再次提醒（每版本一次）。
    */
   async syncSubscription(userId: string): Promise<SubscriptionSyncDTO> {
+    // D07：单位关注同步独立于订阅开关——订阅关闭只停订阅提醒，单位关注提醒照常
+    const org = await this.syncOrganizationFollows(userId);
+    const orgFields = {
+      orgNewNotices: org.newNotices,
+      orgBackfilled: org.backfilled,
+    };
     const row = await this.prisma.opportunitySubscription.findUnique({
       where: { userId },
     });
     if (!row || !row.enabled) {
-      return { enabled: false, subscribed: row !== null, newNotices: 0, backfilled: 0 };
+      return { enabled: false, subscribed: row !== null, newNotices: 0, backfilled: 0, ...orgFields };
     }
     const criteria: SubscriptionCriteria = {
       regions: row.regions as SubscriptionCriteria['regions'],
@@ -475,7 +486,7 @@ export class OpportunitiesService {
       now: new Date(),
     });
     if (plan.keys.length === 0) {
-      return { enabled: true, subscribed: true, newNotices: 0, backfilled: 0 };
+      return { enabled: true, subscribed: true, newNotices: 0, backfilled: 0, ...orgFields };
     }
 
     for (const notice of plan.notices) {
@@ -508,7 +519,133 @@ export class OpportunitiesService {
       subscribed: true,
       newNotices: plan.notices.length,
       backfilled: plan.backfillCount,
+      ...orgFields,
     };
+  }
+
+  // ==================== 单位关注（D07 / PRD 11.8 U07） ====================
+
+  /** 当前用户的单位关注列表（按关注时间升序） */
+  async listOrganizationFollows(
+    userId: string,
+  ): Promise<OrganizationFollowDTO[]> {
+    const rows = await this.prisma.followedOrganization.findMany({
+      where: { userId },
+      orderBy: { followedAt: 'asc' },
+    });
+    return rows.map((r) => ({
+      id: r.id,
+      identityKey: r.identityKey,
+      publisherName: r.publisherName,
+      regionCode: r.regionCode,
+      followedAt: r.followedAt.toISOString(),
+    }));
+  }
+
+  /**
+   * 关注一个单位：身份键 = 规范化发布主体名 + 地区码（仅精确匹配，
+   * 不做更名/合并的模糊推断）。重复关注幂等返回已有记录，followedAt 不变。
+   */
+  async followOrganization(
+    userId: string,
+    input: { publisherName?: unknown; regionCode?: unknown },
+  ): Promise<OrganizationFollowDTO> {
+    const publisherName =
+      typeof input.publisherName === 'string' ? input.publisherName.trim() : '';
+    const regionCode =
+      typeof input.regionCode === 'string' ? input.regionCode.trim() : '';
+    if (!publisherName) {
+      throw new BadRequestException('缺少发布主体名称');
+    }
+    if (!/^\d{6}$/.test(regionCode)) {
+      throw new BadRequestException('地区码格式不正确');
+    }
+    const identityKey = organizationIdentityKey({ publisherName, regionCode });
+    const row = await this.prisma.followedOrganization.upsert({
+      where: { userId_identityKey: { userId, identityKey } },
+      create: { userId, identityKey, publisherName, regionCode },
+      update: {},
+    });
+    return {
+      id: row.id,
+      identityKey: row.identityKey,
+      publisherName: row.publisherName,
+      regionCode: row.regionCode,
+      followedAt: row.followedAt.toISOString(),
+    };
+  }
+
+  /** 取消单位关注（按身份键；幂等，本就不存在也返回 ok） */
+  async unfollowOrganization(
+    userId: string,
+    identityKey: unknown,
+  ): Promise<{ ok: true }> {
+    if (typeof identityKey !== 'string' || !identityKey.trim()) {
+      throw new BadRequestException('缺少单位身份键');
+    }
+    await this.prisma.followedOrganization.deleteMany({
+      where: { userId, identityKey },
+    });
+    return { ok: true };
+  }
+
+  /**
+   * 单位关注同步（幂等）：被关注单位发布的新公告产生一次站内提醒。
+   * 触发口径与订阅一致（官方来源、未过期、已人工核对、用户可见）；
+   * 每个关注首次同步基线回填不产生通知风暴；
+   * 幂等键复用 OpportunityNoticeLog（dedupKey 前缀 org:，与订阅互不干扰）。
+   */
+  async syncOrganizationFollows(
+    userId: string,
+  ): Promise<{ newNotices: number; backfilled: number }> {
+    const rows = await this.prisma.followedOrganization.findMany({
+      where: { userId },
+    });
+    if (rows.length === 0) return { newNotices: 0, backfilled: 0 };
+    const catalog = await this.loadCatalog();
+    const existing = await this.prisma.opportunityNoticeLog.findMany({
+      where: { userId },
+      select: { dedupKey: true },
+    });
+    const plan = planOrganizationNotices({
+      announcements: catalog,
+      follows: rows.map((r) => ({
+        identityKey: r.identityKey,
+        publisherName: r.publisherName,
+        regionCode: r.regionCode,
+        followedAt: r.followedAt.toISOString(),
+      })),
+      existingKeys: new Set(existing.map((r) => r.dedupKey)),
+      now: new Date(),
+    });
+    if (plan.keys.length === 0) return { newNotices: 0, backfilled: 0 };
+
+    for (const notice of plan.notices) {
+      await this.prisma.notificationRecord.create({
+        data: {
+          userId,
+          severity: 'info',
+          title: `关注单位新公告：${notice.publisher}`,
+          body: [
+            `${notice.regionLabel}《${notice.announcementTitle}》`,
+            `含 ${notice.unitCount} 个岗位，报名截止 ${notice.registrationEnd}`,
+            '来自你关注的单位，已通过人工核对，详情见机会页。',
+          ].join('；'),
+          relatedUnitId: notice.unitId,
+        },
+      });
+    }
+    await this.prisma.opportunityNoticeLog.createMany({
+      data: plan.keys.map((k) => ({
+        userId,
+        announcementId: k.announcementId,
+        versionId: k.versionId,
+        dedupKey: k.dedupKey,
+        notified: k.notified,
+      })),
+      skipDuplicates: true,
+    });
+    return { newNotices: plan.notices.length, backfilled: plan.backfillCount };
   }
 
   /** 画像读取失败/未保存时返回 null（同步与订阅默认值不因此中断） */

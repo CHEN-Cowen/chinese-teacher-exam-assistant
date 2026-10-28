@@ -6,11 +6,12 @@
  */
 import type { AnnouncementVersion, ApplicationUnit } from "@/lib/announcements/types";
 
-/** 关注/跟进状态：考虑中 → 准备报名 → 已报名；另含已放弃、已结束 */
+/** 关注/跟进状态：考虑中 → 准备报名 → 已报名 → 等待考试；另含已放弃、已结束 */
 export type FollowStatus =
   | "considering" // 考虑中
   | "preparing" // 准备报名
   | "registered" // 已报名
+  | "waiting_exam" // 等待考试（D07：报名完成后、考试结束前）
   | "abandoned" // 已放弃
   | "closed"; // 已结束（录取结束、公告失效等）
 
@@ -53,6 +54,7 @@ export const FOLLOW_STATUS_LABELS: Record<FollowStatus, string> = {
   considering: "考虑中",
   preparing: "准备报名",
   registered: "已报名",
+  waiting_exam: "等待考试",
   abandoned: "已放弃",
   closed: "已结束",
 };

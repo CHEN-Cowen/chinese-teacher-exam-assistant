@@ -40,6 +40,10 @@ vi.mock("@/lib/opportunities/api", () => ({
   opportunitiesApi: {
     follow: (...args: unknown[]) => holders.follow(...args),
     unitDetail: (...args: unknown[]) => holders.unitDetail(...args),
+    // D07 单位关注按钮：详情页已挂载 OrganizationFollowButton，mock 需补齐只读兜底
+    listOrganizationFollows: () => Promise.resolve([]),
+    followOrganization: () => Promise.resolve(undefined),
+    unfollowOrganization: () => Promise.resolve(undefined),
   },
 }));
 

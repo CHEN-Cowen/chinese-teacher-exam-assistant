@@ -13,6 +13,7 @@ export type FollowStatus =
   | 'considering'
   | 'preparing'
   | 'registered'
+  | 'waiting_exam'
   | 'abandoned'
   | 'closed';
 
@@ -46,11 +47,12 @@ export interface FollowRecord {
   remindersMuted: boolean;
 }
 
-/** 允许的状态流转图 */
+/** 允许的状态流转图（waiting_exam 为 D07 新增：已报名 → 等待考试 → 已结束/不再考虑） */
 const ALLOWED_TRANSITIONS: Record<FollowStatus, readonly FollowStatus[]> = {
   considering: ['preparing', 'abandoned', 'closed'],
   preparing: ['registered', 'abandoned', 'considering', 'closed'],
-  registered: ['closed', 'abandoned'],
+  registered: ['waiting_exam', 'closed', 'abandoned'],
+  waiting_exam: ['closed', 'abandoned'],
   abandoned: ['considering', 'preparing', 'closed'],
   closed: [],
 };
@@ -59,6 +61,7 @@ export const FOLLOW_STATUSES: readonly FollowStatus[] = [
   'considering',
   'preparing',
   'registered',
+  'waiting_exam',
   'abandoned',
   'closed',
 ];

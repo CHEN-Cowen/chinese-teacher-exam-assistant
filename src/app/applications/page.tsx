@@ -31,7 +31,7 @@ import { useOnlineStatus, isForbiddenError } from "@/lib/useOnlineStatus";
  *
  * 不变量：
  * - 不建立新的状态系统：状态字段仍为后端 FollowStatus（considering/preparing/
- *   registered/abandoned/closed），不引入新枚举；
+ *   registered/waiting_exam/abandoned/closed），不引入新枚举；
  * - 外部官网状态无法自动确认，必须标注「需要你确认」；
  * - 只跳验证过的官方地址，不在站内伪造报名成功；用户返回后可主动确认「我已报名」
  *   并记录时间（写入 follow.statusHistory）；
@@ -173,7 +173,7 @@ export default function ApplicationsPage() {
   }).length;
   const waitingCount = merged.filter((m) => {
     const s = m.follow?.status ?? m.goal.followStatus;
-    return s === "registered";
+    return s === "registered" || s === "waiting_exam";
   }).length;
 
   return (
@@ -609,6 +609,16 @@ function nextStepFor(
         label: "查看官方系统",
         href: safeOfficialLink(goal.announcement.officialUrl) ?? `/opportunities/${goal.unitId}`,
       };
+    case "waiting_exam":
+      return {
+        kind: "review",
+        title: "等待考试",
+        detail: exam
+          ? `笔试时间 ${formatIsoDate(exam)}，做好备考安排`
+          : "考试时间待官方通知，可先安排备考",
+        label: "安排备考",
+        href: "/study",
+      };
     case "abandoned":
       return {
         kind: "done",
@@ -644,6 +654,7 @@ function statusVariantFor(status: FollowStatus) {
     case "preparing":
       return "primary" as const;
     case "registered":
+    case "waiting_exam":
       return "success" as const;
     case "abandoned":
     case "closed":

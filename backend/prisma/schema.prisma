@@ -173,6 +173,30 @@ model FollowedOpportunity {
 }
 
 /**
+ * 单位关注（D07 / PRD 11.8 U07）：按「规范化发布主体名 + 地区码」精确身份键关注单位。
+ *
+ * - identityKey = normalizePublisherName(publisherName) + "@" + regionCode，
+ *   规范化仅 NFKC + 折叠空白，不做括号剥离与相似度推断；同名不同区不串联；
+ * - 提醒幂等键复用 OpportunityNoticeLog，dedupKey 前缀 `org:{identityKey}:`，
+ *   与岗位/订阅提醒互不干扰；首次同步基线回填不产生通知风暴。
+ */
+model FollowedOrganization {
+  id            String   @id @default(uuid())
+  userId        String   @map("user_id")
+  /** 身份键：规范化发布主体名@地区码（仅精确匹配） */
+  identityKey   String   @map("identity_key")
+  /** 关注时刻的发布主体显示名（原样保存，仅展示用；匹配只看 identityKey） */
+  publisherName String   @map("publisher_name")
+  regionCode    String   @map("region_code")
+  followedAt    DateTime @default(now()) @map("followed_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId, identityKey])
+  @@map("followed_organizations")
+}
+
+/**
  * 机会详情纠错提交（v6.1 模块 5，PRD 7.10）。
  * 用户在证据层发现公告原文/字段/版本有误时提交；受邀阶段只留痕与回复状态，
  * 不做自动改判，改判必须走模块 2 审核发布新版本。

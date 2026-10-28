@@ -41,7 +41,7 @@ export const scheduleApi = {
 
   /** 标记单条通知已读 */
   markNotificationRead(id: string): Promise<void> {
-    if (AUTH_MODE === "demo") return demoScheduleApi.markNotificationRead();
+    if (AUTH_MODE === "demo") return demoScheduleApi.markNotificationRead(id);
     return request<void>(`/notifications/${encodeURIComponent(id)}/read`, {
       method: "PATCH",
     });

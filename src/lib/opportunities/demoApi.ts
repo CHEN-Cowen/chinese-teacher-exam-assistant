@@ -24,6 +24,11 @@ import {
 import type { UserRecruitmentProfile } from "@/lib/profile/types";
 import { getRollingDemoAnnouncements } from "@/lib/seed/demoTimeline";
 import { loadFromStorage, saveToStorageStrict } from "@/lib/storage";
+import type { NotificationDTO } from "@/lib/schedule/types";
+import {
+  organizationIdentityKey,
+  planOrganizationNotices,
+} from "./organization-follow";
 import type {
   FollowDTO,
   FollowStatus,
@@ -34,6 +39,7 @@ import type {
   MatchResponse,
   MaterialStatus,
   OpportunityCorrectionDTO,
+  OrganizationFollowDTO,
   StudyTargetRole,
   SubscriptionDTO,
   SubscriptionSyncDTO,
@@ -49,6 +55,12 @@ interface DemoFollow extends FollowDTO {
 interface DemoData {
   follows: DemoFollow[];
   corrections: OpportunityCorrectionDTO[];
+  /** D07：单位关注（按身份键精确匹配） */
+  orgFollows: OrganizationFollowDTO[];
+  /** D07：单位关注已记录的幂等键（org:{identityKey}:{announcementId}:{versionId}） */
+  orgNoticeKeys: string[];
+  /** D07：单位关注新公告产生的站内通知 */
+  notifications: NotificationDTO[];
 }
 
 function currentUserId(): string {
@@ -61,13 +73,25 @@ function storageKey(): string {
   return `kb_demo_opportunities_v1_${currentUserId()}`;
 }
 
+function emptyDemoData(): DemoData {
+  return {
+    follows: [],
+    corrections: [],
+    orgFollows: [],
+    orgNoticeKeys: [],
+    notifications: [],
+  };
+}
+
 function load(): DemoData {
   // v7.2：访客在 /preview/supplement 按需补问时需要只读访问演示详情；
   // 无会话时返回空数据（不写本机），写操作仍由 persist→currentUserId 抛错守住。
   if (!authService.getSession()?.userId) {
-    return { follows: [], corrections: [] };
+    return emptyDemoData();
   }
-  return loadFromStorage<DemoData>(storageKey(), { follows: [], corrections: [] });
+  // 旧版本地数据可能缺少 D07 新增字段，读取时补齐默认值（应用层迁移）
+  const stored = loadFromStorage<Partial<DemoData>>(storageKey(), {});
+  return { ...emptyDemoData(), ...stored };
 }
 
 function persist(data: DemoData): void {
@@ -136,6 +160,7 @@ function toUnit(candidate: OpportunityCandidate, data: DemoData): UnitMatchDTO {
       publisher: announcement.publisher,
       organizationType: announcement.organizationType,
       officialUrl: announcement.officialUrl,
+      region: announcement.region,
       dataset: "demo",
       reviewStatus: "human_reviewed",
       reviewedBy: null,
@@ -284,16 +309,68 @@ export const demoOpportunitiesApi = {
     return loadDemoSubscription(V61_SEED_PROFILE);
   },
 
-  /** 演示环境无真实公告流入，同步恒为幂等空操作 */
+  /**
+   * 演示环境同步：订阅无真实公告流入恒为空操作；
+   * 单位关注（D07）按演示目录精确匹配——首次同步基线回填不通知，
+   * 之后出现新公告版本才产生站内通知（幂等键存本机）。
+   */
   async syncSubscription(): Promise<SubscriptionSyncDTO> {
     const { V61_SEED_PROFILE } = await import("@/lib/seed/v61-opportunities");
     const subscription = loadDemoSubscription(V61_SEED_PROFILE);
+    const org = syncDemoOrganizationFollows();
     return {
       enabled: subscription.enabled,
       subscribed: true,
       newNotices: 0,
       backfilled: 0,
+      orgNewNotices: org.newNotices,
+      orgBackfilled: org.backfilled,
     };
+  },
+
+  // ==================== 单位关注（D07 / PRD 11.8 U07） ====================
+
+  /** 当前演示账号的单位关注列表（本机持久化） */
+  async listOrganizationFollows(): Promise<OrganizationFollowDTO[]> {
+    return load().orgFollows;
+  },
+
+  /**
+   * 关注一个单位：身份键 = 规范化发布主体名 + 地区码（仅精确匹配，
+   * 不做更名/合并的模糊推断）。重复关注幂等返回已有记录，followedAt 不变。
+   */
+  async followOrganization(input: {
+    publisherName: string;
+    regionCode: string;
+  }): Promise<OrganizationFollowDTO> {
+    const publisherName = input.publisherName.trim();
+    const regionCode = input.regionCode.trim();
+    if (!publisherName) throw new Error("缺少发布主体名称");
+    if (!/^\d{6}$/.test(regionCode)) throw new Error("地区码格式不正确");
+    const identityKey = organizationIdentityKey({ publisherName, regionCode });
+    const data = load();
+    const existing = data.orgFollows.find((f) => f.identityKey === identityKey);
+    if (existing) return existing;
+    const row: OrganizationFollowDTO = {
+      id: `demo-org-${currentUserId()}-${Date.now()}`,
+      identityKey,
+      publisherName,
+      regionCode,
+      followedAt: new Date().toISOString(),
+    };
+    data.orgFollows.push(row);
+    persist(data);
+    return row;
+  },
+
+  /** 取消单位关注（按身份键；幂等，本就不存在也返回 ok） */
+  async unfollowOrganization(identityKey: string): Promise<{ ok: true }> {
+    const data = load();
+    data.orgFollows = data.orgFollows.filter(
+      (f) => f.identityKey !== identityKey,
+    );
+    persist(data);
+    return { ok: true };
   },
 
   async match(profile: UserRecruitmentProfile): Promise<MatchResponse> {
@@ -653,4 +730,74 @@ export function demoFollowRecords(): DemoFollow[] {
 
 export function demoFollowedUnit(unitId: string): ReturnType<typeof findUnit> {
   return findUnit(unitId);
+}
+
+// ==================== D07 演示单位关注同步与站内通知 ====================
+
+/**
+ * 演示环境单位关注同步（幂等）：被关注单位在演示目录中出现新公告版本时
+ * 产生站内通知；首次同步基线回填不通知。无会话/无单位关注时为空操作。
+ */
+export function syncDemoOrganizationFollows(): {
+  newNotices: number;
+  backfilled: number;
+} {
+  const data = load();
+  if (data.orgFollows.length === 0) return { newNotices: 0, backfilled: 0 };
+  const now = new Date();
+  const plan = planOrganizationNotices({
+    announcements: getRollingDemoAnnouncements(),
+    follows: data.orgFollows,
+    existingKeys: new Set(data.orgNoticeKeys),
+    now,
+  });
+  if (plan.keys.length === 0) return { newNotices: 0, backfilled: 0 };
+  const createdAt = now.toISOString();
+  for (const notice of plan.notices) {
+    data.notifications.unshift({
+      id: `demo-org-notice-${notice.announcementId}-${notice.versionId}`,
+      severity: "info",
+      title: `关注单位新公告：${notice.publisher}`,
+      body: [
+        `${notice.regionLabel}《${notice.announcementTitle}》`,
+        `含 ${notice.unitCount} 个岗位，报名截止 ${notice.registrationEnd}`,
+        "来自你关注的单位（演示数据，不代表真实招聘信息）。",
+      ].join("；"),
+      relatedUnitId: notice.unitId,
+      readAt: null,
+      createdAt,
+    });
+  }
+  data.orgNoticeKeys = [
+    ...data.orgNoticeKeys,
+    ...plan.keys.map((k) => k.dedupKey),
+  ];
+  persist(data);
+  return { newNotices: plan.notices.length, backfilled: plan.backfillCount };
+}
+
+/** 演示站内通知（按创建时间倒序已由 unshift 保证；无会话返回空） */
+export function demoListNotifications(): NotificationDTO[] {
+  return load().notifications;
+}
+
+export function demoMarkNotificationRead(id: string): void {
+  const data = load();
+  const target = data.notifications.find((n) => n.id === id);
+  if (!target || target.readAt) return;
+  target.readAt = new Date().toISOString();
+  persist(data);
+}
+
+export function demoMarkAllNotificationsRead(): void {
+  const data = load();
+  const now = new Date().toISOString();
+  let changed = false;
+  for (const notification of data.notifications) {
+    if (!notification.readAt) {
+      notification.readAt = now;
+      changed = true;
+    }
+  }
+  if (changed) persist(data);
 }

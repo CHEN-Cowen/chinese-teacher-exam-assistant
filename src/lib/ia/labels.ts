@@ -73,6 +73,7 @@ export const FOLLOW_STATUS_UI_LABELS: Record<FollowStatus, string> = {
   considering: "考虑中",
   preparing: "准备报名",
   registered: "已报名",
+  waiting_exam: "等待考试",
   abandoned: "已放弃",
   closed: "已结束",
 };
