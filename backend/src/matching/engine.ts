@@ -16,8 +16,10 @@
  * 不变量：用户未填写的信息只能得到 UNKNOWN，永远不会被转换成 FAIL。
  */
 import {
+  degreeFacts,
   majorCandidates,
   resolveEducationFacts,
+  type DegreeFact,
 } from './education.js';
 import {
   IN_SCOPE_EMPLOYMENT_NATURES,
@@ -25,6 +27,7 @@ import {
   type AnnouncementVersion,
   type ApplicationUnit,
   type CredentialLevel,
+  type DegreeCode,
   type EmploymentNatureCode,
   type GateResult,
   type MatchDimensionResult,
@@ -68,6 +71,13 @@ const EDUCATION_STAGE_LABELS: Record<CredentialLevel, string> = {
   bachelor: '本科',
   master: '硕士研究生',
   doctorate: '博士研究生',
+};
+
+const DEGREE_LABELS: Record<DegreeCode, string> = {
+  none: '无学位',
+  bachelor: '学士',
+  master: '硕士',
+  doctorate: '博士',
 };
 
 /** 专业名归一化：去多余空白、统一全角括号与大小写（不删除“师范”等语义） */
@@ -316,25 +326,109 @@ export function evaluateRequirement(
       });
     }
     case 'degree': {
-      const facts = resolveEducationFacts(profile);
-      const degree = facts.degree ?? profile.degree;
-      const degreeLabel = degree
-        ? { bachelor: '学士', master: '硕士', doctorate: '博士', none: '无学位' }[
-            degree
-          ]
-        : undefined;
-      if (!degree) return unknown(req, '尚未填写学位信息');
-      if (
-        EDUCATION_RANK[degreeToLevel(degree)] >=
-        EDUCATION_RANK[degreeToLevel(c.requiredDegree)]
-      ) {
-        return pass(req, '学位满足公告要求', {
-          ...(degreeLabel ? { userFact: degreeLabel } : {}),
-        });
+      const facts = degreeFacts(profile);
+      if (facts.length === 0) return unknown(req, '尚未填写学位信息');
+      const requiredRank = EDUCATION_RANK[degreeToLevel(c.requiredDegree)];
+      const statusLabel = (fact: DegreeFact): string =>
+        fact.degreeStatus === 'obtained'
+          ? '已取得'
+          : fact.degreeStatus === 'in_progress'
+            ? '在读/待取得'
+            : fact.degreeStatus === 'none'
+              ? '无学位'
+              : '未填写取得状态';
+      const factLabel = (fact: DegreeFact): string => {
+        const stage = fact.stage ? `${EDUCATION_STAGE_LABELS[fact.stage]}阶段` : '';
+        return `${stage}${DEGREE_LABELS[fact.degree]}（${statusLabel(fact)}）`;
+      };
+      const userFact = facts.map(factLabel).join('；');
+      const extras = { userFact };
+      const rankOk = (fact: DegreeFact): boolean =>
+        fact.degree !== 'none' &&
+        EDUCATION_RANK[degreeToLevel(fact.degree)] >= requiredRank;
+
+      // 1) 已取得的学位达到要求即满足（多段经历任一即可，不要求每段都填）
+      const obtained = facts.filter(
+        (fact) => fact.degreeStatus === 'obtained' && rankOk(fact),
+      );
+      if (obtained.length > 0) {
+        return pass(req, '已取得的学位满足公告要求', extras);
       }
-      return fail(req, '学位未达到公告要求', {
-        ...(degreeLabel ? { userFact: degreeLabel } : {}),
-      });
+      // 2) 未填写取得状态的旧画像/旧字段：按用户已声明的学位层次判断，并提示补充状态
+      const declaredLegacy = facts.filter(
+        (fact) => fact.degreeStatus === undefined && rankOk(fact),
+      );
+      if (declaredLegacy.length > 0) {
+        return pass(
+          req,
+          '学位满足公告要求（未填写取得状态，旧资料按已声明学位判断，建议补充）',
+          extras,
+        );
+      }
+      // 3) 在读/待取得：只有公告明确允许限期取得才能接受
+      const inProgress = facts.filter(
+        (fact) => fact.degreeStatus === 'in_progress' && rankOk(fact),
+      );
+      if (inProgress.length > 0) {
+        const fact = inProgress[0];
+        if (!c.acceptInProgress) {
+          return manual(
+            req,
+            '你的学位尚在取得中，公告未明确是否接受在读/待取得学位报考，请向招聘单位确认；取得后重新判断',
+            extras,
+          );
+        }
+        if (!c.obtainBy) {
+          return manual(
+            req,
+            '公告允许在期限内取得学位，但期限尚未核对明确，请向招聘单位确认',
+            extras,
+          );
+        }
+        if (!fact.graduationDate) {
+          return unknown(
+            req,
+            '请补充预计取得学位的时间，以判断能否在公告期限内取得',
+            extras,
+          );
+        }
+        const deadline = new Date(c.obtainBy).getTime();
+        const expected = new Date(fact.graduationDate).getTime();
+        if (
+          Number.isNaN(deadline) ||
+          Number.isNaN(expected)
+        ) {
+          return manual(
+            req,
+            '公告期限或你填写的取得时间无法解析，请核对后重新判断',
+            extras,
+          );
+        }
+        if (expected > deadline) {
+          return fail(
+            req,
+            `你预计 ${fact.graduationDate} 取得学位，晚于公告要求的 ${c.obtainBy}`,
+            extras,
+          );
+        }
+        return pass(
+          req,
+          `公告允许在 ${c.obtainBy} 前取得学位，你预计 ${fact.graduationDate} 取得`,
+          extras,
+        );
+      }
+      // 4) 明确没有学位或学位层次不足
+      const onlyNoDegree = facts.every(
+        (fact) => fact.degree === 'none' || fact.degreeStatus === 'none',
+      );
+      if (onlyNoDegree) {
+        return fail(
+          req,
+          `你填写为无学位，公告要求${DEGREE_LABELS[c.requiredDegree]}及以上学位`,
+          extras,
+        );
+      }
+      return fail(req, '学位未达到公告要求', extras);
     }
     case 'major': {
       const candidates = majorCandidates(profile);
@@ -346,43 +440,46 @@ export function evaluateRequirement(
         candidates
           .map(
             (candidate) =>
-              `${stageLabels(candidate.stage)}：${candidate.majorFullName}`,
+              `${stageLabels(candidate.stage)}${candidate.stageUnconfirmed ? '（阶段待确认）' : ''}：${candidate.majorFullName}`,
           )
           .join('；') || undefined;
       const extras = userFact ? { userFact } : {};
-
-      const stages = c.stages ? [...new Set(c.stages)] : [];
-      const stageMode = c.stageMode ?? 'any';
       const adoptedOf = (list: typeof candidates) =>
         list.map((candidate) => ({
           experienceId: candidate.experienceId ?? 'legacy-major',
           ...(candidate.stage ? { stage: candidate.stage } : {}),
           majorFullName: candidate.majorFullName,
         }));
+      const matched = (candidate: (typeof candidates)[number]) =>
+        majorNameMatches(candidate.majorFullName, c.majorNames);
+
+      const stages = c.stages ? [...new Set(c.stages)] : [];
+      const stageMode = c.stageMode ?? 'any';
 
       if (stages.length === 0) {
-        // 公告未指定阶段：采用最高学历阶段的专业，避免用低阶段专业过度放宽
-        const facts = resolveEducationFacts(profile);
-        const primary =
-          candidates.find((candidate) =>
-            facts.adoptedExperienceId
-              ? candidate.experienceId === facts.adoptedExperienceId
-              : candidate.experienceId === null,
-          ) ?? candidates[0];
-        if (majorNameMatches(primary.majorFullName, c.majorNames)) {
-          const stageNote = primary.stage
-            ? `（采用${stageLabels(primary.stage)}阶段专业“${primary.majorFullName}”）`
-            : `（采用“${primary.majorFullName}”）`;
+        // 公告未明确适用阶段（R03）：任一已填阶段命中即通过，
+        // 不得只取最高阶段专业判不符合；均不命中属阶段歧义 → 官方确认。
+        // 阶段待确认的迁移记录不能凭名称直接算命中（R03）
+        const confirmed = candidates.filter(
+          (candidate) => !candidate.stageUnconfirmed,
+        );
+        const hits = confirmed.filter(matched);
+        if (hits.length > 0) {
+          const note = hits
+            .map(
+              (candidate) =>
+                `${stageLabels(candidate.stage)}${
+                  candidate.stageUnconfirmed ? '（阶段待确认）' : ''
+                }专业“${candidate.majorFullName}”`,
+            )
+            .join('、');
           return pass(
             req,
-            `专业与公告列明专业（或已审核等价专业）一致${stageNote}`,
-            {
-              ...extras,
-              adoptedEducation: adoptedOf([primary]),
-            },
+            `专业与公告列明专业（或已审核等价专业）一致（采用${note}）`,
+            { ...extras, adoptedEducation: adoptedOf(hits) },
           );
         }
-        if (primary.stageUnconfirmed) {
+        if (candidates.some((candidate) => candidate.stageUnconfirmed)) {
           return unknown(
             req,
             '从旧资料迁移的专业尚未确认所属学历阶段，请先确认后再判断',
@@ -396,57 +493,50 @@ export function evaluateRequirement(
             extras,
           );
         }
-        return fail(req, '专业不在公告列明的可报专业范围内', {
+        return manual(req, '公告未明确该专业要求适用的学历阶段，且你的专业未精确命中列明专业；请向招聘单位确认后再判断', {
           ...extras,
-          adoptedEducation: adoptedOf([primary]),
+          adoptedEducation: adoptedOf(candidates),
         });
       }
 
-      // 公告指定了阶段：逐阶段收集事实
-      const stageCandidates = stages.map((stage) => ({
-        stage,
-        list: candidates.filter((candidate) => candidate.stage === stage),
-      }));
-      const missingStages = stageCandidates.filter(
-        (entry) => entry.list.length === 0,
-      );
-      if (missingStages.length > 0) {
-        return unknown(
-          req,
-          `公告要求${missingStages
-            .map((entry) => stageLabels(entry.stage))
-            .join('、')}阶段专业，你尚未填写该阶段经历`,
-          extras,
-        );
-      }
-      const matches = stageCandidates.map((entry) => ({
-        stage: entry.stage,
-        matched: entry.list.filter((candidate) =>
-          majorNameMatches(candidate.majorFullName, c.majorNames),
-        ),
-      }));
+      // 公告指定了阶段：未确认阶段归属的迁移记录不能当作该阶段事实
+      const stageCandidates = stages.map((stage) => {
+        const all = candidates.filter((candidate) => candidate.stage === stage);
+        const confirmed = all.filter((candidate) => !candidate.stageUnconfirmed);
+        return { stage, all, confirmed, hits: confirmed.filter(matched) };
+      });
+      const missing = stageCandidates.filter((entry) => entry.all.length === 0);
+
       if (stageMode === 'all') {
-        if (matches.every((entry) => entry.matched.length > 0)) {
-          const adopted = matches.flatMap((entry) => adoptedOf(entry.matched));
+        if (missing.length > 0) {
+          return unknown(
+            req,
+            `公告要求${missing
+              .map((entry) => stageLabels(entry.stage))
+              .join('、')}阶段专业同时符合，你尚未填写该阶段经历`,
+            extras,
+          );
+        }
+        const unconfirmed = stageCandidates.filter(
+          (entry) => entry.confirmed.length === 0,
+        );
+        if (unconfirmed.length > 0) {
+          return unknown(
+            req,
+            `你的${unconfirmed
+              .map((entry) => stageLabels(entry.stage))
+              .join('、')}阶段经历尚未确认阶段归属，请先确认后再判断`,
+            extras,
+          );
+        }
+        if (stageCandidates.every((entry) => entry.hits.length > 0)) {
+          const adopted = stageCandidates.flatMap((entry) => adoptedOf(entry.hits));
           return pass(
             req,
             `公告要求${stages
               .map((stage) => stageLabels(stage))
-              .join('、')}阶段专业，你的各阶段专业均符合`,
+              .join('、')}阶段专业同时符合，你的各阶段专业均符合`,
             { ...extras, adoptedEducation: adopted },
-          );
-        }
-        const missingMatch = matches.find((entry) => entry.matched.length === 0);
-        const stageUnconfirmed = stageCandidates
-          .filter((entry) => entry.stage === missingMatch?.stage)
-          .some((entry) =>
-            entry.list.some((candidate) => candidate.stageUnconfirmed),
-          );
-        if (stageUnconfirmed) {
-          return unknown(
-            req,
-            '从旧资料迁移的专业尚未确认所属学历阶段，请先确认后再判断',
-            extras,
           );
         }
         if (c.ambiguous) {
@@ -456,35 +546,43 @@ export function evaluateRequirement(
             extras,
           );
         }
+        const failedStage = stageCandidates.find((entry) => entry.hits.length === 0);
         return fail(
           req,
-          `公告要求${stageLabels(missingMatch?.stage)}阶段专业，你的该阶段专业不在列明范围内`,
+          `公告要求${stageLabels(failedStage?.stage)}阶段专业同时符合，你的该阶段专业不在列明范围内`,
           extras,
         );
       }
-      // any：任一阶段命中即可
-      const adopted = matches.flatMap((entry) => adoptedOf(entry.matched));
-      if (adopted.length > 0) {
+
+      // any：任一阶段命中即可，另一可选阶段缺资料不影响已命中的结论
+      const stageHits = stageCandidates.flatMap((entry) => entry.hits);
+      if (stageHits.length > 0) {
+        const hitStages = [
+          ...new Set(
+            stageCandidates
+              .filter((entry) => entry.hits.length > 0)
+              .map((entry) => stageLabels(entry.stage)),
+          ),
+        ];
         return pass(
           req,
-          `专业与公告列明专业（或已审核等价专业）一致（采用${[
-            ...new Set(
-              matches
-                .filter((entry) => entry.matched.length > 0)
-                .map((entry) => stageLabels(entry.stage)),
-            ),
-          ].join('、')}阶段专业）`,
-          { ...extras, adoptedEducation: adopted },
+          `专业与公告列明专业（或已审核等价专业）一致（采用${hitStages.join('、')}阶段专业）`,
+          { ...extras, adoptedEducation: adoptedOf(stageHits) },
         );
       }
-      if (
-        stageCandidates.some((entry) =>
-          entry.list.some((candidate) => candidate.stageUnconfirmed),
-        )
-      ) {
+      if (missing.length > 0) {
         return unknown(
           req,
-          '从旧资料迁移的专业尚未确认所属学历阶段，请先确认后再判断',
+          `公告要求${missing
+            .map((entry) => stageLabels(entry.stage))
+            .join('、')}阶段任一专业符合，你尚未填写该阶段经历`,
+          extras,
+        );
+      }
+      if (stageCandidates.some((entry) => entry.confirmed.length === 0)) {
+        return unknown(
+          req,
+          '你的相关阶段经历尚未确认阶段归属，请先确认后再判断',
           extras,
         );
       }

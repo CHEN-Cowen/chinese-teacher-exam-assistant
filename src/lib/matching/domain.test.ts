@@ -220,6 +220,26 @@ describe("D03 资格与求职偏好分离", () => {
     expect(region?.nextStep).toContain("偏好");
     expect(region?.userFact).toContain("必须接受");
   });
+
+  it("资格事实改变后结论重算；仅修改求职偏好不改变资格结论", () => {
+    const educationOf = (profile: UserRecruitmentProfile) =>
+      buildCandidates(V61_SEED_ANNOUNCEMENTS, profile, V61_NOW)
+        .find((c) => c.announcement.id === V61_SCENARIO_IDS.educationFail)!
+        .match.dimensions.find((d) => d.dimension === "education")!;
+
+    // 本科 + 中级教资：学历维度不符合
+    expect(educationOf(V61_SEED_PROFILE).value).toBe("FAIL");
+    // 改为硕士学历（资格事实改变）→ 学历维度重新计算结果
+    const upgraded = { ...V61_SEED_PROFILE, educationLevel: "master" as const, degree: "master" as const };
+    expect(educationOf(upgraded).value).toBe("PASS");
+    // 仅改求职偏好（地区）：资格结论不随之改变
+    expect(
+      educationOf({
+        ...V61_SEED_PROFILE,
+        regions: [{ code: "110000", province: "北京市", level: "required" }],
+      }).value,
+    ).toBe("FAIL");
+  });
 });
 
 describe("D03 分阶段专业匹配", () => {
@@ -274,14 +294,25 @@ describe("D03 分阶段专业匹配", () => {
     expect(evaluateRequirement(req(["bachelor", "master"], "all"), profile, V61_NOW).value).toBe("FAIL");
   });
 
-  it("公告未指定阶段时按最高学历阶段专业判断", () => {
+  it("公告未明确阶段时任一已填阶段命中即通过（不按最高学历判不符合）", () => {
     const profile = stagedProfile([
       { id: "b", stage: "bachelor", majorFullName: "汉语言文学", teacherTraining: "yes", majorConfirmed: true, source: "user" },
       { id: "m", stage: "master", majorFullName: "学科教学（语文）", teacherTraining: "no", majorConfirmed: true, source: "user" },
     ]);
     const result = evaluateRequirement(req(undefined), profile, V61_NOW);
-    expect(result.value).toBe("FAIL");
-    expect(result.adoptedEducation?.[0]?.stage).toBe("master");
+    expect(result.value).toBe("PASS");
+    expect(result.adoptedEducation?.[0]?.stage).toBe("bachelor");
+    expect(result.reason).toContain("本科");
+  });
+
+  it("公告未明确阶段且各阶段均不命中 → 官方确认（MANUAL_REVIEW，不判 FAIL）", () => {
+    const profile = stagedProfile([
+      { id: "b", stage: "bachelor", majorFullName: "数学与应用数学", teacherTraining: "no", majorConfirmed: true, source: "user" },
+      { id: "m", stage: "master", majorFullName: "统计学", teacherTraining: "no", majorConfirmed: true, source: "user" },
+    ]);
+    const result = evaluateRequirement(req(undefined), profile, V61_NOW);
+    expect(result.value).toBe("MANUAL_REVIEW");
+    expect(result.reason).toContain("阶段");
   });
 
   it("公告要求某阶段专业但用户缺该阶段经历 → UNKNOWN", () => {
@@ -291,21 +322,136 @@ describe("D03 分阶段专业匹配", () => {
     expect(evaluateRequirement(req(["master"]), profile, V61_NOW).value).toBe("UNKNOWN");
   });
 
-  it("迁移记录阶段未确认且专业未命中 → UNKNOWN，不判 FAIL", () => {
+  it("迁移记录阶段待确认且名称恰好匹配 → 不直接 PASS", () => {
     const profile = stagedProfile([
       {
         id: "legacy-education",
         stage: "master",
-        majorFullName: "中文教育",
+        majorFullName: "汉语言文学",
         teacherTraining: "unknown",
         majorConfirmed: false,
         source: "legacy",
         stageNeedsConfirmation: true,
       },
     ]);
-    const result = evaluateRequirement(req(undefined), profile, V61_NOW);
-    expect(result.value).toBe("UNKNOWN");
-    expect(result.reason).toContain("确认");
+    const unspecified = evaluateRequirement(req(undefined), profile, V61_NOW);
+    expect(unspecified.value).toBe("UNKNOWN");
+    const staged = evaluateRequirement(req(["master"]), profile, V61_NOW);
+    expect(staged.value).toBe("UNKNOWN");
+    expect(staged.reason).toContain("确认");
+  });
+
+  it("任一满足且另一阶段缺失：已命中阶段直接 PASS，不因另一阶段缺资料变 UNKNOWN", () => {
+    const profile = stagedProfile([
+      { id: "b", stage: "bachelor", majorFullName: "汉语言文学", teacherTraining: "yes", majorConfirmed: true, source: "user" },
+    ]);
+    const result = evaluateRequirement(req(["bachelor", "master"], "any"), profile, V61_NOW);
+    expect(result.value).toBe("PASS");
+    expect(result.adoptedEducation?.[0]?.stage).toBe("bachelor");
+  });
+
+  it("同时满足且其中一阶段缺失 → UNKNOWN（不是 FAIL）", () => {
+    const profile = stagedProfile([
+      { id: "b", stage: "bachelor", majorFullName: "汉语言文学", teacherTraining: "yes", majorConfirmed: true, source: "user" },
+    ]);
+    expect(evaluateRequirement(req(["bachelor", "master"], "all"), profile, V61_NOW).value).toBe("UNKNOWN");
+  });
+
+  it("本科专业符合、硕士专业不同：未明确阶段时采用本科结论", () => {
+    const profile = stagedProfile([
+      { id: "b", stage: "bachelor", majorFullName: "汉语言文学", teacherTraining: "yes", majorConfirmed: true, source: "user" },
+      { id: "m", stage: "master", majorFullName: "数学与应用数学", teacherTraining: "no", majorConfirmed: true, source: "user" },
+    ]);
+    const result = evaluateRequirement(req(["bachelor"]), profile, V61_NOW);
+    expect(result.value).toBe("PASS");
+    expect(result.reason).toContain("本科");
+  });
+});
+
+describe("R03 学位取得状态", () => {
+  const degreeReq = (extra?: {
+    acceptInProgress?: boolean;
+    obtainBy?: string;
+  }): Requirement => ({
+    id: "degree-req",
+    dimension: "degree",
+    description: "须取得学士及以上学位",
+    hard: true,
+    criterion: { kind: "degree", requiredDegree: "bachelor", ...extra },
+    evidence: {
+      id: "ev-degree",
+      locator: { kind: "url", url: "https://example.gov.cn/a" },
+      state: "official",
+      checkedAt: V61_NOW,
+    },
+  });
+
+  function degreeProfile(
+    degreeStatus: "none" | "in_progress" | "obtained",
+    graduationDate?: string,
+  ): UserRecruitmentProfile {
+    return {
+      ...V61_SEED_PROFILE,
+      degree: undefined,
+      educationExperiences: [
+        {
+          id: "edu-master",
+          stage: "master",
+          majorFullName: "汉语言文学",
+          status: "in_progress",
+          degree: "master",
+          degreeStatus,
+          teacherTraining: "no",
+          majorConfirmed: true,
+          source: "user",
+          ...(graduationDate ? { graduationDate } : {}),
+        },
+      ],
+    };
+  }
+
+  it("已取得学位 → PASS；在读且公告未说明 → MANUAL_REVIEW；无学位 → FAIL", () => {
+    expect(evaluateRequirement(degreeReq(), degreeProfile("obtained"), V61_NOW).value).toBe("PASS");
+    expect(evaluateRequirement(degreeReq(), degreeProfile("in_progress"), V61_NOW).value).toBe(
+      "MANUAL_REVIEW",
+    );
+    expect(evaluateRequirement(degreeReq(), degreeProfile("none"), V61_NOW).value).toBe("FAIL");
+  });
+
+  it("允许限期取得：期限内 PASS，超期 FAIL，缺预计毕业时间 UNKNOWN", () => {
+    const allowed = degreeReq({ acceptInProgress: true, obtainBy: "2026-12-31" });
+    expect(
+      evaluateRequirement(
+        allowed,
+        degreeProfile("in_progress", "2026-06-30"),
+        V61_NOW,
+      ).value,
+    ).toBe("PASS");
+    expect(
+      evaluateRequirement(
+        allowed,
+        degreeProfile("in_progress", "2027-06-30"),
+        V61_NOW,
+      ).value,
+    ).toBe("FAIL");
+    expect(evaluateRequirement(allowed, degreeProfile("in_progress"), V61_NOW).value).toBe(
+      "UNKNOWN",
+    );
+    // 公告要求已取得（未声明可限期）：在读不能按已取得处理
+    expect(evaluateRequirement(degreeReq(), degreeProfile("in_progress", "2026-06-30"), V61_NOW).value).toBe(
+      "MANUAL_REVIEW",
+    );
+  });
+
+  it("旧单一学位字段未填取得状态 → 按已声明判断并提示补充", () => {
+    const legacy: UserRecruitmentProfile = {
+      ...V61_SEED_PROFILE,
+      degree: "master",
+      educationExperiences: [],
+    };
+    const result = evaluateRequirement(degreeReq(), legacy, V61_NOW);
+    expect(result.value).toBe("PASS");
+    expect(result.reason).toContain("未填写取得状态");
   });
 });
 

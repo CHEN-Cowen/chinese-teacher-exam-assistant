@@ -141,7 +141,17 @@ export type DegreeCode = "none" | "bachelor" | "master" | "doctorate";
  */
 export type RequirementCriterion =
   | { kind: "education"; minLevel: CredentialLevel }
-  | { kind: "degree"; requiredDegree: Exclude<DegreeCode, "none"> }
+  | {
+      kind: "degree";
+      requiredDegree: Exclude<DegreeCode, "none">;
+      /**
+       * 公告原文明确允许在报名/入职前取得学位时置 true（R03）。
+       * 缺省=false：未取得（在读）不能当作已取得。
+       */
+      acceptInProgress?: boolean;
+      /** 公告明确给出的取得期限（ISO 日期）；未给出则不能自行假设 */
+      obtainBy?: string;
+    }
   | {
       kind: "major";
       /** 公告列出的可接受专业全称（归一化后精确匹配） */
@@ -154,8 +164,9 @@ export type RequirementCriterion =
        */
       ambiguous?: boolean;
       /**
-       * 公告明确指定的教育阶段（D03）。
-       * 缺省按最高学历阶段专业判断；多阶段可要求任一命中（any）或同时命中（all）。
+       * 公告明确指定的教育阶段（D03/R03）。
+       * 缺省：公告未明确阶段，不得自行按最高学历判不符合；
+       * 多阶段可要求任一命中（any）或同时命中（all）。
        */
       stages?: CredentialLevel[];
       stageMode?: "any" | "all";

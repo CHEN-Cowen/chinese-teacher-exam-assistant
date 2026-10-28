@@ -710,9 +710,9 @@ demo 通道 demoApi.submitCorrection/listMyCorrections（localStorage 按用户�
 | R01-5 | 旧客户端 PUT 删除新字段 | U01 | `profile.service.saveProfile` 整体替换 profile | 已修复 | 见下 |
 | R01-6 | 读取失败伪装成无画像 | U01 | `profileApi.getProfile` 失败返回 `null` | 已修复 | 见下 |
 | R02 | 真实发布只生成 majorNames | U02 | `catalog-payload-assembler.ts` `majorRequirement` 无 stages/stageMode | 已修复 | 见下 |
-| R03-1 | any 模式任一命中仍因他阶段缺失返回 UNKNOWN | U03 | `engine.ts` `missingStages.length>0` 先于命中判断 | 待修复 | |
-| R03-2 | 学位判断不区分取得状态 | U03 | `engine.ts` `case 'degree'` 只读 level | 待修复 | |
-| R03-3 | 未明确阶段时按最高学历直接判 FAIL | U03 | `engine.ts` `stages.length===0` 分支 | 待修复 | |
+| R03-1 | any 模式任一命中仍因他阶段缺失返回 UNKNOWN | U03 | `engine.ts` `missingStages.length>0` 先于命中判断 | 已修复 | 见下 |
+| R03-2 | 学位判断不区分取得状态 | U03 | `engine.ts` `case 'degree'` 只读 level | 已修复 | 见下 |
+| R03-3 | 未明确阶段时按最高学历直接判 FAIL | U03 | `engine.ts` `stages.length===0` 分支 | 已修复 | 见下 |
 | R04-1 | 以“历史键为空”判首次同步 → 永久漏报 | U07 | `organization-follow.domain.ts` `isFirstSync = ownKeys.size===0` | 待修复 | |
 | R04-2 | 先发通知后记去重、无事务 → 重复/漏发 | U07 | `opportunities.service.ts` `syncOrganizationFollows` | 待修复 | |
 | R05-1 | 无修正版本也可结案并称“已更正” | U08 | `reviewCorrection` `resolvedVersionId ?? row.resolvedVersionId` 仍发“已更正” | 待修复 | |
@@ -816,7 +816,50 @@ demo 通道 demoApi.submitCorrection/listMyCorrections（localStorage 按用户�
 边界：未明确阶段的**匹配语义**（阶段歧义不应直接判 FAIL）属 R03 修复范围，
 本轮只保证数据链路不猜测、不丢失。
 
+### R03 专业与学位判断（U03）
+
+问题核实（参考版本 `c4502d22`）：`engine.ts` 的 `case 'degree'` 只比较学历层级，
+不读取 `degreeStatus`（已取得/在读/无学位）；`case 'major'` 在 `stages.length===0`
+时按最高学历专业直接判 FAIL，且 `any` 模式先判缺失阶段再判命中，导致已命中仍返回 UNKNOWN。
+
+实现（前后端规则镜像，`src/lib/matching/domain.ts` 与 `backend/src/matching/engine.ts` 同步）：
+
+- 学位（`degree`）：
+  - 新增 `DegreeFact` 与 `degreeFacts(profile)`（`src/lib/profile/education.ts` 与
+    `backend/src/matching/education.ts`）：有分阶段经历时读取各段学位与取得状态；
+    无分阶段经历时回退旧单一字段（`degreeStatus` 缺省，按「已声明」处理，reason 提示补充）。
+  - 已取得且达标 → PASS；在读/待取得（`in_progress`）：
+    公告未声明接受在读 → MANUAL_REVIEW；声明接受但未给出期限 → MANUAL_REVIEW；
+    缺预计取得时间 → UNKNOWN；否则按 `obtainBy` 与预计取得时间比较 PASS/FAIL。
+  - 无学位 → FAIL；其余未达标 → FAIL。
+  - 标量类型新增 `acceptInProgress?`、`obtainBy?`（`backend/src/matching/types.ts`、
+    `src/lib/announcements/types.ts`）。
+- 专业（`major`）：
+  - `stages` 为空（公告未明确阶段）：任一**已确认阶段**经历命中即 PASS，并说明采用的阶段；
+    不命中且存在阶段待确认记录 → UNKNOWN；否则按歧义/未明确 → MANUAL_REVIEW，
+    **不再按最高学历直接判 FAIL**。
+  - 阶段待确认的迁移记录不再仅凭名称算命中（含新增回归用例）。
+  - 指定阶段：`any` 模式先判命中（任一阶段命中即 PASS，不因另一可选阶段缺资料变 UNKNOWN），
+    再判缺失（UNKNOWN）与待确认（UNKNOWN）；`all` 模式先判缺失/待确认（UNKNOWN），
+    全部命中才 PASS，任一段不符 → FAIL。
+  - 未确认阶段归属的迁移记录不作为指定阶段事实。
+
+验证证据：
+
+| 用例 | 命令 | 结果 |
+| --- | --- | --- |
+| 前端匹配/画像（含新增 R03 3 例） | `npx vitest run src/lib/matching src/lib/profile` | 5 文件 91 passed |
+| 后端 matching/profile（含新增 R03 2 例） | `cd backend && npx vitest run src/matching src/profile` | 6 文件 89 passed |
+| 类型/构建 | `npx tsc --noEmit`、`npm run build`、`cd backend && npx nest build` | 通过 |
+| lint | `npm run lint`（前端）、`cd backend && npm run lint` | 0 error（仅既有 scripts/风格 warning） |
+
+新增回归覆盖：公告未明确阶段时任一已填阶段命中即 PASS；均不命中 → MANUAL_REVIEW；
+迁移记录阶段待确认但名称恰好匹配 → UNKNOWN（前后端各 1 例）；
+`any` 模式任一满足且另一阶段缺失 → PASS；`all` 模式一阶段缺失 → UNKNOWN；
+学位已取得/在读/无学位、限期取得（期限内 PASS、超期 FAIL、缺时间 UNKNOWN）、
+旧单一字段未填取得状态按已声明判断；资格事实改变会重算、仅修改求职偏好不改变资格结论（前后端各 1 例）。
+
 ## 8. 恢复点
 
-当前：D00—D08 已完成并推送；D09 代码本地实现未提交；R00 台账已建立，R01、R02 已修复推送。
+当前：D00—D08 已完成并推送；D09 代码本地实现未提交；R00 台账已建立，R01、R02、R03 已修复推送。
 下一次中断后：从本节台账中第一个非「已修复」的 R 编号继续。

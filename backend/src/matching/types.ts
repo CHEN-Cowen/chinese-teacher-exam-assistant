@@ -114,16 +114,27 @@ export type DegreeCode = 'none' | 'bachelor' | 'master' | 'doctorate';
 
 export type RequirementCriterion =
   | { kind: 'education'; minLevel: CredentialLevel }
-  | { kind: 'degree'; requiredDegree: Exclude<DegreeCode, 'none'> }
+  | {
+      kind: 'degree';
+      requiredDegree: Exclude<DegreeCode, 'none'>;
+      /**
+       * 公告原文明确允许在报名/入职前取得学位时置 true（D03/R03）。
+       * 缺省=false：未取得（在读）不能当作已取得。
+       */
+      acceptInProgress?: boolean;
+      /** 公告明确给出的取得期限（ISO 日期）；未给出则不能自行假设 */
+      obtainBy?: string;
+    }
   | {
       kind: 'major';
       majorNames: string[];
       catalogGroups?: string[];
       /**
-       * 公告明确指定的教育阶段（D03）。
-       * - 缺省：按最高学历阶段专业判断；
+       * 公告明确指定的教育阶段（D03/R03）。
+       * - 缺省：公告未明确阶段——不得自行按最高学历判不符合，
+       *   命中任一阶段即 PASS，均不命中时转人工确认；
        * - 单阶段：只比对该阶段专业；
-       * - 多阶段 + stageMode=any：任一阶段命中即可；
+       * - 多阶段 + stageMode=any：任一阶段命中即可（另一阶段缺资料不判 UNKNOWN）；
        * - 多阶段 + stageMode=all：列出的阶段必须同时命中。
        */
       stages?: CredentialLevel[];

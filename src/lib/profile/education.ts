@@ -411,6 +411,53 @@ export function majorCandidates(
   ];
 }
 
+export interface DegreeFact {
+  degree: DegreeCode;
+  /** undefined = 未填写取得状态（旧画像/旧单一字段） */
+  degreeStatus?: NonNullable<EducationExperience["degreeStatus"]>;
+  /** null = 旧单一字段（无分阶段记录） */
+  experienceId: string | null;
+  stage?: EducationStage;
+  /** 该经历填写的（预计）毕业时间，用于“允许限期取得”的判断 */
+  graduationDate?: string;
+}
+
+/**
+ * 学位事实（R03）：逐经历保留取得状态，不把 none/in_progress/obtained 混为一谈。
+ * - 有分阶段记录：返回所有带 degree 的经历；
+ * - 无分阶段记录：回退旧单一字段（无取得状态，按已声明处理并提示补充）。
+ */
+export function degreeFacts(profile: UserRecruitmentProfile): DegreeFact[] {
+  const experiences = (profile.educationExperiences ?? [])
+    .map(normalizeEducationExperience)
+    .filter((experience): experience is EducationExperience => experience !== null);
+  const facts: DegreeFact[] = [];
+  for (const experience of experiences) {
+    if (!experience.degree) continue;
+    facts.push({
+      degree: experience.degree,
+      ...(experience.degreeStatus
+        ? { degreeStatus: experience.degreeStatus }
+        : {}),
+      experienceId: experience.id,
+      ...(experience.stage ? { stage: experience.stage } : {}),
+      ...(experience.graduationDate
+        ? { graduationDate: experience.graduationDate }
+        : {}),
+    });
+  }
+  if (facts.length === 0 && profile.degree) {
+    facts.push({
+      degree: profile.degree,
+      experienceId: null,
+      ...(profile.graduationDate
+        ? { graduationDate: profile.graduationDate }
+        : {}),
+    });
+  }
+  return facts;
+}
+
 export interface EducationFacts {
   /** 按阶段从高到低排序的经历 */
   experiences: EducationExperience[];
