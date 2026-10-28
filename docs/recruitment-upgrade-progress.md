@@ -65,7 +65,7 @@ D04（多原因空态与覆盖）覆盖。
 | D00 基线、诊断、进度机制 | U10 前置 | 已完成 | `e4e4767` | `target/codex/modular-development`，远端 SHA 一致 | 本地自检通过，待 D10 统一核对远端 CI |
 | D01 教育经历模型与兼容迁移 | U01 | 已完成 | `54262e9` | `target/codex/modular-development`，远端 SHA 一致 | 本地 lint/test/build 通过；远端 CI 待 D10 核对 |
 | D02 我的资料与分阶段填写 | U01、U05 | 已完成 | `54262e9` | 同上 | 浏览器核心路径通过；375px 响应式未在浏览器工具内验证 |
-| D03 资格与偏好、阶段匹配 | U02、U03 | 已完成 | 见本节 D03 记录 | `target/codex/modular-development`，远端 SHA 一致 | 本地 lint/test/build 与浏览器详情验证通过；远端 CI 待 D10 核对 |
+| D03 资格与偏好、阶段匹配 | U02、U03 | 已完成 | `1a0671e` | `target/codex/modular-development`，远端 SHA 一致 | 本地 lint/test/build 与浏览器详情验证通过；远端 CI 待 D10 核对 |
 | D04 结果解释、无结果与影响预览 | U03、U04 | 未开始 | | | |
 | D05 定向补充与保存后反馈 | U05 | 未开始 | | | |
 | D06 往年参考目录与详情 | U06 | 未开始 | | | |
