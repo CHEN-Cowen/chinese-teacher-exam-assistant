@@ -119,6 +119,15 @@ export type RequirementCriterion =
       kind: 'major';
       majorNames: string[];
       catalogGroups?: string[];
+      /**
+       * 公告明确指定的教育阶段（D03）。
+       * - 缺省：按最高学历阶段专业判断；
+       * - 单阶段：只比对该阶段专业；
+       * - 多阶段 + stageMode=any：任一阶段命中即可；
+       * - 多阶段 + stageMode=all：列出的阶段必须同时命中。
+       */
+      stages?: CredentialLevel[];
+      stageMode?: 'any' | 'all';
       /** 目录表述存在解释空间（“相关专业”等），精确不中时转人工确认 */
       ambiguous?: boolean;
     }
@@ -128,6 +137,8 @@ export type RequirementCriterion =
       subject: SubjectCode;
       stage: StageCode;
       acceptInProgress: boolean;
+      /** 公告原文明确允许高学段教师资格报考低学段岗位（D03） */
+      acceptHigherStage?: boolean;
     }
   | { kind: 'age'; maxAgeYears: number; referenceDate?: string }
   | { kind: 'hukou'; allowedRegionCodes: string[]; label: string }
@@ -402,12 +413,24 @@ export type OpportunityMatchStatus =
   | 'manual_review'
   | 'not_eligible';
 
+export interface AdoptedEducationRef {
+  experienceId: string;
+  stage?: CredentialLevel;
+  majorFullName: string;
+}
+
 export interface MatchDimensionResult {
   requirementId: string;
   dimension: RequirementDimension;
   value: MatchValue;
   reason: string;
   hard: boolean;
+  /** 用户事实摘要（不收集证件内容），用于解释“采用了哪条资料” */
+  userFact?: string;
+  /** 专业条件实际采用的教育经历（可多段） */
+  adoptedEducation?: AdoptedEducationRef[];
+  /** 该条件下一步动作（补充/确认/无需操作） */
+  nextStep?: string;
 }
 
 export type GateCode =
@@ -434,6 +457,11 @@ export interface OpportunityMatchResult {
   gates: GateResult[];
   dimensions: MatchDimensionResult[];
   overall: OpportunityMatchStatus;
+  /**
+   * 资格初步符合，但岗位不在“必须接受”的地区范围内（D03）。
+   * 这是偏好范围外，不是资格不符合；不进入有效机会计数。
+   */
+  preferenceOutOfScope?: boolean;
   summary: string;
 }
 

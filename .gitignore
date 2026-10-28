@@ -64,6 +64,11 @@ next-env.d.ts
 /.merge-primary-repo/
 /.trae/
 
+# 本地抓取/探针临时产物
+/.tmp-probe/
+/.workbuddy/
+/outputs/
+
 # ===== 嵌套 frontend 子目录构建副本（主工程在根目录，子目录是误入的构建产物）=====
 /frontend/
 

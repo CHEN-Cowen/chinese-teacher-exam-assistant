@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { AnnouncementVersion, ApplicationUnit, RecruitmentAnnouncement, Requirement } from "@/lib/announcements/types";
-import type { UserRecruitmentProfile } from "@/lib/profile/types";
+import type {
+  EducationExperience,
+  UserRecruitmentProfile,
+} from "@/lib/profile/types";
 import {
   buildCandidates,
   evaluateAnnouncement,
@@ -164,6 +167,145 @@ describe("缺失信息永远不是不符合（回归）", () => {
       V61_NOW,
     );
     expect(match.overall).not.toBe("not_eligible");
+  });
+});
+
+describe("D03 资格与求职偏好分离", () => {
+  const jiangsuOnly: UserRecruitmentProfile = {
+    ...V61_SEED_PROFILE,
+    regions: [{ code: "320000", province: "江苏省", level: "required" }],
+  };
+
+  it("浙江岗位资格初步符合但地区不在必须接受范围 → preferenceOutOfScope，不计有效机会", () => {
+    const candidate = buildCandidates(V61_SEED_ANNOUNCEMENTS, jiangsuOnly, V61_NOW).find(
+      (c) => c.announcement.id === V61_SCENARIO_IDS.eligible,
+    )!;
+    const region = candidate.match.dimensions.find((d) => d.dimension === "region");
+    expect(region?.value).toBe("FAIL");
+    expect(region?.hard).toBe(false);
+    expect(candidate.match.overall).toBe("preliminary_eligible");
+    expect(candidate.match.preferenceOutOfScope).toBe(true);
+    expect(isValidOpportunity(candidate.match)).toBe(false);
+  });
+
+  it("只有“可考虑/优先”地区时不排除岗位", () => {
+    const profile: UserRecruitmentProfile = {
+      ...V61_SEED_PROFILE,
+      regions: [{ code: "340000", province: "安徽省", level: "preferred" }],
+    };
+    const candidate = buildCandidates(V61_SEED_ANNOUNCEMENTS, profile, V61_NOW).find(
+      (c) => c.announcement.id === V61_SCENARIO_IDS.eligible,
+    )!;
+    expect(candidate.match.dimensions.find((d) => d.dimension === "region")?.value).toBe("PASS");
+    expect(candidate.match.preferenceOutOfScope).toBeUndefined();
+    expect(isValidOpportunity(candidate.match)).toBe(true);
+  });
+
+  it("资格硬性不符合时不做偏好范围外标记（仍为明确不符合）", () => {
+    const profile: UserRecruitmentProfile = {
+      ...V61_SEED_PROFILE,
+      regions: [{ code: "110000", province: "北京市", level: "required" }],
+    };
+    const candidate = buildCandidates(V61_SEED_ANNOUNCEMENTS, profile, V61_NOW).find(
+      (c) => c.announcement.id === V61_SCENARIO_IDS.educationFail,
+    )!;
+    expect(candidate.match.overall).toBe("not_eligible");
+    expect(candidate.match.preferenceOutOfScope).toBeUndefined();
+  });
+
+  it("每个条件维度都带下一步动作，地区维度说明是偏好约束", () => {
+    const { match } = candidateFor(V61_SCENARIO_IDS.eligible);
+    expect(match.dimensions.every((d) => (d.nextStep ?? "").length > 0)).toBe(true);
+    const region = match.dimensions.find((d) => d.dimension === "region");
+    expect(region?.nextStep).toContain("偏好");
+    expect(region?.userFact).toContain("必须接受");
+  });
+});
+
+describe("D03 分阶段专业匹配", () => {
+  function stagedProfile(
+    experiences: EducationExperience[],
+  ): UserRecruitmentProfile {
+    return {
+      ...V61_SEED_PROFILE,
+      majorFullName: undefined,
+      educationExperiences: experiences,
+    };
+  }
+
+  const req = (
+    stages?: NonNullable<EducationExperience["stage"]>[],
+    mode?: "any" | "all",
+  ): Requirement => ({
+    id: "major-staged",
+    dimension: "major",
+    description: "公告要求的专业范围",
+    hard: true,
+    criterion: {
+      kind: "major",
+      majorNames: ["汉语言文学"],
+      ...(stages ? { stages } : {}),
+      ...(mode ? { stageMode: mode } : {}),
+    },
+    evidence: {
+      id: "ev-major-staged",
+      locator: { kind: "url", url: "https://example.gov.cn/a" },
+      state: "official",
+      checkedAt: V61_NOW,
+    },
+  });
+
+  it("公告指定本科时只看本科专业，并返回采用的经历", () => {
+    const profile = stagedProfile([
+      { id: "b", stage: "bachelor", majorFullName: "汉语言文学", teacherTraining: "yes", majorConfirmed: true, source: "user" },
+      { id: "m", stage: "master", majorFullName: "学科教学（语文）", teacherTraining: "no", majorConfirmed: true, source: "user" },
+    ]);
+    const result = evaluateRequirement(req(["bachelor"]), profile, V61_NOW);
+    expect(result.value).toBe("PASS");
+    expect(result.adoptedEducation?.[0]?.experienceId).toBe("b");
+    expect(result.reason).toContain("本科");
+  });
+
+  it("公告要求本硕同时满足时，任一阶段不符 → FAIL", () => {
+    const profile = stagedProfile([
+      { id: "b", stage: "bachelor", majorFullName: "汉语言文学", teacherTraining: "yes", majorConfirmed: true, source: "user" },
+      { id: "m", stage: "master", majorFullName: "学科教学（语文）", teacherTraining: "no", majorConfirmed: true, source: "user" },
+    ]);
+    expect(evaluateRequirement(req(["bachelor", "master"], "all"), profile, V61_NOW).value).toBe("FAIL");
+  });
+
+  it("公告未指定阶段时按最高学历阶段专业判断", () => {
+    const profile = stagedProfile([
+      { id: "b", stage: "bachelor", majorFullName: "汉语言文学", teacherTraining: "yes", majorConfirmed: true, source: "user" },
+      { id: "m", stage: "master", majorFullName: "学科教学（语文）", teacherTraining: "no", majorConfirmed: true, source: "user" },
+    ]);
+    const result = evaluateRequirement(req(undefined), profile, V61_NOW);
+    expect(result.value).toBe("FAIL");
+    expect(result.adoptedEducation?.[0]?.stage).toBe("master");
+  });
+
+  it("公告要求某阶段专业但用户缺该阶段经历 → UNKNOWN", () => {
+    const profile = stagedProfile([
+      { id: "b", stage: "bachelor", majorFullName: "汉语言文学", teacherTraining: "yes", majorConfirmed: true, source: "user" },
+    ]);
+    expect(evaluateRequirement(req(["master"]), profile, V61_NOW).value).toBe("UNKNOWN");
+  });
+
+  it("迁移记录阶段未确认且专业未命中 → UNKNOWN，不判 FAIL", () => {
+    const profile = stagedProfile([
+      {
+        id: "legacy-education",
+        stage: "master",
+        majorFullName: "中文教育",
+        teacherTraining: "unknown",
+        majorConfirmed: false,
+        source: "legacy",
+        stageNeedsConfirmation: true,
+      },
+    ]);
+    const result = evaluateRequirement(req(undefined), profile, V61_NOW);
+    expect(result.value).toBe("UNKNOWN");
+    expect(result.reason).toContain("确认");
   });
 });
 

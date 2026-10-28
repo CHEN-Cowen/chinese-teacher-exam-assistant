@@ -153,6 +153,12 @@ export type RequirementCriterion =
        * 精确匹配不中时不得自动判定，转人工确认。
        */
       ambiguous?: boolean;
+      /**
+       * 公告明确指定的教育阶段（D03）。
+       * 缺省按最高学历阶段专业判断；多阶段可要求任一命中（any）或同时命中（all）。
+       */
+      stages?: CredentialLevel[];
+      stageMode?: "any" | "all";
     }
   | { kind: "graduate_status"; requireFresh: boolean }
   | {
@@ -161,6 +167,8 @@ export type RequirementCriterion =
       stage: StageCode;
       /** 是否接受“已通过考试、领证中”的在途状态 */
       acceptInProgress: boolean;
+      /** 公告原文明确允许高学段教师资格报考低学段岗位（D03） */
+      acceptHigherStage?: boolean;
     }
   | { kind: "age"; maxAgeYears: number; referenceDate?: string }
   | { kind: "hukou"; allowedRegionCodes: string[]; label: string }

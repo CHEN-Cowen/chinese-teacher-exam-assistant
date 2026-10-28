@@ -65,7 +65,7 @@ D04（多原因空态与覆盖）覆盖。
 | D00 基线、诊断、进度机制 | U10 前置 | 已完成 | `e4e4767` | `target/codex/modular-development`，远端 SHA 一致 | 本地自检通过，待 D10 统一核对远端 CI |
 | D01 教育经历模型与兼容迁移 | U01 | 已完成 | `54262e9` | `target/codex/modular-development`，远端 SHA 一致 | 本地 lint/test/build 通过；远端 CI 待 D10 核对 |
 | D02 我的资料与分阶段填写 | U01、U05 | 已完成 | `54262e9` | 同上 | 浏览器核心路径通过；375px 响应式未在浏览器工具内验证 |
-| D03 资格与偏好、阶段匹配 | U02、U03 | 未开始 | | | |
+| D03 资格与偏好、阶段匹配 | U02、U03 | 已完成 | 见本节 D03 记录 | `target/codex/modular-development`，远端 SHA 一致 | 本地 lint/test/build 与浏览器详情验证通过；远端 CI 待 D10 核对 |
 | D04 结果解释、无结果与影响预览 | U03、U04 | 未开始 | | | |
 | D05 定向补充与保存后反馈 | U05 | 未开始 | | | |
 | D06 往年参考目录与详情 | U06 | 未开始 | | | |
@@ -111,6 +111,45 @@ D04（多原因空态与覆盖）覆盖。
   D10 若仍无本地数据库，将如实记录为未验证项。
 - 浏览器工具无法调整到 375px 视口，移动端布局仅由 CSS 栅格与构建检查覆盖，未做真机截图。
 - `src/app/onboarding/page.tsx` 的用户未提交修改未纳入本提交。
+
+### D03 资格与偏好、阶段匹配与逐条件解释
+
+实现：
+
+- 资格与偏好分离（前后端 `matching` 同口径）：地区维度仅 `required` 构成范围限制，
+  `preferred/consider` 只影响排序且 `hard:false`；新增 `preferenceOutOfScope` 标记
+  （地区 FAIL 且无硬性资格 FAIL 时），`isValidOpportunity` 将其排除出有效机会，
+  列表/IA 视图归入“偏好范围外”分组，不计入“明确不符合”；旧数据 region-only
+  not_eligible 仍兼容归入范围外。
+- 分阶段专业匹配：`major` 条件支持未指定阶段（取最高阶段）、指定阶段、
+  `stageMode:any/all`；命中返回 `adoptedEducation`（经历 id/阶段/专业原文）；
+  迁移未确认阶段归属的经历参与匹配但结果受限为 UNKNOWN，不判 FAIL。
+- 逐条件解释：每个维度返回 `userFact`（你的情况）、`adoptedEducation`（采用经历）、
+  `nextStep`（下一步动作）；详情页条件行分“公告怎么写（官方事实）/根据你填写的报考
+  信息判断”两栏，地区行明确“偏好不是公告条件”；`teacher_cert` 仅在公告
+  `acceptHigherStage` 时按高学段放宽。
+- 画像教育事实补充 `graduationDate`（最高阶段毕业时间，旧字段兜底），应届判断改用
+  分阶段事实。
+- `.gitignore`/`eslint.config.mjs` 补充忽略 `.tmp-probe/`、`.workbuddy/`、`outputs/`
+  本地临时产物（既有非源码目录导致 lint 误报，属工具链修正）。
+
+命令与结果：
+
+| 命令 | 结果 |
+| --- | --- |
+| `cd backend && npx vitest run src/matching` | 58 通过（含阶段匹配三口径、偏好分离、nextStep、迁移未确认 UNKNOWN） |
+| `npx vitest run src/lib/matching src/lib/opportunities src/lib/ia src/lib/guest` | 25 文件 302 通过（domain.test 28 含 D03 两组新用例） |
+| `npx tsc --noEmit` | 通过（修复 stages 类型与 EducationFacts.graduationDate 两处错误后） |
+| `npm run lint` | 0 error / 2 warning（scripts 下既有未使用变量，非本轮文件） |
+| `cd backend && npm run lint` | 0 error / 8 warning（unicorn/no-useless-spread 风格警告，非阻断） |
+| `npm run build` | 通过（28 页静态生成 + postbuild 外部依赖检查通过） |
+| 浏览器（localhost:3100，生产构建，注入完整访客画像） | /opportunities 列表可达；unit-hangzhou-01 详情含“公告怎么写（官方事实）/根据你填写的报考信息判断”两栏、“你的情况：/下一步：”解释、地区行偏好说明；console 无业务 error，无 4xx/5xx |
+
+边界与未验证：
+
+- 移动端 375px 视口浏览器工具不支持，仅 CSS 栅格与构建覆盖。
+- 真实 PostgreSQL 迁移验证本机无 Docker，仍未执行（本轮无表结构变更）。
+- 用户未提交的 `src/app/onboarding/page.tsx` 等既有修改未纳入本提交。
 
 ## 5. 需求到验收点映射（开始实现前写清）
 
@@ -191,5 +230,5 @@ D04（多原因空态与覆盖）覆盖。
 
 ## 6. 恢复点
 
-当前：D01、D02 已完成并推送。下一步：D03 资格与偏好分离、阶段匹配与逐条件解释。
+当前：D00—D03 已完成并推送。下一步：D04 结果解释、无结果与影响预览。
 任何中断后从“模块状态”中第一个非“已完成”模块继续，不重复已验收模块。

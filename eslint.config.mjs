@@ -23,6 +23,10 @@ const eslintConfig = defineConfig([
     ".legacy-git-metadata/**",
     ".merge-primary-repo/**",
     ".trae/**",
+    // 本地抓取/探针临时产物（非源码，见 .gitignore）
+    ".tmp-probe/**",
+    ".workbuddy/**",
+    "outputs/**",
   ]),
 ]);
 

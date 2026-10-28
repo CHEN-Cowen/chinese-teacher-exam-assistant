@@ -90,6 +90,16 @@ export interface DimensionDTO {
   hard: boolean;
   requirementDescription?: string;
   evidence?: EvidenceAnchorDTO;
+  /** 用户事实摘要（采用哪条资料/哪一阶段） */
+  userFact?: string;
+  /** 专业条件实际采用的教育经历 */
+  adoptedEducation?: {
+    experienceId: string;
+    stage?: string;
+    majorFullName: string;
+  }[];
+  /** 该条件下一步动作 */
+  nextStep?: string;
 }
 
 export interface FollowStatusEventDTO {
@@ -203,6 +213,8 @@ export interface UnitMatchDTO {
   gates: GateDTO[];
   dimensions: DimensionDTO[];
   overall: OpportunityMatchStatus;
+  /** 资格初步符合但不在“必须接受”的地区范围内（偏好范围外，不是不符合） */
+  preferenceOutOfScope?: boolean;
   summary: string;
   follow: FollowDTO | null;
   /** 需官方确认维度的咨询问题模板 */

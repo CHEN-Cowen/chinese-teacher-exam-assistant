@@ -376,6 +376,41 @@ export function confirmLegacyStage(
   };
 }
 
+export interface MajorCandidate {
+  experienceId: string | null;
+  stage?: EducationStage;
+  majorFullName: string;
+  /** 迁移记录阶段归属未确认 */
+  stageUnconfirmed: boolean;
+}
+
+/**
+ * 专业条件可比较的候选专业（D03）。
+ * - 有分阶段记录：返回全部记录（公告可能只要求某一阶段）；
+ * - 无记录：返回旧单一字段（阶段未知）。
+ */
+export function majorCandidates(
+  profile: UserRecruitmentProfile,
+): MajorCandidate[] {
+  const facts = resolveEducationFacts(profile);
+  if (facts.experiences.length > 0) {
+    return facts.experiences.map((item) => ({
+      experienceId: item.id,
+      ...(item.stage ? { stage: item.stage } : {}),
+      majorFullName: item.majorFullName,
+      stageUnconfirmed: item.stageNeedsConfirmation === true,
+    }));
+  }
+  if (!profile.majorFullName?.trim()) return [];
+  return [
+    {
+      experienceId: null,
+      majorFullName: profile.majorFullName,
+      stageUnconfirmed: false,
+    },
+  ];
+}
+
 export interface EducationFacts {
   /** 按阶段从高到低排序的经历 */
   experiences: EducationExperience[];
@@ -384,6 +419,8 @@ export interface EducationFacts {
   /** 最高阶段对应的专业（公告未指定阶段时采用） */
   majorFullName?: string;
   degree?: DegreeCode;
+  /** 最高阶段对应的毕业时间（应届身份判断用；旧字段兜底） */
+  graduationDate?: string;
   /** 采用的经历 id；旧单一字段兜底时为 null */
   adoptedExperienceId: string | null;
   /** true=来自旧单一字段兜底（无分阶段记录） */
@@ -421,6 +458,7 @@ export function resolveEducationFacts(
       highestStage: highest.stage,
       majorFullName: highest.majorFullName || undefined,
       degree: highestDegree ?? profile.degree,
+      graduationDate: highest.graduationDate ?? profile.graduationDate,
       adoptedExperienceId: highest.id,
       fromLegacyFields: false,
       hasUnconfirmedLegacy: ranked.some((item) => item.stageNeedsConfirmation),
@@ -431,6 +469,7 @@ export function resolveEducationFacts(
     highestStage: profile.educationLevel,
     majorFullName: profile.majorFullName,
     degree: profile.degree,
+    graduationDate: profile.graduationDate,
     adoptedExperienceId: null,
     fromLegacyFields: true,
     hasUnconfirmedLegacy: false,

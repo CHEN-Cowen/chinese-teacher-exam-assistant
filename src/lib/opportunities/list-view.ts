@@ -208,8 +208,14 @@ export function buildListViewModel(
   profile?: UserRecruitmentProfile,
 ): OpportunityListViewModel {
   const { groups, primaryTargetUnitId, meta, coverage } = response;
-  const preliminary = groups.preliminary.filter((unit) =>
-    isActionableRecommendation(unit, "preliminary_eligible"),
+  // D03：偏好范围外也是 preliminary_eligible，但不能进“初次符合”主列表或有效计数。
+  const preferenceOut = groups.preliminary.filter(
+    (unit) => unit.preferenceOutOfScope === true,
+  );
+  const preliminary = groups.preliminary.filter(
+    (unit) =>
+      unit.preferenceOutOfScope !== true &&
+      isActionableRecommendation(unit, "preliminary_eligible"),
   );
   const needInfoGroups = groups.needInfo
     .map((group) => {
@@ -242,7 +248,10 @@ export function buildListViewModel(
   const realMonitored: UnitMatchDTO[] = [];
   // 地区偏好不重叠与资格不符合分离（仅前端叙事拆分，后端分组结构不变）
   const visibleNotEligible = groups.notEligible.filter(isPublishedForUser);
-  const regionOutOfScope = visibleNotEligible.filter(isRegionOnlyMismatch);
+  const regionOutOfScope = [
+    ...preferenceOut.filter(isPublishedForUser),
+    ...visibleNotEligible.filter(isRegionOnlyMismatch),
+  ];
   const notEligible = visibleNotEligible.filter(
     (u) => !isRegionOnlyMismatch(u),
   );
@@ -255,7 +264,8 @@ export function buildListViewModel(
     needInfoCount === 0 &&
     manualReview.length === 0 &&
     visibleNotEligible.length === 0 &&
-    closed.length === 0;
+    closed.length === 0 &&
+    preferenceOut.length === 0;
 
   // v7.2 工作台三标签：对所有可见单元跑 classifyOpportunity 单一事实源分桶。
   // 收集顺序与后端分组顺序一致（preliminary → needInfo → manualReview → notEligible → closed），
@@ -281,6 +291,8 @@ export function buildListViewModel(
     conclusion = `还没有能直接判断的机会：补充 ${needInfoCount} 个机会缺失的信息后会重新判断`;
   } else if (manualReview.length > 0) {
     conclusion = `有 ${manualReview.length} 个机会的条件需要向招聘单位确认`;
+  } else if (preferenceOut.length > 0) {
+    conclusion = `有 ${preferenceOut.length} 个岗位资格初步符合，但不在你“必须接受”的地区范围内（偏好范围外，不是资格不符合）`;
   } else if (uncoveredRegions.length > 0) {
     conclusion = "你选择的地区当前暂未收录官方公告";
   } else {

@@ -225,25 +225,37 @@ export function buildOpportunitiesView(
   const invalid = sorted.filter((c) => !isValidOpportunity(c.match));
 
   const preliminary = valid.filter((c) => c.match.overall === "preliminary_eligible");
-  // 闸门通过但被 isValidOpportunity 剔除的候选：目前只有「未填地区 → region UNKNOWN」。
+  // 地区偏好不重叠与资格不符合分离（仅视图叙事，判定仍在 matching/domain.ts）。
+  // D03 起后端直接标记 preferenceOutOfScope；旧数据仍可能返回 not_eligible + 仅地区 FAIL。
+  const preferenceOut = sorted.filter(
+    (c) =>
+      c.match.preferenceOutOfScope === true &&
+      c.match.gates.every((g) => g.passed),
+  );
+  const regionOutOfScope = preferenceOut.map((c) => toRow(c, nowIso));
+  // 闸门通过但被 isValidOpportunity 剔除的候选：缺事实（UNKNOWN）或偏好范围外。
   // 缺事实 ≠ 不符合：overall 不是 not_eligible 的，必须归入「补充信息后判断」，
   // 只有 overall 明确为 not_eligible 的才进入「明确不符合」组。
   const gatePassedButInvalid = invalid.filter((c) => c.match.gates.every((g) => g.passed));
   const infoDeficit = gatePassedButInvalid.filter(
-    (c) => c.match.overall !== "not_eligible",
+    (c) => c.match.overall !== "not_eligible" && c.match.preferenceOutOfScope !== true,
   );
   const notEligibleAll = gatePassedButInvalid
     .filter((c) => c.match.overall === "not_eligible")
     .map((c) => toRow(c, nowIso));
-  // 地区偏好不重叠与资格不符合分离（仅视图叙事，判定仍在 matching/domain.ts）
   const isRegionOnlyMismatch = (c: OpportunityCandidate): boolean => {
     const fails = c.match.dimensions.filter((d) => d.value === "FAIL");
     return fails.length > 0 && fails.every((d) => d.dimension === "region");
   };
-  const regionMismatchCandidates = gatePassedButInvalid.filter(
-    (c) => c.match.overall === "not_eligible" && isRegionOnlyMismatch(c),
-  );
-  const regionOutOfScope = regionMismatchCandidates.map((c) => toRow(c, nowIso));
+  for (const candidate of gatePassedButInvalid) {
+    if (
+      candidate.match.overall === "not_eligible" &&
+      isRegionOnlyMismatch(candidate) &&
+      !preferenceOut.some((c) => c.unit.id === candidate.unit.id)
+    ) {
+      regionOutOfScope.push(toRow(candidate, nowIso));
+    }
+  }
   const notEligible = notEligibleAll.filter(
     (row) => !regionOutOfScope.some((r) => r.unitId === row.unitId),
   );

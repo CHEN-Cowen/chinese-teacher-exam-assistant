@@ -81,6 +81,16 @@ export interface DimensionDTO {
   /** 公告原文表述（地区维度为用户偏好约束，无公告原文） */
   requirementDescription?: string;
   evidence?: EvidenceAnchor;
+  /** 用户事实摘要：说明用了哪条资料/哪一阶段 */
+  userFact?: string;
+  /** 专业条件实际采用的教育经历 */
+  adoptedEducation?: {
+    experienceId: string;
+    stage?: string;
+    majorFullName: string;
+  }[];
+  /** 该条件下一步动作 */
+  nextStep?: string;
 }
 
 export interface UnitMatchDTO {
@@ -128,6 +138,8 @@ export interface UnitMatchDTO {
   gates: OpportunityCandidate['match']['gates'];
   dimensions: DimensionDTO[];
   overall: OpportunityCandidate['match']['overall'];
+  /** 资格初步符合但不在“必须接受”的地区范围内（偏好范围外，不是不符合） */
+  preferenceOutOfScope: boolean;
   summary: string;
   follow: FollowDTO | null;
   /** 需官方确认维度的咨询问题模板 */
@@ -294,6 +306,7 @@ export function toUnitMatchDTO(
     gates: match.gates,
     dimensions,
     overall: match.overall,
+    preferenceOutOfScope: match.preferenceOutOfScope === true,
     summary: match.summary,
     follow: follow ? toFollowDTO(follow, version.id) : null,
     consultationTemplates: buildConsultationTemplates(announcement, unit, dimensions),
