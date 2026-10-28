@@ -1,15 +1,15 @@
 /**
- * v7.0 用户端主导航（机会 / 日程 / 我的）。
+ * 用户端主导航（PRD 11.10 U09：四个主入口统一）。
  *
- * 不变量（PRD.md 用户流程与页面职责）：
- * - 主导航永远只有三个入口：机会 / 日程 / 我的；
- * - 个人画像、地区偏好、用工偏好、通知、隐私、纠错记录统一收入「我的」；
- * - 不设置独立「备考」主导航：备考能力仅在用户设置主要目标后，
- *   从目标上下文与「我的」次级入口进入；旧 /study 路由与数据保留；
+ * 不变量（PRD.md U09 与 dev D09）：
+ * - 四个主入口固定为：当年招聘 /opportunities、往年参考 /history、
+ *   我的关注 /follows、我的资料 /me；桌面与手机顺序一致；
+ * - 日程（/schedule、/applications）、材料、备考（/study）、设置等保留为
+ *   可达的次级入口（「我的资料」页与头像菜单），不进主导航、无主导航高亮；
  * - 高亮以新路由为准；旧路由 /exam /today /plan 经 src/proxy.ts 跳转，不参与高亮。
  */
 
-export type PrimaryNavId = "opportunities" | "schedule" | "me";
+export type PrimaryNavId = "opportunities" | "history" | "follows" | "me";
 
 export interface PrimaryNavItem {
   id: PrimaryNavId;
@@ -18,9 +18,10 @@ export interface PrimaryNavItem {
 }
 
 export const PRIMARY_NAV: readonly PrimaryNavItem[] = [
-  { id: "opportunities", href: "/opportunities", label: "机会" },
-  { id: "schedule", href: "/schedule", label: "日程" },
-  { id: "me", href: "/me", label: "我的" },
+  { id: "opportunities", href: "/opportunities", label: "当年招聘" },
+  { id: "history", href: "/history", label: "往年参考" },
+  { id: "follows", href: "/follows", label: "我的关注" },
+  { id: "me", href: "/me", label: "我的资料" },
 ] as const;
 
 /**
@@ -32,7 +33,7 @@ export function isNavActive(pathname: string, href: string): boolean {
   return pathname.startsWith(`${href}/`);
 }
 
-/** 当前命中的主导航项；未命中返回 null（设置、资料、备考等二级页面无高亮） */
+/** 当前命中的主导航项；未命中返回 null（设置、资料、备考、日程等二级页面无高亮） */
 export function activeNavId(pathname: string): PrimaryNavId | null {
   const hit = PRIMARY_NAV.find((item) => isNavActive(pathname, item.href));
   return hit ? hit.id : null;

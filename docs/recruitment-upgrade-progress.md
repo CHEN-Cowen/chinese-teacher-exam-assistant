@@ -717,7 +717,7 @@ demo 通道 demoApi.submitCorrection/listMyCorrections（localStorage 按用户�
 | R04-2 | 先发通知后记去重、无事务 → 重复/漏发 | U07 | `opportunities.service.ts` `syncOrganizationFollows` | 已修复 | 见下 |
 | R05-1 | 无修正版本也可结案并称“已更正” | U08 | `reviewCorrection` `resolvedVersionId ?? row.resolvedVersionId` 仍发“已更正” | 已修复 | 见下 |
 | R05-2 | 只校验同公告，不校验版本有效性与修正内容 | U08 | 同上，仅 `versions.some(v=>v.id===…)` | 已修复 | 见下 |
-| R06 | 历史详情无“关注单位”、筛选缺学历/专业、四入口与 D09 | U06/U09/U10 | `/history` 详情无关注入口；`/admin/pipeline` 无跨阶段总览 | 待修复 | |
+| R06 | 历史详情无“关注单位”、筛选缺学历/专业、四入口与 D09 | U06/U09/U10 | `/history` 详情无关注入口；`/admin/pipeline` 无跨阶段总览 | 已修复 | 见下 |
 | R07 | 超时用例、真实迁移、真浏览器流程 | U10 | 本机无 PostgreSQL/Docker；CI 历史结果仅作线索 | 待验 | |
 | R08 | 全项目验收与交付 | U01—U10 | 待前序完成 | 待开始 | |
 
@@ -936,7 +936,58 @@ demo 通道 demoApi.submitCorrection/listMyCorrections（localStorage 按用户�
 | 构建 / lint | `cd backend && npx nest build`、`npm run lint` | 通过 / 0 error（6 条既有 warning） |
 | 前端 | `npx tsc --noEmit`、`npm run lint` | 通过 / 0 error（2 条既有 scripts warning） |
 
+### R06 往年参考与四个主入口（U06 / U09 / U10，含 D09）
+
+问题核实（参考版本 `c4502d22`）：
+
+- `/history/[unitId]` 详情只有纠错入口，没有「关注该单位」的闭环，用户看到往年岗位
+  无法跟进该单位来年公告；
+- `/history` 只有批次年/地区/学段/用工性质/关键词五个筛选，缺学历与专业；
+  学历/专业是教招最常用的两类筛选；
+- D09 四项未落地：主导航仍是 v7.0 三入口（机会/日程/我的），`/history`、`/follows`
+  未进入主导航；`/admin/pipeline` 无跨阶段汇总；采集观察方法与模板缺失。
+
+实现：
+
+- 历史详情「关注单位」闭环：新增 `history-follow-organization` 区块，复用
+  `OrganizationFollowButton`（身份键 = 发布主体名 + 公告级地区码）并给出
+  「查看已关注单位」链接；文案明确本页不提供报名、不计入当前可报名机会，
+  历史禁报名的定位不变。
+- 学历/专业结构化筛选（前后端同口径）：
+  - `HistoryFiltersInput` 新增 `educationLevel`、`major`；学历按岗位**最低学历精确匹配**
+    （不把本科可报的硕士岗混进本科筛选），专业复用匹配引擎的 `normalizeMajor`
+    归一化口径（全半角/空白差异不误伤）；
+  - `parseHistoryQuery` 校验取值，非法值 400 并给出可读原因；
+  - 响应新增 `educationLevels`、`availableMajors`，**只来自真实历史数据**，
+    不预置空项；`total` 为筛选后的真实结果数，与分页一致；
+  - `/history` 页新增两个下拉，前端 demoApi 与后端返回结构一致。
+- 四入口与 D09：
+  - `PRIMARY_NAV` 改为 当年招聘 / 往年参考 / 我的关注 / 我的资料，桌面
+    `DesktopNav`、移动 `BottomNav`、登录后 `Sidebar` 共享同一常量与顺序；
+    日程/备考/学习资料/设置保留为次级入口与旧链接（`/exam`、`/today`、`/plan`
+    经 `src/proxy.ts` 仍可达）；
+  - 后端新增 `GET /announcements/admin/pipeline-summary`（AdminGuard），返回来源、
+    快照、解析、提取、发布各阶段真实持久化计数与统计时间；前端 `/admin/pipeline`
+    顶部 `PipelineSummaryCard` 展示，加载失败显示错误态不编造数字；
+  - 新增 `docs/source-observation-template.md` 作为连续采集观察记录模板；
+    7 天真实观察仍未执行，保持待验（与 PRD 5 一致）。
+
+验证证据：
+
+| 用例 | 命令 | 结果 |
+| --- | --- | --- |
+| 往年筛选与分页（新增学历/专业/真实 total 3 例） | `npx vitest run src/lib/history` | 21 passed |
+| 后端往年筛选（新增 3 例 + 2 例参数解析） | `cd backend && npx vitest run src/opportunities/history.spec.ts` | 33 passed |
+| 主导航与移动一致 | `npx vitest run src/lib/ia src/components/layout` | 6 文件 51 passed |
+| 机会库（demoApi/详情/关注） | `npx vitest run src/lib/opportunities` | 18 文件 200 passed |
+| 后端公告链路（含 D09 汇总接口） | `cd backend && npx vitest run src/announcements` | 22 文件 294 passed |
+| 构建 / 类型 / lint | `npm run build`、`npx tsc --noEmit`、`cd backend && npx nest build`、两侧 `npm run lint` | 通过 / 0 error（仅既有 warning） |
+
+未完成与边界：D09 连续 7 天真实采集观察未执行（需真实运行环境，保持待验）；
+导航响应式以 CSS 与构建覆盖，任意视口真机复测留 R07/R08 浏览器验证；
+`/admin/pipeline` 汇总卡需要后端运行与管理员账号，浏览器验证留 R07。
+
 ## 8. 恢复点
 
-当前：D00—D08 已完成并推送；D09 代码本地实现未提交；R00 台账已建立，R01—R05 已修复推送。
+当前：D00—D08 已完成并推送；D09 随 R06 收口推送；R00 台账已建立，R01—R06 已修复推送。
 下一次中断后：从本节台账中第一个非「已修复」的 R 编号继续。

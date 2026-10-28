@@ -12,9 +12,9 @@ import { PRIMARY_NAV, isNavActive } from "@/lib/ia/nav";
 import { NavIcon } from "./navIcons";
 import { BrandMark } from "./BrandMark";
 
-// v7.0：主导航只有 机会 / 日程 / 我的；
-// 备考为次级入口（已设主要目标后从「我的」与目标上下文进入）；
-// 设置、资料、通知、账号进入头像菜单或「我的」页面，不在主导航中。
+// U09：主导航为 当年招聘 / 往年参考 / 我的关注 / 我的资料 四个入口；
+// 日程、备考为次级入口（从「我的资料」页与目标上下文进入）；
+// 设置、资料、通知、账号进入头像菜单或「我的资料」页面，不在主导航中。
 //
 // v6.1 模块 0A：移除常驻大型目标卡（核心方案 §3.7：桌面端移除宽侧栏中常驻的目标卡）；
 // 用 BrandMark 替代 📝 Emoji Logo；侧栏收窄到 w-56，颜色切品牌墨蓝；
@@ -129,7 +129,7 @@ export function Sidebar() {
                     onClick={() => setMenuOpen(false)}
                     className="flex items-center gap-2 px-3 py-2 text-sm text-ink hover:bg-canvas"
                   >
-                    <span aria-hidden="true">📚</span> 我的资料
+                    <span aria-hidden="true">📚</span> 学习资料
                   </Link>
                   <button
                     type="button"

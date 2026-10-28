@@ -11,6 +11,7 @@ import {
   collectHistoricalUnits,
   filterHistoricalUnits,
   availableBatchYears,
+  availableHistoryFilters,
   historySampleNote,
   paginate,
 } from "@/lib/history/domain";
@@ -699,6 +700,7 @@ export const demoOpportunitiesApi = {
       filters.pageSize ?? 20,
     );
     const years = availableBatchYears(all);
+    const options = availableHistoryFilters(all);
     return {
       meta: {
         ruleVersion: "demo-frontend-matching-1",
@@ -710,6 +712,8 @@ export const demoOpportunitiesApi = {
       sampleNote: historySampleNote(years, all.length),
       years,
       availableRegions: availableHistoryRegions(all),
+      educationLevels: options.educationLevels,
+      availableMajors: options.majors,
       total: page.total,
       page: page.page,
       pageSize: page.pageSize,

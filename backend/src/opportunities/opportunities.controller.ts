@@ -47,6 +47,8 @@ export class OpportunitiesController {
     @Query('stage') stage?: string,
     @Query('nature') nature?: string,
     @Query('keyword') keyword?: string,
+    @Query('educationLevel') educationLevel?: string,
+    @Query('major') major?: string,
     @Query('page') page?: string,
     @Query('pageSize') pageSize?: string,
   ) {
@@ -56,6 +58,8 @@ export class OpportunitiesController {
       stage,
       nature,
       keyword,
+      educationLevel,
+      major,
       page,
       pageSize,
     });

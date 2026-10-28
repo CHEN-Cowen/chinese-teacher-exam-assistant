@@ -401,6 +401,80 @@ export class AnnouncementsService {
     });
   }
 
+  // ==================== 管理员：跨阶段流水线汇总（D09 / U10） ====================
+
+  /**
+   * 采集管线各阶段真实持久化计数，供 /admin/pipeline 总览卡展示。
+   * 只统计数据库事实，不做任何推断；调用方以 generatedAt 标注统计时间。
+   * 「来源异常（覆盖缺口）」与「检查正常但无新增」由前端按健康状态分布区分。
+   */
+  async pipelineSummary() {
+    const now = new Date();
+    const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const [
+      sourcesTotal,
+      sourceHealthGroups,
+      lastSourceSuccess,
+      snapshotsTotal,
+      snapshotsLast24h,
+      parseStatusGroups,
+      extractionStatusGroups,
+      publishedGroups,
+      lastPublished,
+    ] = await Promise.all([
+      this.prisma.source.count(),
+      this.prisma.source.groupBy({ by: ['healthStatus'], _count: true }),
+      this.prisma.source.findFirst({
+        where: { lastSuccessAt: { not: null } },
+        orderBy: { lastSuccessAt: 'desc' },
+        select: { lastSuccessAt: true },
+      }),
+      this.prisma.sourceSnapshot.count(),
+      this.prisma.sourceSnapshot.count({ where: { createdAt: { gte: dayAgo } } }),
+      this.prisma.documentParseRun.groupBy({ by: ['status'], _count: true }),
+      this.prisma.extractionRun.groupBy({ by: ['status'], _count: true }),
+      this.prisma.publishedAnnouncementVersion.groupBy({
+        by: ['status'],
+        _count: true,
+      }),
+      this.prisma.publishedAnnouncementVersion.findFirst({
+        orderBy: { publishedAt: 'desc' },
+        select: { publishedAt: true },
+      }),
+    ]);
+    const groupCounts = (
+      rows: Array<{ status?: string; healthStatus?: string; _count: number | { [key: string]: number } }>,
+      key: 'status' | 'healthStatus',
+    ): Record<string, number> => {
+      const out: Record<string, number> = {};
+      for (const row of rows) {
+        const raw = row[key];
+        const count = row._count;
+        out[String(raw)] = typeof count === 'number' ? count : (count._all ?? 0);
+      }
+      return out;
+    };
+    return {
+      generatedAt: now.toISOString(),
+      sources: {
+        total: sourcesTotal,
+        byHealthStatus: groupCounts(sourceHealthGroups, 'healthStatus'),
+        lastSuccessAt: lastSourceSuccess?.lastSuccessAt?.toISOString() ?? null,
+      },
+      snapshots: { total: snapshotsTotal, last24h: snapshotsLast24h },
+      parseRuns: {
+        byStatus: groupCounts(parseStatusGroups, 'status'),
+      },
+      extractionRuns: {
+        byStatus: groupCounts(extractionStatusGroups, 'status'),
+      },
+      publishedVersions: {
+        byStatus: groupCounts(publishedGroups, 'status'),
+        lastPublishedAt: lastPublished?.publishedAt?.toISOString() ?? null,
+      },
+    };
+  }
+
   // ==================== 3.1 M2：期望清单（固定分母）构建与冻结 ====================
 
   /**

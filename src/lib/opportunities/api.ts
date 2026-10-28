@@ -303,6 +303,8 @@ export const opportunitiesApi = {
     if (filters.stage) params.set("stage", filters.stage);
     if (filters.nature) params.set("nature", filters.nature);
     if (filters.keyword) params.set("keyword", filters.keyword);
+    if (filters.educationLevel) params.set("educationLevel", filters.educationLevel);
+    if (filters.major) params.set("major", filters.major);
     if (filters.page !== undefined) params.set("page", String(filters.page));
     if (filters.pageSize !== undefined) params.set("pageSize", String(filters.pageSize));
     const qs = params.toString();

@@ -273,6 +273,84 @@ describe('往年参考：筛选与分页', () => {
     ).toBe(0);
   });
 
+  it('按岗位最低学历与专业范围筛选，选项来自真实数据（R06）', () => {
+    const withMajor = makeAnnouncement({
+      id: 'major-master',
+      timeline: { registrationStart: '2024-03-01', registrationEnd: '2024-03-10' },
+      unitOverrides: {
+        id: 'major-master-u1',
+        requirements: [
+          {
+            id: 'major-master-edu',
+            dimension: 'education',
+            description: '硕士及以上学历',
+            hard: true,
+            criterion: { kind: 'education', minLevel: 'master' },
+            evidence: {
+              id: 'major-master-edu-ev',
+              locator: {
+                kind: 'excerpt',
+                excerpt: '具有硕士研究生及以上学历',
+              },
+              state: 'official',
+              checkedAt: '2024-03-01T00:00:00.000Z',
+            },
+          },
+          {
+            id: 'major-master-major',
+            dimension: 'major',
+            description: '汉语言文学及相关专业',
+            hard: true,
+            criterion: { kind: 'major', majorNames: ['汉语言文学', '学科教学（语文）'] },
+            evidence: {
+              id: 'major-master-major-ev',
+              locator: { kind: 'excerpt', excerpt: '汉语言文学及相关专业' },
+              state: 'official',
+              checkedAt: '2024-03-01T00:00:00.000Z',
+            },
+          },
+        ],
+      },
+    });
+    const all = [...catalog, withMajor];
+
+    // 学历：精确匹配岗位最低学历，不把“本科可报硕士岗”混进来
+    const bachelorOnly = buildHistoryList(all, { educationLevel: 'bachelor' }, NOW);
+    expect(bachelorOnly.total).toBe(2);
+    expect(
+      bachelorOnly.items.every((item) => item.unitId !== 'major-master-u1'),
+    ).toBe(true);
+    expect(buildHistoryList(all, { educationLevel: 'master' }, NOW).total).toBe(1);
+
+    // 专业：按公告列明范围匹配，全半角与空白差异不误伤
+    expect(buildHistoryList(all, { major: '汉语言文学' }, NOW).total).toBe(1);
+    expect(buildHistoryList(all, { major: '学科教学(语文)' }, NOW).total).toBe(1);
+    expect(buildHistoryList(all, { major: '数学与应用数学' }, NOW).total).toBe(0);
+
+    // 选项只来自真实数据，不预置空项
+    const response = buildHistoryList(all, {}, NOW);
+    expect(response.educationLevels).toEqual([
+      { code: 'bachelor', label: '本科' },
+      { code: 'master', label: '硕士' },
+    ]);
+    expect(response.availableMajors).toEqual(['汉语言文学', '学科教学（语文）']);
+  });
+
+  it('筛选后的 total 是真实结果数，与分页一致（R06）', () => {
+    const many = Array.from({ length: 7 }, (_, index) =>
+      makeAnnouncement({ id: `f${index}` }),
+    );
+    const response = buildHistoryList(
+      many,
+      { educationLevel: 'bachelor', page: 2, pageSize: 3 },
+      NOW,
+    );
+    expect(response.total).toBe(7);
+    expect(response.page).toBe(2);
+    expect(response.items).toHaveLength(3);
+    expect(buildHistoryList(many, { educationLevel: 'master' }, NOW).total).toBe(0);
+  });
+
   it('分页：页码越界回退末页，pageSize 上限 50', () => {
     const many = Array.from({ length: 5 }, (_, index) =>
       makeAnnouncement({ id: `p${index}` }),
@@ -413,9 +491,22 @@ describe('往年参考：查询串校验', () => {
     [{ pageSize: '-3' }, 'pageSize 必须是正整数'],
     [{ regionCode: '33x' }, 'regionCode 必须是 2—6 位行政区划代码前缀'],
     [{ keyword: 'x'.repeat(101) }, '关键词不能超过 100 字'],
+    [{ educationLevel: 'phd' }, 'educationLevel 必须是 secondary / college / bachelor / master / doctorate 之一'],
+    [{ major: 'x'.repeat(51) }, '专业名称不能超过 50 字'],
   ])('非法查询被拒绝：%o', (query, message) => {
     const parsed = parseHistoryQuery(query);
     expect(parsed.ok).toBe(false);
     if (!parsed.ok) expect(parsed.message).toBe(message);
+  });
+
+  it('学历/专业筛选参数被正确解析（R06）', () => {
+    const parsed = parseHistoryQuery({
+      educationLevel: ' master ',
+      major: ' 汉语言文学 ',
+    });
+    expect(parsed).toEqual({
+      ok: true,
+      filters: { educationLevel: 'master', major: '汉语言文学' },
+    });
   });
 });

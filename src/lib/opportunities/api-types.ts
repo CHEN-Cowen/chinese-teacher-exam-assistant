@@ -525,6 +525,10 @@ export interface HistoryFilters {
   stage?: string;
   nature?: string;
   keyword?: string;
+  /** 岗位要求的最低学历（精确匹配该档，不是“可报”推断） */
+  educationLevel?: "secondary" | "college" | "bachelor" | "master" | "doctorate";
+  /** 岗位专业范围包含该专业名称 */
+  major?: string;
   page?: number;
   pageSize?: number;
 }
@@ -537,6 +541,13 @@ export interface HistoryListResponse {
   years: number[];
   /** 全部历史数据（未筛选）中的可选地区 */
   availableRegions: { code: string; label: string }[];
+  /** 全部历史数据（未筛选）中出现过的学历档（岗位最低学历） */
+  educationLevels: {
+    code: "secondary" | "college" | "bachelor" | "master" | "doctorate";
+    label: string;
+  }[];
+  /** 全部历史数据（未筛选）中出现过的专业名 */
+  availableMajors: string[];
   total: number;
   page: number;
   pageSize: number;

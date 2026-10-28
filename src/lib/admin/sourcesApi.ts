@@ -124,7 +124,6 @@ export const sourcesApi = {
   getHealth(): Promise<SourcesHealthResponse> {
     return request<SourcesHealthResponse>("/health");
   },
-
   /** 手动触发一次来源检查 */
   checkSource(sourceId: string): Promise<CheckSourceResult> {
     return request<CheckSourceResult>(`/${sourceId}/check`, {
@@ -164,3 +163,54 @@ export const sourcesApi = {
     });
   },
 };
+
+// ==================== 采集管线跨阶段汇总（D09 / U10） ====================
+
+/** 管线汇总响应：只含数据库真实计数；时间字段 ISO 字符串或 null */
+export interface PipelineSummary {
+  generatedAt: string;
+  sources: {
+    total: number;
+    byHealthStatus: Record<string, number>;
+    lastSuccessAt: string | null;
+  };
+  snapshots: { total: number; last24h: number };
+  parseRuns: { byStatus: Record<string, number> };
+  extractionRuns: { byStatus: Record<string, number> };
+  publishedVersions: {
+    byStatus: Record<string, number>;
+    lastPublishedAt: string | null;
+  };
+}
+
+const ANNOUNCEMENTS_API_BASE = "/api/announcements";
+
+/**
+ * 公告管理端点客户端（/api/announcements/admin/*，BFF 代理透传）。
+ * 后端 AdminGuard 强制校验角色；前端仅做体验层展示。
+ */
+export const announcementsAdminApi = {
+  /** 跨阶段流水线汇总（来源/快照/解析/提取/发布各阶段计数） */
+  pipelineSummary(): Promise<PipelineSummary> {
+    return requestAnnouncements<PipelineSummary>("/admin/pipeline-summary");
+  },
+};
+
+async function requestAnnouncements<T>(
+  path: string,
+  init: RequestInit = {},
+): Promise<T> {
+  const res = await fetch(`${ANNOUNCEMENTS_API_BASE}${path}`, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders(),
+      ...(init.headers ?? {}),
+    },
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ message: res.statusText }));
+    throw new Error(body.message || body.error || `请求失败 (${res.status})`);
+  }
+  return res.json() as Promise<T>;
+}

@@ -7,10 +7,10 @@ import { PRIMARY_NAV, isNavActive } from "@/lib/ia/nav";
 import { NavIcon } from "./navIcons";
 
 /**
- * 移动端主导航（v7.0）：只有 机会 / 日程 / 我的 三个入口。
+ * 移动端主导航（U09）：当年招聘 / 往年参考 / 我的关注 / 我的资料 四个入口。
  * - 激活态同时用 顶部指示条 + 字重 + 颜色 + aria-current 表达，不只靠颜色；
  * - 每个入口等宽、高 64px，满足移动端触控目标；
- * - 备考不在主导航（次级入口）；设置/通知/资料/账号进入头像菜单或「我的」页面。
+ * - 日程/备考为次级入口；设置/通知/资料/账号进入头像菜单或「我的资料」页面。
  */
 export function BottomNav() {
   const pathname = usePathname();

@@ -45,6 +45,8 @@ export default function HistoryPage() {
   const [regionCode, setRegionCode] = useState<string>("");
   const [stage, setStage] = useState<string>("");
   const [nature, setNature] = useState<string>("");
+  const [educationLevel, setEducationLevel] = useState<string>("");
+  const [major, setMajor] = useState<string>("");
   const [keyword, setKeyword] = useState<string>("");
   const [page, setPage] = useState(1);
   const [state, setState] = useState<LoadState>({ status: "loading" });
@@ -57,11 +59,14 @@ export default function HistoryPage() {
       regionCode: regionCode || undefined,
       stage: stage || undefined,
       nature: nature || undefined,
+      educationLevel:
+        (educationLevel as HistoryFilters["educationLevel"]) || undefined,
+      major: major || undefined,
       keyword: keyword.trim() || undefined,
       page,
       pageSize: 20,
     };
-  }, [year, regionCode, stage, nature, keyword, page]);
+  }, [year, regionCode, stage, nature, educationLevel, major, keyword, page]);
 
   useEffect(() => {
     // 筛选/翻页变化时保留旧内容直到新数据就绪，避免整页 Loading 夺走输入焦点
@@ -129,7 +134,7 @@ export default function HistoryPage() {
           aria-label="筛选往年公告"
           className="space-y-3 rounded-xl border border-line bg-surface p-4"
         >
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             <label className="block text-xs text-ink-muted">
               批次年
               <select
@@ -198,6 +203,42 @@ export default function HistoryPage() {
                 {NATURE_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>
                     {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block text-xs text-ink-muted">
+              岗位最低学历
+              <select
+                value={educationLevel}
+                onChange={(event) => {
+                  setEducationLevel(event.target.value);
+                  setPage(1);
+                }}
+                className="mt-1 w-full rounded-lg border border-line bg-canvas px-2 py-2 text-sm text-ink"
+              >
+                <option value="">全部学历</option>
+                {data.educationLevels.map((option) => (
+                  <option key={option.code} value={option.code}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block text-xs text-ink-muted">
+              专业（公告列明范围）
+              <select
+                value={major}
+                onChange={(event) => {
+                  setMajor(event.target.value);
+                  setPage(1);
+                }}
+                className="mt-1 w-full rounded-lg border border-line bg-canvas px-2 py-2 text-sm text-ink"
+              >
+                <option value="">全部专业</option>
+                {data.availableMajors.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
                   </option>
                 ))}
               </select>

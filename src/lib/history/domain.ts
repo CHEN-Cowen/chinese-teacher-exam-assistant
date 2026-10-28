@@ -10,12 +10,33 @@
  * - 日期一律保留公告原文字符串，展示端标注口径，不臆造未知时间。
  */
 import { currentVersion } from "@/lib/announcements/domain";
+import { normalizeMajor } from "@/lib/matching/domain";
 import type {
   AnnouncementVersion,
   ApplicationUnit,
   EvidenceAnchor,
   RecruitmentAnnouncement,
 } from "@/lib/announcements/types";
+
+/** 岗位最低学历档（与公告 education.minLevel 同口径） */
+export type HistoryEducationLevel =
+  | "secondary"
+  | "college"
+  | "bachelor"
+  | "master"
+  | "doctorate";
+
+export const HISTORY_EDUCATION_LABELS: Record<HistoryEducationLevel, string> = {
+  secondary: "中专/高中",
+  college: "大专",
+  bachelor: "本科",
+  master: "硕士",
+  doctorate: "博士",
+};
+
+const HISTORY_EDUCATION_LEVELS = Object.keys(
+  HISTORY_EDUCATION_LABELS,
+) as HistoryEducationLevel[];
 
 /** 今日日期（Asia/Shanghai，YYYY-MM-DD） */
 export function chinaToday(now: Date): string {
@@ -151,6 +172,33 @@ export interface HistoryFilterInput {
   nature?: string;
   /** 单位名 / 公告标题 / 发布主体关键词 */
   keyword?: string;
+  /** 岗位要求的最低学历（精确匹配该档，不是“可报”推断） */
+  educationLevel?: HistoryEducationLevel;
+  /** 岗位专业范围包含该专业名称 */
+  major?: string;
+}
+
+/** 单元是否在学历维度要求该档（任一学历条件的最小要求等于所选档） */
+function hasEducationRequirement(
+  unit: ApplicationUnit,
+  level: HistoryEducationLevel,
+): boolean {
+  return unit.requirements.some(
+    (requirement) =>
+      requirement.criterion.kind === "education" &&
+      requirement.criterion.minLevel === level,
+  );
+}
+
+/** 单元专业范围是否列明所选专业（与匹配引擎一致的专业归一化口径） */
+function hasMajorRequirement(unit: ApplicationUnit, major: string): boolean {
+  return unit.requirements.some(
+    (requirement) =>
+      requirement.criterion.kind === "major" &&
+      requirement.criterion.majorNames.some(
+        (listed) => normalizeMajor(listed) === normalizeMajor(major),
+      ),
+  );
 }
 
 export function filterHistoricalUnits(
@@ -170,12 +218,51 @@ export function filterHistoricalUnits(
     if (filters.nature && record.unit.employmentNature.code !== filters.nature) {
       return false;
     }
+    if (
+      filters.educationLevel &&
+      !hasEducationRequirement(record.unit, filters.educationLevel)
+    ) {
+      return false;
+    }
+    if (filters.major && !hasMajorRequirement(record.unit, filters.major)) {
+      return false;
+    }
     if (keyword) {
       const haystack = `${record.unit.name} ${record.announcement.title} ${record.announcement.publisher}`;
       if (!haystack.includes(keyword)) return false;
     }
     return true;
   });
+}
+
+/** 全部历史记录中出现的学历档与专业名（筛选下拉的真实可选值，不预置空项） */
+export function availableHistoryFilters(
+  records: readonly HistoricalUnitRecord[],
+): {
+  educationLevels: { code: HistoryEducationLevel; label: string }[];
+  majors: string[];
+} {
+  const levels = new Set<HistoryEducationLevel>();
+  const majors = new Map<string, string>();
+  for (const record of records) {
+    for (const requirement of record.unit.requirements) {
+      if (requirement.criterion.kind === "education") {
+        levels.add(requirement.criterion.minLevel);
+      }
+      if (requirement.criterion.kind === "major") {
+        for (const name of requirement.criterion.majorNames) {
+          const key = normalizeMajor(name);
+          if (!majors.has(key)) majors.set(key, name.trim());
+        }
+      }
+    }
+  }
+  return {
+    educationLevels: HISTORY_EDUCATION_LEVELS.filter((level) => levels.has(level)).map(
+      (code) => ({ code, label: HISTORY_EDUCATION_LABELS[code] }),
+    ),
+    majors: [...majors.values()].sort((a, b) => a.localeCompare(b, "zh-CN")),
+  };
 }
 
 export interface HistoryPage<T> {

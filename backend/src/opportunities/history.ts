@@ -18,10 +18,13 @@ import {
   buildCandidates,
   currentVersion,
   isUserVisibleInCatalog,
+  majorNameMatches,
+  normalizeMajor,
 } from '../matching/engine.js';
 import type {
   AnnouncementVersion,
   ApplicationUnit,
+  CredentialLevel,
   EvidenceAnchor,
   EvidenceReviewState,
   MaterialItem,
@@ -163,6 +166,18 @@ export function availableBatchYears(
   return [...years].sort((a, b) => b - a);
 }
 
+export const HISTORY_EDUCATION_LABELS: Record<CredentialLevel, string> = {
+  secondary: '中专/高中',
+  college: '大专',
+  bachelor: '本科',
+  master: '硕士',
+  doctorate: '博士',
+};
+
+const HISTORY_EDUCATION_LEVELS = Object.keys(
+  HISTORY_EDUCATION_LABELS,
+) as CredentialLevel[];
+
 export interface HistoryFiltersInput {
   year?: number;
   /** 6 位行政区划代码前缀匹配（省 2 位 / 市 4 位 / 区 6 位） */
@@ -172,8 +187,33 @@ export interface HistoryFiltersInput {
   nature?: string;
   /** 单位名 / 公告标题 / 发布主体关键词 */
   keyword?: string;
+  /** 岗位要求的最低学历（精确匹配该档，不是“可报”推断） */
+  educationLevel?: CredentialLevel;
+  /** 岗位专业范围包含该专业名称（与可选列表同口径，忽略全半角/空白差异） */
+  major?: string;
   page?: number;
   pageSize?: number;
+}
+
+/** 单元是否在学历维度要求该档（只要任一学历条件的最小要求等于所选档） */
+function hasEducationRequirement(
+  unit: ApplicationUnit,
+  level: CredentialLevel,
+): boolean {
+  return unit.requirements.some(
+    (requirement) =>
+      requirement.criterion.kind === 'education' &&
+      requirement.criterion.minLevel === level,
+  );
+}
+
+/** 单元专业范围是否列明所选专业（复用匹配引擎的专业比对口径） */
+function hasMajorRequirement(unit: ApplicationUnit, major: string): boolean {
+  return unit.requirements.some(
+    (requirement) =>
+      requirement.criterion.kind === 'major' &&
+      majorNameMatches(major, requirement.criterion.majorNames),
+  );
 }
 
 export function filterHistoricalUnits(
@@ -196,12 +236,48 @@ export function filterHistoricalUnits(
     if (filters.nature && record.unit.employmentNature.code !== filters.nature) {
       return false;
     }
+    if (
+      filters.educationLevel &&
+      !hasEducationRequirement(record.unit, filters.educationLevel)
+    ) {
+      return false;
+    }
+    if (filters.major && !hasMajorRequirement(record.unit, filters.major)) {
+      return false;
+    }
     if (keyword) {
       const haystack = `${record.unit.name} ${record.announcement.title} ${record.announcement.publisher}`;
       if (!haystack.includes(keyword)) return false;
     }
     return true;
   });
+}
+
+/** 全部历史记录中出现的学历档与专业名（筛选下拉的真实可选值，不预置空项） */
+export function availableHistoryFilters(
+  records: readonly HistoricalUnitRecord[],
+): { educationLevels: { code: CredentialLevel; label: string }[]; majors: string[] } {
+  const levels = new Set<CredentialLevel>();
+  const majors = new Map<string, string>();
+  for (const record of records) {
+    for (const requirement of record.unit.requirements) {
+      if (requirement.criterion.kind === 'education') {
+        levels.add(requirement.criterion.minLevel);
+      }
+      if (requirement.criterion.kind === 'major') {
+        for (const name of requirement.criterion.majorNames) {
+          const key = normalizeMajor(name);
+          if (!majors.has(key)) majors.set(key, name.trim());
+        }
+      }
+    }
+  }
+  return {
+    educationLevels: HISTORY_EDUCATION_LEVELS.filter((level) =>
+      levels.has(level),
+    ).map((code) => ({ code, label: HISTORY_EDUCATION_LABELS[code] })),
+    majors: [...majors.values()].sort((a, b) => a.localeCompare(b, 'zh-CN')),
+  };
 }
 
 export interface HistoryPage<T> {
@@ -259,6 +335,8 @@ export interface HistoryQueryRaw {
   stage?: string;
   nature?: string;
   keyword?: string;
+  educationLevel?: string;
+  major?: string;
   page?: string;
   pageSize?: string;
 }
@@ -297,6 +375,23 @@ export function parseHistoryQuery(query: HistoryQueryRaw): ParsedHistoryQuery {
       return { ok: false, message: '关键词不能超过 100 字' };
     }
     filters.keyword = keyword;
+  }
+  if (typeof query.educationLevel === 'string' && query.educationLevel.trim()) {
+    const level = query.educationLevel.trim();
+    if (!HISTORY_EDUCATION_LEVELS.includes(level as CredentialLevel)) {
+      return {
+        ok: false,
+        message: `educationLevel 必须是 ${HISTORY_EDUCATION_LEVELS.join(' / ')} 之一`,
+      };
+    }
+    filters.educationLevel = level as CredentialLevel;
+  }
+  if (typeof query.major === 'string' && query.major.trim()) {
+    const major = query.major.trim();
+    if (major.length > 50) {
+      return { ok: false, message: '专业名称不能超过 50 字' };
+    }
+    filters.major = major;
   }
   for (const key of ['page', 'pageSize'] as const) {
     const raw = query[key];
@@ -358,6 +453,10 @@ export interface HistoryListResponse {
   years: number[];
   /** 全部历史数据（未筛选）中的可选地区 */
   availableRegions: { code: string; label: string }[];
+  /** 全部历史数据（未筛选）中出现过的学历档（岗位最低学历） */
+  educationLevels: { code: CredentialLevel; label: string }[];
+  /** 全部历史数据（未筛选）中出现过的专业名 */
+  availableMajors: string[];
   total: number;
   page: number;
   pageSize: number;
@@ -480,11 +579,14 @@ export function buildHistoryList(
     filters.pageSize ?? 20,
   );
   const years = availableBatchYears(all);
+  const options = availableHistoryFilters(all);
   return {
     meta: buildMeta(now),
     sampleNote: historySampleNote(years, all.length),
     years,
     availableRegions: availableHistoryRegions(all),
+    educationLevels: options.educationLevels,
+    availableMajors: options.majors,
     total: page.total,
     page: page.page,
     pageSize: page.pageSize,

@@ -5,7 +5,7 @@
  *
  * 不变量：
  * - 顶部固定声明「往年已截止，仅供参考；本年度以新公告为准」；
- * - 无报名、无关注动作；不进入当前可报名计数；
+ * - 无报名动作，不进入当前可报名计数；可关注该单位以获取其后续新公告（D06/D07）
  * - 日期保留公告原文（北京时间口径），缺日期显示「待官方通知」，不臆造；
  * - 个人资料对照明确标注计算时间，且不等同用户当年身份或今年资格。
  */
@@ -20,6 +20,7 @@ import { Callout } from "@/components/ui/Callout";
 import { StatusMessage } from "@/components/ui/StatusMessage";
 import { ConditionRows } from "@/components/opportunities/ConditionRows";
 import { CorrectionModal } from "@/components/opportunities/CorrectionModal";
+import { OrganizationFollowButton } from "@/components/opportunities/OrganizationFollowButton";
 import {
   dimensionLabel,
   natureShortLabel,
@@ -182,6 +183,32 @@ export default function HistoryDetailPage() {
           {item.publishedAt.slice(0, 10)}（北京时间）
         </p>
       </header>
+
+      <section
+        aria-labelledby="history-follow"
+        className="rounded-xl border border-line bg-surface p-4"
+        data-testid="history-follow-organization"
+      >
+        <h2 id="history-follow" className="text-sm font-semibold text-ink">
+          跟进该单位的新公告
+        </h2>
+        <p className="mt-1 text-xs leading-5 text-ink-muted">
+          关注后，该单位发布的新公告（经人工核对、未截止）会在站内提醒你。
+          本页仍是往年记录：不提供报名，也不计入当前可报名机会。
+        </p>
+        <div className="mt-2 flex flex-wrap items-center gap-3">
+          <OrganizationFollowButton
+            publisherName={item.announcement.publisher}
+            regionCode={item.region.code}
+          />
+          <Link
+            href="/follows"
+            className="text-xs text-brand underline underline-offset-2"
+          >
+            查看已关注单位
+          </Link>
+        </div>
+      </section>
 
       <section
         aria-labelledby="history-facts"

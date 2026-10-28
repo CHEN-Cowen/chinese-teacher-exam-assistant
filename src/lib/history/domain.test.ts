@@ -6,6 +6,7 @@ import type {
 } from "@/lib/announcements/types";
 import {
   availableBatchYears,
+  availableHistoryFilters,
   batchYearOf,
   chinaToday,
   collectHistoricalUnits,
@@ -224,6 +225,85 @@ describe("filterHistoricalUnits", () => {
     expect(
       filterHistoricalUnits(records, { year: 2025, stage: "high", keyword: "杭州" }).map((r) => r.unit.id),
     ).toEqual(["a-u1"]);
+  });
+
+  it("按岗位最低学历与专业范围筛选（R06）", () => {
+    const withRequirements = collectHistoricalUnits(
+      [
+        makeAnnouncement(
+          "c",
+          { registrationStart: "2025-03-10", registrationEnd: "2025-03-20" },
+          { title: "硕士语文岗位" },
+          [
+            makeUnit("c-u1", {
+              name: "硕士语文教师",
+              requirements: [
+                {
+                  id: "c-u1-edu",
+                  dimension: "education",
+                  description: "硕士研究生及以上",
+                  hard: true,
+                  criterion: { kind: "education", minLevel: "master" },
+                  evidence: {
+                    id: "c-u1-edu-ev",
+                    locator: { kind: "excerpt", excerpt: "硕士研究生及以上" },
+                    state: "official",
+                    checkedAt: "2025-03-01T10:00:00+08:00",
+                  },
+                },
+                {
+                  id: "c-u1-major",
+                  dimension: "major",
+                  description: "汉语言文学及相关专业",
+                  hard: true,
+                  criterion: {
+                    kind: "major",
+                    majorNames: ["汉语言文学", "学科教学（语文）"],
+                  },
+                  evidence: {
+                    id: "c-u1-major-ev",
+                    locator: { kind: "excerpt", excerpt: "汉语言文学及相关专业" },
+                    state: "official",
+                    checkedAt: "2025-03-01T10:00:00+08:00",
+                  },
+                },
+              ],
+            }),
+          ],
+        ),
+      ],
+      NOW,
+    );
+
+    // 学历精确匹配岗位最低学历，不把“本科可报的硕士岗”混入本科筛选
+    expect(
+      filterHistoricalUnits(withRequirements, { educationLevel: "master" }).map(
+        (r) => r.unit.id,
+      ),
+    ).toEqual(["c-u1"]);
+    expect(
+      filterHistoricalUnits(withRequirements, { educationLevel: "bachelor" }),
+    ).toEqual([]);
+
+    // 专业按公告列明范围匹配，全半角/空白差异不误伤
+    expect(
+      filterHistoricalUnits(withRequirements, { major: "汉语言文学" }).map(
+        (r) => r.unit.id,
+      ),
+    ).toEqual(["c-u1"]);
+    expect(
+      filterHistoricalUnits(withRequirements, { major: "学科教学(语文)" }).map(
+        (r) => r.unit.id,
+      ),
+    ).toEqual(["c-u1"]);
+    expect(filterHistoricalUnits(withRequirements, { major: "数学与应用数学" })).toEqual(
+      [],
+    );
+
+    // 选项只来自真实数据，不预置空项
+    const options = availableHistoryFilters(withRequirements);
+    expect(options.educationLevels).toEqual([{ code: "master", label: "硕士" }]);
+    expect(options.majors).toEqual(["汉语言文学", "学科教学（语文）"]);
   });
 });
 
