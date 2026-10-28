@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest";
 import type { CoverageDTO, MatchResponse, UnitMatchDTO } from "./api-types";
 import { buildListViewModel } from "./list-view";
-import { buildNoResultState } from "./no-result";
+import { buildNoResultPanel, buildNoResultState } from "./no-result";
 import type { UserRecruitmentProfile } from "@/lib/profile/types";
 
 function makeUnit(
@@ -241,5 +241,120 @@ describe("buildNoResultState：三种无结果状态", () => {
     );
     expect(view.validCount).toBeGreaterThan(0);
     expect(buildNoResultState(view)).toBeNull();
+  });
+});
+
+// ==================== D04：多原因无结果面板 ====================
+
+describe("buildNoResultPanel：多原因并存（PRD 11.5）", () => {
+  it("覆盖有限 + 已截止 + 偏好限制多原因并存，主原因按优先级取覆盖有限", () => {
+    const closed = makeUnit("unit-closed", "preliminary_eligible", {
+      gates: [{ code: "registration_closed", passed: false, reason: "已截止" }],
+    });
+    const outOfScope = makeUnit("unit-out", "preliminary_eligible", {
+      preferenceOutOfScope: true,
+    });
+    const view = buildListViewModel(
+      responseOf({ preliminary: [outOfScope], closed: [closed] }),
+      {
+        ...PROFILE,
+        regions: [
+          { code: "330100", province: "浙江省", city: "杭州市", level: "required" },
+          { code: "310000", province: "上海市", level: "preferred" },
+        ],
+      },
+    );
+    expect(view.validCount).toBe(0);
+    const panel = buildNoResultPanel(view, {
+      ...PROFILE,
+      regions: [
+        { code: "330100", province: "浙江省", city: "杭州市", level: "required" },
+        { code: "310000", province: "上海市", level: "preferred" },
+      ],
+    })!;
+    const kinds = panel.reasons.map((r) => r.kind);
+    expect(kinds).toContain("coverage_limited");
+    expect(kinds).toContain("closed_expired");
+    expect(kinds).toContain("preference_limited");
+    expect(kinds).toContain("no_open_published");
+    expect(panel.primary.kind).toBe("coverage_limited");
+    expect(panel.legacyKind).toBe("region_uncovered");
+    // 分阶段数量、统计范围、当前筛选齐全
+    expect(panel.stageCounts.map((s) => s.label)).toContain("已截止/留档");
+    expect(panel.scopeText).toContain("去重");
+    expect(panel.filterText).toContain("杭州");
+    // 覆盖有限不得写成「当地没有招聘」
+    const coverageReason = panel.reasons.find((r) => r.kind === "coverage_limited")!;
+    expect(coverageReason.detail).toContain("暂未收录不等于当地没有招聘");
+  });
+
+  it("材料待审核：真实目录 AI 初核记录只计数、不展示内容", () => {
+    const pendingReal = makeUnit("unit-pending", "preliminary_eligible", {
+      announcement: {
+        id: "ann-real-1",
+        title: "真实公告",
+        publisher: "教育局",
+        organizationType: "government_unified",
+        officialUrl: "https://example.gov.cn/real",
+        dataset: "real",
+        reviewStatus: "ai_reviewed_pending",
+        reviewedBy: null,
+        reviewedAt: null,
+      },
+    });
+    const view = buildListViewModel(
+      responseOf({ closed: [pendingReal] }),
+      PROFILE,
+    );
+    expect(view.pendingReviewCount).toBe(1);
+    const panel = buildNoResultPanel(view, PROFILE)!;
+    const reason = panel.reasons.find((r) => r.kind === "material_pending_review")!;
+    expect(reason.title).toContain("1 条真实公告正在人工核对");
+    // 不泄露受限材料内容：detail 不含公告标题
+    expect(reason.detail).not.toContain("真实公告");
+  });
+
+  it("更新异常：来源检查失败与非实时回退分别如实说明", () => {
+    const coverage = emptyCoverage();
+    coverage.sources = [
+      { ...coverage.sources[0]!, state: "check_failed", note: "目标站点 5xx" },
+    ];
+    coverage.caliber = { ...coverage.caliber, isFallback: true, fallbackNote: "运行状态不可用，展示静态快照" };
+    const view = buildListViewModel(responseOf({}, coverage), PROFILE);
+    const panel = buildNoResultPanel(view, PROFILE)!;
+    const reason = panel.reasons.find((r) => r.kind === "update_anomaly")!;
+    expect(reason.detail).toContain("检查失败");
+    expect(reason.detail).toContain("非实时");
+    expect(panel.fallbackNote).toContain("静态快照");
+  });
+
+  it("资料不足：旧资料阶段归属未确认时明确提示，不当不符合", () => {
+    const legacyProfile: UserRecruitmentProfile = {
+      ...PROFILE,
+      legacyEducation: { confirmed: false },
+    };
+    const view = buildListViewModel(responseOf({}), legacyProfile);
+    const panel = buildNoResultPanel(view, legacyProfile)!;
+    const reason = panel.reasons.find((r) => r.kind === "info_insufficient")!;
+    expect(reason.detail).toContain("阶段归属尚未确认");
+    expect(reason.detail).toContain("信息不足");
+  });
+
+  it("全部无结果场景仍保留 no_open_published 兜底与「无新增不算故障」说明", () => {
+    const view = buildListViewModel(responseOf({}), PROFILE);
+    const panel = buildNoResultPanel(view, PROFILE)!;
+    expect(panel.primary.kind).toBe("no_open_published");
+    expect(panel.legacyKind).toBe("no_open_recruitment");
+    expect(panel.primary.detail).toContain("不算故障");
+    expect(panel.lastCheckedAt).toBe("2026-10-12T08:00:00+08:00");
+    expect(panel.generatedAt).toBe("2026-10-12T08:00:00+08:00");
+  });
+
+  it("有可行动机会时面板返回 null", () => {
+    const view = buildListViewModel(
+      responseOf({ preliminary: [makeUnit("unit-ok", "preliminary_eligible")] }),
+      PROFILE,
+    );
+    expect(buildNoResultPanel(view, PROFILE)).toBeNull();
   });
 });

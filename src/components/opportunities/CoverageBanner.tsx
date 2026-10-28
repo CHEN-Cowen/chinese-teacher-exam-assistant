@@ -163,7 +163,13 @@ export function CoverageBanner({ coverage }: { coverage: CoverageDTO }) {
         ) : null}
         <p className="mt-3 border-t border-line pt-3 text-xs leading-relaxed text-ink-muted">
           {coverage.scopeNote}
-          AI 初核且尚待人工复核的记录不会进入推荐。覆盖版本 {coverage.version}。
+          AI 初核且尚待人工复核的记录不会进入推荐。来源检查正常但没有新增公告属于正常状态，
+          不算故障。最近成功检查 {formatDay(coverage.lastCheckedAt)}
+          {coverage.caliber?.generatedAt &&
+          coverage.caliber.generatedAt !== coverage.lastCheckedAt
+            ? `；统计生成于 ${formatDay(coverage.caliber.generatedAt)}`
+            : ""}
+          。覆盖版本 {coverage.version}。
         </p>
       </div>
     </details>

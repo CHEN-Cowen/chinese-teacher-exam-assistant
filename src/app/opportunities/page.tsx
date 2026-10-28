@@ -15,9 +15,10 @@ import {
   formatEvaluatedAt,
   listCardNextStepLabel,
 } from "@/lib/opportunities/list-view";
-import { buildNoResultState } from "@/lib/opportunities/no-result";
+import { buildNoResultPanel } from "@/lib/opportunities/no-result";
 import { opportunitiesApi } from "@/lib/opportunities/api";
 import { OpportunityListItem } from "@/components/opportunities/OpportunityListItem";
+import { PreferencePreviewCard } from "@/components/opportunities/PreferencePreviewCard";
 import { MigrationConflictBanner } from "@/components/opportunities/MigrationConflictBanner";
 import type { SupplementFacts } from "@/lib/profile/activeProfile";
 import { WorkbenchTabs } from "@/components/opportunities/WorkbenchTabs";
@@ -139,7 +140,8 @@ export default function OpportunitiesPage() {
   }
 
   const view = buildListViewModel(state.data, state.profile);
-  const noResult = buildNoResultState(view);
+  // D04：多原因无结果面板（含当前筛选/统计范围/分阶段数量/检查时间）
+  const noResult = buildNoResultPanel(view, state.profile);
   const evaluatedAt = view.meta.evaluatedAt;
   const suggested =
     view.priority ??
@@ -278,6 +280,12 @@ export default function OpportunitiesPage() {
 
       <CoverageBanner coverage={view.coverage} />
       <DatasetScopeNotice hasDemo={hasDemo} />
+      {/* D04：偏好调整影响预览（只读预览 → 确认保存 → 可撤销），有结果/无结果都可用 */}
+      <PreferencePreviewCard
+        profile={state.profile}
+        response={state.data}
+        onApplied={() => reload()}
+      />
       {/* v7.2：当前条件摘要 + 修改入口（与 /preview 同一组件，ff 开时展示） */}
       {FLAGS.ff_new_results && state.profile && (
         <Suspense fallback={null}>
@@ -323,7 +331,7 @@ export default function OpportunitiesPage() {
       )}
 
       {noResult && (
-        <NoResultFeedback state={noResult} coverage={view.coverage} />
+        <NoResultFeedback panel={noResult} coverage={view.coverage} />
       )}
       {noResult && <SubscriptionCard profile={state.profile} />}
 

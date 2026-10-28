@@ -66,7 +66,7 @@ D04（多原因空态与覆盖）覆盖。
 | D01 教育经历模型与兼容迁移 | U01 | 已完成 | `54262e9` | `target/codex/modular-development`，远端 SHA 一致 | 本地 lint/test/build 通过；远端 CI 待 D10 核对 |
 | D02 我的资料与分阶段填写 | U01、U05 | 已完成 | `54262e9` | 同上 | 浏览器核心路径通过；375px 响应式未在浏览器工具内验证 |
 | D03 资格与偏好、阶段匹配 | U02、U03 | 已完成 | `1a0671e` | `target/codex/modular-development`，远端 SHA 一致 | 本地 lint/test/build 与浏览器详情验证通过；远端 CI 待 D10 核对 |
-| D04 结果解释、无结果与影响预览 | U03、U04 | 未开始 | | | |
+| D04 结果解释、无结果与影响预览 | U03、U04 | 进行中 | | | |
 | D05 定向补充与保存后反馈 | U05 | 未开始 | | | |
 | D06 往年参考目录与详情 | U06 | 未开始 | | | |
 | D07 关注对象与站内动态 | U07 | 未开始 | | | |
@@ -151,7 +151,76 @@ D04（多原因空态与覆盖）覆盖。
 - 真实 PostgreSQL 迁移验证本机无 Docker，仍未执行（本轮无表结构变更）。
 - 用户未提交的 `src/app/onboarding/page.tsx` 等既有修改未纳入本提交。
 
+### D04 结果解释、无结果与影响预览
+
+实现：
+
+- 多原因无结果（`no-result.ts` 新增 `buildNoResultReasons/buildNoResultPanel`，纯函数）：
+  覆盖有限 / 偏好限制 / 明确资格不符 / 资料不足 / 已截止 / 尚未报名（时间待定）/
+  材料待审核 / 更新异常 / 当前无在招九类原因可并存，按稳定优先级取主原因；
+  面板同时展示当前筛选（画像条件摘要）、统计范围（监测城市/来源/在报数、
+  按报考单元去重口径）、分阶段数量、最近成功检查与统计生成两个时间、非实时回退说明。
+  「请求失败」仍由页面 ErrorState 区分，不显示业务零结果。旧三态
+  `buildNoResultState` 保留（埋点 reasonCode 与既有测试沿用），面板携带 legacyKind 映射。
+- `list-view.ts` 新增 `pendingReviewCount`：真实目录 AI 初核待人工复核记录按报考单元
+  去重后只计数（不展示内容，不泄露受限材料）；同时修复 D03 遗留缺口——
+  `preferenceOutOfScope` 单元此前未进入 workbench 分桶输入，导致「偏好范围外」标签
+  在新版三标签下丢失这类单元（classify 规则 3 依赖该标记），现已补入分桶输入。
+- `NoResultFeedback` 改为渲染多原因面板；`CoverageBanner` 页脚补充「最近成功检查 /
+  统计生成」两个时间与「检查正常无新增不算故障」说明。
+- 偏好影响预览（新 `preference-preview.ts` 纯函数 + `PreferencePreviewCard` 组件，
+  挂载于 /opportunities）：地区级别与用工偏好调整 → 预览影响（复用后端只读
+  `POST /match`，显式携带草稿画像、不落库）→ 确认应用才持久化（访客/demo 写本机
+  guestSessionService，受邀登录走 profileApi.saveProfile）→ 撤销条恢复原偏好。
+  计数前后均来自 workbench 三标签分桶，与实际列表同一数据源；过期响应保护 =
+  请求序号丢弃旧响应 + 目录版本（catalogVersion/realCatalogVersion）不一致丢弃预览；
+  预览失败明确提示、不编造数量。撤销快照存 localStorage（30 分钟有效，内存态优先，
+  存储不可用不阻断本会话撤销）。
+- 不改 `src/app/onboarding/page.tsx`（保留用户未提交修改）；增删地区仍走
+  「修改报考信息」流程，预览卡片只调整级别与用工偏好。
+
+命令与结果：
+
+| 命令 | 结果 |
+| --- | --- |
+| `npx vitest run src/lib/opportunities src/lib/matching src/lib/ia src/lib/results` | 23 文件 267 通过（含 no-result 新增 6 项多原因用例、preference-preview 5 项） |
+| `npx vitest run src/lib/guest src/app/opportunities` | 6 文件 78 通过 |
+| `npx tsc --noEmit` | 通过 |
+| `npm run lint` | 0 error / 2 warning（scripts 下既有未使用变量，非本轮文件） |
+| `npm run build` | 通过（含 postbuild 外部依赖检查、客户端密钥泄漏检查） |
+| 浏览器（localhost:3100 生产构建，注入访客画像） | 场景一：上海（未覆盖）无结果面板含 coverage_limited 等多原因、当前筛选/统计范围/分阶段数量/最近成功检查齐全，未出现「当地没有招聘」表述；场景二：杭州级别 只考虑→也可以考虑 → 预览影响出结果 → 确认应用 → 撤销条出现且整页刷新后保留 → 撤销后级别恢复；console 无业务 error |
+
+边界与未验证：
+
+- 浏览器验证为 demo/访客链路（本机画像 + 生产构建）；受邀登录用户的
+  `profileApi.saveProfile` 持久化路径由既有画像测试覆盖，本轮未做浏览器端登录态复测。
+- 预览卡片增删地区不支持（属画像编辑主流程，非偏好快速调整）；PRD「新增待核实数量」
+  以待补充桶计数变化与新增岗位点名表达。
+- 修复过的两处实现问题：React 渲染期状态调整替代 effect 内 setState（lint 阻断）；
+  撤销快照由 sessionStorage 改 localStorage（sessionStorage 按标签页隔离导致跨标签丢失）。
+
 ## 5. 需求到验收点映射（开始实现前写清）
+
+### D04 差距确认（2026-10-28，实现前已读调用链）
+
+- `src/lib/opportunities/no-result.ts` 只有三态单原因（region_uncovered / no_open_recruitment /
+  qualification_gap），不满足 PRD 11.5「多原因并存」；缺当前筛选、统计范围、分阶段数量、
+  最近成功检查的结构化展示。页面已有 ErrorState 区分「请求失败」，保留不并入无结果面板。
+- 覆盖投影与 CoverageBanner 已有省份/来源状态、`lastCheckedAt`、fallback 透传；
+  缺「统计生成时间」与「检查正常无新增不算故障」的明示。
+- 真实目录中 AI 初核待人工复核记录被前端整体过滤（list-view `realMonitored` 恒空），
+  无结果归因需要其汇总数量（只计数，不展示内容，不泄露受限材料）。
+- 筛选调整影响预览：无现实现。地区偏好原本只在 onboarding 第二屏编辑，保存前无预览、无撤销。
+  已确认后端 `POST /opportunities/match` 只读（`resolveProfile` 请求体优先、不落库），
+  复用同一接口做预览计算；`MetaDTO.catalogVersion/realCatalogVersion` 做过期响应保护；
+  快速切换以请求序号丢弃旧响应。用户未提交的 `src/app/onboarding/page.tsx` 修改保留，
+  本模块不改该文件；预览入口放 `/opportunities` 页（符合 PRD「快速切换、保留上下文」）。
+- 预览持久化：访客/demo 写本机 `guestSessionService.save({draft:{regions}})`；
+  受邀登录用户走 `profileApi.saveProfile`（带服务端校验）；确认前不落库。
+- 撤销：确认应用后保留原偏好快照（sessionStorage），页面重载后仍可撤销回原偏好。
+
+验收点见本节下文 D04（U04）条目，另补：调整前后计数与列表实际分桶一致（workbench 单一数据源）；
+目录版本不一致时预览响应被丢弃并提示刷新；无真实统计（预览请求失败）时明确提示，不编造数值。
 
 ### D01（U01）
 

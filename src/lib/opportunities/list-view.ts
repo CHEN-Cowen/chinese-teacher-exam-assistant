@@ -91,6 +91,12 @@ export interface OpportunityListViewModel {
   /** 没有任何可行动机会（四档全空）：页面展示空结果态，留档分区仍可查 */
   emptyResult: boolean;
   /**
+   * D04：真实目录中「AI 初核待人工复核」记录的汇总数量（按报考单元去重，只计数）。
+   * 这些记录不进入用户可见分组，但无结果归因需如实说明「有公告正在核对中」；
+   * 仅暴露数量属于经权限允许的汇总状态，不泄露受限审核材料内容。
+   */
+  pendingReviewCount: number;
+  /**
    * v7.2 工作台三标签视图模型：三标签单一数据源 + 留档区。
    * priority/supplement/outOfScope 互斥，由 classify.ts 统一分桶；
    * excluded 供折叠区按 closedBuckets 展示。
@@ -257,6 +263,22 @@ export function buildListViewModel(
   );
   const uncoveredRegions = computeUncoveredRegions(profile, response);
   const closedBuckets = bucketClosedUnits(closed, (u) => u.gates);
+  // D04：待人工复核汇总（真实目录、未通过人工发布门槛），只计数不展示内容
+  const pendingReviewCount = new Set(
+    [
+      ...groups.preliminary,
+      ...groups.needInfo.flatMap((group) => group.units),
+      ...groups.manualReview,
+      ...groups.notEligible,
+      ...groups.closed,
+    ]
+      .filter(
+        (unit) =>
+          unit.announcement.dataset === "real" &&
+          unit.announcement.reviewStatus !== "human_reviewed",
+      )
+      .map((unit) => unit.unit.id),
+  ).size;
   const excludedCount =
     visibleNotEligible.length + closed.length;
   const emptyResult =
@@ -270,8 +292,11 @@ export function buildListViewModel(
   // v7.2 工作台三标签：对所有可见单元跑 classifyOpportunity 单一事实源分桶。
   // 收集顺序与后端分组顺序一致（preliminary → needInfo → manualReview → notEligible → closed），
   // 保证桶内顺序稳定；isPublishedForUser 已在上述数组里兜底，real AI 初核记录不进入 workbench。
+  // D04 修正：preferenceOut（资格初步符合但偏好范围外）必须进入分桶输入，
+  // 否则「偏好范围外」标签会丢失这类单元（classify 规则 3 依赖 preferenceOutOfScope 标记）。
   const workbench = buildWorkbench([
     ...preliminary,
+    ...preferenceOut.filter(isPublishedForUser),
     ...needInfoGroups.flatMap((group) => group.units),
     ...manualReview,
     ...visibleNotEligible,
@@ -317,6 +342,7 @@ export function buildListViewModel(
     conclusion,
     excludedCount,
     emptyResult,
+    pendingReviewCount,
     workbench,
   };
 }
