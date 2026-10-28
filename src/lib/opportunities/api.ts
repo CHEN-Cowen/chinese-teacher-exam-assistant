@@ -8,6 +8,7 @@ import { AUTH_MODE } from "@/lib/auth";
 import type { UserRecruitmentProfile } from "@/lib/profile/types";
 import { demoOpportunitiesApi } from "./demoApi";
 import type {
+  AnnouncementSubmissionDTO,
   FollowDTO,
   FollowStatus,
   GoalsResponse,
@@ -18,6 +19,7 @@ import type {
   MaterialStatus,
   OpportunityCorrectionDTO,
   OrganizationFollowDTO,
+  StaffAnnouncementSubmissionDTO,
   StaffOpportunityCorrectionDTO,
   StudyTargetRole,
   SubscriptionDTO,
@@ -264,6 +266,32 @@ export const opportunitiesApi = {
     return request<OpportunityCorrectionDTO[]>("/corrections/mine");
   },
 
+  // ==================== 公告补录（D08 / PRD 11.9 U08） ====================
+
+  /** 补录未收录官方公告：只进运营待办队列，不直接发布 */
+  submitAnnouncementSubmission(input: {
+    officialUrl: string;
+    publisherName: string;
+    regionCode: string;
+    note?: string;
+  }): Promise<{ id: string; status: string }> {
+    if (AUTH_MODE === "demo")
+      return demoOpportunitiesApi.submitAnnouncementSubmission(input);
+    return request<{ id: string; status: string }>(
+      "/announcement-submissions",
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  },
+
+  /** 我提交过的补录与处理状态（我的页） */
+  listMyAnnouncementSubmissions(): Promise<AnnouncementSubmissionDTO[]> {
+    if (AUTH_MODE === "demo")
+      return demoOpportunitiesApi.listMyAnnouncementSubmissions();
+    return request<AnnouncementSubmissionDTO[]>(
+      "/announcement-submissions/mine",
+    );
+  },
+
   // ==================== 往年参考（D06 / PRD 11.7 U06） ====================
 
   /** 往年参考列表（只读；公开可访问，无需画像） */
@@ -309,13 +337,46 @@ export const opportunitiesApi = {
     return request<StaffOpportunityCorrectionDTO[]>(`/admin/corrections${qs}`);
   },
 
-  /** 员工处理纠错：reviewing / resolved / rejected（rejected 必填 reviewNote） */
+  /**
+   * 员工处理纠错：reviewing / need_supplement / resolved / rejected
+   * （need_supplement、rejected 必填 reviewNote；resolved 可带 resolvedVersionId）
+   */
   adminReviewCorrection(
     correctionId: string,
-    input: { status: "reviewing" | "resolved" | "rejected"; reviewNote?: string },
+    input: {
+      status: "reviewing" | "need_supplement" | "resolved" | "rejected";
+      reviewNote?: string;
+      resolvedVersionId?: string;
+    },
   ): Promise<OpportunityCorrectionDTO> {
     return request<OpportunityCorrectionDTO>(
       `/admin/corrections/${encodeURIComponent(correctionId)}`,
+      { method: "PATCH", body: JSON.stringify(input) },
+    );
+  },
+
+  // ==================== 公告补录（D08 / PRD 11.9 U08） ====================
+
+  /** 员工补录队列（STAFF_ROLES；status 省略时返回全部） */
+  adminListAnnouncementSubmissions(
+    status?: string,
+  ): Promise<StaffAnnouncementSubmissionDTO[]> {
+    const qs = status ? `?status=${encodeURIComponent(status)}` : "";
+    return request<StaffAnnouncementSubmissionDTO[]>(
+      `/admin/announcement-submissions${qs}`,
+    );
+  },
+
+  /** 员工处理补录：reviewing / need_supplement / resolved / rejected */
+  adminReviewAnnouncementSubmission(
+    submissionId: string,
+    input: {
+      status: "reviewing" | "need_supplement" | "resolved" | "rejected";
+      reviewNote?: string;
+    },
+  ): Promise<AnnouncementSubmissionDTO> {
+    return request<AnnouncementSubmissionDTO>(
+      `/admin/announcement-submissions/${encodeURIComponent(submissionId)}`,
       { method: "PATCH", body: JSON.stringify(input) },
     );
   },

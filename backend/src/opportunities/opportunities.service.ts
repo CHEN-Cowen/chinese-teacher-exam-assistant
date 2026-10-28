@@ -45,11 +45,15 @@ import {
 import {
   CORRECTION_STATUSES,
   fieldPathLabel,
-  isTerminalStatus,
   validateReview,
   type CorrectionDTO,
   type StaffCorrectionDTO,
 } from './corrections.domain.js';
+import {
+  decideSubmission,
+  validateSubmissionInput,
+  type AnnouncementSubmissionDTO,
+} from './announcement-submission.domain.js';
 import {
   buildGoals,
   buildMatchResponse,
@@ -1047,6 +1051,10 @@ export class OpportunitiesService {
 
   // ==================== 纠错提交（证据层，PRD 7.10） ====================
 
+  /** 纠错提交限流：同一用户 24 小时滚动窗口内最多 20 条 */
+  private static readonly CORRECTION_MAX_PER_DAY = 20;
+  private static readonly CORRECTION_WINDOW_MS = 24 * 60 * 60 * 1000;
+
   async submitCorrection(
     userId: string,
     unitId: string,
@@ -1064,6 +1072,31 @@ export class OpportunitiesService {
     }
     if (content.length > 1000) {
       throw new BadRequestException('纠错说明不能超过 1000 字');
+    }
+    // D08（PRD 11.9）：限流 + 重复提交可识别。
+    const windowStart = new Date(
+      Date.now() - OpportunitiesService.CORRECTION_WINDOW_MS,
+    );
+    const recent = await this.prisma.opportunityCorrection.findMany({
+      where: { userId, createdAt: { gte: windowStart } },
+      select: { id: true, unitId: true, fieldPath: true, content: true },
+      orderBy: { createdAt: 'desc' },
+    });
+    const duplicate = recent.find(
+      (row) =>
+        row.unitId === unitId &&
+        row.fieldPath === fieldPath &&
+        row.content === content,
+    );
+    if (duplicate) {
+      throw new ConflictException(
+        '这条纠错你已提交过，处理进度可在「我的资料」页查看',
+      );
+    }
+    if (recent.length >= OpportunitiesService.CORRECTION_MAX_PER_DAY) {
+      throw new ConflictException(
+        `提交太频繁：24 小时内最多提交 ${OpportunitiesService.CORRECTION_MAX_PER_DAY} 条纠错，请稍后再试`,
+      );
     }
     const row = await this.prisma.opportunityCorrection.create({
       data: {
@@ -1134,15 +1167,16 @@ export class OpportunitiesService {
 
   /**
    * 员工处理纠错：
-   * - 状态机校验见 corrections.domain（终态不可改、不采纳必须写说明）；
-   * - resolved/rejected 时给提交人发一条站内通知，通知只含结论与说明，
-   *   不含联系方式等其他用户信息；
+   * - 状态机校验见 corrections.domain（终态不可改、不采纳/需补充必须写说明）；
+   * - resolved/rejected/need_supplement 时给提交人发一条站内通知，通知只含
+   *   结论与说明，不含联系方式等其他用户信息；
+   * - resolved 可登记 resolvedVersionId（已发布修正版本），随通知告知提交人；
    * - 纠错记录不物理删除，处理人/处理时间/说明全部留痕。
    */
   async reviewCorrection(
     reviewer: { id: string; role: string },
     correctionId: string,
-    body: { status?: unknown; reviewNote?: unknown },
+    body: { status?: unknown; reviewNote?: unknown; resolvedVersionId?: unknown },
   ): Promise<CorrectionDTO> {
     const catalog = await this.loadCatalog();
     const row = await this.prisma.opportunityCorrection.findUnique({
@@ -1155,9 +1189,29 @@ export class OpportunitiesService {
       from: row.status,
       to: body.status,
       reviewNote: body.reviewNote,
+      existingNote: row.reviewNote,
     });
     if (!result.ok) {
       throw new ConflictException(result.message);
+    }
+    const resolvedVersionId =
+      typeof body.resolvedVersionId === 'string' &&
+      body.resolvedVersionId.trim()
+        ? body.resolvedVersionId.trim().slice(0, 100)
+        : null;
+    if (result.status === 'resolved' && resolvedVersionId) {
+      // 版本落点校验：必须属于该纠错对应公告的已发布版本链，防止误登记
+      const announcement = catalog.find(
+        (a) => a.id === row.announcementId,
+      );
+      const known = announcement?.versions.some(
+        (v) => v.id === resolvedVersionId,
+      );
+      if (!known) {
+        throw new BadRequestException(
+          '修正版本号不属于该公告的版本链，请核对后填写',
+        );
+      }
     }
     const now = new Date();
     const updated = await this.prisma.opportunityCorrection.update({
@@ -1167,43 +1221,251 @@ export class OpportunitiesService {
         reviewNote: result.note ?? row.reviewNote,
         reviewerId: reviewer.id,
         reviewedAt: now,
+        resolvedVersionId:
+          result.status === 'resolved'
+            ? (resolvedVersionId ?? row.resolvedVersionId)
+            : row.resolvedVersionId,
       },
     });
 
-    if (isTerminalStatus(result.status)) {
-      const meta = this.findCatalogUnitMeta(row.unitId, catalog);
-      const unitName = meta?.unitName ?? '该机会';
-      const noteLine = result.note ? `处理说明：${result.note}` : '';
-      if (result.status === 'resolved') {
-        await this.prisma.notificationRecord.create({
-          data: {
-            userId: row.userId,
-            severity: 'info',
-            title: `你提交的「${unitName}」纠错已采纳并修正`,
-            body:
-              `我们已核对官方原文，确认你反馈的「${fieldPathLabel(row.fieldPath)}」问题，` +
-              `并在新版本中完成更正，感谢你的反馈。${noteLine}`,
-            eventKey: null,
-            relatedUnitId: row.unitId,
-          },
-        });
-      } else {
-        await this.prisma.notificationRecord.create({
-          data: {
-            userId: row.userId,
-            severity: 'info',
-            title: `你提交的「${unitName}」纠错已核对完成`,
-            body:
-              `我们核对官方原文后暂未采纳这条「${fieldPathLabel(row.fieldPath)}」纠错。` +
-              noteLine,
-            eventKey: null,
-            relatedUnitId: row.unitId,
-          },
-        });
-      }
+    const meta = this.findCatalogUnitMeta(row.unitId, catalog);
+    const unitName = meta?.unitName ?? '该机会';
+    const noteLine = result.note ? `处理说明：${result.note}` : '';
+    if (result.status === 'resolved') {
+      const versionLine = updated.resolvedVersionId
+        ? `更正版本：${updated.resolvedVersionId}。`
+        : '';
+      await this.prisma.notificationRecord.create({
+        data: {
+          userId: row.userId,
+          severity: 'info',
+          title: `你提交的「${unitName}」纠错已采纳并修正`,
+          body:
+            `我们已核对官方原文，确认你反馈的「${fieldPathLabel(row.fieldPath)}」问题，` +
+            `并在新版本中完成更正，感谢你的反馈。${versionLine}${noteLine}`,
+          eventKey: null,
+          relatedUnitId: row.unitId,
+        },
+      });
+    } else if (result.status === 'need_supplement') {
+      await this.prisma.notificationRecord.create({
+        data: {
+          userId: row.userId,
+          severity: 'info',
+          title: `你提交的「${unitName}」纠错需要补充信息`,
+          body:
+            `我们核对你反馈的「${fieldPathLabel(row.fieldPath)}」问题时还需要更多信息。` +
+            noteLine,
+          eventKey: null,
+          relatedUnitId: row.unitId,
+        },
+      });
+    } else if (result.status === 'rejected') {
+      await this.prisma.notificationRecord.create({
+        data: {
+          userId: row.userId,
+          severity: 'info',
+          title: `你提交的「${unitName}」纠错已核对完成`,
+          body:
+            `我们核对官方原文后暂未采纳这条「${fieldPathLabel(row.fieldPath)}」纠错。` +
+            noteLine,
+          eventKey: null,
+          relatedUnitId: row.unitId,
+        },
+      });
     }
 
     return this.toCorrectionDTO(updated, catalog);
+  }
+
+  // ==================== 公告补录（D08 / PRD 11.9 U08） ====================
+
+  /**
+   * 用户提交未收录官方公告的补录。只进运营待办队列，绝不直接进入采集
+   * 与发布；链接经安全校验，按用户限流，重复提交可识别。
+   */
+  async submitAnnouncementSubmission(
+    userId: string,
+    body: {
+      officialUrl?: unknown;
+      publisherName?: unknown;
+      regionCode?: unknown;
+      note?: unknown;
+    },
+  ): Promise<{ id: string; status: string }> {
+    const check = validateSubmissionInput(body);
+    if (!check.ok || !check.value) {
+      throw new BadRequestException(check.message ?? '补录信息不完整');
+    }
+    const value = check.value;
+    const [recentForUser, accepted] = await Promise.all([
+      this.prisma.announcementSubmission.findMany({
+        where: { userId },
+        select: {
+          id: true,
+          userId: true,
+          urlHash: true,
+          status: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 100,
+      }),
+      // 已收录（resolved）链接全库去重：同一公告链接不需要重复补录
+      this.prisma.announcementSubmission.findMany({
+        where: { status: 'resolved', urlHash: value.urlHash },
+        select: { urlHash: true },
+        take: 1,
+      }),
+    ]);
+    const decision = decideSubmission({
+      urlHash: value.urlHash,
+      userId,
+      recentForUser,
+      acceptedHashes: new Set(accepted.map((r) => r.urlHash)),
+      now: new Date(),
+    });
+    if (!decision.ok) {
+      if (decision.kind === 'duplicate_self') {
+        throw new ConflictException(decision.message);
+      }
+      throw new ConflictException(decision.message);
+    }
+    const row = await this.prisma.announcementSubmission.create({
+      data: {
+        userId,
+        officialUrl: value.officialUrl,
+        urlHash: value.urlHash,
+        publisherName: value.publisherName,
+        regionCode: value.regionCode,
+        note: value.note,
+      },
+    });
+    return { id: row.id, status: row.status };
+  }
+
+  /** 当前用户提交过的补录与处理状态（我的页） */
+  async listMyAnnouncementSubmissions(
+    userId: string,
+  ): Promise<AnnouncementSubmissionDTO[]> {
+    const rows = await this.prisma.announcementSubmission.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+    return rows.map((row) => this.toSubmissionDTO(row));
+  }
+
+  /** 员工补录队列；status 为空时返回全部 */
+  async listAnnouncementSubmissionsForStaff(
+    status: string | null,
+  ): Promise<
+    (AnnouncementSubmissionDTO & {
+      submitter: { id: string; email: string; name: string | null };
+    })[]
+  > {
+    if (
+      status !== null &&
+      !(CORRECTION_STATUSES as readonly string[]).includes(status)
+    ) {
+      throw new BadRequestException('补录状态筛选值无效');
+    }
+    const rows = await this.prisma.announcementSubmission.findMany({
+      where: status === null ? {} : { status },
+      orderBy: [{ createdAt: 'desc' }],
+      take: 200,
+    });
+    const submitterIds = [...new Set(rows.map((r) => r.userId))];
+    const submitters = await this.prisma.user.findMany({
+      where: { id: { in: submitterIds } },
+      select: { id: true, email: true, name: true },
+    });
+    const submitterMap = new Map(submitters.map((u) => [u.id, u]));
+    return rows.map((row) => {
+      const submitterRow = submitterMap.get(row.userId) ?? null;
+      return {
+        ...this.toSubmissionDTO(row),
+        submitter: submitterRow
+          ? {
+              id: submitterRow.id,
+              email: submitterRow.email,
+              name: submitterRow.name,
+            }
+          : { id: row.userId, email: '', name: null },
+      };
+    });
+  }
+
+  /**
+   * 员工处理补录：与纠错共用状态机（need_supplement 须附说明；
+   * resolved = 已收录）。终态/需补充均给提交人发站内通知；
+   * 处理只改变补录记录本身，不直接修改任何公共目录或发布数据。
+   */
+  async reviewAnnouncementSubmission(
+    reviewer: { id: string; role: string },
+    submissionId: string,
+    body: { status?: unknown; reviewNote?: unknown },
+  ): Promise<AnnouncementSubmissionDTO> {
+    const row = await this.prisma.announcementSubmission.findUnique({
+      where: { id: submissionId },
+    });
+    if (!row) {
+      throw new NotFoundException('未找到该补录记录');
+    }
+    const result = validateReview({
+      from: row.status,
+      to: body.status,
+      reviewNote: body.reviewNote,
+      existingNote: row.reviewNote,
+    });
+    if (!result.ok) {
+      throw new ConflictException(result.message);
+    }
+    const updated = await this.prisma.announcementSubmission.update({
+      where: { id: row.id },
+      data: {
+        status: result.status,
+        reviewNote: result.note ?? row.reviewNote,
+        reviewerId: reviewer.id,
+        reviewedAt: new Date(),
+      },
+    });
+    const noteLine = result.note ? `处理说明：${result.note}` : '';
+    if (result.status === 'resolved') {
+      await this.prisma.notificationRecord.create({
+        data: {
+          userId: row.userId,
+          severity: 'info',
+          title: `你补录的「${row.publisherName}」公告已收录处理`,
+          body: `我们会按官方来源核对该公告并纳入监测，感谢你的补录。${noteLine}`,
+          eventKey: null,
+          relatedUnitId: null,
+        },
+      });
+    } else if (result.status === 'need_supplement') {
+      await this.prisma.notificationRecord.create({
+        data: {
+          userId: row.userId,
+          severity: 'info',
+          title: `你补录的「${row.publisherName}」公告需要补充信息`,
+          body: `处理这条补录还需要更多信息。${noteLine}`,
+          eventKey: null,
+          relatedUnitId: null,
+        },
+      });
+    } else if (result.status === 'rejected') {
+      await this.prisma.notificationRecord.create({
+        data: {
+          userId: row.userId,
+          severity: 'info',
+          title: `你补录的「${row.publisherName}」公告暂未采纳`,
+          body: `我们核对后暂未采纳这条补录。${noteLine}`,
+          eventKey: null,
+          relatedUnitId: null,
+        },
+      });
+    }
+    return this.toSubmissionDTO(updated);
   }
 
   // ==================== 内部工具 ====================
@@ -1279,6 +1541,7 @@ export class OpportunitiesService {
       reviewNote: string | null;
       reviewerId: string | null;
       reviewedAt: Date | null;
+      resolvedVersionId?: string | null;
       createdAt: Date;
     },
     catalog: readonly RecruitmentAnnouncement[],
@@ -1295,6 +1558,33 @@ export class OpportunitiesService {
       fieldLabel: fieldPathLabel(row.fieldPath),
       content: row.content,
       contact: row.contact,
+      status: row.status,
+      reviewNote: row.reviewNote,
+      reviewerId: row.reviewerId,
+      reviewedAt: row.reviewedAt ? row.reviewedAt.toISOString() : null,
+      resolvedVersionId: row.resolvedVersionId ?? null,
+      createdAt: row.createdAt.toISOString(),
+    };
+  }
+
+  private toSubmissionDTO(row: {
+    id: string;
+    officialUrl: string;
+    publisherName: string;
+    regionCode: string;
+    note: string | null;
+    status: string;
+    reviewNote: string | null;
+    reviewerId: string | null;
+    reviewedAt: Date | null;
+    createdAt: Date;
+  }): AnnouncementSubmissionDTO {
+    return {
+      id: row.id,
+      officialUrl: row.officialUrl,
+      publisherName: row.publisherName,
+      regionCode: row.regionCode,
+      note: row.note,
       status: row.status,
       reviewNote: row.reviewNote,
       reviewerId: row.reviewerId,

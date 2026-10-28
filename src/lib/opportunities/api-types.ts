@@ -400,10 +400,11 @@ export interface GoalsResponse {
   primaryTargetUnitId: string | null;
 }
 
-/** 机会纠错处理状态（P0-F）：与后端 corrections.domain 对齐 */
+/** 机会纠错处理状态（P0-F / D08 扩展）：与后端 corrections.domain 对齐 */
 export type OpportunityCorrectionStatus =
   | "submitted"
   | "reviewing"
+  | "need_supplement"
   | "resolved"
   | "rejected";
 
@@ -423,12 +424,41 @@ export interface OpportunityCorrectionDTO {
   reviewNote: string | null;
   reviewerId: string | null;
   reviewedAt: string | null;
+  /** D08：已采纳修正时登记的已发布版本 id（可空，供回详情核对） */
+  resolvedVersionId: string | null;
   createdAt: string;
 }
 
 /** 员工队列项（GET /opportunities/admin/corrections）：附带提交人账号 */
 export interface StaffOpportunityCorrectionDTO
   extends OpportunityCorrectionDTO {
+  submitter: {
+    id: string;
+    email: string;
+    name: string | null;
+  };
+}
+
+/**
+ * 公告补录提交（D08 / PRD 11.9 U08）：用户报告未收录的官方公告。
+ * 处理状态与纠错共用同一状态机（submitted/reviewing/need_supplement/resolved/rejected）。
+ */
+export interface AnnouncementSubmissionDTO {
+  id: string;
+  officialUrl: string;
+  publisherName: string;
+  regionCode: string;
+  note: string | null;
+  status: OpportunityCorrectionStatus;
+  reviewNote: string | null;
+  reviewerId: string | null;
+  reviewedAt: string | null;
+  createdAt: string;
+}
+
+/** 员工补录队列项（GET /opportunities/admin/announcement-submissions） */
+export interface StaffAnnouncementSubmissionDTO
+  extends AnnouncementSubmissionDTO {
   submitter: {
     id: string;
     email: string;

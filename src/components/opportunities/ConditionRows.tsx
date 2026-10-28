@@ -16,10 +16,13 @@ import { DIMENSION_VALUE_META } from "@/lib/opportunities/detail-view";
 export function ConditionRows({
   dimensions,
   showDescription = false,
+  /** D08：携带条件维度打开纠错弹窗（预选问题位置）；不传则不显示逐行纠错入口 */
+  onCorrectCondition,
 }: {
   dimensions: DimensionDTO[];
   /** 详情页展示公告原文栏；列表卡片展开态可只展示短判断 */
   showDescription?: boolean;
+  onCorrectCondition?: (fieldPath: string) => void;
 }) {
   return (
     <ul className="divide-y divide-line">
@@ -37,14 +40,25 @@ export function ConditionRows({
                   ? "就业地区"
                   : dimensionLabel(dim.dimension)}
               </span>
-              <span
-                className={cn(
-                  "inline-flex shrink-0 items-center gap-1 rounded-full bg-canvas px-2 py-0.5 text-xs font-medium",
-                  meta.className,
+              <span className="flex shrink-0 items-center gap-2">
+                {onCorrectCondition && dim.dimension !== "region" && (
+                  <button
+                    type="button"
+                    onClick={() => onCorrectCondition("matching")}
+                    className="text-xs text-ink-muted underline-offset-2 hover:text-brand hover:underline"
+                  >
+                    判断有误？
+                  </button>
                 )}
-              >
-                <span aria-hidden="true">{meta.symbol}</span>
-                {meta.text}
+                <span
+                  className={cn(
+                    "inline-flex shrink-0 items-center gap-1 rounded-full bg-canvas px-2 py-0.5 text-xs font-medium",
+                    meta.className,
+                  )}
+                >
+                  <span aria-hidden="true">{meta.symbol}</span>
+                  {meta.text}
+                </span>
               </span>
             </div>
 

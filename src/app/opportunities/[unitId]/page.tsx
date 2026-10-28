@@ -108,6 +108,10 @@ export default function OpportunityDetailPage() {
   const [actionRetry, setActionRetry] = useState<(() => void) | null>(null);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
   const [correctionOpen, setCorrectionOpen] = useState(false);
+  /** D08：从逐条件解释行进入纠错时预选的问题位置（undefined＝由用户自选） */
+  const [correctionFieldPath, setCorrectionFieldPath] = useState<
+    string | undefined
+  >(undefined);
   const [correctionSubmitting, setCorrectionSubmitting] = useState(false);
   /** 提交成功后的回执编号（M10）：凭编号可在「我的」页查询状态与结果 */
   const [correctionDone, setCorrectionDone] = useState<string | null>(null);
@@ -570,6 +574,13 @@ export default function OpportunityDetailPage() {
     }
   };
 
+  /** D08：从逐条件解释行打开纠错，预选「匹配结论」问题位置 */
+  const openCorrectionForField = (_fieldPath: string) => {
+    setCorrectionDone(null);
+    setCorrectionFieldPath(_fieldPath);
+    setCorrectionOpen(true);
+  };
+
   return (
     <div className="mx-auto max-w-2xl space-y-6 pb-4">
       <nav className="text-xs text-ink-muted">
@@ -826,7 +837,11 @@ export default function OpportunityDetailPage() {
             title="需要补充的信息"
             count={groups.missingInfo.length}
           >
-            <ConditionRows dimensions={groups.missingInfo} showDescription />
+            <ConditionRows
+              dimensions={groups.missingInfo}
+              showDescription
+              onCorrectCondition={openCorrectionForField}
+            />
           </Disclosure>
         )}
 
@@ -836,7 +851,11 @@ export default function OpportunityDetailPage() {
             title="需要向招聘单位确认"
             count={groups.confirmOfficial.length}
           >
-            <ConditionRows dimensions={groups.confirmOfficial} showDescription />
+            <ConditionRows
+              dimensions={groups.confirmOfficial}
+              showDescription
+              onCorrectCondition={openCorrectionForField}
+            />
           </Disclosure>
         )}
 
@@ -846,13 +865,21 @@ export default function OpportunityDetailPage() {
             title="明确不符合项"
             count={groups.unsatisfied.length}
           >
-            <ConditionRows dimensions={groups.unsatisfied} showDescription />
+            <ConditionRows
+              dimensions={groups.unsatisfied}
+              showDescription
+              onCorrectCondition={openCorrectionForField}
+            />
           </Disclosure>
         )}
 
         {groups.satisfied.length > 0 && (
           <Disclosure title="已满足的条件" count={groups.satisfied.length}>
-            <ConditionRows dimensions={groups.satisfied} showDescription />
+            <ConditionRows
+              dimensions={groups.satisfied}
+              showDescription
+              onCorrectCondition={openCorrectionForField}
+            />
           </Disclosure>
         )}
 
@@ -958,8 +985,9 @@ export default function OpportunityDetailPage() {
           <OfficialSourceSection detail={detail} />
           <VerificationSection
             detail={detail}
-            onOpenCorrection={() => {
+            onOpenCorrection={(fieldPath?: string) => {
               setCorrectionDone(null);
+              setCorrectionFieldPath(fieldPath);
               setCorrectionOpen(true);
             }}
           />
@@ -968,8 +996,12 @@ export default function OpportunityDetailPage() {
 
       <CorrectionModal
         isOpen={correctionOpen}
-        onClose={() => setCorrectionOpen(false)}
+        onClose={() => {
+          setCorrectionOpen(false);
+          setCorrectionFieldPath(undefined);
+        }}
         submitting={correctionSubmitting}
+        initialFieldPath={correctionFieldPath}
         onSubmit={(input) => void handleCorrection(input)}
       />
     </div>

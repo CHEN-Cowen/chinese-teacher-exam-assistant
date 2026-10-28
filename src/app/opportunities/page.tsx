@@ -32,6 +32,8 @@ import { SubscriptionCard } from "@/components/opportunities/SubscriptionCard";
 import { StatusMessage, StatusMessageRegion } from "@/components/ui/StatusMessage";
 import { Callout } from "@/components/ui/Callout";
 import { useOnlineStatus } from "@/lib/useOnlineStatus";
+import { correctionTicketCode } from "@/lib/opportunities/correction-code";
+import { AnnouncementSubmissionModal } from "@/components/opportunities/AnnouncementSubmissionModal";
 import { ResultConditionSummary } from "@/components/results/ResultConditionSummary";
 import { buildEditConditionsHref } from "@/lib/results/condition-summary";
 import type { ConditionSource } from "@/lib/results/condition-summary";
@@ -89,6 +91,31 @@ export default function OpportunitiesPage() {
     toggleFollow,
   } = useOpportunities();
   const online = useOnlineStatus();
+
+  // D08：公告补录弹窗（报告未收录的官方公告）
+  const [submissionOpen, setSubmissionOpen] = useState(false);
+  const [submissionSubmitting, setSubmissionSubmitting] = useState(false);
+  const [submissionDone, setSubmissionDone] = useState<string | null>(null);
+  const [submissionError, setSubmissionError] = useState<string | null>(null);
+
+  const handleSubmission = async (input: {
+    officialUrl: string;
+    publisherName: string;
+    regionCode: string;
+    note?: string;
+  }) => {
+    setSubmissionSubmitting(true);
+    setSubmissionError(null);
+    try {
+      const receipt = await opportunitiesApi.submitAnnouncementSubmission(input);
+      setSubmissionOpen(false);
+      setSubmissionDone(correctionTicketCode(receipt.id));
+    } catch (e) {
+      setSubmissionError(e instanceof Error ? e.message : "补录提交失败");
+    } finally {
+      setSubmissionSubmitting(false);
+    }
+  };
 
   // v7.1 M6：进入机会页即幂等同步订阅（fire-and-forget）；有新提醒时给页面提示条
   const [newNotices, setNewNotices] = useState(0);
@@ -289,7 +316,13 @@ export default function OpportunitiesPage() {
         }
       />
 
-      <CoverageBanner coverage={view.coverage} />
+      <CoverageBanner
+        coverage={view.coverage}
+        onOpenSubmission={() => {
+          setSubmissionDone(null);
+          setSubmissionOpen(true);
+        }}
+      />
       <DatasetScopeNotice hasDemo={hasDemo} />
       {/* D06：往年参考入口（历史已截止公告，只读、不计入当前可报） */}
       <div className="flex items-center justify-between gap-3 rounded-xl border border-line bg-surface px-4 py-3">
@@ -354,7 +387,14 @@ export default function OpportunitiesPage() {
       )}
 
       {noResult && (
-        <NoResultFeedback panel={noResult} coverage={view.coverage} />
+        <NoResultFeedback
+          panel={noResult}
+          coverage={view.coverage}
+          onOpenSubmission={() => {
+            setSubmissionDone(null);
+            setSubmissionOpen(true);
+          }}
+        />
       )}
       {noResult && <SubscriptionCard profile={state.profile} />}
 
@@ -363,6 +403,27 @@ export default function OpportunitiesPage() {
           {actionError}
         </Callout>
       )}
+
+      {submissionError && (
+        <Callout variant="no" title="补录提交未完成">
+          {submissionError}
+        </Callout>
+      )}
+      {submissionDone && (
+        <StatusMessage
+          tone="success"
+          duration={0}
+          message={`补录已提交，受理编号 ${submissionDone}。我们核对官方来源后会纳入监测，处理结果可在「我的资料」页查看。`}
+        />
+      )}
+
+      {/* D08：公告补录弹窗（列表页与无结果面板共用） */}
+      <AnnouncementSubmissionModal
+        isOpen={submissionOpen}
+        onClose={() => setSubmissionOpen(false)}
+        submitting={submissionSubmitting}
+        onSubmit={(input) => void handleSubmission(input)}
+      />
 
       {/* v7.2 结果区：ff_new_results 开 → 工作台三标签；关（回退）→ 旧式堆叠分组。
           FLAGS 是构建期快照，顶层条件渲染在服务端与客户端一致，无 hydration 风险。

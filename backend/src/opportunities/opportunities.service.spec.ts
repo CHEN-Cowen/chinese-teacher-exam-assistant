@@ -147,6 +147,7 @@ function createFakePrisma() {
         reviewNote: null,
         reviewerId: null,
         reviewedAt: null,
+        resolvedVersionId: null,
         createdAt: new Date(),
         ...data,
       };
@@ -159,12 +160,21 @@ function createFakePrisma() {
       where,
       take,
     }: {
-      where?: { userId?: string; status?: string };
+      where?: {
+        userId?: string;
+        status?: string;
+        createdAt?: { gte?: Date };
+      };
       take?: number;
     }) => {
       let list = [...corrections];
       if (where?.userId) list = list.filter((r) => r.userId === where.userId);
       if (where?.status) list = list.filter((r) => r.status === where.status);
+      if (where?.createdAt?.gte) {
+        list = list.filter(
+          (r) => (r.createdAt as Date).getTime() >= where.createdAt!.gte!.getTime(),
+        );
+      }
       list.sort(
         (a: { createdAt: Date }, b: { createdAt: Date }) =>
           b.createdAt.getTime() - a.createdAt.getTime(),
@@ -179,6 +189,60 @@ function createFakePrisma() {
       data: Record<string, unknown>;
     }) => {
       const row = corrections.find((r) => r.id === where.id);
+      if (!row) throw new Error('not found');
+      Object.assign(row, data);
+      return row;
+    },
+  };
+
+  // D08：公告补录（内存版）
+  const submissions: Array<Record<string, unknown>> = [];
+  const announcementSubmission = {
+    create: async ({ data }: { data: Record<string, unknown> }) => {
+      const row = {
+        id: `sub-${++seq}`,
+        status: 'submitted',
+        reviewNote: null,
+        reviewerId: null,
+        reviewedAt: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        ...data,
+      };
+      submissions.push(row);
+      return row;
+    },
+    findUnique: async ({ where }: { where: { id: string } }) =>
+      submissions.find((r) => r.id === where.id) ?? null,
+    findMany: async ({
+      where,
+      take,
+    }: {
+      where?: {
+        userId?: string;
+        status?: string;
+        urlHash?: string;
+      };
+      take?: number;
+    }) => {
+      let list = [...submissions];
+      if (where?.userId) list = list.filter((r) => r.userId === where.userId);
+      if (where?.status) list = list.filter((r) => r.status === where.status);
+      if (where?.urlHash) list = list.filter((r) => r.urlHash === where.urlHash);
+      list.sort(
+        (a: { createdAt: Date }, b: { createdAt: Date }) =>
+          b.createdAt.getTime() - a.createdAt.getTime(),
+      );
+      return typeof take === 'number' ? list.slice(0, take) : list;
+    },
+    update: async ({
+      where,
+      data,
+    }: {
+      where: { id: string };
+      data: Record<string, unknown>;
+    }) => {
+      const row = submissions.find((r) => r.id === where.id);
       if (!row) throw new Error('not found');
       Object.assign(row, data);
       return row;
@@ -319,6 +383,7 @@ function createFakePrisma() {
     prisma: {
       followedOpportunity,
       opportunityCorrection,
+      announcementSubmission,
       notificationRecord,
       opportunitySubscription,
       opportunityNoticeLog,
@@ -328,6 +393,7 @@ function createFakePrisma() {
     } as never,
     rows,
     corrections,
+    submissions,
     notifications,
     subscriptions,
     noticeLogs,
@@ -1010,6 +1076,241 @@ describe('OpportunitiesService：纠错处理闭环（P0-F / 模块 8）', () =>
     await expect(
       service.listCorrectionsForStaff('not-a-status'),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('D08：need_supplement 必须附说明，用户可见理由并可回到核对中', async () => {
+    const fake = createFakePrisma();
+    const { service, created } = await seedCorrection(fake);
+
+    await expect(
+      service.reviewCorrection(REVIEWER, created.id, { status: 'need_supplement' }),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    const need = await service.reviewCorrection(REVIEWER, created.id, {
+      status: 'need_supplement',
+      reviewNote: '请补充公告原文中该岗位人数所在段落或截图入口',
+    });
+    expect(need.status).toBe('need_supplement');
+    expect(fake.notifications).toHaveLength(1);
+    expect(String((fake.notifications[0] as Record<string, unknown>).title)).toContain(
+      '需要补充信息',
+    );
+
+    // 用户侧可查处理说明（需补充理由可查）
+    const mine = await service.listMyCorrections('user-1');
+    expect(mine[0]?.reviewNote).toContain('请补充公告原文');
+
+    // 补充后可继续推进：need_supplement → reviewing → resolved
+    await service.reviewCorrection(REVIEWER, created.id, { status: 'reviewing' });
+    const resolved = await service.reviewCorrection(REVIEWER, created.id, {
+      status: 'resolved',
+      reviewNote: '已按补充材料修正',
+    });
+    expect(resolved.status).toBe('resolved');
+    // 需补充 1 条 + 已修正 1 条（reviewing 不通知）
+    expect(fake.notifications).toHaveLength(2);
+  });
+
+  it('D08：resolved 可登记修正版本号；不属于该公告版本链时拒绝', async () => {
+    const fake = createFakePrisma();
+    const { service, created } = await seedCorrection(fake);
+
+    await expect(
+      service.reviewCorrection(REVIEWER, created.id, {
+        status: 'resolved',
+        resolvedVersionId: 'ann-unknown-version',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    const resolved = await service.reviewCorrection(REVIEWER, created.id, {
+      status: 'resolved',
+      resolvedVersionId: 'ann-hefei-v2',
+    });
+    expect(resolved.resolvedVersionId).toBe('ann-hefei-v2');
+    const notice = fake.notifications[0] as Record<string, unknown>;
+    expect(String(notice.body)).toContain('更正版本：ann-hefei-v2');
+
+    const mine = await service.listMyCorrections('user-1');
+    expect(mine[0]?.resolvedVersionId).toBe('ann-hefei-v2');
+  });
+
+  it('D08：24 小时内同单元同字段同内容重复提交 409；限流达到上限拒绝', async () => {
+    const fake = createFakePrisma();
+    const service = new OpportunitiesService(fake.prisma, fakeProfileService, fakeScheduleService);
+    const input = { fieldPath: 'major', content: '专业目录少列了一个专业名称' };
+    await service.submitCorrection('user-1', 'unit-hefei-01-v2', input);
+    await expect(
+      service.submitCorrection('user-1', 'unit-hefei-01-v2', input),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    // 不同内容不受去重影响，但达到限流上限（20）后拒绝
+    for (let i = 0; i < 19; i += 1) {
+      await service.submitCorrection('user-1', 'unit-hefei-01-v2', {
+        fieldPath: 'other',
+        content: `第 ${i} 条足够长的其他问题说明`,
+      });
+    }
+    await expect(
+      service.submitCorrection('user-1', 'unit-hefei-01-v2', {
+        fieldPath: 'other',
+        content: '再提交一条足够长的其他问题说明',
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    // 其他用户不受该用户限流影响
+    await expect(
+      service.submitCorrection('user-2', 'unit-hefei-01-v2', input),
+    ).resolves.toBeTruthy();
+  });
+});
+
+describe('OpportunitiesService：公告补录（D08 / PRD 11.9 U08）', () => {
+  const REVIEWER = { id: 'staff-1', role: 'admin' };
+  const VALID_INPUT = {
+    officialUrl: 'https://example.gov.cn/2026/recruit-notice',
+    publisherName: '某市人力资源和社会保障局',
+    regionCode: '330100',
+    note: '该公告已发布但站内未收录',
+  };
+
+  it('合法提交入库（存规范化链接与哈希），本人可查、他人不可见', async () => {
+    const fake = createFakePrisma();
+    const service = new OpportunitiesService(fake.prisma, fakeProfileService, fakeScheduleService);
+
+    const created = await service.submitAnnouncementSubmission('user-1', VALID_INPUT);
+    expect(created.status).toBe('submitted');
+
+    const mine = await service.listMyAnnouncementSubmissions('user-1');
+    expect(mine).toHaveLength(1);
+    expect(mine[0]?.officialUrl).toBe('https://example.gov.cn/2026/recruit-notice');
+    expect(mine[0]?.publisherName).toBe('某市人力资源和社会保障局');
+    // 他人视角看不到
+    expect(await service.listMyAnnouncementSubmissions('user-2')).toHaveLength(0);
+  });
+
+  it('非法与内网链接被拒：javascript:/ftp:/localhost/127.x/192.168.x/凭据 URL', async () => {
+    const fake = createFakePrisma();
+    const service = new OpportunitiesService(fake.prisma, fakeProfileService, fakeScheduleService);
+
+    for (const officialUrl of [
+      'javascript:alert(1)',
+      'ftp://example.gov.cn/a',
+      'http://localhost:3000/notice',
+      'http://127.0.0.1/notice',
+      'http://192.168.1.10/notice',
+      'http://10.0.0.5/notice',
+      'http://172.16.0.9/notice',
+      'http://[::1]/notice',
+      'https://user:pass@example.gov.cn/notice',
+      'not-a-url',
+    ]) {
+      await expect(
+        service.submitAnnouncementSubmission('user-1', { ...VALID_INPUT, officialUrl }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    }
+    expect(fake.submissions).toHaveLength(0);
+  });
+
+  it('缺单位、缺地区码、说明超长均 400', async () => {
+    const fake = createFakePrisma();
+    const service = new OpportunitiesService(fake.prisma, fakeProfileService, fakeScheduleService);
+
+    await expect(
+      service.submitAnnouncementSubmission('user-1', { ...VALID_INPUT, publisherName: ' ' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.submitAnnouncementSubmission('user-1', { ...VALID_INPUT, regionCode: '33' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.submitAnnouncementSubmission('user-1', { ...VALID_INPUT, note: '超'.repeat(501) }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('重复提交可识别：本人同链接 409；已收录链接任何人提交 409；24h 限流', async () => {
+    const fake = createFakePrisma();
+    const service = new OpportunitiesService(fake.prisma, fakeProfileService, fakeScheduleService);
+
+    const first = await service.submitAnnouncementSubmission('user-1', VALID_INPUT);
+    await expect(
+      service.submitAnnouncementSubmission('user-1', {
+        ...VALID_INPUT,
+        // 规范化后相同（默认端口/结尾斜杠/hash 差异不产生新提交）
+        officialUrl: 'https://example.gov.cn:443/2026/recruit-notice/#top',
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    // 管理员标记已收录后，任何用户再提交同链接都被识别
+    await service.reviewAnnouncementSubmission(REVIEWER, first.id, {
+      status: 'resolved',
+      reviewNote: '已纳入监测',
+    });
+    await expect(
+      service.submitAnnouncementSubmission('user-2', VALID_INPUT),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    // 限流：user-3 连续 10 条后拒绝
+    for (let i = 0; i < 10; i += 1) {
+      await service.submitAnnouncementSubmission('user-3', {
+        ...VALID_INPUT,
+        officialUrl: `https://example.gov.cn/notice-${i}`,
+      });
+    }
+    await expect(
+      service.submitAnnouncementSubmission('user-3', {
+        ...VALID_INPUT,
+        officialUrl: 'https://example.gov.cn/notice-overflow',
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('员工处理补录：need_supplement/rejected 须附说明并通知；resolved 通知已收录', async () => {
+    const fake = createFakePrisma();
+    const service = new OpportunitiesService(fake.prisma, fakeProfileService, fakeScheduleService);
+
+    const created = await service.submitAnnouncementSubmission('user-1', VALID_INPUT);
+
+    const need = await service.reviewAnnouncementSubmission(REVIEWER, created.id, {
+      status: 'need_supplement',
+      reviewNote: '请补充公告标题或发文文号',
+    });
+    expect(need.status).toBe('need_supplement');
+    const mineAfterNeed = await service.listMyAnnouncementSubmissions('user-1');
+    expect(mineAfterNeed[0]?.reviewNote).toContain('请补充公告标题');
+
+    const rejected = await service.reviewAnnouncementSubmission(REVIEWER, created.id, {
+      status: 'rejected',
+    });
+    expect(rejected.status).toBe('rejected'); // need_supplement → rejected 允许（说明已在）
+    await expect(
+      service.reviewAnnouncementSubmission(REVIEWER, created.id, { status: 'resolved' }),
+    ).rejects.toBeInstanceOf(ConflictException); // 终态不可改
+
+    const second = await service.submitAnnouncementSubmission('user-2', VALID_INPUT);
+    const resolved = await service.reviewAnnouncementSubmission(REVIEWER, second.id, {
+      status: 'resolved',
+    });
+    expect(resolved.status).toBe('resolved');
+
+    const titles = fake.notifications.map((n) => String((n as Record<string, unknown>).title));
+    expect(titles.some((t) => t.includes('需要补充信息'))).toBe(true);
+    expect(titles.some((t) => t.includes('暂未采纳'))).toBe(true);
+    expect(titles.some((t) => t.includes('已收录处理'))).toBe(true);
+  });
+
+  it('员工队列支持状态过滤并附带提交人；非法状态 400；处理不存在记录 404', async () => {
+    const fake = createFakePrisma();
+    const service = new OpportunitiesService(fake.prisma, fakeProfileService, fakeScheduleService);
+
+    await service.submitAnnouncementSubmission('user-1', VALID_INPUT);
+    const queue = await service.listAnnouncementSubmissionsForStaff('submitted');
+    expect(queue).toHaveLength(1);
+    expect(queue[0]?.submitter.email).toBe('u1@example.com');
+    await expect(
+      service.listAnnouncementSubmissionsForStaff('not-a-status'),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.reviewAnnouncementSubmission(REVIEWER, 'sub-missing', { status: 'reviewing' }),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 });
 

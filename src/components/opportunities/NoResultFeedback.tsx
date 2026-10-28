@@ -24,9 +24,12 @@ function formatDay(iso: string): string {
 export function NoResultFeedback({
   panel,
   coverage,
+  /** D08：打开公告补录弹窗（报告未收录的官方公告） */
+  onOpenSubmission,
 }: {
   panel: NoResultPanelModel;
   coverage: CoverageDTO;
+  onOpenSubmission?: () => void;
 }) {
   // 无结果原因曝光（会话级去重；reasonCode 沿用旧三态，并存原因列表只记枚举不记正文）
   useEffect(() => {
@@ -151,13 +154,22 @@ export function NoResultFeedback({
         {panel.primary.nextStep ??
           "订阅新机会提醒：人工核对发布的新公告会在站内通知中心提醒你一次。"}
       </p>
-      <div className="mt-4 text-center">
+      <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
         <Link
           href="#subscription"
           className="inline-block rounded-xl bg-brand-soft px-4 py-2 text-sm font-semibold text-brand-strong transition-colors hover:bg-bar/60"
         >
           订阅新机会提醒
         </Link>
+        {onOpenSubmission && (
+          <button
+            type="button"
+            onClick={onOpenSubmission}
+            className="text-sm text-ink-muted underline underline-offset-2 hover:text-ink"
+          >
+            发现未收录的官方公告？提交补录
+          </button>
+        )}
       </div>
     </section>
   );

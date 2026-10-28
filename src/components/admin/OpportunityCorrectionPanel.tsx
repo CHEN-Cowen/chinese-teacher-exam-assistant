@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
-import { Textarea } from "@/components/ui/Input";
+import { Input, Textarea } from "@/components/ui/Input";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { cn, formatDateTime } from "@/lib/utils";
 import { useCurrentUser } from "@/lib/auth";
@@ -15,11 +15,18 @@ import type {
   StaffOpportunityCorrectionDTO,
 } from "@/lib/opportunities/api-types";
 
-type TabKey = "submitted" | "reviewing" | "resolved" | "rejected" | "all";
+type TabKey =
+  | "submitted"
+  | "reviewing"
+  | "need_supplement"
+  | "resolved"
+  | "rejected"
+  | "all";
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: "submitted", label: "待核对" },
   { key: "reviewing", label: "核对中" },
+  { key: "need_supplement", label: "需补充" },
   { key: "resolved", label: "已修正" },
   { key: "rejected", label: "不采纳" },
   { key: "all", label: "全部" },
@@ -31,6 +38,7 @@ const STATUS_META: Record<
 > = {
   submitted: { label: "待核对", variant: "warning" },
   reviewing: { label: "核对中", variant: "info" },
+  need_supplement: { label: "需补充", variant: "warning" },
   resolved: { label: "已修正", variant: "success" },
   rejected: { label: "不采纳", variant: "muted" },
 };
@@ -181,17 +189,26 @@ function CorrectionDetail({
   const terminal = c.status === "resolved" || c.status === "rejected";
 
   const [note, setNote] = useState(c.reviewNote ?? "");
+  const [resolvedVersionId, setResolvedVersionId] = useState(
+    c.resolvedVersionId ?? "",
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmReject, setConfirmReject] = useState(false);
 
-  const act = async (status: "reviewing" | "resolved" | "rejected") => {
+  const act = async (
+    status: "reviewing" | "need_supplement" | "resolved" | "rejected",
+  ) => {
     setBusy(true);
     setError(null);
     try {
       await opportunitiesApi.adminReviewCorrection(c.id, {
         status,
         reviewNote: note.trim() || undefined,
+        resolvedVersionId:
+          status === "resolved" && resolvedVersionId.trim()
+            ? resolvedVersionId.trim()
+            : undefined,
       });
       onHandled();
     } catch (e) {
@@ -268,11 +285,14 @@ function CorrectionDetail({
         <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
           该纠错已处理完成（终态不可修改）。处理人：{c.reviewerId ?? "—"}；
           处理时间：{c.reviewedAt ? formatDateTime(c.reviewedAt) : "—"}。
+          {c.resolvedVersionId && (
+            <>修正版本：{c.resolvedVersionId}。</>
+          )}
         </div>
       ) : canAct ? (
         <div className="space-y-3 rounded-lg border border-slate-200 p-3">
           <Textarea
-            label="处理说明（不采纳时必填；将随站内通知发送给提交人）"
+            label="处理说明（不采纳/需补充时必填；将随站内通知发送给提交人）"
             className="min-h-[72px]"
             value={note}
             maxLength={500}
@@ -282,6 +302,16 @@ function CorrectionDetail({
             }}
             placeholder="例如：已核对补充公告原文，该岗位人数确已调整为 12 人，将在新版本中更正。"
           />
+          <Input
+            label="修正版本号（标记已修正时可选填写；用户可回详情核对）"
+            value={resolvedVersionId}
+            maxLength={100}
+            onChange={(e) => {
+              setResolvedVersionId(e.target.value);
+              setError(null);
+            }}
+            placeholder="例如：ann-hefei-v3"
+          />
           {c.status === "submitted" && (
             <Button size="sm" variant="outline" disabled={busy} onClick={() => void act("reviewing")}>
               认领并开始核对
@@ -290,6 +320,14 @@ function CorrectionDetail({
           <div className="flex flex-wrap gap-2">
             <Button size="sm" disabled={busy} onClick={() => void act("resolved")}>
               核对无误，标记已修正
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy || !note.trim()}
+              onClick={() => void act("need_supplement")}
+            >
+              需要用户补充（需有说明）
             </Button>
             {confirmReject ? (
               <>

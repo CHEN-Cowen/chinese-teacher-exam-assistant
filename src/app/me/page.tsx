@@ -23,7 +23,9 @@ import {
 import { stageLabel } from "@/lib/ia/labels";
 import { opportunitiesApi } from "@/lib/opportunities/api";
 import { correctionTicketCode } from "@/lib/opportunities/correction-code";
+import { submissionStatusMeta } from "@/lib/opportunities/announcement-submission";
 import type {
+  AnnouncementSubmissionDTO,
   GoalsResponse,
   OpportunityCorrectionDTO,
   OpportunityCorrectionStatus,
@@ -47,6 +49,7 @@ const CORRECTION_STATUS_META: Record<
 > = {
   submitted: { label: "待核对", variant: "warning" },
   reviewing: { label: "核对中", variant: "info" },
+  need_supplement: { label: "需补充", variant: "warning" },
   resolved: { label: "已修正", variant: "success" },
   rejected: { label: "不采纳", variant: "muted" },
 };
@@ -82,6 +85,9 @@ export default function MePage() {
 
       {/* 我的纠错 */}
       <MyCorrectionsCard />
+
+      {/* 我的公告补录（D08） */}
+      <MySubmissionsCard />
 
       {/* 次级入口集中收纳，避免与首屏主行动竞争 */}
       <Card>
@@ -540,12 +546,84 @@ function MyCorrectionsCard() {
                   处理说明：{c.reviewNote}
                 </p>
               )}
+              {c.status === "resolved" && c.resolvedVersionId && (
+                <p className="mt-1.5 rounded bg-canvas px-2 py-1 text-xs text-ink-muted">
+                  已在新版本中更正（版本 {c.resolvedVersionId}），可回到该机会详情核对。
+                </p>
+              )}
               <p className="mt-1 text-[11px] text-ink-muted">
                 提交于 {formatDateTime(c.createdAt)}
                 {c.reviewedAt ? ` · 处理于 ${formatDateTime(c.reviewedAt)}` : ""}
               </p>
             </li>
           ))}
+        </ul>
+      </div>
+    </details>
+  );
+}
+
+/** D08：我提交的公告补录与处理状态（受理编号可对账；仅本人可见） */
+function MySubmissionsCard() {
+  const [items, setItems] = useState<AnnouncementSubmissionDTO[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    opportunitiesApi
+      .listMyAnnouncementSubmissions()
+      .then((data) => {
+        if (!cancelled) setItems(data);
+      })
+      .catch(() => {
+        // 无后端环境（如公开演示）不展示该卡片
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (items === null || items.length === 0) return null;
+
+  return (
+    <details className="group rounded-2xl border border-line bg-surface">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-4 [&::-webkit-details-marker]:hidden">
+        <span>
+          <span className="block text-sm font-semibold text-ink">我的公告补录</span>
+          <span className="mt-0.5 block text-xs text-ink-muted">{items.length} 条补录记录</span>
+        </span>
+        <span className="text-ink-muted transition-transform group-open:rotate-180">⌄</span>
+      </summary>
+      <div className="border-t border-line p-4">
+        <p className="mb-3 text-xs text-ink-muted">
+          补录经人工核对后才会纳入监测；处理结果会以站内通知告知，这里可随时查看进度。
+        </p>
+        <ul className="space-y-3">
+          {items.slice(0, 10).map((s) => {
+            const meta = submissionStatusMeta(s.status);
+            return (
+              <li key={s.id} className="rounded-lg border border-line p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium text-ink truncate">
+                    <span className="mr-1.5 font-mono text-xs text-ink-muted">
+                      {correctionTicketCode(s.id)}
+                    </span>
+                    {s.publisherName}
+                  </p>
+                  <Badge variant={meta.tone}>{meta.label}</Badge>
+                </div>
+                <p className="mt-1 truncate text-xs text-ink-muted">{s.officialUrl}</p>
+                {s.reviewNote && (
+                  <p className="mt-1.5 rounded bg-canvas px-2 py-1 text-xs text-ink-muted whitespace-pre-line">
+                    处理说明：{s.reviewNote}
+                  </p>
+                )}
+                <p className="mt-1 text-[11px] text-ink-muted">
+                  提交于 {formatDateTime(s.createdAt)}
+                  {s.reviewedAt ? ` · 处理于 ${formatDateTime(s.reviewedAt)}` : ""}
+                </p>
+              </li>
+            );
+          })}
         </ul>
       </div>
     </details>

@@ -22,7 +22,14 @@ function formatDay(iso: string): string {
  * 已登记/核验通过不等于已有在报岗位；
  * 非实时回退（caliber.isFallback）必须明示，不冒充实时监测。
  */
-export function CoverageBanner({ coverage }: { coverage: CoverageDTO }) {
+export function CoverageBanner({
+  coverage,
+  /** D08：打开公告补录弹窗（覆盖说明内提供入口，与无结果面板一致） */
+  onOpenSubmission,
+}: {
+  coverage: CoverageDTO;
+  onOpenSubmission?: () => void;
+}) {
   const provinceViews = buildProvinceScopeViews(coverage);
   const fallbackNote = coverageFallbackNote(coverage);
   return (
@@ -171,6 +178,17 @@ export function CoverageBanner({ coverage }: { coverage: CoverageDTO }) {
             : ""}
           。覆盖版本 {coverage.version}。
         </p>
+        {onOpenSubmission && (
+          <p className="mt-2 text-xs">
+            <button
+              type="button"
+              onClick={onOpenSubmission}
+              className="text-brand underline underline-offset-2 hover:text-brand-strong"
+            >
+              发现尚未收录的官方公告？提交补录供人工核对 →
+            </button>
+          </p>
+        )}
       </div>
     </details>
   );

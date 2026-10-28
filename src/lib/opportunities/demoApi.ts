@@ -46,7 +46,9 @@ import type {
   SubscriptionUpdateInput,
   UnitDetailResponse,
   UnitMatchDTO,
+  AnnouncementSubmissionDTO,
 } from "./api-types";
+import { checkOfficialUrl } from "./announcement-submission";
 
 interface DemoFollow extends FollowDTO {
   remindersMuted: boolean;
@@ -55,6 +57,8 @@ interface DemoFollow extends FollowDTO {
 interface DemoData {
   follows: DemoFollow[];
   corrections: OpportunityCorrectionDTO[];
+  /** D08：公告补录提交（localStorage 按用户隔离） */
+  submissions: AnnouncementSubmissionDTO[];
   /** D07：单位关注（按身份键精确匹配） */
   orgFollows: OrganizationFollowDTO[];
   /** D07：单位关注已记录的幂等键（org:{identityKey}:{announcementId}:{versionId}） */
@@ -77,6 +81,7 @@ function emptyDemoData(): DemoData {
   return {
     follows: [],
     corrections: [],
+    submissions: [],
     orgFollows: [],
     orgNoticeKeys: [],
     notifications: [],
@@ -89,9 +94,15 @@ function load(): DemoData {
   if (!authService.getSession()?.userId) {
     return emptyDemoData();
   }
-  // 旧版本地数据可能缺少 D07 新增字段，读取时补齐默认值（应用层迁移）
+  // 旧版本地数据可能缺少 D07/D08 新增字段，读取时补齐默认值（应用层迁移）
   const stored = loadFromStorage<Partial<DemoData>>(storageKey(), {});
-  return { ...emptyDemoData(), ...stored };
+  const merged = { ...emptyDemoData(), ...stored };
+  // D08：旧纠错记录补 resolvedVersionId 默认值
+  merged.corrections = merged.corrections.map((row) => ({
+    ...row,
+    resolvedVersionId: row.resolvedVersionId ?? null,
+  }));
+  return merged;
 }
 
 function persist(data: DemoData): void {
@@ -612,6 +623,7 @@ export const demoOpportunitiesApi = {
       reviewNote: null,
       reviewerId: null,
       reviewedAt: null,
+      resolvedVersionId: null,
       createdAt: new Date().toISOString(),
     });
     persist(data);
@@ -620,6 +632,52 @@ export const demoOpportunitiesApi = {
 
   async listMyCorrections(): Promise<OpportunityCorrectionDTO[]> {
     return load().corrections;
+  },
+
+  // ==================== 公告补录（D08 / PRD 11.9 U08） ====================
+
+  async submitAnnouncementSubmission(input: {
+    officialUrl: string;
+    publisherName: string;
+    regionCode: string;
+    note?: string;
+  }): Promise<{ id: string; status: string }> {
+    // 前端校验只做即时反馈（安全边界在服务端）；演示通道同样拒绝内网/凭据链接
+    const urlCheck = checkOfficialUrl(input.officialUrl);
+    if (!urlCheck.ok || !urlCheck.normalized) {
+      throw new Error(urlCheck.message ?? "官方链接不合法");
+    }
+    const data = load();
+    // 重复提交可识别：同一规范化链接只保留一条
+    const existing = data.submissions.find(
+      (row) => row.officialUrl === urlCheck.normalized,
+    );
+    if (existing) {
+      const error = new Error(
+        "这条链接你已经提交过补录，可在「我的资料」页查看处理进度",
+      ) as Error & { status?: number };
+      error.status = 409;
+      throw error;
+    }
+    const id = `demo-submission-${Date.now()}`;
+    data.submissions.push({
+      id,
+      officialUrl: urlCheck.normalized,
+      publisherName: input.publisherName.trim(),
+      regionCode: input.regionCode,
+      note: input.note?.trim() || null,
+      status: "submitted",
+      reviewNote: null,
+      reviewerId: null,
+      reviewedAt: null,
+      createdAt: new Date().toISOString(),
+    });
+    persist(data);
+    return { id, status: "submitted" };
+  },
+
+  async listMyAnnouncementSubmissions(): Promise<AnnouncementSubmissionDTO[]> {
+    return load().submissions;
   },
 
   // ==================== 往年参考（D06 / PRD 11.7 U06） ====================

@@ -211,17 +211,49 @@ model OpportunityCorrection {
   content        String
   contact        String?
   status         String    @default("submitted")
-  /** 员工处理说明（不采纳时必填，随站内通知发给提交人） */
+  /** 员工处理说明（不采纳/需补充时必填，随站内通知发给提交人） */
   reviewNote     String?   @map("review_note")
   /** 最近一次处理人（员工账号 id） */
   reviewerId     String?   @map("reviewer_id")
   /** 最近一次处理时间（开始核对/终态均记录） */
   reviewedAt     DateTime? @map("reviewed_at")
+  /** D08：采纳修正时登记的已发布版本 id（处理人填写，供用户回详情核对） */
+  resolvedVersionId String? @map("resolved_version_id")
   createdAt      DateTime  @default(now()) @map("created_at")
 
+  @@index([userId, createdAt])
   @@index([announcementId, versionId])
   @@index([status, createdAt])
   @@map("opportunity_corrections")
+}
+
+/**
+ * 公告补录提交（D08 / PRD 11.9 U08）：用户报告未收录的官方公告。
+ * 只进入运营待办队列，绝不直接进入采集与发布；处理状态机与纠错共用
+ * corrections.domain（submitted→reviewing→resolved/rejected，含 need_supplement）。
+ * officialUrl 存规范化 https/http 原文；urlHash 为其 SHA-256（去重键）。
+ */
+model AnnouncementSubmission {
+  id            String    @id @default(uuid())
+  userId        String    @map("user_id")
+  officialUrl   String    @map("official_url")
+  urlHash       String    @map("url_hash")
+  publisherName String    @map("publisher_name")
+  regionCode    String    @map("region_code")
+  note          String?
+  status        String    @default("submitted")
+  /** 员工处理说明（不采纳/需补充时必填，随站内通知发给提交人） */
+  reviewNote    String?   @map("review_note")
+  /** 最近一次处理人（员工账号 id） */
+  reviewerId    String?   @map("reviewer_id")
+  reviewedAt    DateTime? @map("reviewed_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  @@index([userId, createdAt])
+  @@index([urlHash])
+  @@index([status, createdAt])
+  @@map("announcement_submissions")
 }
 
 /**

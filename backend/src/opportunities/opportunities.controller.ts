@@ -328,10 +328,63 @@ export class OpportunitiesController {
   @UseGuards(ReviewGuard)
   reviewCorrection(
     @Param('id') id: string,
-    @Body() body: { status?: unknown; reviewNote?: unknown },
+    @Body()
+    body: { status?: unknown; reviewNote?: unknown; resolvedVersionId?: unknown },
     @Req() req: AuthenticatedRequest,
   ) {
     return this.service.reviewCorrection(
+      { id: req.user!.id, role: req.user!.role },
+      id,
+      body,
+    );
+  }
+
+  // ==================== 公告补录（D08 / PRD 11.9 U08） ====================
+
+  /** 用户补录未收录官方公告：只进运营待办，不直接发布 */
+  @Post('announcement-submissions')
+  @UseGuards(UserGuard)
+  submitAnnouncementSubmission(
+    @Body()
+    body: {
+      officialUrl?: unknown;
+      publisherName?: unknown;
+      regionCode?: unknown;
+      note?: unknown;
+    },
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.service.submitAnnouncementSubmission(req.user!.id, body);
+  }
+
+  /** 当前用户提交过的补录与处理状态（我的页） */
+  @Get('announcement-submissions/mine')
+  @UseGuards(UserGuard)
+  listMyAnnouncementSubmissions(@Req() req: AuthenticatedRequest) {
+    return this.service.listMyAnnouncementSubmissions(req.user!.id);
+  }
+
+  /** 员工补录队列：STAFF_ROLES 可读 */
+  @Get('admin/announcement-submissions')
+  @UseGuards(AdminGuard)
+  listStaffAnnouncementSubmissions(
+    @Query('status') status: string | undefined,
+    @Req() _req: AuthenticatedRequest,
+  ) {
+    const normalized =
+      typeof status === 'string' && status.trim() ? status.trim() : null;
+    return this.service.listAnnouncementSubmissionsForStaff(normalized);
+  }
+
+  /** 员工处理补录：仅 exam_reviewer/admin；状态推进通知提交人 */
+  @Patch('admin/announcement-submissions/:id')
+  @UseGuards(ReviewGuard)
+  reviewAnnouncementSubmission(
+    @Param('id') id: string,
+    @Body() body: { status?: unknown; reviewNote?: unknown },
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.service.reviewAnnouncementSubmission(
       { id: req.user!.id, role: req.user!.role },
       id,
       body,
