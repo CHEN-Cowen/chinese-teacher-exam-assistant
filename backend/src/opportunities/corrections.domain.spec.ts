@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   canTransition,
   isTerminalStatus,
+  isVersionCorrectableField,
+  validateResolution,
   validateReview,
 } from './corrections.domain.js';
 
@@ -54,5 +56,92 @@ describe('纠错处理状态机（P0-F）', () => {
     expect(
       validateReview({ from: 'reviewing', to: 'submitted' }).ok,
     ).toBe(false);
+  });
+});
+
+describe('纠错结案真实性（R05）', () => {
+  const versions = [
+    { id: 'v1', versionNumber: 1, superseded: true },
+    { id: 'v2', versionNumber: 2, superseded: false },
+  ];
+
+  it('数据类问题：必须登记已发布且晚于提交版本的修正版本', () => {
+    expect(isVersionCorrectableField('major')).toBe(true);
+    expect(isVersionCorrectableField('matching')).toBe(false);
+
+    expect(
+      validateResolution({
+        fieldPath: 'headcount',
+        submittedVersionId: 'v2',
+        reviewNote: null,
+        resolvedVersionId: null,
+        versions,
+      }).ok,
+    ).toBe(false);
+
+    // 不属于版本链
+    expect(
+      validateResolution({
+        fieldPath: 'headcount',
+        submittedVersionId: 'v1',
+        reviewNote: null,
+        resolvedVersionId: 'v9',
+        versions,
+      }).ok,
+    ).toBe(false);
+
+    // 已被取代
+    expect(
+      validateResolution({
+        fieldPath: 'headcount',
+        submittedVersionId: 'v1',
+        reviewNote: null,
+        resolvedVersionId: 'v1',
+        versions,
+      }).ok,
+    ).toBe(false);
+
+    // 晚于提交版本 → 通过
+    const ok = validateResolution({
+      fieldPath: 'headcount',
+      submittedVersionId: 'v1',
+      reviewNote: null,
+      resolvedVersionId: 'v2',
+      versions,
+    });
+    expect(ok.ok).toBe(true);
+    if (ok.ok) expect(ok.resolvedVersionId).toBe('v2');
+  });
+
+  it('非数据类问题：不得登记版本，必须写明实际处理结果', () => {
+    expect(
+      validateResolution({
+        fieldPath: 'matching',
+        submittedVersionId: 'v2',
+        reviewNote: null,
+        resolvedVersionId: null,
+        versions,
+      }).ok,
+    ).toBe(false);
+
+    expect(
+      validateResolution({
+        fieldPath: 'dead_link',
+        submittedVersionId: 'v2',
+        reviewNote: '已替换为官方新链接',
+        resolvedVersionId: 'v2',
+        versions,
+      }).ok,
+    ).toBe(false);
+
+    const ok = validateResolution({
+      fieldPath: 'matching',
+      submittedVersionId: 'v2',
+      reviewNote: '已复核匹配规则并复测，结论已订正',
+      resolvedVersionId: null,
+      versions,
+    });
+    expect(ok.ok).toBe(true);
+    if (ok.ok) expect(ok.resolvedVersionId).toBeNull();
   });
 });

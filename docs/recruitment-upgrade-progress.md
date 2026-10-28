@@ -715,8 +715,8 @@ demo 通道 demoApi.submitCorrection/listMyCorrections（localStorage 按用户�
 | R03-3 | 未明确阶段时按最高学历直接判 FAIL | U03 | `engine.ts` `stages.length===0` 分支 | 已修复 | 见下 |
 | R04-1 | 以“历史键为空”判首次同步 → 永久漏报 | U07 | `organization-follow.domain.ts` `isFirstSync = ownKeys.size===0` | 已修复 | 见下 |
 | R04-2 | 先发通知后记去重、无事务 → 重复/漏发 | U07 | `opportunities.service.ts` `syncOrganizationFollows` | 已修复 | 见下 |
-| R05-1 | 无修正版本也可结案并称“已更正” | U08 | `reviewCorrection` `resolvedVersionId ?? row.resolvedVersionId` 仍发“已更正” | 待修复 | |
-| R05-2 | 只校验同公告，不校验版本有效性与修正内容 | U08 | 同上，仅 `versions.some(v=>v.id===…)` | 待修复 | |
+| R05-1 | 无修正版本也可结案并称“已更正” | U08 | `reviewCorrection` `resolvedVersionId ?? row.resolvedVersionId` 仍发“已更正” | 已修复 | 见下 |
+| R05-2 | 只校验同公告，不校验版本有效性与修正内容 | U08 | 同上，仅 `versions.some(v=>v.id===…)` | 已修复 | 见下 |
 | R06 | 历史详情无“关注单位”、筛选缺学历/专业、四入口与 D09 | U06/U09/U10 | `/history` 详情无关注入口；`/admin/pipeline` 无跨阶段总览 | 待修复 | |
 | R07 | 超时用例、真实迁移、真浏览器流程 | U10 | 本机无 PostgreSQL/Docker；CI 历史结果仅作线索 | 待验 | |
 | R08 | 全项目验收与交付 | U01—U10 | 待前序完成 | 待开始 | |
@@ -895,7 +895,48 @@ demo 通道 demoApi.submitCorrection/listMyCorrections（localStorage 按用户�
 真实迁移验证（临时 PostgreSQL）按 R07 统一执行；本机当前无可用 PostgreSQL，迁移文件已按
 现有命名与列风格新增，未执行数据库变更。
 
+### R05 纠错结案真实性（U08）
+
+问题核实（参考版本 `c4502d22`）：
+
+- `reviewCorrection` 允许在**没有任何修正版本**时把数据类纠错标为「已修正」，
+  通知正文直接写「并在新版本中完成更正」——没有版本却声称已更正，属于虚假结案。
+- 版本校验只判断「id 是否属于该公告的版本链」，不判断版本是否已发布/被取代、
+  是否晚于用户提交时的版本；非数据类问题也能挂版本号。
+- 通知在状态更新后创建、无事务，重复提交/并发可能重复通知或状态与通知不一致。
+
+实现：
+
+- `corrections.domain.ts` 新增 `VERSION_CORRECTABLE_FIELDS`（major/timeline/headcount/evidence）
+  与 `validateResolution`：
+  - 数据类问题：必须有 `resolvedVersionId`，且属于该公告、未被取代、
+    版本号晚于纠错提交时的版本；否则以「修正版本尚未发布 → 保持处理中」（409）或
+    「版本无效」（400）拒绝结案；
+  - 非数据类问题（匹配结论/链接失效/重复收录/其他）：禁止登记版本，必须写
+    ≥5 字实际处理结果，否则拒绝结案。
+- `reviewCorrection`：
+  - 服务层再次校验 `REVIEW_ROLES`（ReviewGuard 之外的第二道权限防线）；
+  - 同一终态重复提交按幂等返回当前记录，不重复通知；
+  - 状态更新 + 通知写入同一事务，并用 `where id+status` 条件更新抢占，
+    并发处理只有一个请求真正推进状态；
+  - 数据类结案通知写「第 N 版（版本 id）」真实版本号；非数据类结案通知只写实际处理结果，
+    不再出现「新版本/更正版本」字样；
+  - 「需补充」通知补充可执行路径：到「我的资料」页查看并重新提交包含补充信息的纠错。
+- 后台面板 `OpportunityCorrectionPanel` 同步规则：数据类显示必填版本号输入、
+  未填时禁用结案并说明「修正未发布时保持处理中」；非数据类隐藏版本输入、
+  说明不足 5 字时禁用结案。
+
+验证证据：
+
+| 用例 | 命令 | 结果 |
+| --- | --- | --- |
+| 领域状态机 + 结案真实性（新增 2 例） | `cd backend && npx vitest run src/opportunities/corrections.domain.spec.ts` | 6 passed |
+| 服务闭环（新增/改写 5 例：无版本拒绝、真实版本结案、非数据类说明、终态幂等、权限审计） | `cd backend && npx vitest run src/opportunities/opportunities.service.spec.ts` | 53 passed |
+| opportunities 全量 | `cd backend && npx vitest run src/opportunities` | 10 文件 165 passed（另有 1 例既有 expected fail） |
+| 构建 / lint | `cd backend && npx nest build`、`npm run lint` | 通过 / 0 error（6 条既有 warning） |
+| 前端 | `npx tsc --noEmit`、`npm run lint` | 通过 / 0 error（2 条既有 scripts warning） |
+
 ## 8. 恢复点
 
-当前：D00—D08 已完成并推送；D09 代码本地实现未提交；R00 台账已建立，R01—R04 已修复推送。
+当前：D00—D08 已完成并推送；D09 代码本地实现未提交；R00 台账已建立，R01—R05 已修复推送。
 下一次中断后：从本节台账中第一个非「已修复」的 R 编号继续。

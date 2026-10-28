@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -196,6 +197,23 @@ function createFakePrisma() {
       if (!row) throw new Error('not found');
       Object.assign(row, data);
       return row;
+    },
+    /** R05：条件更新（where 带 status）用于并发处理时的状态抢占 */
+    updateMany: async ({
+      where,
+      data,
+    }: {
+      where: { id: string; status?: string };
+      data: Record<string, unknown>;
+    }) => {
+      let count = 0;
+      for (const row of corrections) {
+        if (row.id !== where.id) continue;
+        if (where.status !== undefined && row.status !== where.status) continue;
+        Object.assign(row, data);
+        count += 1;
+      }
+      return { count };
     },
   };
 
@@ -1013,7 +1031,7 @@ describe('OpportunitiesService：纠错处理闭环（P0-F / 模块 8）', () =>
     return { service, created };
   }
 
-  it('submitted → reviewing → resolved：记录处理人/时间，并给提交人发一条站内通知', async () => {
+  it('数据类纠错未发布修正版本时不能以「已修正」结案，也不会发「已更正」通知（R05）', async () => {
     const fake = createFakePrisma();
     const { service, created } = await seedCorrection(fake);
 
@@ -1025,16 +1043,39 @@ describe('OpportunitiesService：纠错处理闭环（P0-F / 模块 8）', () =>
     expect(reviewing.reviewedAt).toBeTruthy();
     expect(fake.notifications).toHaveLength(0); // 核对中不通知
 
+    // 修正版本还没发布：不能结案，保持处理中
+    await expect(
+      service.reviewCorrection(REVIEWER, created.id, {
+        status: 'resolved',
+        reviewNote: '已按补充公告修正为 12 人',
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(fake.notifications).toHaveLength(0);
+    expect((await service.listMyCorrections('user-1'))[0]?.status).toBe(
+      'reviewing',
+    );
+  });
+
+  it('数据类纠错登记已发布的后续版本后结案：通知包含真实版本号与说明', async () => {
+    const fake = createFakePrisma();
+    const { service, created } = await seedCorrection(fake);
+    // 纠错提交时是 v1，之后发布了 v2（补充公告）
+    fake.corrections.find((row) => row.id === created.id)!.versionId =
+      'ann-hefei-v1';
+
     const resolved = await service.reviewCorrection(REVIEWER, created.id, {
       status: 'resolved',
       reviewNote: '已按补充公告修正为 12 人',
+      resolvedVersionId: 'ann-hefei-v2',
     });
     expect(resolved.status).toBe('resolved');
     expect(resolved.reviewNote).toBe('已按补充公告修正为 12 人');
+    expect(resolved.resolvedVersionId).toBe('ann-hefei-v2');
     expect(fake.notifications).toHaveLength(1);
     const notice = fake.notifications[0] as Record<string, unknown>;
     expect(notice.userId).toBe('user-1');
-    expect(String(notice.title)).toContain('已采纳并修正');
+    expect(String(notice.title)).toContain('已处理完成');
+    expect(String(notice.body)).toContain('第 2 版');
     expect(String(notice.body)).toContain('已按补充公告修正为 12 人');
   });
 
@@ -1059,9 +1100,17 @@ describe('OpportunitiesService：纠错处理闭环（P0-F / 模块 8）', () =>
     expect(fake.notifications).toHaveLength(1); // 被拒绝的推进不产生新通知
   });
 
-  it('允许 submitted 直接 resolved/rejected；非法状态值拒绝', async () => {
+  it('非数据类纠错可直接结案：必须写明实际处理结果，通知不声称发了新版本（R05）', async () => {
     const fake = createFakePrisma();
-    const { service, created } = await seedCorrection(fake);
+    const service = new OpportunitiesService(
+      fake.prisma,
+      fakeProfileService,
+      fakeScheduleService,
+    );
+    const created = await service.submitCorrection('user-1', 'unit-hefei-01-v2', {
+      fieldPath: 'matching',
+      content: '系统判断与官方条件不一致，请看原始公告',
+    });
 
     await expect(
       service.reviewCorrection(REVIEWER, created.id, { status: 'submitted' }),
@@ -1069,11 +1118,66 @@ describe('OpportunitiesService：纠错处理闭环（P0-F / 模块 8）', () =>
     await expect(
       service.reviewCorrection(REVIEWER, created.id, { status: 'unknown' }),
     ).rejects.toBeInstanceOf(ConflictException);
+    // 结案必须有真实处理说明
+    await expect(
+      service.reviewCorrection(REVIEWER, created.id, { status: 'resolved' }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    // 非数据类问题不允许挂版本号
+    await expect(
+      service.reviewCorrection(REVIEWER, created.id, {
+        status: 'resolved',
+        reviewNote: '已复核匹配规则并复测',
+        resolvedVersionId: 'ann-hefei-v2',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
 
     const done = await service.reviewCorrection(REVIEWER, created.id, {
       status: 'resolved',
+      reviewNote: '已复核匹配规则并复测，结论已订正',
     });
     expect(done.status).toBe('resolved');
+    expect(done.resolvedVersionId).toBeNull();
+    const notice = fake.notifications[0] as Record<string, unknown>;
+    expect(String(notice.body)).not.toContain('更正版本');
+    expect(String(notice.body)).toContain('已复核匹配规则并复测');
+  });
+
+  it('终态重复提交同一结论按幂等返回，不重复通知（R05）', async () => {
+    const fake = createFakePrisma();
+    const service = new OpportunitiesService(
+      fake.prisma,
+      fakeProfileService,
+      fakeScheduleService,
+    );
+    const created = await service.submitCorrection('user-1', 'unit-hefei-01-v2', {
+      fieldPath: 'other',
+      content: '其他问题的足够长说明文字',
+    });
+    const rejected = await service.reviewCorrection(REVIEWER, created.id, {
+      status: 'rejected',
+      reviewNote: '经核对官方原文，该反馈不成立',
+    });
+    expect(rejected.status).toBe('rejected');
+    expect(fake.notifications).toHaveLength(1);
+
+    const retry = await service.reviewCorrection(REVIEWER, created.id, {
+      status: 'rejected',
+      reviewNote: '经核对官方原文，该反馈不成立',
+    });
+    expect(retry.status).toBe('rejected');
+    expect(fake.notifications).toHaveLength(1);
+  });
+
+  it('无处理权限的角色不能处理纠错（服务层权限审计）（R05）', async () => {
+    const fake = createFakePrisma();
+    const { service, created } = await seedCorrection(fake);
+    await expect(
+      service.reviewCorrection(
+        { id: 'staff-2', role: 'resource_reviewer' },
+        created.id,
+        { status: 'reviewing' },
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('处理不存在的纠错返回 404', async () => {
@@ -1133,19 +1237,27 @@ describe('OpportunitiesService：纠错处理闭环（P0-F / 模块 8）', () =>
     // 用户侧可查处理说明（需补充理由可查）
     const mine = await service.listMyCorrections('user-1');
     expect(mine[0]?.reviewNote).toContain('请补充公告原文');
+    // 通知给出可执行路径：去哪里、怎么补充
+    const needNotice = fake.notifications[0] as Record<string, unknown>;
+    expect(String(needNotice.body)).toContain('我的资料');
+    expect(String(needNotice.body)).toContain('重新提交');
 
-    // 补充后可继续推进：need_supplement → reviewing → resolved
+    // 补充后可继续推进：need_supplement → reviewing → resolved（登记 v2 修正版本）
+    fake.corrections.find((row) => row.id === created.id)!.versionId =
+      'ann-hefei-v1';
     await service.reviewCorrection(REVIEWER, created.id, { status: 'reviewing' });
     const resolved = await service.reviewCorrection(REVIEWER, created.id, {
       status: 'resolved',
       reviewNote: '已按补充材料修正',
+      resolvedVersionId: 'ann-hefei-v2',
     });
     expect(resolved.status).toBe('resolved');
+    expect(resolved.resolvedVersionId).toBe('ann-hefei-v2');
     // 需补充 1 条 + 已修正 1 条（reviewing 不通知）
     expect(fake.notifications).toHaveLength(2);
   });
 
-  it('D08：resolved 可登记修正版本号；不属于该公告版本链时拒绝', async () => {
+  it('D08/R05：版本落点必须属于该公告版本链、未取代且晚于提交版本', async () => {
     const fake = createFakePrisma();
     const { service, created } = await seedCorrection(fake);
 
@@ -1156,13 +1268,36 @@ describe('OpportunitiesService：纠错处理闭环（P0-F / 模块 8）', () =>
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
 
+    // 已取代的旧版本不能作为修正落点
+    await expect(
+      service.reviewCorrection(REVIEWER, created.id, {
+        status: 'resolved',
+        reviewNote: '已修正',
+        resolvedVersionId: 'ann-hefei-v1',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    // 提交版本晚于登记版本（顺序不成立）同样拒绝
+    fake.corrections.find((row) => row.id === created.id)!.versionId =
+      'ann-hefei-v2';
+    await expect(
+      service.reviewCorrection(REVIEWER, created.id, {
+        status: 'resolved',
+        reviewNote: '已修正',
+        resolvedVersionId: 'ann-hefei-v1',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    fake.corrections.find((row) => row.id === created.id)!.versionId =
+      'ann-hefei-v1';
     const resolved = await service.reviewCorrection(REVIEWER, created.id, {
       status: 'resolved',
+      reviewNote: '已修正岗位人数为 12 人',
       resolvedVersionId: 'ann-hefei-v2',
     });
     expect(resolved.resolvedVersionId).toBe('ann-hefei-v2');
     const notice = fake.notifications[0] as Record<string, unknown>;
-    expect(String(notice.body)).toContain('更正版本：ann-hefei-v2');
+    expect(String(notice.body)).toContain('第 2 版');
 
     const mine = await service.listMyCorrections('user-1');
     expect(mine[0]?.resolvedVersionId).toBe('ann-hefei-v2');

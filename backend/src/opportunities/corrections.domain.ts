@@ -16,6 +16,8 @@
  * 不变量：
  * - resolved/rejected 为终态，任何人不能再改（纠错不物理删除，留痕可审计）；
  * - rejected / need_supplement 必须附处理说明，向提交人解释原因或需补充的内容；
+ * - resolved 必须真实：数据类问题需登记已发布的修正版本，非数据类问题需写明实际处理结果（R05）；
+ * - 同一终态的重复提交按幂等处理（返回当前记录、不重复通知）；
  * - 每次状态推进都记录处理人与处理时间。
  */
 
@@ -126,6 +128,109 @@ export const FIELD_PATH_LABELS: Record<string, string> = {
   duplicate: '重复收录',
   other: '其他问题',
 };
+
+/**
+ * 必须通过“发布修正版本”才能真实结案的数据类问题（R05）。
+ * 其余位置是体验/结论类反馈，不产生新公告版本，结案必须写清实际处理结果。
+ */
+export const VERSION_CORRECTABLE_FIELDS: readonly string[] = [
+  'major',
+  'timeline',
+  'headcount',
+  'evidence',
+];
+
+export function isVersionCorrectableField(fieldPath: string): boolean {
+  return VERSION_CORRECTABLE_FIELDS.includes(fieldPath);
+}
+
+/** 公告版本在纠错结案校验时所需的只读信息 */
+export interface CorrectionVersionRef {
+  id: string;
+  versionNumber: number;
+  /** 已被后续版本取代的版本不能作为修正落点 */
+  superseded: boolean;
+}
+
+export type ResolutionCheck =
+  | { ok: true; resolvedVersionId: string | null }
+  | {
+      ok: false;
+      kind:
+        | 'version_not_published'
+        | 'invalid_version'
+        | 'version_not_allowed'
+        | 'note_required';
+      message: string;
+    };
+
+/**
+ * 校验“已修正”结案是否真实（R05）。
+ * - 数据类问题：必须登记该公告当前有效、且晚于提交版本的已发布修正版本，
+ *   否则不能以“已修正”结案（修正还没发布时就应保持处理中）；
+ * - 非数据类问题：不允许登记修正版本，必须写清实际处理结果。
+ */
+export function validateResolution(input: {
+  fieldPath: string;
+  submittedVersionId: string;
+  reviewNote: string | null;
+  resolvedVersionId: string | null;
+  versions: readonly CorrectionVersionRef[];
+}): ResolutionCheck {
+  const { fieldPath, submittedVersionId, reviewNote, resolvedVersionId, versions } =
+    input;
+  if (!isVersionCorrectableField(fieldPath)) {
+    if (resolvedVersionId) {
+      return {
+        ok: false,
+        kind: 'version_not_allowed',
+        message:
+          '这类问题不通过公告版本修正，不能登记修正版本；请在处理说明中写清实际处理结果',
+      };
+    }
+    if (!reviewNote || reviewNote.trim().length < 5) {
+      return {
+        ok: false,
+        kind: 'note_required',
+        message: '非数据类问题结案必须填写至少 5 个字的处理说明，写清实际处理结果',
+      };
+    }
+    return { ok: true, resolvedVersionId: null };
+  }
+
+  if (!resolvedVersionId) {
+    return {
+      ok: false,
+      kind: 'version_not_published',
+      message:
+        '该问题属于公告数据，必须登记已发布的修正版本后才能结案；修正版本尚未发布时请保持处理中',
+    };
+  }
+  const target = versions.find((version) => version.id === resolvedVersionId);
+  if (!target) {
+    return {
+      ok: false,
+      kind: 'invalid_version',
+      message: '修正版本不属于该公告的版本链，请核对后填写',
+    };
+  }
+  if (target.superseded) {
+    return {
+      ok: false,
+      kind: 'invalid_version',
+      message: '登记的修正版本已被取代，请登记当前有效的版本',
+    };
+  }
+  const submitted = versions.find((version) => version.id === submittedVersionId);
+  if (submitted && target.versionNumber <= submitted.versionNumber) {
+    return {
+      ok: false,
+      kind: 'invalid_version',
+      message: '登记的修正版本需晚于纠错提交时的版本，才能证明更正已发布',
+    };
+  }
+  return { ok: true, resolvedVersionId: target.id };
+}
 
 export function fieldPathLabel(fieldPath: string): string {
   return FIELD_PATH_LABELS[fieldPath] ?? fieldPath;

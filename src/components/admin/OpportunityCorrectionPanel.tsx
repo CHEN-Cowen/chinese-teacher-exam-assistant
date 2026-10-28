@@ -49,7 +49,11 @@ const STATUS_META: Record<
  * submitted → reviewing → resolved/rejected；不采纳必须写处理说明，
  * 终态结果由后端发站内通知给提交人。权限以后端 ReviewGuard 为准，
  * 前端的只读/可操作切换只用于界面呈现。
+ * R05：数据类问题必须登记已发布的修正版本才能结案；非数据类问题必须写明
+ * 实际处理结果（与后端 corrections.domain 同口径，后端仍做最终校验）。
  */
+const VERSION_CORRECTABLE_FIELDS = ["major", "timeline", "headcount", "evidence"];
+
 export function OpportunityCorrectionPanel() {
   const [tab, setTab] = useState<TabKey>("submitted");
   const [items, setItems] = useState<StaffOpportunityCorrectionDTO[]>([]);
@@ -187,11 +191,15 @@ function CorrectionDetail({
   const { role } = useCurrentUser();
   const canAct = role === "exam_reviewer" || role === "admin";
   const terminal = c.status === "resolved" || c.status === "rejected";
+  const versionCorrectable = VERSION_CORRECTABLE_FIELDS.includes(c.fieldPath);
 
   const [note, setNote] = useState(c.reviewNote ?? "");
   const [resolvedVersionId, setResolvedVersionId] = useState(
     c.resolvedVersionId ?? "",
   );
+  const resolvedBlocked = versionCorrectable
+    ? !resolvedVersionId.trim()
+    : note.trim().length < 5;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmReject, setConfirmReject] = useState(false);
@@ -292,7 +300,11 @@ function CorrectionDetail({
       ) : canAct ? (
         <div className="space-y-3 rounded-lg border border-slate-200 p-3">
           <Textarea
-            label="处理说明（不采纳/需补充时必填；将随站内通知发送给提交人）"
+            label={
+              versionCorrectable
+                ? "处理说明（将随站内通知发送给提交人）"
+                : "处理说明（结案必填：写清实际处理结果，至少 5 个字）"
+            }
             className="min-h-[72px]"
             value={note}
             maxLength={500}
@@ -300,26 +312,36 @@ function CorrectionDetail({
               setNote(e.target.value);
               setError(null);
             }}
-            placeholder="例如：已核对补充公告原文，该岗位人数确已调整为 12 人，将在新版本中更正。"
+            placeholder={
+              versionCorrectable
+                ? "例如：已核对补充公告原文，该岗位人数确已调整为 12 人。"
+                : "例如：已复核匹配规则并复测，结论已在系统订正；或已替换为官方新链接。"
+            }
           />
-          <Input
-            label="修正版本号（标记已修正时可选填写；用户可回详情核对）"
-            value={resolvedVersionId}
-            maxLength={100}
-            onChange={(e) => {
-              setResolvedVersionId(e.target.value);
-              setError(null);
-            }}
-            placeholder="例如：ann-hefei-v3"
-          />
+          {versionCorrectable && (
+            <Input
+              label="修正版本号（结案必填：必须是已发布且晚于提交时版本的公告版本）"
+              value={resolvedVersionId}
+              maxLength={100}
+              onChange={(e) => {
+                setResolvedVersionId(e.target.value);
+                setError(null);
+              }}
+              placeholder="例如：ann-hefei-v3"
+            />
+          )}
           {c.status === "submitted" && (
             <Button size="sm" variant="outline" disabled={busy} onClick={() => void act("reviewing")}>
               认领并开始核对
             </Button>
           )}
           <div className="flex flex-wrap gap-2">
-            <Button size="sm" disabled={busy} onClick={() => void act("resolved")}>
-              核对无误，标记已修正
+            <Button
+              size="sm"
+              disabled={busy || resolvedBlocked}
+              onClick={() => void act("resolved")}
+            >
+              {versionCorrectable ? "已发布修正版本，标记已修正" : "已处理完成，标记已修正"}
             </Button>
             <Button
               size="sm"
@@ -349,6 +371,13 @@ function CorrectionDetail({
               </Button>
             )}
           </div>
+          {resolvedBlocked && (
+            <p className="text-xs text-slate-500">
+              {versionCorrectable
+                ? "该问题属于公告数据：请先发布修正版本并填写版本号；修正尚未发布时保持处理中，不要标记已修正。"
+                : "这类问题不需要新版本：请在处理说明中写清实际处理结果（至少 5 个字）后再结案。"}
+            </p>
+          )}
         </div>
       ) : (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">

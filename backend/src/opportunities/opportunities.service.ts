@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
@@ -8,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service.js';
+import { REVIEW_ROLES } from '../auth/admin.guard.js';
 import { ProfileService } from '../profile/profile.service.js';
 import { ScheduleService } from '../schedule/schedule.service.js';
 import { REAL_ANNOUNCEMENTS } from '../matching/real-catalog.js';
@@ -45,8 +47,11 @@ import {
 import {
   CORRECTION_STATUSES,
   fieldPathLabel,
+  isTerminalStatus,
+  validateResolution,
   validateReview,
   type CorrectionDTO,
+  type CorrectionVersionRef,
   type StaffCorrectionDTO,
 } from './corrections.domain.js';
 import {
@@ -1194,11 +1199,13 @@ export class OpportunitiesService {
   }
 
   /**
-   * 员工处理纠错：
+   * 员工处理纠错（R05）：
+   * - 权限：服务层再校验一次处理角色（ReviewGuard 之外的第二道保险，便于审计）；
    * - 状态机校验见 corrections.domain（终态不可改、不采纳/需补充必须写说明）；
-   * - resolved/rejected/need_supplement 时给提交人发一条站内通知，通知只含
-   *   结论与说明，不含联系方式等其他用户信息；
-   * - resolved 可登记 resolvedVersionId（已发布修正版本），随通知告知提交人；
+   * - resolved 必须真实：数据类问题需登记已发布、晚于提交版本的修正版本；
+   *   非数据类问题不得登记版本，必须写清实际处理结果；
+   * - 幂等：同一终态重复提交返回当前记录且不重复通知；并发处理用
+   *   `where id + status` 条件更新，只有一个请求能推进状态并产生通知；
    * - 纠错记录不物理删除，处理人/处理时间/说明全部留痕。
    */
   async reviewCorrection(
@@ -1206,12 +1213,19 @@ export class OpportunitiesService {
     correctionId: string,
     body: { status?: unknown; reviewNote?: unknown; resolvedVersionId?: unknown },
   ): Promise<CorrectionDTO> {
+    if (!REVIEW_ROLES.includes(reviewer.role)) {
+      throw new ForbiddenException('当前账号没有处理纠错的权限');
+    }
     const catalog = await this.loadCatalog();
     const row = await this.prisma.opportunityCorrection.findUnique({
       where: { id: correctionId },
     });
     if (!row) {
       throw new NotFoundException('未找到该纠错记录');
+    }
+    // 幂等：网络重试提交相同终态时返回当前记录，不再产生通知
+    if (isTerminalStatus(row.status) && body.status === row.status) {
+      return this.toCorrectionDTO(row, catalog);
     }
     const result = validateReview({
       from: row.status,
@@ -1222,88 +1236,119 @@ export class OpportunitiesService {
     if (!result.ok) {
       throw new ConflictException(result.message);
     }
-    const resolvedVersionId =
-      typeof body.resolvedVersionId === 'string' &&
-      body.resolvedVersionId.trim()
+    const requestedVersionId =
+      typeof body.resolvedVersionId === 'string' && body.resolvedVersionId.trim()
         ? body.resolvedVersionId.trim().slice(0, 100)
         : null;
-    if (result.status === 'resolved' && resolvedVersionId) {
-      // 版本落点校验：必须属于该纠错对应公告的已发布版本链，防止误登记
-      const announcement = catalog.find(
-        (a) => a.id === row.announcementId,
-      );
-      const known = announcement?.versions.some(
-        (v) => v.id === resolvedVersionId,
-      );
-      if (!known) {
-        throw new BadRequestException(
-          '修正版本号不属于该公告的版本链，请核对后填写',
-        );
-      }
-    }
-    const now = new Date();
-    const updated = await this.prisma.opportunityCorrection.update({
-      where: { id: row.id },
-      data: {
-        status: result.status,
-        reviewNote: result.note ?? row.reviewNote,
-        reviewerId: reviewer.id,
-        reviewedAt: now,
-        resolvedVersionId:
-          result.status === 'resolved'
-            ? (resolvedVersionId ?? row.resolvedVersionId)
-            : row.resolvedVersionId,
-      },
-    });
+    const effectiveNote = result.note ?? row.reviewNote ?? null;
+    const announcement = catalog.find((a) => a.id === row.announcementId);
+    const versions: CorrectionVersionRef[] = (announcement?.versions ?? []).map(
+      (version) => ({
+        id: version.id,
+        versionNumber: version.versionNumber,
+        superseded: Boolean(version.supersededAt),
+      }),
+    );
 
+    let resolvedVersionId: string | null = null;
+    let versionLine = '';
+    if (result.status === 'resolved') {
+      const check = validateResolution({
+        fieldPath: row.fieldPath,
+        submittedVersionId: row.versionId,
+        reviewNote: effectiveNote,
+        resolvedVersionId: requestedVersionId,
+        versions,
+      });
+      if (!check.ok) {
+        throw check.kind === 'invalid_version' ||
+          check.kind === 'version_not_allowed'
+          ? new BadRequestException(check.message)
+          : new ConflictException(check.message);
+      }
+      resolvedVersionId = check.resolvedVersionId;
+      const target = versions.find((version) => version.id === resolvedVersionId);
+      versionLine = target
+        ? `更正版本：第 ${target.versionNumber} 版（${target.id}）。`
+        : '';
+    }
+
+    const now = new Date();
+    const data = {
+      status: result.status,
+      reviewNote: effectiveNote,
+      reviewerId: reviewer.id,
+      reviewedAt: now,
+      resolvedVersionId,
+    };
     const meta = this.findCatalogUnitMeta(row.unitId, catalog);
     const unitName = meta?.unitName ?? '该机会';
-    const noteLine = result.note ? `处理说明：${result.note}` : '';
-    if (result.status === 'resolved') {
-      const versionLine = updated.resolvedVersionId
-        ? `更正版本：${updated.resolvedVersionId}。`
-        : '';
-      await this.prisma.notificationRecord.create({
-        data: {
-          userId: row.userId,
-          severity: 'info',
-          title: `你提交的「${unitName}」纠错已采纳并修正`,
-          body:
-            `我们已核对官方原文，确认你反馈的「${fieldPathLabel(row.fieldPath)}」问题，` +
-            `并在新版本中完成更正，感谢你的反馈。${versionLine}${noteLine}`,
-          eventKey: null,
-          relatedUnitId: row.unitId,
-        },
-      });
-    } else if (result.status === 'need_supplement') {
-      await this.prisma.notificationRecord.create({
-        data: {
-          userId: row.userId,
-          severity: 'info',
-          title: `你提交的「${unitName}」纠错需要补充信息`,
-          body:
-            `我们核对你反馈的「${fieldPathLabel(row.fieldPath)}」问题时还需要更多信息。` +
-            noteLine,
-          eventKey: null,
-          relatedUnitId: row.unitId,
-        },
-      });
-    } else if (result.status === 'rejected') {
-      await this.prisma.notificationRecord.create({
-        data: {
-          userId: row.userId,
-          severity: 'info',
-          title: `你提交的「${unitName}」纠错已核对完成`,
-          body:
-            `我们核对官方原文后暂未采纳这条「${fieldPathLabel(row.fieldPath)}」纠错。` +
-            noteLine,
-          eventKey: null,
-          relatedUnitId: row.unitId,
-        },
-      });
-    }
+    const noteLine = effectiveNote ? `处理说明：${effectiveNote}` : '';
 
-    return this.toCorrectionDTO(updated, catalog);
+    return this.prisma.$transaction(async (tx) => {
+      // 条件更新：并发处理同一纠错时只有一个请求能推进状态
+      const claimed = await tx.opportunityCorrection.updateMany({
+        where: { id: row.id, status: row.status },
+        data,
+      });
+      if (claimed.count === 0) {
+        const latest = await tx.opportunityCorrection.findUnique({
+          where: { id: row.id },
+        });
+        return this.toCorrectionDTO(latest ?? row, catalog);
+      }
+
+      if (result.status === 'resolved') {
+        const body =
+          resolvedVersionId !== null
+            ? `我们已核对官方原文，确认你反馈的「${fieldPathLabel(row.fieldPath)}」问题，` +
+              `并在${versionLine}完成更正，感谢你的反馈。${noteLine}`
+            : `我们已核对并处理你反馈的「${fieldPathLabel(row.fieldPath)}」问题，` +
+              `处理结果可在机会详情页核对，感谢你的反馈。${noteLine}`;
+        await tx.notificationRecord.create({
+          data: {
+            userId: row.userId,
+            severity: 'info',
+            title: `你提交的「${unitName}」纠错已处理完成`,
+            body,
+            eventKey: `correction:${row.id}`,
+            reminderStage: `correction_resolved_${now.getTime()}`,
+            relatedUnitId: row.unitId,
+          },
+        });
+      } else if (result.status === 'need_supplement') {
+        await tx.notificationRecord.create({
+          data: {
+            userId: row.userId,
+            severity: 'info',
+            title: `你提交的「${unitName}」纠错需要补充信息`,
+            body:
+              `我们核对你反馈的「${fieldPathLabel(row.fieldPath)}」问题时还需要更多信息。` +
+              `${noteLine}请在「我的资料」页查看这条纠错，并重新提交一条包含补充信息的纠错，` +
+              `我们会继续跟进。`,
+            eventKey: `correction:${row.id}`,
+            reminderStage: `correction_need_supplement_${now.getTime()}`,
+            relatedUnitId: row.unitId,
+          },
+        });
+      } else if (result.status === 'rejected') {
+        await tx.notificationRecord.create({
+          data: {
+            userId: row.userId,
+            severity: 'info',
+            title: `你提交的「${unitName}」纠错已核对完成`,
+            body:
+              `我们核对官方原文后暂未采纳这条「${fieldPathLabel(row.fieldPath)}」纠错。` +
+              noteLine,
+            eventKey: `correction:${row.id}`,
+            reminderStage: `correction_rejected_${now.getTime()}`,
+            relatedUnitId: row.unitId,
+          },
+        });
+      }
+
+      return this.toCorrectionDTO({ ...row, ...data }, catalog);
+    });
   }
 
   // ==================== 公告补录（D08 / PRD 11.9 U08） ====================
