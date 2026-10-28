@@ -4,7 +4,7 @@
 
 产品要求统一维护在 **[PRD.md](PRD.md)**。本文介绍当前架构与开发入口，不代表生产已部署或商业服务已开放。
 
-本轮教育经历、可解释匹配与往年参考升级：先读 [完整开发任务需求稿](docs/recruitment-upgrade-development.md)；需要交给其他开发工具时，复制 [分模块开发提示词](docs/recruitment-upgrade-prompt.md)。新增需求当前为待开发，既有能力继续按实际验收状态记录。
+本轮教育经历、可解释匹配与往年参考升级：先读 [完整开发任务需求稿](docs/recruitment-upgrade-development.md)。开发提示词由用户在本地另行提供，不纳入远端文档。新增需求当前为待开发，既有能力继续按实际验收状态记录。
 
 **分支说明：** 当前功能盘点基于 [`codex/modular-development`](https://github.com/CHEN-Cowen/chinese-teacher-exam-assistant/tree/codex/modular-development)。`main` 本轮仅同步文档整理，尚未合并该分支的业务代码；开发和运行最新功能请使用对应开发分支。
 
