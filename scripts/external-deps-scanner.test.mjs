@@ -76,7 +76,7 @@ describe("应用源码网络基线", () => {
     expect(
       blocked.map((b) => `${b.origin} @ ${b.file}`),
     ).toEqual([]);
-  });
+  }, 60_000); // 全量并发时扫描 src/public 在 Windows 上可能超出默认 5s
 
   it("没有任何文件再引用 next/font/google 或 geist 字体变量", () => {
     const files = collectFiles(path.join(frontendRoot, "src")).filter((f) =>

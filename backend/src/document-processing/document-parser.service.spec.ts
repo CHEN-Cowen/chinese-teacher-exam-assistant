@@ -100,5 +100,5 @@ describe('DocumentParserService（DOCX Feature Flag）', () => {
     await expect(service.parse(input(fakeDocx, 'a.docx'))).rejects.toMatchObject({
       name: 'GuardError',
     } as Partial<GuardError>);
-  });
+  }, 30_000); // Mammoth 首次动态加载在 Windows 并发下可能超过默认 5 秒
 });
