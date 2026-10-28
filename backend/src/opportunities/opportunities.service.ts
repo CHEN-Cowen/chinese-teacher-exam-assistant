@@ -69,6 +69,14 @@ import {
   type UnifiedCoverageProjection,
 } from './coverage-projection.js';
 import {
+  buildHistoryDetail,
+  buildHistoryList,
+  parseHistoryQuery,
+  type HistoryDetailResponse,
+  type HistoryListResponse,
+  type HistoryQueryRaw,
+} from './history.js';
+import {
   SOURCE_CATALOG,
   SOURCE_MONITORING_RECORDS,
 } from '../sourcing/source-catalog.js';
@@ -275,6 +283,54 @@ export class OpportunitiesService {
           : Number.NEGATIVE_INFINITY;
         return count + (start <= timestamp && timestamp <= end ? version.units.length : 0);
       }, 0);
+  }
+
+  // ==================== 往年参考（D06 / PRD 11.7 U06） ====================
+
+  /**
+   * 往年参考列表（公开只读）：报名已截止或已撤回的往年公告。
+   * 不进入当前可报名计数，没有任何报名/关注动作；查询串非法值 400，不静默猜测。
+   */
+  async listHistory(query: HistoryQueryRaw): Promise<HistoryListResponse> {
+    const parsed = parseHistoryQuery(query);
+    if (!parsed.ok) throw new BadRequestException(parsed.message);
+    const now = new Date();
+    const catalog = await this.loadCatalog(now);
+    return buildHistoryList(catalog, parsed.filters, now);
+  }
+
+  /**
+   * 往年参考详情（公开）：历史事实 + 版本链 + 用当前资料的可选对照。
+   * 画像可选：请求体未携带且服务端无持久画像时 comparison 为 null（不编造对照）；
+   * 请求体携带了画像但结构非法仍按 400 处理（边界校验不放宽）。
+   */
+  async historyDetail(
+    profile: unknown,
+    userId: string | undefined,
+    unitId: string,
+  ): Promise<HistoryDetailResponse> {
+    const valid = await this.resolveOptionalProfile(profile, userId);
+    const now = new Date();
+    const catalog = await this.loadCatalog(now);
+    const detail = buildHistoryDetail(catalog, unitId, valid, now);
+    if (!detail) {
+      throw new NotFoundException('未找到这个往年公告，它可能不在已收录范围内');
+    }
+    return detail;
+  }
+
+  /**
+   * 画像可选解析（往年参考对照专用）：请求体优先；其次服务端持久画像；
+   * 都没有时返回 null——历史事实浏览不因缺画像而中断。
+   */
+  private async resolveOptionalProfile(
+    profile: unknown,
+    userId?: string,
+  ): Promise<UserRecruitmentProfile | null> {
+    if (profile !== undefined && profile !== null) {
+      return this.validateProfile(profile);
+    }
+    return userId ? this.safeProfile(userId) : null;
   }
 
   // ==================== 新机会订阅（v7.1 M6） ====================

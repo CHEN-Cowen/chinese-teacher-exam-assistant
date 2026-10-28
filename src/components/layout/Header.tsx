@@ -13,10 +13,11 @@ const PAGE_TITLES: Record<string, string> = {
   "/materials": "我的资料",
   "/settings": "设置",
   "/study": "我的备考",
+  "/history": "往年参考",
 };
 
 /** 有返回按钮的二级页面；主导航三页是顶层页，不显示返回 */
-const BACK_BUTTON_PATHS = new Set(["/onboarding", "/settings", "/materials", "/study"]);
+const BACK_BUTTON_PATHS = new Set(["/onboarding", "/settings", "/materials", "/study", "/history"]);
 
 export function Header() {
   const pathname = usePathname();

@@ -291,6 +291,18 @@ export default function OpportunitiesPage() {
 
       <CoverageBanner coverage={view.coverage} />
       <DatasetScopeNotice hasDemo={hasDemo} />
+      {/* D06：往年参考入口（历史已截止公告，只读、不计入当前可报） */}
+      <div className="flex items-center justify-between gap-3 rounded-xl border border-line bg-surface px-4 py-3">
+        <p className="text-xs leading-5 text-ink-muted">
+          想提前准备？可以查看往年已截止公告的条件与时间（仅供参考，本年度以新公告为准）。
+        </p>
+        <Link
+          href="/history"
+          className="shrink-0 text-sm font-medium text-brand underline underline-offset-2"
+        >
+          往年参考
+        </Link>
+      </div>
       {/* D04：偏好调整影响预览（只读预览 → 确认保存 → 可撤销），有结果/无结果都可用 */}
       <PreferencePreviewCard
         profile={state.profile}

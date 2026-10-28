@@ -36,6 +36,45 @@ export class OpportunitiesController {
     return this.service.coverage();
   }
 
+  /**
+   * 往年参考列表（D06 / PRD 11.7 U06：公开只读）。
+   * 已截止/已撤回的往年公告，不进入当前可报名计数，无任何报名动作。
+   */
+  @Get('history')
+  listHistory(
+    @Query('year') year?: string,
+    @Query('regionCode') regionCode?: string,
+    @Query('stage') stage?: string,
+    @Query('nature') nature?: string,
+    @Query('keyword') keyword?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+  ) {
+    return this.service.listHistory({
+      year,
+      regionCode,
+      stage,
+      nature,
+      keyword,
+      page,
+      pageSize,
+    });
+  }
+
+  /**
+   * 往年参考详情（D06：公开；画像可选）。
+   * 未登录用户在请求体携带访客画像用于对照；已登录用户画像由服务端读取；
+   * 都没有时对照区为 null，历史事实仍可读。
+   */
+  @Post('history/:unitId/detail')
+  historyDetail(
+    @Param('unitId') unitId: string,
+    @Body() body: { profile?: unknown } | undefined,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.service.historyDetail(body?.profile, req.user?.id, unitId);
+  }
+
   /** 当前用户的新机会订阅（v7.1 M6；未开启过返回 null） */
   @Get('subscription')
   @UseGuards(UserGuard)

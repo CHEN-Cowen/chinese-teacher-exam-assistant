@@ -218,7 +218,7 @@ function toFollowDTO(
 }
 
 /** 逐条件结果关联公告原文表述与证据锚点；地区维度无对应公告条件 */
-function toDimensions(candidate: OpportunityCandidate): DimensionDTO[] {
+export function toDimensions(candidate: OpportunityCandidate): DimensionDTO[] {
   const requirementsById = new Map(
     candidate.unit.requirements.map((req) => [req.id, req]),
   );

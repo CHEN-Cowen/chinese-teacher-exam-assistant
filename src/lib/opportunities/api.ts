@@ -11,6 +11,9 @@ import type {
   FollowDTO,
   FollowStatus,
   GoalsResponse,
+  HistoryDetailResponse,
+  HistoryFilters,
+  HistoryListResponse,
   MatchResponse,
   MaterialStatus,
   OpportunityCorrectionDTO,
@@ -224,6 +227,43 @@ export const opportunitiesApi = {
   listMyCorrections(): Promise<OpportunityCorrectionDTO[]> {
     if (AUTH_MODE === "demo") return demoOpportunitiesApi.listMyCorrections();
     return request<OpportunityCorrectionDTO[]>("/corrections/mine");
+  },
+
+  // ==================== 往年参考（D06 / PRD 11.7 U06） ====================
+
+  /** 往年参考列表（只读；公开可访问，无需画像） */
+  listHistory(filters: HistoryFilters = {}): Promise<HistoryListResponse> {
+    if (AUTH_MODE === "demo") return demoOpportunitiesApi.listHistory(filters);
+    const params = new URLSearchParams();
+    if (filters.year !== undefined) params.set("year", String(filters.year));
+    if (filters.regionCode) params.set("regionCode", filters.regionCode);
+    if (filters.stage) params.set("stage", filters.stage);
+    if (filters.nature) params.set("nature", filters.nature);
+    if (filters.keyword) params.set("keyword", filters.keyword);
+    if (filters.page !== undefined) params.set("page", String(filters.page));
+    if (filters.pageSize !== undefined) params.set("pageSize", String(filters.pageSize));
+    const qs = params.toString();
+    return request<HistoryListResponse>(`/history${qs ? `?${qs}` : ""}`);
+  },
+
+  /**
+   * 往年参考详情（公开可访问）。携带画像时返回「当年条件 × 当前资料」对照；
+   * 受邀模式默认不发送画像（后端读已持久化画像，无画像则对照为 null）。
+   */
+  historyDetail(
+    unitId: string,
+    profile?: UserRecruitmentProfile,
+    options?: { sendProfile?: boolean },
+  ): Promise<HistoryDetailResponse> {
+    if (AUTH_MODE === "demo") return demoOpportunitiesApi.historyDetail(unitId, profile);
+    const sendProfile = options?.sendProfile ?? (AUTH_MODE !== "invited" && !!profile);
+    return request<HistoryDetailResponse>(
+      `/history/${encodeURIComponent(unitId)}/detail`,
+      {
+        method: "POST",
+        body: JSON.stringify(sendProfile && profile ? { profile } : {}),
+      },
+    );
   },
 
   /** 员工跨用户纠错队列（STAFF_ROLES；status 省略时返回全部） */

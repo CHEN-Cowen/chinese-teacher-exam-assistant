@@ -435,6 +435,112 @@ export interface StaffOpportunityCorrectionDTO
 /** POST 请求体：前端只提交画像与补问答案，判定在后端完成 */
 export type ProfilePayload = { profile: UserRecruitmentProfile };
 
+// ==================== 往年参考（D06 / PRD 11.7 U06） ====================
+
+/** 往年参考完整程度（日期口径：报名起止/笔试/面试 4 项） */
+export interface HistoryCompletenessDTO {
+  knownDateCount: number;
+  totalDateCount: number;
+  materialCount: number;
+  /** 全部证据已人工核对=official；含 AI 初核/待复核内容时如实标注 */
+  evidenceState: "official" | "ai_extracted" | "pending_review";
+}
+
+/** 往年参考列表项（只读历史事实，无报名/关注动作） */
+export interface HistoryUnitDTO {
+  unitId: string;
+  unitCode: string;
+  unitName: string;
+  region: RegionRefDTO;
+  subject: string;
+  stage: string;
+  headcount: number;
+  organizationType: string;
+  employmentNature: { code: string; officialName: string };
+  allocation: { code: string; description: string };
+  teachingScope?: string;
+  schoolPlacement?: SchoolPlacementDTO;
+  announcement: {
+    id: string;
+    title: string;
+    publisher: string;
+    officialUrl: string;
+    dataset: "demo" | "real";
+    reviewStatus: "ai_reviewed_pending" | "human_reviewed";
+  };
+  /** 招聘批次年（报名开始年，缺报名日期回退公告发布年；无法确定为 null） */
+  batchYear: number | null;
+  /** 公告发布时间 ISO 原文 */
+  publishedAt: string;
+  /** 公告原文日期（不臆造；缺省表示公告未公布该节点） */
+  registrationStart?: string;
+  registrationEnd?: string;
+  writtenExamDate?: string;
+  interviewDate?: string;
+  /** 官方明确待定的日程项 */
+  pendingItems: string[];
+  completeness: HistoryCompletenessDTO;
+  /** 官方来源失效时的存档说明（链接失效仍显示留档） */
+  archiveNote: string | null;
+}
+
+/** 往年参考列表筛选条件（地区为 6 位区划代码前缀） */
+export interface HistoryFilters {
+  year?: number;
+  regionCode?: string;
+  stage?: string;
+  nature?: string;
+  keyword?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface HistoryListResponse {
+  meta: MetaDTO;
+  /** 收录样本范围说明（单年样本/年份区间，不推测本年必招时间） */
+  sampleNote: string;
+  /** 全部历史数据（未筛选）中的可筛选批次年，倒序 */
+  years: number[];
+  /** 全部历史数据（未筛选）中的可选地区 */
+  availableRegions: { code: string; label: string }[];
+  total: number;
+  page: number;
+  pageSize: number;
+  items: HistoryUnitDTO[];
+}
+
+/** 往年参考详情：历史事实 + 版本链 + 用当前资料的可选对照 */
+export interface HistoryDetailResponse {
+  meta: MetaDTO;
+  item: HistoryUnitDTO;
+  requirements: {
+    id: string;
+    dimension: DimensionDTO["dimension"];
+    description: string;
+    hard: boolean;
+    evidence: EvidenceAnchorDTO;
+  }[];
+  materials: MaterialItemDTO[];
+  previousVersions: {
+    id: string;
+    versionNumber: number;
+    sourceKind: string;
+    publishedAt: string;
+    supersededAt?: string;
+    changeNote?: string;
+  }[];
+  /**
+   * 用当前填写的资料对照当年条件（无画像时为 null）。
+   * 不等同用户当年身份，也不等同今年新公告的资格要求。
+   */
+  comparison: {
+    computedAt: string;
+    overall: OpportunityMatchStatus;
+    summary: string;
+    dimensions: DimensionDTO[];
+  } | null;
+}
+
 // ==================== 新机会订阅（v7.1 M6） ====================
 
 export interface SubscriptionRegionDTO {

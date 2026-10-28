@@ -7,6 +7,15 @@ import { currentVersion } from "@/lib/announcements/domain";
 import type { RecruitmentAnnouncement } from "@/lib/announcements/types";
 import { GUEST_COVERAGE } from "@/lib/guest/coverage";
 import {
+  collectHistoricalUnits,
+  filterHistoricalUnits,
+  availableBatchYears,
+  historySampleNote,
+  paginate,
+} from "@/lib/history/domain";
+import { availableHistoryRegions, toHistoryUnitDTO } from "@/lib/history/dto";
+import { getDemoHistoryAnnouncements } from "@/lib/seed/v61-history";
+import {
   buildCandidates,
   groupByMissingDimension,
   sortCandidates,
@@ -19,6 +28,9 @@ import type {
   FollowDTO,
   FollowStatus,
   GoalsResponse,
+  HistoryDetailResponse,
+  HistoryFilters,
+  HistoryListResponse,
   MatchResponse,
   MaterialStatus,
   OpportunityCorrectionDTO,
@@ -491,7 +503,21 @@ export const demoOpportunitiesApi = {
   },
 
   async submitCorrection(unitId: string, input: { fieldPath: string; content: string; contact?: string }): Promise<{ id: string; status: string }> {
-    const { announcement, version, unit } = findUnit(unitId);
+    // D06：往年参考详情也保留纠错入口；历史单元不在当前滚动目录时回退到历史示例查找
+    let announcement: RecruitmentAnnouncement;
+    let version: RecruitmentAnnouncement["versions"][number];
+    let unit: RecruitmentAnnouncement["versions"][number]["units"][number];
+    try {
+      ({ announcement, version, unit } = findUnit(unitId));
+    } catch {
+      const record = collectHistoricalUnits(getDemoHistoryAnnouncements(), new Date()).find(
+        (item) => item.unit.id === unitId,
+      );
+      if (!record) throw new Error("未找到这个演示机会");
+      announcement = record.announcement;
+      version = record.version;
+      unit = record.unit;
+    }
     const data = load();
     const id = `demo-correction-${Date.now()}`;
     data.corrections.push({
@@ -517,6 +543,107 @@ export const demoOpportunitiesApi = {
 
   async listMyCorrections(): Promise<OpportunityCorrectionDTO[]> {
     return load().corrections;
+  },
+
+  // ==================== 往年参考（D06 / PRD 11.7 U06） ====================
+
+  /** 往年参考列表：浏览器本地固定日期的示例历史公告，只读、不滚动 */
+  async listHistory(filters: HistoryFilters = {}): Promise<HistoryListResponse> {
+    const now = new Date();
+    const all = collectHistoricalUnits(getDemoHistoryAnnouncements(), now);
+    const filtered = filterHistoricalUnits(all, filters);
+    const page = paginate(
+      filtered.map(toHistoryUnitDTO),
+      filters.page ?? 1,
+      filters.pageSize ?? 20,
+    );
+    const years = availableBatchYears(all);
+    return {
+      meta: {
+        ruleVersion: "demo-frontend-matching-1",
+        majorAliasVersion: "demo-1",
+        catalogVersion: "demo-history-1",
+        realCatalogVersion: GUEST_COVERAGE.version,
+        evaluatedAt: now.toISOString(),
+      },
+      sampleNote: historySampleNote(years, all.length),
+      years,
+      availableRegions: availableHistoryRegions(all),
+      total: page.total,
+      page: page.page,
+      pageSize: page.pageSize,
+      items: page.items,
+    };
+  },
+
+  /**
+   * 往年参考详情：历史事实 + 版本链 + 用当前资料对照当年条件。
+   * 无画像时 comparison 为 null（页面引导先填资料，不编造对照）。
+   */
+  async historyDetail(
+    unitId: string,
+    profile?: UserRecruitmentProfile,
+  ): Promise<HistoryDetailResponse> {
+    const now = new Date();
+    const records = collectHistoricalUnits(getDemoHistoryAnnouncements(), now);
+    const record = records.find((item) => item.unit.id === unitId);
+    if (!record) throw new Error("未找到这个往年公告，它可能不在已收录范围内");
+    const { announcement, version, unit } = record;
+
+    let comparison: HistoryDetailResponse["comparison"] = null;
+    if (profile) {
+      const candidate = buildCandidates([announcement], profile, now.toISOString()).find(
+        (item) => item.unit.id === unitId,
+      );
+      if (candidate) {
+        comparison = {
+          computedAt: now.toISOString(),
+          overall: candidate.match.overall,
+          summary: candidate.match.summary,
+          dimensions: candidate.match.dimensions.map((dimension) => {
+            const requirement = unit.requirements.find(
+              (item) => item.id === dimension.requirementId,
+            );
+            return {
+              ...dimension,
+              requirementDescription:
+                requirement?.description ?? "岗位地区需在你填写的可接受范围内",
+              evidence: requirement?.evidence,
+            };
+          }),
+        };
+      }
+    }
+
+    return {
+      meta: {
+        ruleVersion: "demo-frontend-matching-1",
+        majorAliasVersion: "demo-1",
+        catalogVersion: "demo-history-1",
+        realCatalogVersion: GUEST_COVERAGE.version,
+        evaluatedAt: now.toISOString(),
+      },
+      item: toHistoryUnitDTO(record),
+      requirements: unit.requirements.map((requirement) => ({
+        id: requirement.id,
+        dimension: requirement.dimension,
+        description: requirement.description,
+        hard: requirement.hard,
+        evidence: requirement.evidence,
+      })),
+      materials: unit.materials ?? [],
+      previousVersions: announcement.versions
+        .filter((item) => item.id !== version.id)
+        .map((item) => ({
+          id: item.id,
+          versionNumber: item.versionNumber,
+          sourceKind: item.sourceKind,
+          publishedAt: item.publishedAt,
+          supersededAt: item.supersededAt,
+          changeNote: item.changeNote,
+        })),
+      comparison,
+    };
   },
 };
 
