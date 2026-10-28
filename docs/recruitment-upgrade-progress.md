@@ -69,7 +69,7 @@ D04（多原因空态与覆盖）覆盖。
 | D04 结果解释、无结果与影响预览 | U03、U04 | 已完成 | `6d192ba` | `target/codex/modular-development`，远端 SHA 一致 | 本地 lint/test/build 与浏览器两场景验证通过；远端 CI 待 D10 核对 |
 | D05 定向补充与保存后反馈 | U05 | 已完成 | `341a3dc`、`dda21f1` | `target/codex/modular-development`，远端 SHA 一致 | 本地 lint/test/build 与浏览器全场景验证通过；远端 CI 待 D10 核对 |
 | D06 往年参考目录与详情 | U06 | 已完成 | `2644a86` | `target/codex/modular-development`，远端 SHA 一致 | 本地 lint/test/build 与浏览器验证通过；远端 CI 待 D10 核对 |
-| D07 关注对象与站内动态 | U07 | 未开始 | | | |
+| D07 关注对象与站内动态 | U07 | 已完成 | `ef35388` | `target/codex/modular-development`，远端 SHA 一致 | 本地 lint/test/build 与浏览器验证通过；远端 CI 待 D10 核对 |
 | D08 纠错补录与管理处理 | U08 | 未开始 | | | |
 | D09 导航整合与采集可观察性 | U09、U10 | 未开始 | | | |
 | D10 全项目验收与交付 | U01—U10 | 未开始 | | | |
@@ -303,6 +303,63 @@ D04（多原因空态与覆盖）覆盖。
 - 主导航四入口整合（「往年参考」进 nav）属 D09，本轮入口在 /opportunities 页与 Header。
 - 用户未提交的 `src/app/onboarding/page.tsx`（+18 行）等修改未纳入本提交。
 
+### D07 关注对象与站内动态（提交 `ef35388`）
+
+实现：
+
+- 六态关注状态机：`FollowStatus` 新增 `waiting_exam`（只能从 registered 进、只能去
+  closed/abandoned），后端 `follow.domain.ts` 与前端 `domain.ts`/`next-action-selector.ts`
+  双端镜像；旧记录状态不动，仅加流转边与文案映射（types/ia labels/FollowControls/
+  applications 页均补「等待考试」）。FollowControls 在「已报名」后给「报名已通过，
+  等待考试」推进按钮；applications 页 waiting_exam 下一步指向备考。
+- 单位关注：身份键 = `normalizePublisherName`（NFKC+折叠空白，不去括号不模糊推断）
+  + `@` + 公告级地区码，仅精确匹配；同名不同地区不串联。后端新增 `FollowedOrganization`
+  表（Prisma 迁移 `20261028120000_followed_organizations`，本机无 PostgreSQL，迁移验证留
+  D10）与 follow/list/unfollow 三端点（publisherName 非空 + regionCode 六位数字校验，
+  upsert 幂等）。前端镜像纯函数域 `src/lib/opportunities/organization-follow.ts`。
+- 单位新公告通知：订阅同步时 `planOrganizationNotices` 对关注单位跑目录匹配，触发口径
+  = lifecycle active + https + sourceHealth.ok≠false + officialSource.state=official +
+  registrationEnd≥北京今日；首同步基线回填 notified=false 不产生通知风暴；dedupKey 前缀
+  `org:{identityKey}:` 幂等。仅站内 NotificationRecord，不接外部渠道。
+- 「我的关注」页 `/follows`：岗位动态区（active 按截止升序；closed/abandoned 收进折叠
+  「已结束 / 不再考虑」归档不自动删除；状态徽章六态着色、公告有更新、待核实 N 项、
+  截止 7 天内红色高亮、材料 x/y）；单位与地区动态区（身份键精确匹配 collectUnits 并
+  按公告去重；地区订阅摘要链 /opportunities#subscription）；监测范围卡（scopeNote+
+  lastCheckedAt+caliber.generatedAt+isFallback 标注）。/me 资料与设置区加入口，Header
+  标题与返回路径登记。
+- DTO：`UnitMatchDTO.announcement` 双端补必填 `region: RegionRef`（单位匹配前端精确
+  匹配所需）；`SubscriptionSyncDTO` 补 `orgNewNotices`/`orgBackfilled`。9 个测试文件
+  16 处 announcement 夹具同步补 region。
+- demo 通道：orgFollows/orgNoticeKeys/notifications 入 localStorage（旧数据经
+  emptyDemoData 展开合并做应用层迁移）；schedule demoApi 通知读取接本地派生；无会话
+  只读空数据、写操作抛「请先登录演示账号」。不新增埋点事件（事件类型封闭 union+
+  后端白名单，本模块无新事件）。
+
+命令与结果：
+
+| 命令 | 结果 |
+| --- | --- |
+| `npx vitest run src/lib/opportunities src/lib/schedule src/lib/ia` | 21 文件 218 通过（含 organization-follow 8 项：NFKC/同名不同地区不串联/首同步回填不通知/二次同步单条幂等/新版本再提醒/五类闸门/跨地区不串联） |
+| `npx vitest run`（前端全量） | 71 文件 754 通过 |
+| `cd backend && npx vitest run` | 96 文件 1205 通过（含 follow/organization-follow/service 用例）；首跑 2 失败为并发 flake，重跑全绿 |
+| `npx tsc --noEmit`（前端） | 通过，零错误 |
+| `npm run lint`（前端） | 0 error / 2 warning（scripts 下既有未使用变量，非本轮文件） |
+| `npx next build`（demo flags） | 通过，/follows 静态产出 |
+| 浏览器（localhost:3100，demo 生产构建） | /follows 空态引导正常；详情页「关注该单位的新公告」点击→「已关注该单位 · 取消」+提示；回 /follows 单位与地区动态区出现「江苏省 · 关注于 2026-10-28」+南京公告条目+取消关注；详情页保存岗位后岗位动态区出现「准备报名」徽章，点击推进徽章从「考虑中」流转；控制台无功能错误 |
+
+边界与未验证：
+
+- 单位关注三端点受邀通道由后端 service.spec 覆盖；浏览器端受邀环境未复测（本机无
+  后端实例）。
+- `FollowedOrganization` 迁移 SQL 已提供但未在真实 PostgreSQL 执行（本机无实例），
+  留 D10 统一验收。
+- 站内动态仅 NotificationRecord；外部通知渠道（微信/邮件/短信）按 PRD 边界不接。
+- 单位更名/合并不做自动推断；身份键不一致即不关联。
+- 页面主标题文案为「关注与动态」，Header 标题「我的关注」指同一页。
+- 用户未提交的 `src/app/onboarding/page.tsx`（+18 行）等修改未纳入本提交；
+  `backend/src/app.module.ts`、`package.json`、`deploy/README.md`、
+  `parse-guard.spec.ts` 仅为行尾噪音，未纳入。
+
 ## 5. 需求到验收点映射（开始实现前写清）
 
 ### D04 差距确认（2026-10-28，实现前已读调用链）
@@ -457,7 +514,37 @@ MANUAL_REVIEW 转官方确认、防重复提交、失败保留输入、演示不
 后端历史列表/详情公开可读（与 match 同口径），详情对照可携带访客画像；
 分页 page/pageSize 防全量扫描。
 
+### D07 差距确认（2026-10-28，实现前已读调用链）
+
+已读调用链：后端 `follow.domain.ts` FollowStatus=considering/preparing/registered/
+abandoned/closed（状态机+乐观锁+材料/咨询，`FollowedOpportunity` 表 @@unique(userId,unitId)）；
+`subscription.domain.ts` 地区+学科+用工偏好订阅，新公告提醒幂等（dedupKey=公告:版本，
+首同步基线回填不通知）；`schedule.service.ts` 关注公告版本/生命周期/来源健康 diff →
+NotificationRecord（versionChangeBody 含旧值新值），提醒基线 lastNotifiedState 幂等；
+日程事件跨版本按 code 对齐同步。前端 NotificationCenter 已挂载 Header/DesktopNav/Sidebar；
+/applications 报考中心需登录；guestFollows 存本机、登录合并；订阅卡 SubscriptionCard 在
+/opportunities。保存历史公告不订阅地区：D06 历史页无任何关注动作，已满足。
+
+确认的差距（本模块要实现）：
+
+- 关注对象只有岗位（unitId）：无单位关注；地区+学科仅以画像派生订阅存在，未作为关注
+  对象呈现。PRD 11.8 要求岗位/单位/地区+学科三种关注并存且分别可见。
+- 状态缺「等待考试」：PRD 六态 已关注/准备报名/已报名/等待考试/已结束/不再考虑，
+  现有五态缺 waiting_exam（registered→waiting_exam→closed/abandoned）；旧记录状态不动，
+  仅加流转边与文案映射（兼容，不丢旧状态）。
+- 无「我的关注」页：/applications 需登录，demo/访客关注仅存本机无展示。需新页面分
+  「岗位动态」与「单位/地区动态」，突出截止临近/重要变更/待核实/新公告/待办，
+  已结束可归档不自动删除；demo/访客本地闭环，受邀用户走服务端。
+- 单位身份：匹配目录无 organization 实体。单位关注以「发布主体规范化名+地区码」为身份键，
+  仅精确匹配关联新公告；不一致不自动关联（符合「同名不串联、关联不确定不自动发布关系」）。
+- 监测透明度：我的关注页需展示监测范围、最近检查（订阅 sync 时间）、通知开关
+  （remindersMuted 已有）与来源异常状态。
+
+实现边界：不接外部通知渠道（仅站内 NotificationRecord，不伪造微信/邮件）；单位更名/合并
+不做自动推断；单位关注新增 `FollowedOrganization` 表（Prisma 迁移 SQL 提供，本机无
+PostgreSQL，迁移验证留 D10）；旧跟进状态与个人待办保留。
+
 ## 6. 恢复点
 
-当前：D00—D06 已完成并推送。下一步：D07 关注对象与站内动态。
+当前：D00—D07 已完成并推送。下一步：D08 纠错补录与管理处理。
 任何中断后从“模块状态”中第一个非“已完成”模块继续，不重复已验收模块。
