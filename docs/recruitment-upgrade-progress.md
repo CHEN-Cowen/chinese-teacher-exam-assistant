@@ -70,7 +70,7 @@ D04（多原因空态与覆盖）覆盖。
 | D05 定向补充与保存后反馈 | U05 | 已完成 | `341a3dc`、`dda21f1` | `target/codex/modular-development`，远端 SHA 一致 | 本地 lint/test/build 与浏览器全场景验证通过；远端 CI 待 D10 核对 |
 | D06 往年参考目录与详情 | U06 | 已完成 | `2644a86` | `target/codex/modular-development`，远端 SHA 一致 | 本地 lint/test/build 与浏览器验证通过；远端 CI 待 D10 核对 |
 | D07 关注对象与站内动态 | U07 | 已完成 | `ef35388` | `target/codex/modular-development`，远端 SHA 一致 | 本地 lint/test/build 与浏览器验证通过；远端 CI 待 D10 核对 |
-| D08 纠错补录与管理处理 | U08 | 未开始 | | | |
+| D08 纠错补录与管理处理 | U08 | 已完成 | `fd61e13` | `target/codex/modular-development`，远端 SHA 一致 | 本地 lint/test/build 与浏览器 10 步验证通过；远端 CI 待 D10 核对 |
 | D09 导航整合与采集可观察性 | U09、U10 | 未开始 | | | |
 | D10 全项目验收与交付 | U01—U10 | 未开始 | | | |
 
@@ -543,6 +543,114 @@ NotificationRecord（versionChangeBody 含旧值新值），提醒基线 lastNot
 实现边界：不接外部通知渠道（仅站内 NotificationRecord，不伪造微信/邮件）；单位更名/合并
 不做自动推断；单位关注新增 `FollowedOrganization` 表（Prisma 迁移 SQL 提供，本机无
 PostgreSQL，迁移验证留 D10）；旧跟进状态与个人待办保留。
+
+### D08 纠错补录与管理处理（U08，提交 `fd61e13`）
+
+实现：
+
+- 状态机扩展（`corrections.domain.ts`）：新增 `need_supplement`（需补充）档，
+  迁移 submitted→reviewing→resolved/rejected 四档为五档
+  （submitted→reviewing/need_supplement/resolved/rejected；
+  need_supplement 可回 reviewing 或推进终态）；rejected 与 need_supplement 必须附
+  处理说明（本次未写时沿用记录上已有说明）；`FIELD_PATH_LABELS` 补齐 matching
+  （匹配结论）、dead_link（失效链接）、duplicate（重复收录），与 PRD 11.9 问题类型对齐；
+  DTO 新增 `resolvedVersionId`。
+- 纠错提交治理（`opportunities.service.ts submitCorrection`）：同一用户 24h 滚动窗口
+  限流 20 条；同用户同单元同字段同内容 24h 内重复提交 409（提示可在「我的」页查进度）。
+- 修正版本落点：`reviewCorrection` 支持 `resolvedVersionId`（处理人登记已发布版本 id，
+  服务端校验属于该公告版本链，防误登记）；resolved 通知包含「更正版本：<id>」，
+  用户侧「我的纠错」可见并可回详情核对。
+- 公告补录通道（新 `announcement-submission.domain.ts` + Prisma `AnnouncementSubmission`
+  表 + 迁移 `20261028140000_announcement_submissions`）：官方链接安全校验
+  （拒非 http(s)、localhost/.local、私网/内网/保留 IPv4+IPv6 含映射形式、凭据 URL；
+  规范化小写主机/去 hash/去结尾斜杠/默认端口）；SHA-256 urlHash 去重键；
+  本人同链接重复 409、全库已收录（resolved）链接 409、按用户 24h 限流 10 条；
+  提交只进运营队列，不直接进入采集与发布。处理与纠错共用状态机，
+  状态推进发站内通知（需补充/未采纳必附说明），普通用户只能查本人提交。
+- API 端点（`opportunities.controller.ts`）：`POST /opportunities/announcement-submissions`
+  （UserGuard）、`GET /opportunities/announcement-submissions/mine`（UserGuard）、
+  `GET /opportunities/admin/announcement-submissions`（AdminGuard，状态过滤），
+  `PATCH /opportunities/admin/announcement-submissions/:id`（ReviewGuard）。
+- 前端补录入口：列表页 `CoverageBanner` 覆盖说明内与 `NoResultFeedback` 无结果面板
+  各提供「提交补录」入口（共享 `AnnouncementSubmissionModal`：链接/单位/省市区/
+  可选说明，前端同口径校验即时反馈，服务端再校验）；提交成功展示受理编号
+  （与纠错共用 JC- 编码格式）且不自动消失。
+- 前端纠错入口扩展：详情页逐条件解释行新增「判断有误？」入口（region 行除外），
+  打开 `CorrectionModal` 并预选「匹配结论」问题位置；`CorrectionModal` 问题位置
+  补齐 8 类；`ConditionRows` 新增可选 `onCorrectCondition`。
+- 我的页（/me）：新增「我的公告补录」卡（受理编号、状态徽章、链接、单位、处理说明、
+  提交/处理时间）；「我的纠错」卡状态映射补 need_supplement（需补充），
+  resolved 记录显示更正版本提示。
+- 管理端（/admin/feedback）：新增「公告补录」标签页（`AnnouncementSubmissionPanel`，
+  六状态队列 + 详情处理 + need_supplement/rejected 说明必填 + 终态留痕展示；
+  resource_reviewer 只读提示保留）；「机会纠错」面板补 need_supplement 操作、
+  修正版本号输入（仅 resolved 时提交）与终态版本展示。
+- demo 通道（`demoApi.ts`）：补录提交/查询走 localStorage 按用户隔离（`submissions`
+  数组），同口径链接校验与重复识别；旧本地数据应用层迁移补 `resolvedVersionId` 默认值。
+
+命令与结果：
+
+| 命令 | 结果 |
+| --- | --- |
+| `cd backend && npx vitest run src/opportunities` | 10 文件 156 通过 + 1 expected fail（既有基线：保存响应下一步未落地目标） |
+| `cd backend && npx tsc -p tsconfig.build.json` | 通过（全量 `tsc --noEmit` 的 announcements spec 类型错为既有基线，生产构建排除 spec） |
+| `cd backend && npm run lint` | 0 error / 8 warning（既有风格警告） |
+| `cd backend && npm test` | 99 文件 1223 通过 / 1 expected fail / 2 skipped（D00 超时修复后本轮无失败） |
+| `npx vitest run src/lib/opportunities/announcement-submission.test.ts` | 5 通过（URL 校验/表单校验/状态文案） |
+| `npx vitest run src/app/me src/app/admin src/components/admin` | 4 文件 33 通过 |
+| `npx vitest run src/app/opportunities src/components/opportunities` | 9 文件 72 通过 |
+| `npm test` | 72 文件 759 通过（较 D07 新增 5） |
+| `npx tsc --noEmit` | 通过 |
+| `npm run lint` | 0 error / 2 warning（scripts 既有） |
+| `npm run build`（demo flags） | 通过（postbuild 外部依赖与密钥泄漏检查通过） |
+| 浏览器（localhost:3100 生产构建） | 10 步全 PASS：覆盖说明/无结果面板补录入口；内网链接即时拒绝；公网提交成功（受理编号 JC-919527）；同链接重复提交被拒；/me「我的公告补录」回显编号/状态/链接/单位；详情页「判断有误？」预选匹配结论并提交成功（JC-113663）；/me「我的纠错」2 条记录待核对；console 无业务 error、无 4xx/5xx |
+
+边界与未验证：
+
+- `AnnouncementSubmission` 迁移未在真实 PostgreSQL 执行（本机无 Docker），留 D10。
+- 补录/纠错管理端处理链路（/admin/feedback 状态推进）未做浏览器复测
+  （D07 已验证同类面板交互与权限边界；本轮以服务端测试覆盖 409/终态/说明必填），
+  留 D10 全流程验收。
+- 补录提交成功暂未新增独立埋点事件（复用既有 correction 事件族；
+  PRD 11.9 未强制要求补录埋点，如需区分可后续在双端登记）。
+- 用户未提交的 `src/app/onboarding/page.tsx` 等既有修改未纳入本提交。
+
+### D08 差距确认（2026-10-28，实现前已读调用链）
+
+已读调用链：后端纠错链路已有 `POST /opportunities/units/:unitId/corrections`（UserGuard，
+绑定 userId/unitId/announcementId/versionId/fieldPath/content/contact）、`GET corrections/mine`
+（仅本人）、`GET admin/corrections`（AdminGuard=STAFF_ROLES）、`PATCH admin/corrections/:id`
+（ReviewGuard=exam_reviewer/admin）；状态机 `corrections.domain.ts`
+（submitted→reviewing→resolved/rejected，终态不可改、rejected 必填说明）+ 终态站内通知
+（NotificationRecord，仅结论与说明）。前端详情页 VerificationSection「提交纠错」→
+CorrectionModal（fieldPath 5 选 + 说明 + 联系方式）→ 受理编号 correctionTicketCode（JC-xxx）；
+/me「我的纠错」卡展示状态与处理说明；/admin/corrections 队列面板可认领/采纳/不采纳。
+demo 通道 demoApi.submitCorrection/listMyCorrections（localStorage 按用户隔离）。
+版本发布重算与关注联动已有机制：announcements 管线 publish 新版本 → 目录 → 匹配即重算；
+单位关注 sync 按 versionId 幂等（新版本视为新信息每版本一次提醒）。
+
+确认的差距（本模块要实现）：
+
+- 问题类型不全：PRD 11.9 要求遗漏、学历专业提取、匹配、日期、失效链接、重复、其他。
+  现有 fieldPath 仅 major/timeline/headcount/evidence/other；缺 matching（匹配结论）、
+  dead_link（失效链接）、duplicate（重复收录）；遗漏公告（补录）为无岗位绑定的新形态。
+- 缺「需补充」状态：PRD 状态五档 已提交/处理中/已处理/需补充/暂未采纳，现有四档缺
+  need_supplement（须附处理说明向用户说明需补什么），需扩展状态机与展示映射。
+- 补录通道不存在：用户报告未收录官方公告（官方链接/单位/地区/可选说明）无入口与模型。
+  新增 AnnouncementSubmission 表：URL 安全校验（拒非 http(s)、localhost、内网/私网 IP、
+  带凭据 URL）；按用户限流；去重可识别（本人重复 409 带原受理编号、已收录链接 409）；
+  只进运营队列，不直接进采集与发布。
+- 纠错提交无限流与去重：同一用户同单元同字段同内容 24h 内重复提交应 409；
+  按用户 24h 限流。
+- 反馈入口不全：仅详情有纠错入口；列表页与无结果面板缺补录入口，详情逐条件解释
+  缺按条件预选问题位置的纠错入口。
+- 纠错与版本无落点关联：resolved 通知称“已在新版本中更正”但未记录版本号。新增
+  OpportunityCorrection.resolvedVersionId（可空，处理人填已发布版本 id），
+  用户侧可见并可跳转详情核对。
+
+实现边界：补录与纠错都不物理删除；普通用户不可读他人提交（服务端 userId 过滤 +
+守卫）；resource_reviewer 只读队列；真实 PostgreSQL 迁移验证留 D10（本机无 Docker）；
+不接外部通知渠道；匹配重算与关注联动复用既有版本发布机制，本模块补齐受理侧证据。
 
 ## 6. 恢复点
 
