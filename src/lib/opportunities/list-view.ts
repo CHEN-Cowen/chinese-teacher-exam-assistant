@@ -10,6 +10,7 @@
  */
 import type {
   CoverageDTO,
+  DimensionDTO,
   MatchResponse,
   MetaDTO,
   UnitMatchDTO,
@@ -381,6 +382,29 @@ function buildWorkbench(units: readonly UnitMatchDTO[]): WorkbenchViewModel {
     outOfScope: { count: outOfScope.length, units: outOfScope },
     excluded,
   };
+}
+
+/**
+ * 各待补维度影响的岗位数（D05「影响岗位」提示，PRD 11.6）。
+ *
+ * 口径与结果页 needInfoGroups 一致：只计可行动（已发布且未触发闸门）的
+ * need_more_info 单元；同一单元缺多个维度时在每个维度各计一次（维度分组语义，
+ * 不是去重总数）。数据全部来自后端分组，调用方在请求失败时不得展示本提示
+ * （不编造数量）。
+ */
+export function dimensionImpactCounts(
+  response: MatchResponse,
+): Partial<Record<DimensionDTO["dimension"], number>> {
+  const result: Partial<Record<DimensionDTO["dimension"], number>> = {};
+  for (const group of response.groups.needInfo) {
+    const count = group.units.filter((unit) =>
+      isActionableRecommendation(unit, "need_more_info"),
+    ).length;
+    if (count > 0) {
+      result[group.dimension as DimensionDTO["dimension"]] = count;
+    }
+  }
+  return result;
 }
 
 /**

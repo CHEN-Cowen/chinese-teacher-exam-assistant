@@ -3,6 +3,7 @@ import type { MatchResponse, UnitMatchDTO } from "./api-types";
 import type { UserRecruitmentProfile } from "@/lib/profile/types";
 import {
   buildListViewModel,
+  dimensionImpactCounts,
   formatEvaluatedAt,
   listCardNextStepLabel,
 } from "./list-view";
@@ -706,6 +707,34 @@ describe("buildListViewModel：模块 5 异常态与地区分流", () => {
       ],
     });
     expect(listCardNextStepLabel(closed)).toContain("公告");
+  });
+});
+
+describe("dimensionImpactCounts（D05：补充提示的「影响岗位」计数）", () => {
+  it("按维度聚合可行动的待补单元；与结果页 needInfoGroups 同口径", () => {
+    const response = makeResponse({
+      yinzhou: makeUnit("unit-yinzhou-01", "need_more_info"),
+    });
+    const impact = dimensionImpactCounts(response);
+    expect(impact.hukou).toBe(1);
+    expect(impact.age).toBeUndefined();
+  });
+
+  it("闸门失败/不可行动的单元不计入；空分组返回空对象", () => {
+    const closedNeedInfo = makeUnit("unit-closed-needinfo", "need_more_info", {
+      gates: [
+        { code: "subject_not_open", passed: true, reason: "" },
+        { code: "registration_closed", passed: false, reason: "已截止" },
+        { code: "out_of_scope_nature", passed: true, reason: "" },
+        { code: "announcement_withdrawn", passed: true, reason: "" },
+        { code: "no_official_source", passed: true, reason: "" },
+      ],
+    });
+    const response = makeResponse({ yinzhou: closedNeedInfo });
+    expect(dimensionImpactCounts(response)).toEqual({});
+
+    const empty = makeResponse({});
+    expect(dimensionImpactCounts(empty)).toEqual({});
   });
 });
 

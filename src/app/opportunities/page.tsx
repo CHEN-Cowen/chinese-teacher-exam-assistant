@@ -109,6 +109,17 @@ export default function OpportunitiesPage() {
     };
   }, []);
 
+  // D05 列表位置保留（PRD 11.6）：从定向补充页保存返回时 URL 带 #unit-<id> 锚点，
+  // 数据就绪后滚动定位到原岗位卡片（锚点元素由 ResultsWorkbench 渲染）。
+  useEffect(() => {
+    if (state.status !== "ready") return;
+    const hash = window.location.hash;
+    if (!hash.startsWith("#unit-")) return;
+    document
+      .getElementById(hash.slice(1))
+      ?.scrollIntoView({ block: "center" });
+  }, [state.status]);
+
   if (state.status === "loading") return <LoadingPage />;
 
   if (state.status === "no-profile") {

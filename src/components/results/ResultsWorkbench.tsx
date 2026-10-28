@@ -225,7 +225,11 @@ export function ResultsWorkbench({
             ) : (
               <div className="space-y-3">
                 {cards.map((vm) => (
-                  <div key={vm.id}>{renderCard(vm, tab.variant)}</div>
+                  // D05：id 锚点供「补充保存后返回结果页」滚动定位到原岗位卡片
+                  // （/opportunities 页读取 #unit-<id> 后 scrollIntoView）
+                  <div key={vm.id} id={`unit-${vm.id}`} className="scroll-mt-24">
+                    {renderCard(vm, tab.variant)}
+                  </div>
                 ))}
               </div>
             )}

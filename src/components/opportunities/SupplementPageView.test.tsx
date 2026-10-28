@@ -21,6 +21,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const holders = vi.hoisted(() => ({
   unitDetail: (() =>
     Promise.resolve(undefined)) as (...args: unknown[]) => Promise<unknown>,
+  match: (() =>
+    Promise.resolve({
+      groups: {
+        preliminary: [],
+        needInfo: [],
+        manualReview: [],
+        notEligible: [],
+        closed: [],
+      },
+    })) as (...args: unknown[]) => Promise<unknown>,
+  /** useActiveProfile 返回值；默认访客就绪，用例可覆盖为已登录演示账号 */
+  profileState: { status: "ready" as const, profile: {}, isGuest: true },
 }));
 
 vi.mock("next/navigation", () => ({
@@ -39,11 +51,11 @@ vi.mock("next/link", () => ({
   }) => createElement("a", { href, ...rest }, children),
 }));
 
-// 必须返回稳定引用：详情 effect 依赖 profileState，新对象会导致无限重跑
-vi.mock("@/lib/opportunities/useOpportunities", () => {
-  const ready = { status: "ready" as const, profile: {}, isGuest: true };
-  return { useActiveProfile: () => ready };
-});
+// 必须返回稳定引用：详情 effect 依赖 profileState，新对象会导致无限重跑；
+// 经持有者在用例间切换访客（isGuest=true）/已登录演示账号（isGuest=false）
+vi.mock("@/lib/opportunities/useOpportunities", () => ({
+  useActiveProfile: () => holders.profileState,
+}));
 
 vi.mock("@/lib/auth", () => ({
   useCurrentUser: () => ({ status: "authenticated" as const }),
@@ -52,6 +64,7 @@ vi.mock("@/lib/auth", () => ({
 vi.mock("@/lib/opportunities/api", () => ({
   opportunitiesApi: {
     unitDetail: (...args: unknown[]) => holders.unitDetail(...args),
+    match: (...args: unknown[]) => holders.match(...args),
   },
 }));
 
@@ -72,6 +85,7 @@ vi.mock("@/lib/profile/activeProfile", () => ({
     clear: vi.fn(),
   },
   buildActiveProfile: () => ({ ready: true as const, profile: {} }),
+  profileToSupplementFacts: () => ({}),
 }));
 
 vi.mock("@/lib/profile/profileRepository", () => ({
@@ -235,8 +249,21 @@ async function mountAndRecompute(
 }
 
 describe("SupplementPageView v7.2 定向补充返回链接", () => {
+  const ANCHOR = `#unit-${UNIT_ID}`;
+
   beforeEach(() => {
     holders.unitDetail = () => Promise.resolve(makeDetail("need_more_info"));
+    holders.match = () =>
+      Promise.resolve({
+        groups: {
+          preliminary: [],
+          needInfo: [],
+          manualReview: [],
+          notEligible: [],
+          closed: [],
+        },
+      });
+    holders.profileState = { status: "ready", profile: {}, isGuest: true };
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -248,28 +275,28 @@ describe("SupplementPageView v7.2 定向补充返回链接", () => {
     vi.restoreAllMocks();
   });
 
-  it("origin=opportunities + 重算后为优先机会：顶部与底部返回链接都指向 tab=priority", async () => {
+  it("origin=opportunities + 重算后为优先机会：顶部与底部返回链接都指向 tab=priority 并锚定原岗位", async () => {
     const { beforeHref, topHref, bottomHref } = await mountAndRecompute(
       "opportunities",
       "preliminary_eligible",
     );
-    // 保存前未重算：保持不带 tab
-    expect(beforeHref).toBe("/opportunities");
-    // 保存重算后：聚焦优先机会标签
-    expect(topHref).toBe("/opportunities?tab=priority");
-    expect(bottomHref).toBe("/opportunities?tab=priority");
+    // 保存前未重算：保持不带 tab，但锚定原岗位（D05 列表位置保留）
+    expect(beforeHref).toBe(`/opportunities${ANCHOR}`);
+    // 保存重算后：聚焦优先机会标签并锚定原岗位
+    expect(topHref).toBe(`/opportunities?tab=priority${ANCHOR}`);
+    expect(bottomHref).toBe(`/opportunities?tab=priority${ANCHOR}`);
     // P0 不变量：返回链接绝不回 onboarding
     expect(topHref).not.toContain("/onboarding");
     expect(bottomHref).not.toContain("/onboarding");
   }, 20000);
 
-  it("origin=opportunities + 重算后仍需补充信息：返回链接指向 tab=supplement", async () => {
+  it("origin=opportunities + 重算后仍需补充信息：返回链接指向 tab=supplement 并锚定原岗位", async () => {
     const { topHref, bottomHref } = await mountAndRecompute(
       "opportunities",
       "need_more_info",
     );
-    expect(topHref).toBe("/opportunities?tab=supplement");
-    expect(bottomHref).toBe("/opportunities?tab=supplement");
+    expect(topHref).toBe(`/opportunities?tab=supplement${ANCHOR}`);
+    expect(bottomHref).toBe(`/opportunities?tab=supplement${ANCHOR}`);
     expect(topHref).not.toContain("/onboarding");
     expect(bottomHref).not.toContain("/onboarding");
   }, 20000);
@@ -279,12 +306,12 @@ describe("SupplementPageView v7.2 定向补充返回链接", () => {
       "opportunities",
       "manual_review",
     );
-    expect(topHref).toBe("/opportunities?tab=supplement");
-    expect(bottomHref).toBe("/opportunities?tab=supplement");
+    expect(topHref).toBe(`/opportunities?tab=supplement${ANCHOR}`);
+    expect(bottomHref).toBe(`/opportunities?tab=supplement${ANCHOR}`);
     expect(topHref).not.toContain("/onboarding");
   }, 20000);
 
-  it("origin=opportunities 未重算：保持原行为，不带 ?tab=", async () => {
+  it("origin=opportunities 未重算：不带 ?tab=，仍锚定原岗位", async () => {
     holders.unitDetail = () => Promise.resolve(makeDetail("need_more_info"));
     act(() => {
       root.render(
@@ -296,7 +323,7 @@ describe("SupplementPageView v7.2 定向补充返回链接", () => {
       );
     });
     await waitFor(() => topReturnHref() !== null);
-    expect(topReturnHref()).toBe("/opportunities");
+    expect(topReturnHref()).toBe(`/opportunities${ANCHOR}`);
     expect(topReturnHref()).not.toContain("?tab=");
     expect(bottomReturnAnchor()).toBeNull();
   }, 20000);
@@ -316,5 +343,107 @@ describe("SupplementPageView v7.2 定向补充返回链接", () => {
     expect(bottomHref).toBe(`/opportunities/${UNIT_ID}`);
     expect(topHref).not.toContain("?tab=");
     expect(topHref).not.toContain("/onboarding");
+  }, 20000);
+
+  it("D05：保存后播报包含结论变化与仍需核实项数量", async () => {
+    // makeUnit 自带 1 个 age UNKNOWN 维度：重算后结论变化且仍需核实 1 项
+    await mountAndRecompute("opportunities", "preliminary_eligible");
+    await waitFor(() =>
+      (container.textContent ?? "").includes("机会判断已更新为：初步符合"),
+    );
+    expect(container.textContent).toContain("仍需核实 1 项");
+    expect(container.textContent).toContain("待补充 1 项");
+  }, 20000);
+
+  it("D05：补充提示展示公告要求原文与影响岗位数（来自 match 分组计数）", async () => {
+    holders.match = () =>
+      Promise.resolve({
+        groups: {
+          preliminary: [],
+          needInfo: [
+            {
+              dimension: "age",
+              count: 2,
+              units: [
+                makeUnit("need_more_info"),
+                makeUnit("need_more_info"),
+              ],
+            },
+          ],
+          manualReview: [],
+          notEligible: [],
+          closed: [],
+        },
+      });
+    act(() => {
+      root.render(
+        createElement(SupplementPageView, {
+          mode: "real",
+          unitId: UNIT_ID,
+          searchParamsString: "origin=detail&bucket=need_more_info",
+        }),
+      );
+    });
+    await waitFor(() =>
+      (container.textContent ?? "").includes("公告要求：公告未明确年龄上限"),
+    );
+    expect(container.textContent).toContain(
+      "补充这项会影响 2 个机会的判断（含本岗位）",
+    );
+  }, 20000);
+
+  it("D05：影响统计请求失败时不显示数量提示（不编造），表单仍可用", async () => {
+    holders.match = () => Promise.reject(new Error("网络异常"));
+    act(() => {
+      root.render(
+        createElement(SupplementPageView, {
+          mode: "real",
+          unitId: UNIT_ID,
+          searchParamsString: "origin=detail&bucket=need_more_info",
+        }),
+      );
+    });
+    await waitFor(() => saveButton() !== null);
+    expect(container.textContent).toContain("公告要求：公告未明确年龄上限");
+    expect(container.textContent ?? "").not.toContain("个机会的判断（含本岗位）");
+  }, 20000);
+
+  it("D05：demo 岗位 + 已登录演示账号——不构造服务端画像仓储，保存只写本机并完成播报", async () => {
+    // 回归锁：修复前 /opportunities/[unitId]/supplement 硬编码 mode="real"，
+    // 已登录演示账号会走受邀式 repo.read/patch → /api 503 → 整页报错
+    holders.profileState = { status: "ready", profile: {}, isGuest: false };
+    const { createProfileRepository } = await import(
+      "@/lib/profile/profileRepository"
+    );
+    vi.mocked(createProfileRepository).mockClear();
+    holders.unitDetail = vi
+      .fn()
+      .mockResolvedValueOnce(makeDetail("need_more_info"))
+      .mockResolvedValueOnce(makeDetail("preliminary_eligible"));
+
+    act(() => {
+      root.render(
+        createElement(SupplementPageView, {
+          mode: "demo",
+          unitId: UNIT_ID,
+          searchParamsString: "origin=opportunities&bucket=need_more_info",
+        }),
+      );
+    });
+    await waitFor(() => saveButton() !== null);
+    await act(async () => {
+      saveButton()!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await waitFor(() => bottomReturnAnchor() !== null);
+
+    // 服务端仓储从未被构造：不读 GET /api/profile，也不写 PATCH
+    expect(createProfileRepository).not.toHaveBeenCalled();
+    // 本机保存 + 重算 + 播报照常完成（含仍需核实项）
+    expect(container.textContent).toContain("机会判断已更新为：初步符合");
+    expect(container.textContent).toContain("仍需核实 1 项");
+    // 返回链接带 tab 与锚点（与访客链路一致）
+    expect(bottomReturnAnchor()?.getAttribute("href")).toBe(
+      `/opportunities?tab=priority${ANCHOR}`,
+    );
   }, 20000);
 });

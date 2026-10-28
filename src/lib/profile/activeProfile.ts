@@ -97,6 +97,41 @@ export type ActiveProfileReason =
   | "incomplete"
   | "subject_not_open";
 
+/**
+ * 从完整画像派生补充事实（D05）。
+ *
+ * 用途：受邀登录用户的补充表单初始值来自服务端画像，而不是共享 localStorage
+ * （kb_profile_supplement_v61 是本机访客/演示草稿，跨账号共享，不能预填给登录账号）。
+ * 户籍还原口径：画像只存合并后的 hukouRegionCode（有市选市）；省级码（XX0000）只还原省，
+ * 市级码同时还原省与市，与 SupplementForm 的省/市两个选择框对应。
+ */
+export function profileToSupplementFacts(
+  profile: UserRecruitmentProfile | null | undefined,
+): SupplementFacts {
+  const facts: SupplementFacts = {};
+  if (!profile) return facts;
+  if (profile.birthDate) facts.birthDate = profile.birthDate;
+  const hukou = profile.hukouRegionCode;
+  if (hukou && /^\d{6}$/.test(hukou)) {
+    if (hukou.endsWith("0000")) {
+      facts.hukouProvinceCode = hukou;
+    } else {
+      facts.hukouProvinceCode = `${hukou.slice(0, 2)}0000`;
+      facts.hukouCityCode = hukou;
+    }
+  }
+  if (profile.socialSecurityMonths !== undefined) {
+    facts.socialSecurityMonths = profile.socialSecurityMonths;
+  }
+  if (profile.workExperienceMonths !== undefined) {
+    facts.workExperienceMonths = profile.workExperienceMonths;
+  }
+  if (profile.extraAnswers && Object.keys(profile.extraAnswers).length > 0) {
+    facts.extraAnswers = { ...profile.extraAnswers };
+  }
+  return facts;
+}
+
 export type ActiveProfile =
   | { ready: false; reason: ActiveProfileReason }
   | { ready: true; profile: UserRecruitmentProfile };
