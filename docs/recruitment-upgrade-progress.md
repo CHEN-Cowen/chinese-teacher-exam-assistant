@@ -67,7 +67,7 @@ D04（多原因空态与覆盖）覆盖。
 | D02 我的资料与分阶段填写 | U01、U05 | 已完成 | `54262e9` | 同上 | 浏览器核心路径通过；375px 响应式未在浏览器工具内验证 |
 | D03 资格与偏好、阶段匹配 | U02、U03 | 已完成 | `1a0671e` | `target/codex/modular-development`，远端 SHA 一致 | 本地 lint/test/build 与浏览器详情验证通过；远端 CI 待 D10 核对 |
 | D04 结果解释、无结果与影响预览 | U03、U04 | 已完成 | `6d192ba` | `target/codex/modular-development`，远端 SHA 一致 | 本地 lint/test/build 与浏览器两场景验证通过；远端 CI 待 D10 核对 |
-| D05 定向补充与保存后反馈 | U05 | 未开始 | | | |
+| D05 定向补充与保存后反馈 | U05 | 已完成 | `341a3dc`、`dda21f1` | `target/codex/modular-development`，远端 SHA 一致 | 本地 lint/test/build 与浏览器全场景验证通过；远端 CI 待 D10 核对 |
 | D06 往年参考目录与详情 | U06 | 未开始 | | | |
 | D07 关注对象与站内动态 | U07 | 未开始 | | | |
 | D08 纠错补录与管理处理 | U08 | 未开始 | | | |
@@ -199,6 +199,60 @@ D04（多原因空态与覆盖）覆盖。
 - 修复过的两处实现问题：React 渲染期状态调整替代 effect 内 setState（lint 阻断）；
   撤销快照由 sessionStorage 改 localStorage（sessionStorage 按标签页隔离导致跨标签丢失）。
 
+### D05 定向补充与保存后反馈（提交 `341a3dc`，超时修复 `dda21f1`）
+
+实现：
+
+- 账号隔离（PRD 11.6「草稿与私密数据按账号隔离」）：补充页事实按通道分离——
+  demo/访客读写本机 `kb_profile_supplement_v61`；受邀登录用户的表单初始值改由
+  服务端画像派生（`activeProfile.ts` 新增纯函数 `profileToSupplementFacts`：
+  出生日期/户籍省市码/社保与工作经历月数/其他问答），保存后回显服务端合并后的
+  画像派生值，全程不读共享 localStorage（可能属于本机其他账号或访客）。
+  服务端画像读取 effect 以 `useLocalFacts` 为门卫，demo/访客不产生任何 /api 请求。
+- 登录链路重算修复：保存成功后重算画像按通道选择——demo/访客用 `buildActiveProfile()`
+  本机草稿；受邀登录用户用 `profileState.profile` 占位画像 + `sendProfile=false`
+  （后端忽略请求体、读已持久化画像）。修复前受邀登录用户 `buildActiveProfile()`
+  `ready=false`，结论播报与返回按钮根本不出现；409 冲突分支同样修正。
+- 补充提示三要素（PRD 11.6「说明原因、影响岗位及不填的后果」）：`SupplementForm`
+  各待补字段上方展示「公告要求：<原文>」（`requirementDescription ?? reason`）与
+  「补充这项会影响 N 个机会的判断（含本岗位）」；计数来自 `list-view.ts` 新增
+  `dimensionImpactCounts`（复用只读 match 响应 `groups.needInfo` 中可行动单元，
+  闸门失败单元不计入），请求失败保持 null 不显示，绝不编造数量。
+- 保存播报含仍需核实项（PRD 11.6「展示结论变化和仍需核实项」）：重算后统计
+  UNKNOWN/MANUAL_REVIEW 剩余数，拼入「信息已保存。机会判断已更新为：X。」/
+  「当前判断暂时没有变化。」两条播报（`StatusMessage` 可访问播报）。
+- 列表位置保留（PRD 11.6）：origin=opportunities 的返回链接追加 `#unit-<id>` 锚点
+  （未重算也带），`ResultsWorkbench` 卡片包裹 div 渲染 `id="unit-<id>"` +
+  `scroll-mt-24`，结果页数据就绪后 `scrollIntoView({block:"center"})` 定位原岗位。
+- 存量缺陷修复（浏览器验证发现）：`/opportunities/[unitId]/supplement` 路由曾硬编码
+  `mode="real"`，demo 构建中已登录演示账号（`isGuest=false`）保存会走受邀式
+  `PATCH /api/profile` → 无后端代理恒 503 → 整页「机会详情加载失败 / proxy not
+  configured」，刷新后表单重置。路由 mode 改由构建期内联的 `isDemoMode` 决定
+  （不读运行时 env），与 `opportunitiesApi` 的 AUTH_MODE 数据通道对齐；
+  新增路由页回归测试锁定 demo/受邀两向。
+
+命令与结果：
+
+| 命令 | 结果 |
+| --- | --- |
+| `npx vitest run src/lib/profile/activeProfile.test.ts src/lib/opportunities/list-view.test.ts src/components/opportunities/SupplementPageView.test.tsx` | 47 通过（含派生函数 3、影响计数 2、播报/提示/锚点等 6 项新用例） |
+| `npx vitest run supplement/page.test SupplementPageView.test`（修复后） | 12 通过（含路由通道 2 项、demo 已登录不触服务端 1 项回归锁） |
+| `npm test`（全量） | 69 文件 726 通过（首跑 1 失败为 isolation 守护扫描贴 5s 默认超时，显式放宽到 20s 后全绿，断言未动） |
+| `npx tsc --noEmit` | 通过 |
+| `npm run lint` | 0 error / 2 warning（scripts 下既有未使用变量，非本轮文件） |
+| `npm run build`（demo flags） | 通过（含 postbuild 外部依赖与密钥泄漏检查） |
+| 浏览器（localhost:3100，demo 生产构建，已登录演示账号） | 补充页公告要求与影响提示显示；保存后无 proxy not configured，播报含「信息已保存」与仍需核实项；刷新后户籍字段保留（localStorage 330000/330200）；返回详情页与列表正常；锚点滚动验证 scrollY≈1342、卡片入视口、激活标签正确、无 hash 时停留顶部；console 无业务 error，network 无任何 /api 请求 |
+
+边界与未验证：
+
+- origin=opportunities 的 tab+锚点返回链路当前无 UI 入口生成（UI 入口仅 detail/preview
+  两个 origin），该分支由 4 项单元测试锁定 href 生成，锚点滚动 effect 已浏览器验证。
+- `ff_targeted_supplement` 关闭时的详情页内联回退表单仅写本机 localStorage（受邀登录
+  用户重算不含新事实）——已登记回退路径，本模块不修；当前发布构建开关为开。
+- 受邀登录链路（ServerProfileAdapter.read/patch、409 恢复）由既有仓储测试与本模块
+  单元测试覆盖，浏览器端未做受邀环境复测（本机无后端实例）。
+- 用户未提交的 `src/app/onboarding/page.tsx`（+18 行）等修改未纳入本提交。
+
 ## 5. 需求到验收点映射（开始实现前写清）
 
 ### D04 差距确认（2026-10-28，实现前已读调用链）
@@ -221,6 +275,33 @@ D04（多原因空态与覆盖）覆盖。
 
 验收点见本节下文 D04（U04）条目，另补：调整前后计数与列表实际分桶一致（workbench 单一数据源）；
 目录版本不一致时预览响应被丢弃并提示刷新；无真实统计（预览请求失败）时明确提示，不编造数值。
+
+### D05 差距确认（2026-10-28，实现前已读调用链）
+
+已读调用链：`/opportunities/[unitId]/supplement`（SupplementPageView）+ `/preview/supplement/[unitId]`
+共用视图；`supplement-route.ts` origin/bucket 白名单回退；`SupplementForm` 只渲染仍缺失字段；
+保存走 `supplementFactsService`（demo/访客）或 `ServerProfileAdapter.patch`（409 乐观锁可恢复）；
+保存后重算并播报结论变化；返回按 origin 带 tab。已具备：非法参数回退、闸门失败优先展示、
+MANUAL_REVIEW 转官方确认、防重复提交、失败保留输入、演示不真实隔离（demo 不落敏感事实）。
+
+确认的差距（本模块要修）：
+
+- 账号隔离：补充页初始表单对**所有**用户从共享 localStorage `kb_profile_supplement_v61` 预填，
+  受邀登录用户会看到本机其他账号/访客的私密补充事实；且登录保存后 `setFacts` 读回的是旧本地值
+  而非刚写入服务端的值。PRD 11.6 要求「草稿与私密数据按账号隔离」。
+- 登录链路重算缺口：保存成功后重算走 `buildActiveProfile()`（本机草稿），受邀登录用户无本机草稿
+  时 `ready=false`，结论变化播报与「返回查看结果」按钮根本不出现——保存重算对登录用户不完整。
+- 「影响岗位」缺失：补充提示只说明本岗位还差几项，未说明各项信息的公告要求原文，
+  也未说明该项同时影响多少其他机会的判断（PRD 11.6「说明原因、影响岗位及不填的后果」）。
+  后端 match 响应 `groups.needInfo` 已按维度分组计数，可直接用真实数据，失败则不显示（不编造）。
+- 列表位置不保留：返回 `/opportunities?tab=X` 只恢复标签，不定位到原岗位卡片，
+  滚动位置丢失（PRD 11.6「保留筛选、列表位置」）。方案：返回链接加 `#unit-<id>` 锚点，
+  结果页数据就绪后 scrollIntoView 聚焦该卡片。
+- 保存后播报只有结论变化，未含「仍需核实项」数量（PRD 11.6「展示结论变化和仍需核实项」）。
+
+边界（不在本模块改）：`ff_targeted_supplement` 关闭时的详情页内联回退表单仅写本机 localStorage，
+  对受邀登录用户重算不含新事实——属已登记回退路径，本模块记录不修；当前发布构建开关为开。
+  `/preview` 演示链路不加锚点聚焦（保持既有行为）。
 
 ### D01（U01）
 
@@ -299,5 +380,5 @@ D04（多原因空态与覆盖）覆盖。
 
 ## 6. 恢复点
 
-当前：D00—D04 已完成并推送。下一步：D05 定向补充与保存后反馈。
+当前：D00—D05 已完成并推送。下一步：D06 往年参考目录与详情。
 任何中断后从“模块状态”中第一个非“已完成”模块继续，不重复已验收模块。
