@@ -15,6 +15,7 @@ import { AUTH_MODE, useCurrentUser } from "@/lib/auth";
 import { guestSessionService, REGION_LEVEL_OPTIONS, NATURE_PREFERENCE_OPTIONS } from "@/lib/guest/guestSession";
 import type { EmploymentNaturePreference } from "@/lib/guest/guestSession";
 import { profileApi } from "@/lib/profile/profileApi";
+import { identityScopedKey } from "@/lib/storageIdentity";
 import type { RegionPreference, UserRecruitmentProfile } from "@/lib/profile/types";
 import { opportunitiesApi } from "@/lib/opportunities/api";
 import type { MatchResponse } from "@/lib/opportunities/api-types";
@@ -46,7 +47,8 @@ function readUndoSnapshot(): UndoSnapshot | null {
   if (typeof window === "undefined") return null;
   try {
     // localStorage：sessionStorage 按标签页隔离，跨标签/新开页面后撤销会丢失
-    const raw = window.localStorage.getItem(UNDO_STORAGE_KEY);
+    // R01：按身份隔离，切换账号后不能撤销另一个账号的偏好
+    const raw = window.localStorage.getItem(identityScopedKey(UNDO_STORAGE_KEY));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as UndoSnapshot;
     if (Date.now() - Date.parse(parsed.savedAt) > UNDO_TTL_MS) return null;
@@ -115,11 +117,16 @@ export function PreferencePreviewCard({
       });
       return;
     }
-    await profileApi.saveProfile({
-      ...profile,
-      regions,
-      employmentNaturePreference: nature,
-    });
+    // R01：偏好只做字段级更新，不把整份画像 PUT 回去，
+    // 避免覆盖另一标签页/另一设备刚保存的最新教育经历。
+    const meta = await profileApi.getProfileWithMeta();
+    await profileApi.patchProfile(
+      {
+        regions,
+        ...(nature !== undefined ? { employmentNaturePreference: nature } : {}),
+      },
+      meta.updatedAt,
+    );
   };
 
   const runPreview = async () => {
@@ -171,7 +178,10 @@ export function PreferencePreviewCard({
       setNotice("已按新的偏好重新计算。原偏好已保留，可在下方撤销。");
       setPreview({ status: "idle" });
       try {
-        window.localStorage.setItem(UNDO_STORAGE_KEY, JSON.stringify(snapshot));
+        window.localStorage.setItem(
+          identityScopedKey(UNDO_STORAGE_KEY),
+          JSON.stringify(snapshot),
+        );
       } catch {
         // 存储不可用（隐私模式/超限）：不影响本会话内撤销
       }
@@ -192,7 +202,7 @@ export function PreferencePreviewCard({
     try {
       await persistPreferences(undo.regions, undo.employmentNaturePreference);
       try {
-        window.localStorage.removeItem(UNDO_STORAGE_KEY);
+        window.localStorage.removeItem(identityScopedKey(UNDO_STORAGE_KEY));
       } catch {
         // 存储不可用：内存态已清除
       }

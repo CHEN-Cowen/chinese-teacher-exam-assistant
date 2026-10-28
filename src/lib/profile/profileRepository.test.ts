@@ -116,6 +116,52 @@ describe("GuestLocalProfileAdapter", () => {
   });
 });
 
+describe("R01 字段级保存：偏好与教育经历互不覆盖", () => {
+  const bachelor = {
+    id: "bachelor-1",
+    stage: "bachelor" as const,
+    majorFullName: "汉语言文学（师范）",
+    teacherTraining: "yes" as const,
+    majorConfirmed: true,
+    source: "user" as const,
+  };
+
+  beforeEach(() => {
+    localStorage.setItem(
+      STORAGE_KEYS.GUEST_PROFILE_V61,
+      JSON.stringify(completeSession()),
+    );
+  });
+
+  it("只改偏好不覆盖已保存的教育经历", async () => {
+    const adapter = new GuestLocalProfileAdapter();
+    await adapter.patch({ educationExperiences: [bachelor] });
+    const result = await adapter.patch({
+      regions: [{ code: "320000", province: "江苏省", level: "consider" }],
+      employmentNaturePreference: "public_only",
+    });
+    expect(result.profile!.educationExperiences).toEqual([bachelor]);
+    expect(result.profile!.regions).toEqual([
+      { code: "320000", province: "江苏省", level: "consider" },
+    ]);
+  });
+
+  it("只改教育经历不覆盖已保存的补充事实", async () => {
+    const adapter = new GuestLocalProfileAdapter();
+    await adapter.patch({ birthDate: "1998-06-15" });
+    const result = await adapter.patch({ educationExperiences: [bachelor] });
+    expect(result.profile!.birthDate).toBe("1998-06-15");
+    expect(result.profile!.educationExperiences).toEqual([bachelor]);
+  });
+
+  it("显式清空教育经历后不再从旧字段恢复", async () => {
+    const adapter = new GuestLocalProfileAdapter();
+    await adapter.patch({ educationExperiences: [bachelor] });
+    const result = await adapter.patch({ educationExperiences: [] });
+    expect(result.profile!.educationExperiences).toEqual([]);
+  });
+});
+
 describe("ServerProfileAdapter", () => {
   it("read：调用 profileApi.getProfileWithMeta", async () => {
     const mockFetch = vi.fn().mockResolvedValue({

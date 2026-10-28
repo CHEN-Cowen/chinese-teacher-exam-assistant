@@ -1,6 +1,7 @@
 import { User } from "@/types";
 import { STORAGE_KEYS } from "@/lib/mock-data";
 import { loadFromStorage, saveToStorage, removeFromStorage } from "@/lib/storage";
+import { setActiveIdentity } from "@/lib/storageIdentity";
 import { AuthCredentials, AuthService, Session } from "./types";
 import { DEMO_ACCOUNTS } from "./demo-accounts";
 
@@ -59,6 +60,8 @@ export class DemoAuthProvider implements AuthService {
       expiresAt: new Date(now + SESSION_TTL_MS).toISOString(),
     };
 
+    // R01：切换本机存储作用域到该账号，避免上一个身份的草稿/快照被误用
+    setActiveIdentity(session.userId);
     this.persist(session);
     return session;
   }
@@ -66,6 +69,7 @@ export class DemoAuthProvider implements AuthService {
   async logout(): Promise<void> {
     await delay(NETWORK_DELAY_MS / 2);
     removeFromStorage(STORAGE_KEYS.SESSION);
+    setActiveIdentity(null);
     this.emitChange();
   }
 
@@ -80,11 +84,15 @@ export class DemoAuthProvider implements AuthService {
 
   restoreSession(): Session | null {
     const session = this.getSession();
-    if (!session) return null;
+    if (!session) {
+      setActiveIdentity(null);
+      return null;
+    }
 
     // 会话结构不完整视为无效
     if (!session.token || !session.user || !session.expiresAt) {
       removeFromStorage(STORAGE_KEYS.SESSION);
+      setActiveIdentity(null);
       this.emitChange();
       return null;
     }
@@ -92,6 +100,7 @@ export class DemoAuthProvider implements AuthService {
     // 会话已过期：打标记供登录页提示“会话已失效”
     if (Date.now() >= new Date(session.expiresAt).getTime()) {
       removeFromStorage(STORAGE_KEYS.SESSION);
+      setActiveIdentity(null);
       if (typeof window !== "undefined") {
         window.sessionStorage.setItem("kb_session_expired", "1");
       }
@@ -99,6 +108,8 @@ export class DemoAuthProvider implements AuthService {
       return null;
     }
 
+    // R01：刷新后恢复本机存储作用域，与当前会话账号一致
+    setActiveIdentity(session.userId);
     return session;
   }
 

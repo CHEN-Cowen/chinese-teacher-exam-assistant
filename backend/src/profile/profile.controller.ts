@@ -47,9 +47,10 @@ export class ProfileController {
   }
 
   /**
-   * v7.2 部分更新画像（PRD 7.6.1）。
+   * v7.2 部分更新画像（PRD 7.6.1）+ R01 字段级扩展。
    * - 只接受白名单字段（birthDate, hukouProvinceCode, hukouCityCode,
-   *   socialSecurityMonths, workExperienceMonths, extraAnswers）；
+   *   socialSecurityMonths, workExperienceMonths, extraAnswers,
+   *   regions, employmentNaturePreference, educationExperiences, legacyEducation）；
    * - 只合并本次变化（partial merge），不是全量覆盖；
    * - expectedUpdatedAt 乐观锁，冲突由 service 抛 ConflictException（409）；
    * - 不做客户端读出全部画像后全量覆盖。

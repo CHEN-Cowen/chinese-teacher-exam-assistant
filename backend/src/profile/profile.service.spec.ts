@@ -345,3 +345,149 @@ describe('D01 分阶段教育经历持久化', () => {
     expect(other.educationExperiences).toEqual([education]);
   });
 });
+
+describe('R01 资料隔离与字段级保存', () => {
+  const bachelor = {
+    id: 'bachelor-1',
+    stage: 'bachelor',
+    majorFullName: '汉语言文学（师范）',
+    teacherTraining: 'yes',
+    majorConfirmed: true,
+    source: 'user',
+  };
+  const master = {
+    id: 'master-1',
+    stage: 'master',
+    majorFullName: '学科教学（语文）',
+    teacherTraining: 'unknown',
+    majorConfirmed: true,
+    source: 'user',
+  };
+
+  it('旧客户端 PUT 未提供新字段时不删除已保存的教育经历', async () => {
+    const prisma = createFakePrisma();
+    const service = new ProfileService(prisma as never);
+    await service.saveProfile('user-1', {
+      regions: [{ code: '330000', province: '浙江省', level: 'required' }],
+      educationExperiences: [bachelor],
+      legacyEducation: { confirmed: true, confirmedAt: '2026-10-01T00:00:00.000Z' },
+    });
+    // 旧客户端只认识基础画像字段，整份 PUT 上来
+    await service.saveProfile('user-1', {
+      regions: [{ code: '330000', province: '浙江省', level: 'required' }],
+      educationLevel: 'bachelor',
+      majorFullName: '汉语言文学',
+    });
+    const saved = (await service.getProfile('user-1')) as Record<string, unknown>;
+    expect(saved.educationExperiences).toEqual([bachelor]);
+    expect(saved.legacyEducation).toMatchObject({ confirmed: true });
+    expect(saved.majorFullName).toBe('汉语言文学');
+  });
+
+  it('显式清空（educationExperiences: []）仍然生效', async () => {
+    const prisma = createFakePrisma();
+    const service = new ProfileService(prisma as never);
+    await service.saveProfile('user-1', { educationExperiences: [bachelor] });
+    await service.saveProfile('user-1', {
+      educationExperiences: [],
+      legacyEducation: { confirmed: true, confirmedAt: '2026-10-02T00:00:00.000Z' },
+    });
+    const saved = (await service.getProfile('user-1')) as Record<string, unknown>;
+    expect(saved.educationExperiences).toEqual([]);
+  });
+
+  it('只更新偏好的 PATCH 不覆盖最新教育经历', async () => {
+    const prisma = createFakePrisma();
+    const service = new ProfileService(prisma as never);
+    await service.saveProfile('user-1', {
+      regions: [{ code: '330000', province: '浙江省', level: 'required' }],
+      educationExperiences: [bachelor],
+    });
+    const meta = await service.getProfileWithMeta('user-1');
+    const result = await service.patchProfile(
+      'user-1',
+      {
+        regions: [{ code: '320000', province: '江苏省', level: 'consider' }],
+        employmentNaturePreference: 'public_only',
+      },
+      meta.updatedAt,
+    );
+    const profile = result.profile as Record<string, unknown>;
+    expect(profile.educationExperiences).toEqual([bachelor]);
+    expect(profile.regions).toEqual([
+      { code: '320000', province: '江苏省', level: 'consider' },
+    ]);
+    expect(profile.employmentNaturePreference).toBe('public_only');
+  });
+
+  it('双标签页：教育页 PATCH 与补充资料 PATCH 互不覆盖', async () => {
+    const prisma = createFakePrisma();
+    const service = new ProfileService(prisma as never);
+    await service.saveProfile('user-1', { regions: [] });
+
+    const tabA = await service.getProfileWithMeta('user-1');
+    const tabB = await service.getProfileWithMeta('user-1');
+    // 标签 A 先保存教育经历
+    const afterA = await service.patchProfile(
+      'user-1',
+      { educationExperiences: [bachelor, master] },
+      tabA.updatedAt,
+    );
+    // 标签 B 用旧版本号保存补充资料 → 冲突，不得静默覆盖
+    await expect(
+      service.patchProfile(
+        'user-1',
+        { birthDate: '1998-06-15' },
+        tabB.updatedAt,
+      ),
+    ).rejects.toMatchObject({ response: { error: 'VERSION_CONFLICT' } });
+    // 标签 B 基于最新版本重试 → 两者都在
+    const afterB = await service.patchProfile(
+      'user-1',
+      { birthDate: '1998-06-15' },
+      afterA.updatedAt,
+    );
+    const profile = afterB.profile as Record<string, unknown>;
+    expect(profile.birthDate).toBe('1998-06-15');
+    expect(profile.educationExperiences).toEqual([bachelor, master]);
+  });
+
+  it('PATCH 教育经历不影响已保存的补充事实', async () => {
+    const prisma = createFakePrisma();
+    const service = new ProfileService(prisma as never);
+    await service.patchProfile('user-1', {
+      birthDate: '1998-06-15',
+      extraAnswers: { 'req-1': '是' },
+    });
+    await service.patchProfile('user-1', { educationExperiences: [bachelor] });
+    const saved = (await service.getProfile('user-1')) as Record<string, unknown>;
+    expect(saved.birthDate).toBe('1998-06-15');
+    expect(saved.extraAnswers).toEqual({ 'req-1': '是' });
+    expect(saved.educationExperiences).toEqual([bachelor]);
+  });
+
+  it('PATCH 教育经历结构非法时 400，且不写入任何部分数据', async () => {
+    const prisma = createFakePrisma();
+    const service = new ProfileService(prisma as never);
+    await service.saveProfile('user-1', { educationExperiences: [bachelor] });
+    await expect(
+      service.patchProfile('user-1', {
+        educationExperiences: [{ id: 'x', stage: 'phd', majorFullName: '汉语言文学' }],
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    const saved = (await service.getProfile('user-1')) as Record<string, unknown>;
+    expect(saved.educationExperiences).toEqual([bachelor]);
+  });
+
+  it('PATCH 非法偏好取值 400', async () => {
+    const prisma = createFakePrisma();
+    const service = new ProfileService(prisma as never);
+    await service.saveProfile('user-1', { regions: [] });
+    await expect(
+      service.patchProfile('user-1', { employmentNaturePreference: 'whatever' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.patchProfile('user-1', { regions: '浙江省' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+});

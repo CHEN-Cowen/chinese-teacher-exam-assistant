@@ -55,9 +55,9 @@ const CORRECTION_STATUS_META: Record<
 };
 
 /**
- * 「我的」（v7.0 信息架构）：报考信息、已保存机会、备考次级入口、
- * 纠错记录、通知、隐私与账号设置的统一入口。
- * 不设置独立「备考」主导航：备考入口仅在用户已设置主要目标时出现。
+ * 「我的资料」（PRD U09 第四主入口）：报考信息、已保存机会、日程与备考
+ * 次级入口、纠错与补录记录、通知、隐私与账号设置的统一入口。
+ * 备考等能力为次级入口，不设独立主导航。
  */
 export default function MePage() {
   const { user, role, hasRole, logout } = useCurrentUser();
@@ -67,7 +67,7 @@ export default function MePage() {
   return (
     <div className="mx-auto max-w-2xl space-y-6 pb-4">
       <header>
-        <p className="text-xs font-semibold tracking-wide text-brand">我的</p>
+        <p className="text-xs font-semibold tracking-wide text-brand">我的资料</p>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">
           {user.name}
         </h1>
@@ -97,9 +97,19 @@ export default function MePage() {
         />
         <div className="divide-y divide-line">
           <SettingsRow
-            href="/follows"
-            title="我的关注"
-            description="岗位进度、关注单位与地区的新公告动态"
+            href="/applications"
+            title="日程与报考"
+            description="保存的机会、报考状态与考试时间线汇总"
+          />
+          <SettingsRow
+            href="/schedule"
+            title="日程时间线"
+            description="报名、缴费、考试等关键时间与变更记录"
+          />
+          <SettingsRow
+            href="/study"
+            title="备考练习"
+            description="按已保存机会生成的每日备考任务"
           />
           <SettingsRow
             href="/me/education"
@@ -194,15 +204,25 @@ function ProfileCard() {
     return active.ready ? active.profile : null;
   });
   const [loaded, setLoaded] = useState(!AUTH_MODE_INVITED);
+  /** R01：读取失败与“没有画像”是两件事，不能混为引导重新填写 */
+  const [loadFailed, setLoadFailed] = useState(false);
 
   useEffect(() => {
     if (!AUTH_MODE_INVITED) return;
     let cancelled = false;
-    profileApi.getProfile().then((persisted) => {
-      if (cancelled) return;
-      setProfile(persisted);
-      setLoaded(true);
-    });
+    profileApi
+      .getProfile()
+      .then((persisted) => {
+        if (cancelled) return;
+        setProfile(persisted);
+        setLoaded(true);
+      })
+      .catch(() => {
+        // R01：读取失败不能伪装成“没有画像”，提示重试而不是引导重新填写
+        if (cancelled) return;
+        setLoadFailed(true);
+        setLoaded(true);
+      });
     return () => {
       cancelled = true;
     };
@@ -212,6 +232,22 @@ function ProfileCard() {
     return (
       <Card>
         <p className="text-sm text-ink-muted">正在读取报考信息…</p>
+      </Card>
+    );
+  }
+
+  if (loadFailed) {
+    return (
+      <Card>
+        <p className="text-sm font-semibold text-ink">没能读取报考信息</p>
+        <p className="mt-1 text-xs leading-5 text-ink-muted">
+          这不代表你还没有填写资料。请稍后重试，或直接查看教育经历与机会列表。
+        </p>
+        <div className="mt-3">
+          <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
+            重试
+          </Button>
+        </div>
       </Card>
     );
   }

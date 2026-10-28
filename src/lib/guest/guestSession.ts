@@ -36,7 +36,11 @@ import type {
   UserRecruitmentProfile,
 } from "@/lib/profile/types";
 import { STORAGE_KEYS } from "@/lib/mock-data";
-import { loadFromStorage, saveToStorageStrict, removeFromStorage } from "@/lib/storage";
+import {
+  readIdentityScopedRaw,
+  removeIdentityScoped,
+  writeIdentityScopedRaw,
+} from "@/lib/storageIdentity";
 
 /**
  * v7.2 用工偏好类型重导出（定义在 profile/types，保证访客草稿与服务端画像同语义）。
@@ -540,17 +544,36 @@ export function migrateSessionStep(step: number): number {
 
 // ==================== 会话存储服务 ====================
 
+/**
+ * 读取身份作用域内的访客会话（R01：不同账号不共用一个草稿键）。
+ * 已登录身份优先读自己的键，读不到再只读回退到访客原键。
+ */
+function readSession(): GuestProfileSession | null {
+  const raw = readIdentityScopedRaw(STORAGE_KEYS.GUEST_PROFILE_V61);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as GuestProfileSession;
+  } catch {
+    return null;
+  }
+}
+
+/** 写入身份作用域内的访客会话；存储不可用时抛出 */
+function writeSession(session: GuestProfileSession): void {
+  writeIdentityScopedRaw(
+    STORAGE_KEYS.GUEST_PROFILE_V61,
+    JSON.stringify(session),
+  );
+}
+
 export const guestSessionService = {
   /** 读取访客画像会话；不存在或已过期时返回 null（过期会同时清除）。
    *  v7.1 M2：加载时自动迁移旧 3 步/5 步草稿的 step 值到 2 步范围。 */
   load(): GuestProfileSession | null {
-    const session = loadFromStorage<GuestProfileSession | null>(
-      STORAGE_KEYS.GUEST_PROFILE_V61,
-      null,
-    );
+    const session = readSession();
     if (!session) return null;
     if (isExpired(session)) {
-      removeFromStorage(STORAGE_KEYS.GUEST_PROFILE_V61);
+      removeIdentityScoped(STORAGE_KEYS.GUEST_PROFILE_V61);
       return null;
     }
     // 迁移旧 step 值；同时规整跳过标记（移除旧 step 1/3 的残留）
@@ -559,7 +582,7 @@ export const guestSessionService = {
     if (migratedStep !== session.step || migratedDraft !== session.draft) {
       const next = { ...session, step: migratedStep, draft: migratedDraft };
       try {
-        saveToStorageStrict(STORAGE_KEYS.GUEST_PROFILE_V61, next);
+        writeSession(next);
       } catch {
         // 存储不可用时返回迁移后的值（不阻塞读取）
       }
@@ -588,7 +611,7 @@ export const guestSessionService = {
       updatedAt: now,
       expiresAt: existing?.expiresAt ?? new Date(Date.now() + GUEST_TTL_MS).toISOString(),
     };
-    saveToStorageStrict(STORAGE_KEYS.GUEST_PROFILE_V61, next);
+    writeSession(next);
     return next;
   },
 
@@ -605,6 +628,6 @@ export const guestSessionService = {
   },
 
   clear(): void {
-    removeFromStorage(STORAGE_KEYS.GUEST_PROFILE_V61);
+    removeIdentityScoped(STORAGE_KEYS.GUEST_PROFILE_V61);
   },
 };

@@ -11,9 +11,9 @@
  */
 import { STORAGE_KEYS } from "@/lib/mock-data";
 import {
-  loadFromStorage,
-  saveToStorage,
-} from "@/lib/storage";
+  readIdentityScopedRaw,
+  writeIdentityScopedRaw,
+} from "@/lib/storageIdentity";
 import {
   draftToProfile,
   guestSessionService,
@@ -77,18 +77,27 @@ export function normalizeSupplementFacts(input: unknown): SupplementFacts {
 }
 
 export const supplementFactsService = {
+  /** 读取身份作用域内的补充事实（R01：不同账号不共用一份补充资料） */
   load(): SupplementFacts {
-    return normalizeSupplementFacts(
-      loadFromStorage<unknown>(STORAGE_KEYS.PROFILE_SUPPLEMENT_V61, {}),
-    );
+    const raw = readIdentityScopedRaw(STORAGE_KEYS.PROFILE_SUPPLEMENT_V61);
+    if (!raw) return {};
+    try {
+      return normalizeSupplementFacts(JSON.parse(raw));
+    } catch {
+      return {};
+    }
   },
   save(facts: SupplementFacts): SupplementFacts {
     const cleaned = normalizeSupplementFacts(facts);
-    saveToStorage(STORAGE_KEYS.PROFILE_SUPPLEMENT_V61, cleaned);
+    writeIdentityScopedRaw(
+      STORAGE_KEYS.PROFILE_SUPPLEMENT_V61,
+      JSON.stringify(cleaned),
+    );
     return cleaned;
   },
   clear(): void {
-    saveToStorage(STORAGE_KEYS.PROFILE_SUPPLEMENT_V61, {});
+    // 保留空对象标记（而非删除键）：与既有语义一致，表示“本机补充事实已清空”
+    writeIdentityScopedRaw(STORAGE_KEYS.PROFILE_SUPPLEMENT_V61, "{}");
   },
 };
 

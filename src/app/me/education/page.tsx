@@ -66,22 +66,71 @@ export default function EducationPage() {
   const [error, setError] = useState<string | null>(null);
   const [confirmStage, setConfirmStage] = useState<Record<string, EducationStage>>({});
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  /** R01：读取失败时禁止保存，避免把“没读到”当成“没有画像”继续覆盖 */
+  const [loadFailed, setLoadFailed] = useState(false);
+  /** R01：本机登录前填写的分阶段经历（服务端已登录时用于明确的导入确认） */
+  const [localExperiences, setLocalExperiences] = useState<EducationExperience[]>([]);
+  const [importBusy, setImportBusy] = useState(false);
+  const [importNotice, setImportNotice] = useState<string | null>(null);
+  /** R01：409 冲突提示（保留页面输入） */
+  const [conflictNotice, setConflictNotice] = useState<string | null>(null);
+
+  /** 服务端经历与页面输入是否不同（用于冲突导入确认） */
+  const differsFromLocal = useMemo(() => {
+    if (localExperiences.length === 0) return false;
+    return (
+      JSON.stringify(normalizeEducationExperiences(experiences)) !==
+      JSON.stringify(normalizeEducationExperiences(localExperiences))
+    );
+  }, [experiences, localExperiences]);
 
   useEffect(() => {
     let cancelled = false;
     const nowIso = new Date().toISOString();
 
-    const apply = (base: UserRecruitmentProfile | null) => {
+    /** 已登录：服务端经历为准；本机经历只作为导入提示，绝不自动替换 */
+    const applyServer = (
+      base: UserRecruitmentProfile,
+      metaUpdatedAt: string | undefined,
+    ) => {
       if (cancelled) return;
       const local = educationExperiencesService.load();
-      const source: UserRecruitmentProfile = base ?? { regions: [], acceptedEmploymentNatures: [] };
+      setLocalExperiences(local);
+      setProfile(base);
+      setSavedAt(metaUpdatedAt ?? null);
+      setLoadFailed(false);
+      const serverExperiences = normalizeEducationExperiences(
+        base.educationExperiences,
+      );
+      if (serverExperiences.length > 0) {
+        setExperiences(serverExperiences);
+      } else if (base.legacyEducation?.confirmed === true) {
+        // 用户已明确确认/清空旧字段，不再悄悄恢复旧单一字段
+        setExperiences([]);
+      } else {
+        const seeded = migrateEducationProfile(base, nowIso).profile;
+        setExperiences(normalizeEducationExperiences(seeded.educationExperiences));
+      }
+      setLoading(false);
+    };
+
+    /** 访客 / demo：本机经历（登录前填写的数据仍可用） */
+    const applyLocal = (base: UserRecruitmentProfile | null) => {
+      if (cancelled) return;
+      const local = educationExperiencesService.load();
+      const source: UserRecruitmentProfile = base ?? {
+        regions: [],
+        acceptedEmploymentNatures: [],
+      };
       const seeded =
         local.length > 0
           ? { ...source, educationExperiences: local }
-          : migrateEducationProfile(source, nowIso).profile;
-      const normalized = normalizeEducationExperiences(seeded.educationExperiences);
+          : source.legacyEducation?.confirmed === true
+            ? source
+            : migrateEducationProfile(source, nowIso).profile;
+      setLocalExperiences(local);
       setProfile(seeded);
-      setExperiences(normalized);
+      setExperiences(normalizeEducationExperiences(seeded.educationExperiences));
       setLoading(false);
     };
 
@@ -90,23 +139,27 @@ export default function EducationPage() {
         .getProfileWithMeta()
         .then((row) => {
           if (cancelled) return;
-          setSavedAt(row.updatedAt ?? null);
-          apply(row.profile);
+          applyServer(
+            row.profile ?? { regions: [], acceptedEmploymentNatures: [] },
+            row.updatedAt,
+          );
         })
         .catch(() => {
           if (cancelled) return;
+          setLoadFailed(true);
           setError("读取报考信息失败，请稍后重试；本页不会覆盖已有资料。");
           setLoading(false);
         });
     } else if (!AUTH_MODE_INVITED || authStatus !== "loading") {
       const active = buildActiveProfile();
-      apply(active.ready ? active.profile : null);
+      applyLocal(active.ready ? active.profile : null);
     }
 
     return () => {
       cancelled = true;
     };
   }, [authenticated, authStatus]);
+
 
   useEffect(() => {
     // 其他页面修改后回到本页时刷新（仅本机来源）
@@ -155,47 +208,117 @@ export default function EducationPage() {
     });
   };
 
+  const legacyConfirmation = useMemo(
+    () => ({
+      confirmed: pendingConfirmations.length === 0,
+      ...(pendingConfirmations.length === 0
+        ? { confirmedAt: new Date().toISOString() }
+        : {}),
+    }),
+    [pendingConfirmations.length],
+  );
+
   const save = async () => {
     const issues = validateEducationExperiences(experiences);
     if (issues.length > 0) {
       setError(issues[0].message);
       return;
     }
+    if (authenticated && loadFailed) {
+      setError("当前没能读取到账号资料，为避免覆盖已有经历，暂不能保存。请刷新后重试。");
+      return;
+    }
     setError(null);
+    setConflictNotice(null);
     setSaving(true);
+    const normalized = normalizeEducationExperiences(experiences);
     try {
       if (authenticated) {
-        const current = profile ?? (await profileApi.getProfile()) ?? {
-          regions: [],
-          acceptedEmploymentNatures: [],
-        };
-        await profileApi.saveProfile({
-          ...current,
-          educationExperiences: experiences,
-          legacyEducation: {
-            confirmed: pendingConfirmations.length === 0,
-            ...(pendingConfirmations.length === 0
-              ? { confirmedAt: new Date().toISOString() }
-              : {}),
+        // R01：只提交教育字段 + 期望版本，不把整份旧画像 PUT 回去
+        const row = await profileApi.patchProfile(
+          {
+            educationExperiences: normalized,
+            legacyEducation: legacyConfirmation,
           },
-        });
-        setProfile({
-          ...current,
-          educationExperiences: experiences,
-        });
+          savedAt ?? undefined,
+        );
+        setProfile((prev) => ({
+          ...(prev ?? { regions: [], acceptedEmploymentNatures: [] }),
+          educationExperiences: normalized,
+          legacyEducation: legacyConfirmation,
+        }));
+        setSavedAt(row.updatedAt ?? savedAt);
       } else {
-        educationExperiencesService.save(experiences);
+        educationExperiencesService.save(normalized);
+        setSavedAt(new Date().toISOString());
       }
       setSaved(true);
-      setSavedAt(new Date().toISOString());
     } catch (e) {
-      setError(
-        e instanceof Error
-          ? `保存失败：${e.message}。页面内容仍保留，可重试。`
-          : "保存失败，页面内容仍保留，可重试。",
-      );
+      const status = (e as { status?: number }).status;
+      if (status === 409) {
+        // 冲突：拉取最新版本更新版本号，但保留用户当前输入
+        await profileApi
+          .getProfileWithMeta()
+          .then((row) => setSavedAt(row.updatedAt ?? null))
+          .catch(() => undefined);
+        setConflictNotice(
+          "账号资料已在其他设备更新。已为你载入最新版本号，页面上你正在编辑的内容仍保留；请核对后再次保存。",
+        );
+      } else {
+        setError(
+          e instanceof Error
+            ? `保存失败：${e.message}。页面内容仍保留，可重试。`
+            : "保存失败，页面内容仍保留，可重试。",
+        );
+      }
     } finally {
       setSaving(false);
+    }
+  };
+
+  /** R01：把本机登录前填写的经历导入账号（明确确认后才写入服务端） */
+  const importLocalExperiences = async (useLocal: boolean) => {
+    if (!authenticated) return;
+    setImportBusy(true);
+    setError(null);
+    try {
+      if (!useLocal) {
+        educationExperiencesService.clear();
+        setLocalExperiences([]);
+        setImportNotice("已保留账号内的教育经历，本机草稿未导入。");
+        return;
+      }
+      const normalized = normalizeEducationExperiences(localExperiences);
+      const row = await profileApi.patchProfile(
+        {
+          educationExperiences: normalized,
+          legacyEducation: {
+            confirmed: !normalized.some((item) => item.stageNeedsConfirmation),
+            ...(normalized.some((item) => item.stageNeedsConfirmation)
+              ? {}
+              : { confirmedAt: new Date().toISOString() }),
+          },
+        },
+        savedAt ?? undefined,
+      );
+      setSavedAt(row.updatedAt ?? savedAt);
+      setExperiences(normalized);
+      setProfile((prev) => ({
+        ...(prev ?? { regions: [], acceptedEmploymentNatures: [] }),
+        educationExperiences: normalized,
+      }));
+      educationExperiencesService.clear();
+      setLocalExperiences([]);
+      setImportNotice("已导入本机教育经历并保存到账号。");
+    } catch (e) {
+      const status = (e as { status?: number }).status;
+      setError(
+        status === 409
+          ? "账号资料刚在其他设备更新，导入未完成。请刷新页面后重试。"
+          : "导入失败，本机草稿仍保留，可重试。",
+      );
+    } finally {
+      setImportBusy(false);
     }
   };
 
@@ -224,6 +347,74 @@ export default function EducationPage() {
           系统才能说明采用了哪一段经历。
         </p>
       </div>
+
+      {loadFailed && (
+        <Card className="border-danger/30 bg-danger-soft/40">
+          <p className="text-sm font-semibold text-danger">没能读取账号里的教育经历</p>
+          <p className="mt-1 text-xs leading-5 text-danger">
+            这不等同于“没有教育经历”。为避免覆盖账号已有资料，本页暂不保存。
+            请刷新页面或稍后重试。
+          </p>
+          <div className="mt-3">
+            <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
+              重新读取
+            </Button>
+          </div>
+        </Card>
+      )}
+
+      {authenticated && localExperiences.length > 0 && (
+        <Card className="border-brand/30 bg-brand-soft/40">
+          <p className="text-sm font-semibold text-ink">
+            {experiences.length === 0
+              ? "本机还有登录前填写的教育经历"
+              : differsFromLocal
+                ? "本机草稿与账号里保存的经历不一致"
+                : "本机草稿与账号里保存的经历一致"}
+          </p>
+          <p className="mt-1 text-xs leading-5 text-ink-muted">
+            {experiences.length === 0
+              ? "系统没有自动写入账号。你可以先核对下面的本机内容，再决定是否导入。"
+              : "账号内的经历优先显示。是否用本机草稿覆盖账号内容，由你确认。"}
+          </p>
+          <ul className="mt-2 space-y-1 text-xs leading-5 text-ink-muted">
+            {localExperiences.map((item) => (
+              <li key={`local-${item.id}`}>本机：{describeEducationExperience(item)}</li>
+            ))}
+          </ul>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => importLocalExperiences(true)}
+              disabled={importBusy}
+            >
+              {importBusy ? "处理中…" : experiences.length === 0 ? "导入到账号" : "用本机草稿覆盖账号"}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => importLocalExperiences(false)}
+              disabled={importBusy}
+            >
+              不使用本机草稿
+            </Button>
+          </div>
+        </Card>
+      )}
+
+      {importNotice && (
+        <p className="rounded-lg bg-success-soft/60 px-3 py-2 text-xs text-success">
+          {importNotice}
+        </p>
+      )}
+
+      {conflictNotice && (
+        <Card className="border-warn/30 bg-warn-soft/40">
+          <p className="text-sm font-semibold text-warn">保存时发现版本冲突</p>
+          <p className="mt-1 text-xs leading-5 text-warn">{conflictNotice}</p>
+        </Card>
+      )}
 
       {pendingConfirmations.length > 0 && (
         <Card className="border-warn/30 bg-warn-soft/40">

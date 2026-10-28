@@ -6,6 +6,7 @@ import { authService } from "@/lib/auth";
 import { currentVersion } from "@/lib/announcements/domain";
 import type { RecruitmentAnnouncement } from "@/lib/announcements/types";
 import { GUEST_COVERAGE } from "@/lib/guest/coverage";
+import { identityScopedKey } from "@/lib/storageIdentity";
 import {
   collectHistoricalUnits,
   filterHistoricalUnits,
@@ -216,6 +217,11 @@ function candidates(profile: UserRecruitmentProfile, now: string): OpportunityCa
 
 const DEMO_SUBSCRIPTION_KEY = "kb_demo_subscription";
 
+/** R01：演示订阅按当前本机身份作用域读写，切换账号不串用订阅偏好 */
+function demoSubscriptionStorageKey(): string {
+  return identityScopedKey(DEMO_SUBSCRIPTION_KEY);
+}
+
 interface DemoSubscriptionRow {
   regions: SubscriptionDTO["regions"];
   naturePreference: SubscriptionDTO["naturePreference"];
@@ -256,7 +262,7 @@ function deriveDemoDefault(profile: UserRecruitmentProfile): DemoSubscriptionRow
 
 function loadDemoSubscription(profile: UserRecruitmentProfile): SubscriptionDTO {
   try {
-    const raw = window.localStorage.getItem(DEMO_SUBSCRIPTION_KEY);
+    const raw = window.localStorage.getItem(demoSubscriptionStorageKey());
     const row: DemoSubscriptionRow = raw
       ? (JSON.parse(raw) as DemoSubscriptionRow)
       : deriveDemoDefault(profile);
@@ -293,7 +299,7 @@ export const demoOpportunitiesApi = {
   /** 演示环境订阅：localStorage 持久化；未开启过返回 null（与后端口径一致） */
   async getSubscription(): Promise<SubscriptionDTO | null> {
     try {
-      if (!window.localStorage.getItem(DEMO_SUBSCRIPTION_KEY)) return null;
+      if (!window.localStorage.getItem(demoSubscriptionStorageKey())) return null;
     } catch {
       return null;
     }
@@ -313,7 +319,7 @@ export const demoOpportunitiesApi = {
       updatedAt: new Date().toISOString(),
     };
     try {
-      window.localStorage.setItem(DEMO_SUBSCRIPTION_KEY, JSON.stringify(row));
+      window.localStorage.setItem(demoSubscriptionStorageKey(), JSON.stringify(row));
     } catch {
       // 持久化失败不阻塞：本次会话内仍生效
     }

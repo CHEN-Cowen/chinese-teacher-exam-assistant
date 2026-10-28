@@ -703,12 +703,12 @@ demo 通道 demoApi.submitCorrection/listMyCorrections（localStorage 按用户�
 | 编号 | 问题 | 需求 | 参考版本仍未修复的证据（核实点） | 状态 | 提交 |
 | --- | --- | --- | --- | --- | --- |
 | R00 | 状态核实与台账 | U10 | 本节；D09 仅本地实现未提交 | 已完成 | 见本节提交 |
-| R01-1 | 已登录时访客经历自动替换服务端 | U01 | `me/education/page.tsx` 加载时 `local.length>0` 覆盖服务端 | 修复中 | |
-| R01-2 | 访客迁移只迁旧单字段、静默覆盖 | U01 | `profileApi.migrateGuestProfileIfNeeded` 只带基础+补充事实 | 修复中 | |
-| R01-3 | 本机草稿/撤销快照不按身份隔离 | U01 | `guestSession`、`supplementFacts`、`educationStore` 共用全局键 | 修复中 | |
-| R01-4 | 教育/偏好整份 PUT 覆盖 + 无版本校验 | U01 | `me/education` `saveProfile({...current})`；`PreferencePreviewCard` 同 | 修复中 | |
-| R01-5 | 旧客户端 PUT 删除新字段 | U01 | `profile.service.saveProfile` 整体替换 profile | 修复中 | |
-| R01-6 | 读取失败伪装成无画像 | U01 | `profileApi.getProfile` 失败返回 `null` | 修复中 | |
+| R01-1 | 已登录时访客经历自动替换服务端 | U01 | `me/education/page.tsx` 加载时 `local.length>0` 覆盖服务端 | 已修复 | 见下 |
+| R01-2 | 访客迁移只迁旧单字段、静默覆盖 | U01 | `profileApi.migrateGuestProfileIfNeeded` 只带基础+补充事实 | 已修复 | 见下 |
+| R01-3 | 本机草稿/撤销快照不按身份隔离 | U01 | `guestSession`、`supplementFacts`、`educationStore`、演示订阅共用全局键 | 已修复 | 见下 |
+| R01-4 | 教育/偏好整份 PUT 覆盖 + 无版本校验 | U01 | `me/education` `saveProfile({...current})`；`PreferencePreviewCard` 同 | 已修复 | 见下 |
+| R01-5 | 旧客户端 PUT 删除新字段 | U01 | `profile.service.saveProfile` 整体替换 profile | 已修复 | 见下 |
+| R01-6 | 读取失败伪装成无画像 | U01 | `profileApi.getProfile` 失败返回 `null` | 已修复 | 见下 |
 | R02 | 真实发布只生成 majorNames | U02 | `catalog-payload-assembler.ts` `majorRequirement` 无 stages/stageMode | 待修复 | |
 | R03-1 | any 模式任一命中仍因他阶段缺失返回 UNKNOWN | U03 | `engine.ts` `missingStages.length>0` 先于命中判断 | 待修复 | |
 | R03-2 | 学位判断不区分取得状态 | U03 | `engine.ts` `case 'degree'` 只读 level | 待修复 | |
@@ -721,7 +721,49 @@ demo 通道 demoApi.submitCorrection/listMyCorrections（localStorage 按用户�
 | R07 | 超时用例、真实迁移、真浏览器流程 | U10 | 本机无 PostgreSQL/Docker；CI 历史结果仅作线索 | 待验 | |
 | R08 | 全项目验收与交付 | U01—U10 | 待前序完成 | 待开始 | |
 
-## 7. 恢复点
+### R01 资料隔离、覆盖保存与旧客户端兼容（U01）
+
+实现：
+
+- `src/lib/storageIdentity.ts`（新）：本机存储身份作用域。访客用原键，已登录用
+  `原键::user:<id>`；登录时把访客画像来源键搬迁到账号名下并清空访客原键，
+  账号作用域已有数据时不覆盖；切换身份清理撤销快照与迁移提示等一次性状态。
+- `guestSession`/`activeProfile`/`educationStore`/演示订阅读写全部改为身份作用域；
+  `clearAllStorage` 同时清理 `::` 作用域键。
+- `me/education/page.tsx`：已登录时服务端经历为准，本机经历只作“本机草稿”提示，
+  由用户明确点“导入到账号 / 用本机草稿覆盖账号 / 不使用本机草稿”；
+  已确认或已清空旧字段时不再从旧单一字段悄悄恢复；保存改为
+  `PATCH { educationExperiences, legacyEducation } + expectedUpdatedAt`；
+  409 时拉最新版本号但保留页面输入；读取失败显示阻断提示且不允许保存。
+- `PreferencePreviewCard`：偏好改为字段级 PATCH（regions / employmentNaturePreference），
+  不再整份 PUT；撤销快照按身份隔离。
+- `profileApi`：读取失败抛错（带 status），不再把失败当“无画像”；
+  `migrateGuestProfileIfNeeded` 带上分阶段经历，服务端缺经历时返回
+  `pendingEducationImport` 而不静默写入。
+- `backend/src/profile`：`PATCH` 白名单新增 regions/employmentNaturePreference/
+  educationExperiences/legacyEducation 并做结构校验（非法 400）；
+  `PUT` 改为字段合并，请求体未出现的键保留服务端原值，显式 `[]` 仍然清空，
+  `legacyEducation` 逐字段合并，旧客户端不再删除新字段。
+- `me` 页读取失败显示“没能读取报考信息”，不引导重新填写。
+
+验证证据：
+
+| 用例 | 命令 | 结果 |
+| --- | --- | --- |
+| 后端画像（含 R01 新增 7 例） | `cd backend && npx vitest run src/profile` | 28 passed |
+| 前端画像/访客/认证/机会组件 | `npx vitest run src/lib/profile src/lib/storageIdentity.test.ts src/lib/guest src/lib/auth src/components/opportunities` | 218 passed |
+| 教育经历页（新，5 例） | `npx vitest run src/app/me/education/page.test.tsx` | 5 passed |
+| 机会与访客链路 | `npx vitest run src/lib/opportunities src/lib/guest src/lib/admin` | 256 passed |
+| 类型/构建 | `npx tsc --noEmit`、`npm run build` | 通过 |
+| 后端 lint/构建 | `npx oxlint --type-aware src/profile`、`npx nest build` | 0 warning 0 error，构建通过 |
+
+覆盖到的行为：账号 A/B 与本机访客互不串联；按身份搬迁访客数据；双标签页乐观锁
+冲突返回 409 而不静默覆盖；只改偏好不覆盖最新教育经历；旧客户端 PUT 保留新经历；
+显式清空生效；读取失败不写入；409 保留输入。
+
+未在真实浏览器复测的部分：双标签页并发与账号切换的浏览器操作留 R07。
+
+## 8. 恢复点
 
 当前：D00—D08 已完成并推送；D09 代码本地实现未提交；R00 台账已建立，R01 起逐模块修复。
 下一次中断后：从本节台账中第一个非「已修复」的 R 编号继续。
