@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   MAJOR_ALIAS_VERSION,
   MATCH_RULE_VERSION,
+  isUserVisibleInCatalog,
 } from '../matching/engine.js';
 import { CATALOG_VERSION } from '../matching/catalog.js';
 import { COVERAGE_PROJECTION_VERSION } from './coverage-projection.js';
@@ -14,7 +15,10 @@ import {
   REAL_ANNOUNCEMENT_IDS,
   REAL_CATALOG_VERSION,
 } from '../matching/real-catalog.js';
-import type { UserRecruitmentProfile } from '../matching/types.js';
+import type {
+  RecruitmentAnnouncement,
+  UserRecruitmentProfile,
+} from '../matching/types.js';
 import { OpportunitiesService } from './opportunities.service.js';
 import { buildGoals, type CatalogSnapshot } from './view.js';
 import type { FollowRecord } from './follow.domain.js';
@@ -377,6 +381,22 @@ function createFakePrisma() {
       }
       return { count };
     },
+    updateMany: async ({
+      where,
+      data,
+    }: {
+      where: { userId: string; baselineSyncedAt: null };
+      data: Record<string, unknown>;
+    }) => {
+      let count = 0;
+      for (const r of orgFollows) {
+        if (r.userId !== where.userId) continue;
+        if (where.baselineSyncedAt === null && r.baselineSyncedAt != null) continue;
+        Object.assign(r, data);
+        count += 1;
+      }
+      return { count };
+    },
   };
 
   return {
@@ -389,7 +409,21 @@ function createFakePrisma() {
       opportunityNoticeLog,
       followedOrganization,
       user,
-      $transaction: async (ops: Array<Promise<unknown>>) => Promise.all(ops),
+      $transaction: async (
+        arg: Array<Promise<unknown>> | ((tx: unknown) => Promise<unknown>),
+      ) =>
+        typeof arg === 'function'
+          ? arg({
+              followedOpportunity,
+              opportunityCorrection,
+              announcementSubmission,
+              notificationRecord,
+              opportunitySubscription,
+              opportunityNoticeLog,
+              followedOrganization,
+              user,
+            })
+          : Promise.all(arg),
     } as never,
     rows,
     corrections,
@@ -1483,6 +1517,59 @@ describe('OpportunitiesService：单位关注（D07 / PRD 11.8 U07）', () => {
     expect(again.orgBackfilled).toBe(0);
     expect(again.orgNewNotices).toBe(0);
     expect(fake.notifications).toHaveLength(0);
+    // 首次同步写入持久化水位，不再依赖「历史键是否为空」判断
+    expect(fake.orgFollows[0]?.baselineSyncedAt).toBeInstanceOf(Date);
+  });
+
+  it('关注时没有匹配公告：首次同步仍写入基线水位（R04 漏报回归）', async () => {
+    await service.followOrganization('user-1', {
+      publisherName: '不存在的单位',
+      regionCode: '330000',
+    });
+    const first = await service.syncSubscription('user-1');
+    expect(first.orgNewNotices).toBe(0);
+    expect(first.orgBackfilled).toBe(0);
+    expect(fake.orgFollows[0]?.baselineSyncedAt).toBeInstanceOf(Date);
+  });
+
+  it('首次同步遇到关注后才发布的公告：产生提醒而非静默回填', async () => {
+    const loadCatalog = (
+      service as unknown as {
+        loadCatalog: () => Promise<RecruitmentAnnouncement[]>;
+      }
+    ).loadCatalog.bind(service);
+    const catalog = await loadCatalog();
+    const today = new Date().toISOString().slice(0, 10);
+    const target = catalog.find((a) => {
+      const version = a.versions[a.versions.length - 1]!;
+      return (
+        a.lifecycle === 'active' &&
+        isUserVisibleInCatalog(a) &&
+        a.officialUrl.startsWith('https://') &&
+        a.sourceHealth?.ok !== false &&
+        version.officialSource.state === 'official' &&
+        (version.timeline.registrationEnd ?? '') >= today
+      );
+    });
+    expect(target).toBeTruthy();
+    const followed = await service.followOrganization('user-1', {
+      publisherName: target!.publisher,
+      regionCode: target!.region.code,
+    });
+    // 模拟：关注发生在公告发布之前，且首次同步尚未完成
+    const row = fake.orgFollows.find(
+      (r) => r.identityKey === followed.identityKey,
+    )!;
+    row.followedAt = new Date('2020-01-01T00:00:00Z');
+    row.baselineSyncedAt = null;
+
+    const result = await service.syncSubscription('user-1');
+    expect(result.orgNewNotices).toBeGreaterThan(0);
+    expect(fake.notifications.length).toBeGreaterThan(0);
+    // 提醒后水位写入，重复同步不重复提醒
+    const repeat = await service.syncSubscription('user-1');
+    expect(repeat.orgNewNotices).toBe(0);
+    expect(fake.notifications.length).toBe(result.orgNewNotices);
   });
 
   it('订阅关闭只停订阅提醒，单位关注同步照常回填', async () => {

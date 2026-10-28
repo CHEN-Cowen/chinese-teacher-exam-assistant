@@ -7,7 +7,8 @@
  * - 提醒触发口径与订阅一致（官方来源、未过期、已人工核对、用户可见），
  *   只是匹配条件从「地区+学科」换成「单位身份」。
  * - 幂等：dedupKey = `org:{identityKey}:{announcementId}:{versionId}`；
- *   每个关注首次同步做基线回填（notified=false），不产生通知风暴；
+ *   首次同步以关注时刻为水位回填基线（notified=false），不产生通知风暴；
+ *   首次同步即使无匹配公告也会写入水位（baselineSyncedAt），不能以「无历史键」判断，否则漏报；
  *   公告发布新版本视为新信息，允许再次提醒（仍每版本一次）。
  */
 import {
@@ -39,12 +40,20 @@ export interface OrganizationFollowRecord {
   publisherName: string;
   regionCode: string;
   followedAt: string;
+  /**
+   * 首次同步基线完成时间（R04）。null/缺省=尚未完成首次同步。
+   * 不能用「该关注没有任何历史键」判断首次同步：关注时没有匹配公告的话，
+   * 历史键会永远为空，之后的新公告会被误当作基线回填而漏报。
+   */
+  baselineSyncedAt?: string | null;
 }
 
 export interface OrganizationNotice {
   identityKey: string;
   announcementId: string;
   versionId: string;
+  /** 幂等键；服务层先写入该键，成功后才创建通知（R04） */
+  dedupKey: string;
   /** 用于跳转详情的一个在报单元（同公告多单元时取第一个） */
   unitId: string;
   unitName: string;
@@ -74,10 +83,11 @@ export function organizationDedupKey(
 
 /**
  * 计划单位关注的提醒与幂等键。
- * - existingKeys 为该用户全部已记录键（含订阅与其他单位关注），函数内部按
- *   `org:{identityKey}:` 前缀筛出每个关注自己的历史；
- * - 某关注没有任何历史键 = 该关注首次同步：命中公告全部基线回填不通知；
- * - 之后该关注出现新 dedupKey 才产生通知。
+ * - 首次同步（`baselineSyncedAt` 为空）以关注时刻 `followedAt` 为水位：
+ *   关注前已发布的版本只回填（notified=false），关注后发布的版本照常提醒，
+ *   因此「关注时无公告、之后才发布」不会被误回填而漏报（R04）；
+ * - 非首次同步：未知 dedupKey 一律提醒；
+ * - dedupKey 已记录的跳过（每关注/公告/版本一次）。
  */
 export function planOrganizationNotices(input: {
   announcements: readonly RecruitmentAnnouncement[];
@@ -96,6 +106,15 @@ export function planOrganizationNotices(input: {
   if (follows.length === 0) return { notices, keys, backfillCount };
 
   const today = chinaTodayIso(now);
+  const publishedAfterFollow = (
+    publishedAt: string,
+    followedAt: string,
+  ): boolean => {
+    const published = new Date(publishedAt).getTime();
+    const followed = new Date(followedAt).getTime();
+    if (Number.isNaN(published) || Number.isNaN(followed)) return false;
+    return published > followed;
+  };
 
   // 按身份键索引当前可提醒的公告（同一公告对多个关注只算一次）
   const byIdentity = new Map<
@@ -121,11 +140,8 @@ export function planOrganizationNotices(input: {
   }
 
   for (const follow of follows) {
-    const prefix = `org:${follow.identityKey}:`;
-    const ownKeys = new Set(
-      [...existingKeys].filter((k) => k.startsWith(prefix)),
-    );
-    const isFirstSync = ownKeys.size === 0;
+    // 首次同步看持久化水位，不看历史键是否为空（R04）
+    const isFirstSync = follow.baselineSyncedAt == null;
     for (const hit of byIdentity.get(follow.identityKey) ?? []) {
       const { announcement, versionId } = hit;
       const version = announcement.versions.find((v) => v.id === versionId);
@@ -137,7 +153,12 @@ export function planOrganizationNotices(input: {
       );
       if (existingKeys.has(dedupKey)) continue;
 
-      if (isFirstSync) {
+      // 首次同步只回填关注前已发布的版本；关注后发布的新公告照常提醒
+      const isNewSinceFollow = publishedAfterFollow(
+        version.publishedAt,
+        follow.followedAt,
+      );
+      if (isFirstSync && !isNewSinceFollow) {
         keys.push({
           identityKey: follow.identityKey,
           announcementId: announcement.id,
@@ -156,6 +177,7 @@ export function planOrganizationNotices(input: {
         identityKey: follow.identityKey,
         announcementId: announcement.id,
         versionId,
+        dedupKey,
         unitId: unit.id,
         unitName: unit.name,
         publisher: announcement.publisher,

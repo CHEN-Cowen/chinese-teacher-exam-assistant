@@ -713,8 +713,8 @@ demo 通道 demoApi.submitCorrection/listMyCorrections（localStorage 按用户�
 | R03-1 | any 模式任一命中仍因他阶段缺失返回 UNKNOWN | U03 | `engine.ts` `missingStages.length>0` 先于命中判断 | 已修复 | 见下 |
 | R03-2 | 学位判断不区分取得状态 | U03 | `engine.ts` `case 'degree'` 只读 level | 已修复 | 见下 |
 | R03-3 | 未明确阶段时按最高学历直接判 FAIL | U03 | `engine.ts` `stages.length===0` 分支 | 已修复 | 见下 |
-| R04-1 | 以“历史键为空”判首次同步 → 永久漏报 | U07 | `organization-follow.domain.ts` `isFirstSync = ownKeys.size===0` | 待修复 | |
-| R04-2 | 先发通知后记去重、无事务 → 重复/漏发 | U07 | `opportunities.service.ts` `syncOrganizationFollows` | 待修复 | |
+| R04-1 | 以“历史键为空”判首次同步 → 永久漏报 | U07 | `organization-follow.domain.ts` `isFirstSync = ownKeys.size===0` | 已修复 | 见下 |
+| R04-2 | 先发通知后记去重、无事务 → 重复/漏发 | U07 | `opportunities.service.ts` `syncOrganizationFollows` | 已修复 | 见下 |
 | R05-1 | 无修正版本也可结案并称“已更正” | U08 | `reviewCorrection` `resolvedVersionId ?? row.resolvedVersionId` 仍发“已更正” | 待修复 | |
 | R05-2 | 只校验同公告，不校验版本有效性与修正内容 | U08 | 同上，仅 `versions.some(v=>v.id===…)` | 待修复 | |
 | R06 | 历史详情无“关注单位”、筛选缺学历/专业、四入口与 D09 | U06/U09/U10 | `/history` 详情无关注入口；`/admin/pipeline` 无跨阶段总览 | 待修复 | |
@@ -859,7 +859,43 @@ demo 通道 demoApi.submitCorrection/listMyCorrections（localStorage 按用户�
 学位已取得/在读/无学位、限期取得（期限内 PASS、超期 FAIL、缺时间 UNKNOWN）、
 旧单一字段未填取得状态按已声明判断；资格事实改变会重算、仅修改求职偏好不改变资格结论（前后端各 1 例）。
 
+### R04 单位关注漏提醒与重复提醒（U07）
+
+问题核实（参考版本 `c4502d22`）：
+
+- `organization-follow.domain.ts` 用 `isFirstSync = ownKeys.size === 0` 判断首次同步。
+  关注时若该单位没有匹配公告，历史键会一直为空；之后发布的新公告仍被当作「首次同步」
+  静默回填，用户永远收不到提醒（永久漏报）。
+- `opportunities.service.ts` 的 `syncOrganizationFollows` 先创建通知、后写幂等日志且无事务：
+  中途失败会重复通知；并发同步两次都通过「日志不存在」检查也会重复发送。
+
+实现：
+
+- `FollowedOrganization` 新增 `baselineSyncedAt`（首次同步水位，迁移
+  `20261028150000_follow_baseline_synced_at`）。首次同步即使没有匹配公告也会写入，
+  之后不再依赖「历史键是否为空」。
+- 首次同步以关注时刻 `followedAt` 为水位：关注前已发布的版本只回填（notified=false），
+  关注后发布的新公告照常提醒。这样「关注时无公告、同步又延迟」也不会漏报。
+- `syncOrganizationFollows` 改为单事务：
+  1. 逐条先写入唯一幂等键（`@@unique([userId, dedupKey])` + `skipDuplicates`），
+     只有实际插入成功（count=1）才创建通知；重复/并发同步自然跳过；
+  2. 通知与日志在同一事务内，失败整体回滚，下次同步可安全重试；
+  3. 事务内把该用户尚未完成首次同步的关注写入 `baselineSyncedAt`。
+- 领域提醒对象补充 `dedupKey`，服务按幂等键与通知一一对应。
+
+验证证据：
+
+| 用例 | 命令 | 结果 |
+| --- | --- | --- |
+| 领域规则（新增 R04 2 例，含延迟发布回归） | `cd backend && npx vitest run src/opportunities/organization-follow.domain.spec.ts` | 9 passed |
+| 服务（新增 R04 2 例：无公告水位、关注后发布提醒且重复同步不重复） | `cd backend && npx vitest run src/opportunities/opportunities.service.spec.ts` | 50 passed |
+| opportunities 全量 | `cd backend && npx vitest run src/opportunities` | 10 文件 160 passed（另有 1 例既有 expected fail） |
+| schema/构建/lint | `npx prisma validate`、`npx prisma generate`、`npx nest build`、`npm run lint` | 通过 / 0 error |
+
+真实迁移验证（临时 PostgreSQL）按 R07 统一执行；本机当前无可用 PostgreSQL，迁移文件已按
+现有命名与列风格新增，未执行数据库变更。
+
 ## 8. 恢复点
 
-当前：D00—D08 已完成并推送；D09 代码本地实现未提交；R00 台账已建立，R01、R02、R03 已修复推送。
+当前：D00—D08 已完成并推送；D09 代码本地实现未提交；R00 台账已建立，R01—R04 已修复推送。
 下一次中断后：从本节台账中第一个非「已修复」的 R 编号继续。

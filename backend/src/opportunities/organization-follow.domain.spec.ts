@@ -16,6 +16,7 @@ function makeAnnouncement(
     regionCode?: string;
     lifecycle?: RecruitmentAnnouncement['lifecycle'];
     registrationEnd?: string;
+    versionPublishedAt?: string;
     sourceOk?: boolean;
     dataset?: string;
     reviewStatus?: string;
@@ -38,7 +39,7 @@ function makeAnnouncement(
         announcementId: id,
         versionNumber: 1,
         sourceKind: 'original',
-        publishedAt: '2026-10-01T09:00:00+08:00',
+        publishedAt: overrides.versionPublishedAt ?? '2026-10-01T09:00:00+08:00',
         officialSource: {
           id: 'src-1',
           locator: { kind: 'url', url: 'https://example.gov.cn/ann-1' },
@@ -88,6 +89,12 @@ const FOLLOW = {
   followedAt: '2026-10-02T09:00:00+08:00',
 };
 
+/** 已完成首次同步基线的关注（R04：以持久化水位判断，不再看历史键是否为空） */
+const SYNCED_FOLLOW = {
+  ...FOLLOW,
+  baselineSyncedAt: '2026-10-02T10:00:00+08:00',
+};
+
 describe('单位身份键', () => {
   it('规范化发布主体名：折叠空白与全角字符，不做模糊推断', () => {
     expect(normalizePublisherName('  杭州市  教育局 ')).toBe('杭州市 教育局');
@@ -122,7 +129,7 @@ describe('单位关注新公告提醒', () => {
     const existing = new Set([baseline]);
     const plan = planOrganizationNotices({
       announcements: [makeAnnouncement({ id: 'ann-1' })],
-      follows: [FOLLOW],
+      follows: [SYNCED_FOLLOW],
       existingKeys: existing,
       now: NOW,
     });
@@ -133,12 +140,54 @@ describe('单位关注新公告提醒', () => {
     // 重复同步：dedupKey 已记录则不再通知
     const again = planOrganizationNotices({
       announcements: [makeAnnouncement({ id: 'ann-1' })],
-      follows: [FOLLOW],
+      follows: [SYNCED_FOLLOW],
       existingKeys: new Set([...existing, plan.keys[0]!.dedupKey]),
       now: NOW,
     });
     expect(again.notices).toHaveLength(0);
     expect(again.keys).toHaveLength(0);
+  });
+
+  it('关注时没有匹配公告、之后才发布：首次同步不吞掉新公告（R04 回归）', () => {
+    const plan = planOrganizationNotices({
+      announcements: [
+        makeAnnouncement({
+          id: 'ann-new',
+          versionPublishedAt: '2026-10-05T09:00:00+08:00',
+        }),
+      ],
+      // 首次同步（baselineSyncedAt 为空），但公告版本发布于关注之后
+      follows: [FOLLOW],
+      existingKeys: new Set(),
+      now: NOW,
+    });
+    expect(plan.notices).toHaveLength(1);
+    expect(plan.keys[0]?.notified).toBe(true);
+    expect(plan.backfillCount).toBe(0);
+  });
+
+  it('首次同步只回填关注前已发布的版本，关注后的新版本照常提醒', () => {
+    const plan = planOrganizationNotices({
+      announcements: [
+        makeAnnouncement({ id: 'ann-old' }), // 版本发布早于关注 → 回填
+        makeAnnouncement({
+          id: 'ann-new',
+          versionPublishedAt: '2026-10-05T09:00:00+08:00', // 晚于关注 → 提醒
+        }),
+      ],
+      follows: [FOLLOW],
+      existingKeys: new Set(),
+      now: NOW,
+    });
+    expect(plan.backfillCount).toBe(1);
+    expect(plan.notices).toHaveLength(1);
+    expect(plan.notices[0]?.announcementId).toBe('ann-new');
+    expect(plan.keys.find((k) => k.announcementId === 'ann-old')?.notified).toBe(
+      false,
+    );
+    expect(plan.keys.find((k) => k.announcementId === 'ann-new')?.notified).toBe(
+      true,
+    );
   });
 
   it('名称相近但不完全一致不关联（更名不做模糊推断）', () => {

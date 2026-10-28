@@ -596,8 +596,9 @@ export class OpportunitiesService {
   /**
    * 单位关注同步（幂等）：被关注单位发布的新公告产生一次站内提醒。
    * 触发口径与订阅一致（官方来源、未过期、已人工核对、用户可见）；
-   * 每个关注首次同步基线回填不产生通知风暴；
-   * 幂等键复用 OpportunityNoticeLog（dedupKey 前缀 org:，与订阅互不干扰）。
+   * 首次同步以关注时刻为水位回填基线（即使当时没有匹配公告也会写入水位），
+   * 避免「历史键为空」被永久当作首次同步而漏报（R04）；
+   * 先写幂等键再通知，且整体在一个事务里：并发同步/中途失败不会重复提醒。
    */
   async syncOrganizationFollows(
     userId: string,
@@ -611,6 +612,7 @@ export class OpportunitiesService {
       where: { userId },
       select: { dedupKey: true },
     });
+    const now = new Date();
     const plan = planOrganizationNotices({
       announcements: catalog,
       follows: rows.map((r) => ({
@@ -618,38 +620,64 @@ export class OpportunitiesService {
         publisherName: r.publisherName,
         regionCode: r.regionCode,
         followedAt: r.followedAt.toISOString(),
+        baselineSyncedAt: r.baselineSyncedAt?.toISOString() ?? null,
       })),
       existingKeys: new Set(existing.map((r) => r.dedupKey)),
-      now: new Date(),
+      now,
     });
-    if (plan.keys.length === 0) return { newNotices: 0, backfilled: 0 };
-
-    for (const notice of plan.notices) {
-      await this.prisma.notificationRecord.create({
-        data: {
-          userId,
-          severity: 'info',
-          title: `关注单位新公告：${notice.publisher}`,
-          body: [
-            `${notice.regionLabel}《${notice.announcementTitle}》`,
-            `含 ${notice.unitCount} 个岗位，报名截止 ${notice.registrationEnd}`,
-            '来自你关注的单位，已通过人工核对，详情见机会页。',
-          ].join('；'),
-          relatedUnitId: notice.unitId,
-        },
-      });
+    const pendingBaseline = rows.some((r) => r.baselineSyncedAt == null);
+    if (plan.keys.length === 0 && !pendingBaseline) {
+      return { newNotices: 0, backfilled: 0 };
     }
-    await this.prisma.opportunityNoticeLog.createMany({
-      data: plan.keys.map((k) => ({
-        userId,
-        announcementId: k.announcementId,
-        versionId: k.versionId,
-        dedupKey: k.dedupKey,
-        notified: k.notified,
-      })),
-      skipDuplicates: true,
+
+    const noticeByKey = new Map(plan.notices.map((n) => [n.dedupKey, n]));
+    return this.prisma.$transaction(async (tx) => {
+      let newNotices = 0;
+      let backfilled = 0;
+      for (const key of plan.keys) {
+        // 先落唯一幂等键：只有真正插入成功才创建通知，重复/并发同步自然跳过
+        const inserted = await tx.opportunityNoticeLog.createMany({
+          data: [
+            {
+              userId,
+              announcementId: key.announcementId,
+              versionId: key.versionId,
+              dedupKey: key.dedupKey,
+              notified: key.notified,
+            },
+          ],
+          skipDuplicates: true,
+        });
+        if (inserted.count === 0) continue;
+        if (!key.notified) {
+          backfilled += 1;
+          continue;
+        }
+        const notice = noticeByKey.get(key.dedupKey);
+        if (!notice) continue;
+        await tx.notificationRecord.create({
+          data: {
+            userId,
+            severity: 'info',
+            title: `关注单位新公告：${notice.publisher}`,
+            body: [
+              `${notice.regionLabel}《${notice.announcementTitle}》`,
+              `含 ${notice.unitCount} 个岗位，报名截止 ${notice.registrationEnd}`,
+              '来自你关注的单位，已通过人工核对，详情见机会页。',
+            ].join('；'),
+            relatedUnitId: notice.unitId,
+          },
+        });
+        newNotices += 1;
+      }
+      if (pendingBaseline) {
+        await tx.followedOrganization.updateMany({
+          where: { userId, baselineSyncedAt: null },
+          data: { baselineSyncedAt: now },
+        });
+      }
+      return { newNotices, backfilled };
     });
-    return { newNotices: plan.notices.length, backfilled: plan.backfillCount };
   }
 
   /** 画像读取失败/未保存时返回 null（同步与订阅默认值不因此中断） */

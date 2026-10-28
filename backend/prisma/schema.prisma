@@ -189,6 +189,12 @@ model FollowedOrganization {
   publisherName String   @map("publisher_name")
   regionCode    String   @map("region_code")
   followedAt    DateTime @default(now()) @map("followed_at")
+  /**
+   * 首次同步基线完成时间（R04）。null=尚未完成首次同步：
+   * 首次同步只回填关注时刻（followedAt）前已发布的公告，之后的新公告才产生提醒；
+   * 即使关注时没有任何匹配公告，首次同步后也会写入，避免“历史键为空”被永久当作首次同步而漏报。
+   */
+  baselineSyncedAt DateTime? @map("baseline_synced_at")
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
