@@ -68,7 +68,7 @@ D04（多原因空态与覆盖）覆盖。
 | D03 资格与偏好、阶段匹配 | U02、U03 | 已完成 | `1a0671e` | `target/codex/modular-development`，远端 SHA 一致 | 本地 lint/test/build 与浏览器详情验证通过；远端 CI 待 D10 核对 |
 | D04 结果解释、无结果与影响预览 | U03、U04 | 已完成 | `6d192ba` | `target/codex/modular-development`，远端 SHA 一致 | 本地 lint/test/build 与浏览器两场景验证通过；远端 CI 待 D10 核对 |
 | D05 定向补充与保存后反馈 | U05 | 已完成 | `341a3dc`、`dda21f1` | `target/codex/modular-development`，远端 SHA 一致 | 本地 lint/test/build 与浏览器全场景验证通过；远端 CI 待 D10 核对 |
-| D06 往年参考目录与详情 | U06 | 未开始 | | | |
+| D06 往年参考目录与详情 | U06 | 已完成 | `2644a86` | `target/codex/modular-development`，远端 SHA 一致 | 本地 lint/test/build 与浏览器验证通过；远端 CI 待 D10 核对 |
 | D07 关注对象与站内动态 | U07 | 未开始 | | | |
 | D08 纠错补录与管理处理 | U08 | 未开始 | | | |
 | D09 导航整合与采集可观察性 | U09、U10 | 未开始 | | | |
@@ -253,6 +253,56 @@ D04（多原因空态与覆盖）覆盖。
   单元测试覆盖，浏览器端未做受邀环境复测（本机无后端实例）。
 - 用户未提交的 `src/app/onboarding/page.tsx`（+18 行）等修改未纳入本提交。
 
+### D06 往年参考目录与详情（提交 `2644a86`）
+
+实现：
+
+- 历史归属与口径（前端 `src/lib/history/domain.ts` 与后端 `backend/src/opportunities/history.ts`
+  双端同口径镜像，纯函数）：报名有效期已结束（registrationEnd 早于北京今日）或
+  lifecycle=withdrawn 才进往年参考；报名日期未定的预告不算历史；跨年但报名仍有效的岗位
+  留在当前入口。批次年=报名开始年，缺报名开始回退公告发布年，都没有为 null 不猜。
+  完整程度=4 项日程有明确日期的数量+材料数+证据最差档；sourceHealth.ok=false 生成
+  archiveNote 存档文案。M5 合规：collectHistoricalUnits 内置 isUserVisibleInCatalog，
+  test 样本与 ai_reviewed_pending 真实记录被挡，空态如实展示。
+- 后端公开端点：`GET /api/opportunities/history`（query 校验非法 400，page/pageSize 分页
+  防全量扫描）与 `POST /api/opportunities/history/:unitId/detail`（画像可选，无画像
+  comparison=null）；对照维度复用 view.ts 的 toDimensions（改为 export），带公告原文表述
+  与证据锚点；闸门维度不进 overall，历史对照 overall 只反映资格条件。
+- 前端：`/history` 列表（批次年/地区/学段/用工性质/关键词筛选+分页+样本范围说明+
+  真实空状态）与 `/history/[unitId]` 详情（固定「往年已截止，仅供参考」Callout、
+  存档 Callout、当年日程/条件/材料/完整程度、对照区、版本与官方来源 Disclosure、
+  纠错 Modal）；无任何报名/关注动作；不计入当前可报计数。Header 标题「往年参考」带返回；
+  `/opportunities` 加入口卡片。demo 通道 listHistory/historyDetail/submitCorrection
+  全走浏览器本地；受邀通道走新建后端端点（`src/lib/opportunities/api.ts`）。
+- demo 数据 `src/lib/seed/v61-history.ts`：4 条固定日期示例（绝不随当前日期滚动）——
+  2025 杭州市直属（日期完整）、2025 苏州高新区（官方来源 404 演示存档）、
+  2024 南京市直属（无面试日期演示完整度 3/4）、2024 宁波鄞州（员额制）。
+- 自检中修复：两个 history 页面曾把 `void load()` 直接放进 useEffect（load 同步调
+  setState），触发 react-hooks/set-state-in-effect lint 阻断；改为仓库既有的
+  cancelled + .then 模式（applying 页面同款），筛选/翻页变化保留旧内容直到新数据就绪，
+  顺带修掉关键词输入每击键整页 Loading 夺焦点的缺陷。
+
+命令与结果：
+
+| 命令 | 结果 |
+| --- | --- |
+| `npx vitest run src/lib/history src/lib/opportunities` | 16 文件 186 通过（含 history/domain 20 项口径用例） |
+| `cd backend && npx vitest run src/opportunities` | 8 文件 125 通过 + 1 既有 expected fail（history.spec 28 项） |
+| `npx tsc --noEmit`（前端） | 通过；后端全量 tsc 红为既有基线（coverage-projection/m5-user-visibility/sourcing/trial 等 spec 类型错，均非本模块文件），生产构建 tsconfig.build.json 排除 spec，本模块新代码零错误 |
+| `npm run lint`（前端） | 0 error / 2 warning（scripts 下既有未使用变量，非本轮文件） |
+| `cd backend && npm run lint` / `npm run build` | 0 error / 8 warning（既有风格警告）；nest build 通过 |
+| `npm run build`（demo flags） | 通过（含 postbuild 外部依赖与密钥泄漏检查） |
+| 浏览器（localhost:3100，demo 生产构建） | /opportunities 出现往年参考入口且不影响当前可报计数；/history 4 条+收录范围说明+五维筛选（2024 年→2 条、关键词「鄞州」→1 条、清空恢复，输入焦点不丢）+4 条不分页；苏州详情含存档 Callout、面试「待官方通知」与待定项；南京详情完整度「4 项日程中 3 项」；清空 localStorage 后对照区显示空态引导（/onboarding?from=history）；注入画像后对照区含「计算于」时间、免责声明、「对照结论：初步符合」与逐条件行（公告怎么写/你的情况）；纠错提交出现受理编号播报（demo-correction-*）；两页均无报名/关注按钮；network 无业务 4xx/5xx（仅 RSC 预取与被清理的 @vite/client 旧产物 ERR_ABORTED 噪音，与本轮代码无关） |
+
+边界与未验证：
+
+- 受邀通道两个新端点由后端 history.spec 28 项测试覆盖（含 query 400、分页、无画像
+  comparison=null、M5 可见性遮挡）；浏览器端受邀环境未复测（本机无后端实例）。
+- 历史录入操作权限与真实数据查询性能：本模块端点为只读公开查询，录入沿用既有审核流水线；
+  真实数据量下的分页/索引表现留待 D10 验收记录。
+- 主导航四入口整合（「往年参考」进 nav）属 D09，本轮入口在 /opportunities 页与 Header。
+- 用户未提交的 `src/app/onboarding/page.tsx`（+18 行）等修改未纳入本提交。
+
 ## 5. 需求到验收点映射（开始实现前写清）
 
 ### D04 差距确认（2026-10-28，实现前已读调用链）
@@ -378,7 +428,36 @@ MANUAL_REVIEW 转官方确认、防重复提交、失败保留输入、演示不
 - 生成 `docs/recruitment-upgrade-acceptance.md`，逐项核对 U01—U10；
 - 测试、模拟、线上证据分开记录。
 
+### D06 差距确认（2026-10-28，实现前已读调用链）
+
+已读调用链：前端演示通道 `demoOpportunitiesApi`（`src/lib/opportunities/demoApi.ts`）只消费
+`getRollingDemoAnnouncements()`（`src/lib/seed/demoTimeline.ts` 把 7 条示例滚动到当前日期），
+**没有固定日期的往年数据**；后端 `OpportunitiesService.loadCatalog()`（ff_db_catalog 关时）
+返回滚动演示目录 + `REAL_ANNOUNCEMENTS`（3 条真实台账：鄞州预告未报名、杭州 2026-04 已截止、
+宁波 2026-07 已截止），已截止记录只能混在当前列表 closed 组，无往年视角。
+领域模型 `RecruitmentAnnouncement`（版本链、timeline、证据锚点、sourceHealth）与匹配引擎
+`buildCandidates(announcements, profile, now)`（前后端同口径）可直接复用于历史对照。
+现有详情视图含关注/报名动作，往年详情必须无可报名按钮，需独立视图。
+
+确认的差距（本模块要实现）：
+
+- 无 `/history` 路由与历史查询 API：`opportunitiesApi`、demoApi、`OpportunitiesController` 均无
+  历史目录/历史详情入口。
+- 无「公告发布年 / 招聘批次年 / 报名有效期」分类函数：历史归属不能靠标题年份，
+  须按报名有效期（registrationEnd < 当前）或 lifecycle=withdrawn 判定；
+  跨年但报名仍有效的岗位必须留在当前入口，不进入历史。
+- 无完整程度汇总（日期项完整度、材料数、证据审核状态）与「当年条件 × 当前资料」对照视图
+  （须注明计算时间、不等同当年身份或今年资格）。
+- demo 无往年示例数据；真实台账的已截止记录未以「往年参考」形态呈现
+  （人数、公告/报名/考试日期、条件、官方正文附件、完整程度、存档状态）。
+- 主导航四入口整合属 D09，本模块只在 `/opportunities` 加「往年参考」入口链接。
+
+实现边界：历史数据只读；无报名/关注动作；不计入当前可报计数；无数据时真实空状态，
+不制造历史资料；日期保留原文与 Asia/Shanghai 口径，缺日期显示「待官方通知」不臆造。
+后端历史列表/详情公开可读（与 match 同口径），详情对照可携带访客画像；
+分页 page/pageSize 防全量扫描。
+
 ## 6. 恢复点
 
-当前：D00—D05 已完成并推送。下一步：D06 往年参考目录与详情。
+当前：D00—D06 已完成并推送。下一步：D07 关注对象与站内动态。
 任何中断后从“模块状态”中第一个非“已完成”模块继续，不重复已验收模块。
