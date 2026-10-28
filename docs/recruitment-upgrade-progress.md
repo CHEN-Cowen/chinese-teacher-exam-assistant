@@ -709,7 +709,7 @@ demo 通道 demoApi.submitCorrection/listMyCorrections（localStorage 按用户�
 | R01-4 | 教育/偏好整份 PUT 覆盖 + 无版本校验 | U01 | `me/education` `saveProfile({...current})`；`PreferencePreviewCard` 同 | 已修复 | 见下 |
 | R01-5 | 旧客户端 PUT 删除新字段 | U01 | `profile.service.saveProfile` 整体替换 profile | 已修复 | 见下 |
 | R01-6 | 读取失败伪装成无画像 | U01 | `profileApi.getProfile` 失败返回 `null` | 已修复 | 见下 |
-| R02 | 真实发布只生成 majorNames | U02 | `catalog-payload-assembler.ts` `majorRequirement` 无 stages/stageMode | 待修复 | |
+| R02 | 真实发布只生成 majorNames | U02 | `catalog-payload-assembler.ts` `majorRequirement` 无 stages/stageMode | 已修复 | 见下 |
 | R03-1 | any 模式任一命中仍因他阶段缺失返回 UNKNOWN | U03 | `engine.ts` `missingStages.length>0` 先于命中判断 | 待修复 | |
 | R03-2 | 学位判断不区分取得状态 | U03 | `engine.ts` `case 'degree'` 只读 level | 待修复 | |
 | R03-3 | 未明确阶段时按最高学历直接判 FAIL | U03 | `engine.ts` `stages.length===0` 分支 | 待修复 | |
@@ -763,7 +763,60 @@ demo 通道 demoApi.submitCorrection/listMyCorrections（localStorage 按用户�
 
 未在真实浏览器复测的部分：双标签页并发与账号切换的浏览器操作留 R07。
 
+### R02 真实发布链路中的分阶段专业规则（U02）
+
+问题核实（参考版本 `c4502d22`）：`catalog-payload-assembler.ts` 的 `majorRequirement`
+只产出 `majorNames: [text]`，匹配引擎虽有 `stages/stageMode`，但真实发布路径从不生成，
+导致阶段规则只在测试/手工数据中生效。
+
+实现：
+
+- 新增 `backend/src/announcements/major-criterion.ts`（单一事实源）：解析审核员显式确认的
+  结构化专业值 `{names, stages, stageMode, ambiguous}`。
+  - 普通文本（不以 `{` 开头）不是结构化值，不推断阶段；
+  - 以 `{` 开头但结构非法（坏 JSON / 未知字段 / 非法阶段码 / 多阶段缺 `stageMode`）直接报错，
+    不静默回退成普通文本；
+  - 无 `stages` = 公告未明确阶段，绝不被解释为「最高学历阶段要求」；
+  - 提供人读描述（`汉语言文学（限本科阶段）`、`…（本科、硕士研究生阶段任一符合）`）。
+- `catalog-payload-assembler.ts`：`majorRequirement` 用上述解析结果产出
+  `criterion { majorNames, stages?, stageMode?, ambiguous? }`，错误统一转为
+  `CatalogPayloadError`，发布接口返回 400 且不写任何数据（失败不留半成品）。
+- `catalog/publication-projector.ts`：新增 `validateMajorCriterion` 结构校验。
+  旧发布版本无 `stages/stageMode` 照常投影（兼容）；多阶段缺 `stageMode`、非法阶段码等
+  坏数据投影失败并被跳过，不进入用户目录/匹配。
+- `announcements/domain.ts`：`validateFieldDecisions` 在**审核提交时**校验 major 的
+  结构化值（不再拖到发布才失败），审核员可当场修正。
+- 审核工作台 `src/app/admin/pipeline/review-workbench.tsx`：专业字段新增
+  「分阶段专业口径」面板（专业名称、适用阶段多选、任一/同时、解释空间标记），
+  生成 `action=edit + afterValue=<结构化 JSON>` 进入 `fieldDecisions`；
+  已发布/已抽取的结构化值额外显示人读摘要，原始 JSON 留在审计值位。
+- 版本不可变与「修正走新版本」由既有 `publishVersion`（versionNumber 追加、旧版 superseded
+  不改写 payload）与 `withdraw.spec.ts`、`publish-catalog.integration.spec.ts` 覆盖，本轮未改动。
+
+验证证据：
+
+| 用例 | 命令 | 结果 |
+| --- | --- | --- |
+| 装配器 9 例 + 真实链路 6 例（新增） | `cd backend && npx vitest run src/announcements/catalog-payload-assembler.spec.ts src/announcements/publish-catalog.integration.spec.ts` | 51 passed |
+| 审核阶段校验（新增 1 例） | `cd backend && npx vitest run src/announcements/domain.spec.ts` | 58 passed |
+| announcements + catalog + matching 全量 | `cd backend && npx vitest run src/announcements src/catalog src/matching` | 30 文件 370 passed |
+| 审核台 UI（新增 R02 1 例） | `npx vitest run src/app/admin/pipeline/review-workbench-m4.test.tsx` | 6 passed |
+| 类型/构建 | `npx tsc --noEmit`、`npm run build`、`cd backend && npx nest build` | 通过 |
+| lint | `npx eslint <改动文件>`、`cd backend && npx oxlint --type-aware <改动文件>` | 0 error（前端整仓仅 2 个既有 scripts warning） |
+
+真实链路覆盖：候选（含 adopt/edit 决策）→ 审核提交（结构校验）→ 不可变发布版本 →
+目录投影 → `buildCandidates` 匹配响应，五种口径分别验证：
+
+1. 只要求本科：本科符合 → PASS，且采用经历为本科；硕士同名专业不能替代本科 → FAIL；
+2. 只要求研究生：硕士符合 → PASS；缺硕士阶段资料 → UNKNOWN；
+3. 本科或研究生任一（`stageMode=any`）：任一段命中即 PASS（两种路径）；
+4. 本科和研究生同时（`stageMode=all`）：任一段不符即 FAIL，两段均符合才 PASS；
+5. 未明确阶段：发布版本 `criterion` 无 `stages`，数据层未被自动补成最高学历阶段要求。
+
+边界：未明确阶段的**匹配语义**（阶段歧义不应直接判 FAIL）属 R03 修复范围，
+本轮只保证数据链路不猜测、不丢失。
+
 ## 8. 恢复点
 
-当前：D00—D08 已完成并推送；D09 代码本地实现未提交；R00 台账已建立，R01 起逐模块修复。
+当前：D00—D08 已完成并推送；D09 代码本地实现未提交；R00 台账已建立，R01、R02 已修复推送。
 下一次中断后：从本节台账中第一个非「已修复」的 R 编号继续。

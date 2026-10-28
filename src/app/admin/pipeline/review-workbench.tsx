@@ -254,6 +254,188 @@ type PendingDecision = {
   reason: string;
 };
 
+// ==================== 分阶段专业口径（R02） ====================
+
+/**
+ * 审核员可为 `major` 字段显式确认结构化的分阶段口径。
+ *
+ * 写入格式与后端 `catalog-payload-assembler` 一致：
+ * `{"names":[...],"stages":["bachelor","master"],"stageMode":"any"}`
+ * 不选择阶段时保持“未明确阶段”，系统不会自动按最高学历推断。
+ */
+const MAJOR_STAGE_OPTIONS = [
+  { code: "bachelor", label: "本科" },
+  { code: "master", label: "硕士研究生" },
+  { code: "doctorate", label: "博士研究生" },
+  { code: "college", label: "大专" },
+  { code: "secondary", label: "中专/高中" },
+] as const;
+
+type MajorStageCode = (typeof MAJOR_STAGE_OPTIONS)[number]["code"];
+
+interface StructuredMajorDraft {
+  names: string;
+  stages: MajorStageCode[];
+  stageMode: "any" | "all";
+  ambiguous: boolean;
+}
+
+function isMajorStageCode(value: unknown): value is MajorStageCode {
+  return MAJOR_STAGE_OPTIONS.some((option) => option.code === value);
+}
+
+/** 解析已结构化（JSON）的专业值；普通文本返回 null */
+function parseMajorDraft(raw: string): StructuredMajorDraft | null {
+  const text = raw.trim();
+  if (!text.startsWith("{")) return null;
+  try {
+    const parsed = JSON.parse(text) as Record<string, unknown>;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    return {
+      names: Array.isArray(parsed.names)
+        ? parsed.names.filter((item): item is string => typeof item === "string").join("、")
+        : "",
+      stages: Array.isArray(parsed.stages) ? parsed.stages.filter(isMajorStageCode) : [],
+      stageMode: parsed.stageMode === "all" ? "all" : "any",
+      ambiguous: parsed.ambiguous === true,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** 把草稿序列化为后端可解析的结构化专业值；非法输入返回错误提示 */
+function serializeMajorDraft(draft: StructuredMajorDraft): { value?: string; error?: string } {
+  const names = [...new Set(
+    draft.names.split(/[、,，;；\n]/).map((item) => item.trim()).filter(Boolean),
+  )];
+  if (names.length === 0) return { error: "请先填写专业名称（多个用顿号分隔）" };
+  const stages = [...new Set(draft.stages)];
+  return {
+    value: JSON.stringify({
+      names,
+      ...(stages.length > 0 ? { stages } : {}),
+      ...(stages.length > 1 ? { stageMode: draft.stageMode } : {}),
+      ...(draft.ambiguous ? { ambiguous: true } : {}),
+    }),
+  };
+}
+
+function StructuredMajorEditor({
+  field,
+  activeDecision,
+  onChange,
+}: {
+  field: CandidateField;
+  activeDecision: PendingDecision | undefined;
+  onChange: (d: PendingDecision) => void;
+}) {
+  const initial = parseMajorDraft(activeDecision?.afterValue ?? field.value);
+  const [draft, setDraft] = useState<StructuredMajorDraft>(
+    initial ?? { names: "", stages: [], stageMode: "any", ambiguous: false },
+  );
+  const [error, setError] = useState<string | null>(null);
+
+  const toggleStage = (code: MajorStageCode) => {
+    setDraft((prev) => ({
+      ...prev,
+      stages: prev.stages.includes(code)
+        ? prev.stages.filter((item) => item !== code)
+        : [...prev.stages, code],
+    }));
+  };
+
+  const apply = () => {
+    const result = serializeMajorDraft(draft);
+    if (result.error || !result.value) {
+      setError(result.error ?? "结构化专业要求生成失败");
+      return;
+    }
+    setError(null);
+    onChange({
+      action: "edit",
+      afterValue: result.value,
+      reason: activeDecision?.reason ?? "",
+    });
+  };
+
+  return (
+    <details
+      className="mt-2 rounded-lg border border-line bg-surface-muted/60 p-2"
+      data-testid={`major-structured-${field.field}`}
+    >
+      <summary className="cursor-pointer text-xs font-medium text-ink-muted">
+        分阶段专业口径（可选，显式确认后才写入发布版本）
+      </summary>
+      <div className="mt-2 space-y-2">
+        <Input
+          label="专业名称（多个用顿号分隔）"
+          value={draft.names}
+          onChange={(e) => setDraft({ ...draft, names: e.target.value })}
+          placeholder="例如：汉语言文学、学科教学（语文）"
+          data-testid="major-names-input"
+        />
+        <fieldset>
+          <legend className="text-xs text-ink-muted">
+            适用阶段（不选 = 公告未明确阶段，系统不会自动按最高学历推断）
+          </legend>
+          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
+            {MAJOR_STAGE_OPTIONS.map((option) => (
+              <label key={option.code} className="flex items-center gap-1 text-xs text-ink">
+                <input
+                  type="checkbox"
+                  checked={draft.stages.includes(option.code)}
+                  onChange={() => toggleStage(option.code)}
+                  data-testid={`major-stage-${option.code}`}
+                />
+                {option.label}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+        {draft.stages.length > 1 && (
+          <fieldset>
+            <legend className="text-xs text-ink-muted">多阶段口径（必填）</legend>
+            <div className="mt-1 flex flex-wrap gap-x-3">
+              <label className="flex items-center gap-1 text-xs text-ink">
+                <input
+                  type="radio"
+                  name={`major-stage-mode-${field.field}`}
+                  checked={draft.stageMode === "any"}
+                  onChange={() => setDraft({ ...draft, stageMode: "any" })}
+                />
+                任一阶段符合即可
+              </label>
+              <label className="flex items-center gap-1 text-xs text-ink">
+                <input
+                  type="radio"
+                  name={`major-stage-mode-${field.field}`}
+                  checked={draft.stageMode === "all"}
+                  onChange={() => setDraft({ ...draft, stageMode: "all" })}
+                />
+                各阶段均须符合
+              </label>
+            </div>
+          </fieldset>
+        )}
+        <label className="flex items-start gap-1 text-xs text-ink">
+          <input
+            type="checkbox"
+            checked={draft.ambiguous}
+            onChange={(e) => setDraft({ ...draft, ambiguous: e.target.checked })}
+            className="mt-0.5"
+          />
+          公告专业目录表述存在解释空间（精确不中时转人工确认）
+        </label>
+        {error && <p className="text-xs text-danger">{error}</p>}
+        <Button size="sm" variant="outline" onClick={apply} data-testid="major-structured-apply">
+          使用结构化专业要求
+        </Button>
+      </div>
+    </details>
+  );
+}
+
 function FieldRow({
   field,
   decision,
@@ -278,6 +460,7 @@ function FieldRow({
   } : undefined);
 
   const label = FIELD_LABELS[field.field] ?? field.field;
+  const structuredMajor = field.field === "major" ? parseMajorDraft(field.value) : null;
 
   return (
     <div
@@ -348,6 +531,21 @@ function FieldRow({
         <p className="mt-1.5 text-sm text-ink break-words">{field.value || "（空）"}</p>
       )}
 
+      {/* 已结构化专业值的人读摘要（原始 JSON 仍在上方作为审计值） */}
+      {structuredMajor && (
+        <p className="mt-1 text-xs text-brand" data-testid={`major-structured-summary-${field.field}`}>
+          结构化口径：{structuredMajor.names || "（未填写专业名称）"}
+          {structuredMajor.stages.length > 0
+            ? `（${structuredMajor.stages
+                .map((code) => MAJOR_STAGE_OPTIONS.find((option) => option.code === code)?.label ?? code)
+                .join("、")}${structuredMajor.stages.length > 1
+                ? structuredMajor.stageMode === "all" ? "阶段均须符合" : "阶段任一符合"
+                : "阶段"}）`
+            : "（未明确阶段）"}
+          {structuredMajor.ambiguous ? "；表述存在解释空间" : ""}
+        </p>
+      )}
+
       {/* 证据定位（可复制，不打开签名 URL） */}
       {locator && (
         <p className="mt-1 text-xs text-ink-muted break-all select-all" data-testid={`locator-${field.field}`}>
@@ -411,6 +609,15 @@ function FieldRow({
             <p className="text-xs text-danger">原因必填</p>
           )}
         </div>
+      )}
+
+      {/* R02：专业字段可显式确认分阶段口径（任一/同时） */}
+      {field.field === "major" && (
+        <StructuredMajorEditor
+          field={field}
+          activeDecision={activeDecision}
+          onChange={onChange}
+        />
       )}
     </div>
   );

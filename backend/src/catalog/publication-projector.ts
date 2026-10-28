@@ -41,6 +41,13 @@ const SOURCE_KINDS: readonly AnnouncementSourceKind[] = [
   'correction',
 ];
 const EVIDENCE_STATES = ['official', 'ai_extracted', 'pending_review'];
+const MAJOR_STAGES = [
+  'secondary',
+  'college',
+  'bachelor',
+  'master',
+  'doctorate',
+] as const;
 
 /** 投影输入：数据库行中投影所需的最小字段 */
 export interface CatalogRowInput {
@@ -171,6 +178,52 @@ function evidenceAt(value: unknown, path: string) {
   } as AnnouncementVersion['officialSource'];
 }
 
+/**
+ * 专业条件（criterion.kind='major'）结构校验。
+ *
+ * 只校验「分阶段口径」的显式结构；旧发布版本没有 stages/stageMode 时照常通过
+ * （兼容旧数据，且绝不把缺失解释为“最高学历阶段要求”）。
+ */
+function validateMajorCriterion(
+  criterion: Record<string, unknown>,
+  path: string,
+): void {
+  const names = criterion.majorNames;
+  if (!Array.isArray(names) || names.some((item) => typeof item !== 'string')) {
+    fail(`${path}.majorNames`, '必须是字符串数组');
+  }
+  if (criterion.catalogGroups !== undefined && !Array.isArray(criterion.catalogGroups)) {
+    fail(`${path}.catalogGroups`, '必须是数组');
+  }
+  if (criterion.ambiguous !== undefined && typeof criterion.ambiguous !== 'boolean') {
+    fail(`${path}.ambiguous`, '必须是布尔值');
+  }
+  if (criterion.stages === undefined) {
+    if (criterion.stageMode !== undefined) {
+      fail(`${path}.stageMode`, '必须与 stages 同时出现');
+    }
+    return;
+  }
+  const stages = criterion.stages;
+  if (!Array.isArray(stages) || stages.length === 0) {
+    fail(`${path}.stages`, '必须是非空数组');
+  }
+  for (const stage of stages) {
+    enumAt(stage, MAJOR_STAGES, `${path}.stages[]`);
+  }
+  // 多阶段必须明确任一/同时，不接受“系统默认”。
+  if (stages.length > 1 && criterion.stageMode !== 'any' && criterion.stageMode !== 'all') {
+    fail(`${path}.stageMode`, '多阶段专业要求必须明确 any 或 all');
+  }
+  if (
+    criterion.stageMode !== undefined &&
+    criterion.stageMode !== 'any' &&
+    criterion.stageMode !== 'all'
+  ) {
+    fail(`${path}.stageMode`, '只能是 any 或 all');
+  }
+}
+
 function requirementAt(value: unknown, path: string) {
   const req = recordAt(value, path);
   const dimension = enumAt(
@@ -192,7 +245,9 @@ function requirementAt(value: unknown, path: string) {
   );
   const criterion = recordAt(req.criterion, `${path}.criterion`);
   // criterion.kind 必须存在且为字符串；具体分支结构由引擎消费，此处只做存在性校验
-  stringAt(criterion.kind, `${path}.criterion.kind`);
+  const kind = stringAt(criterion.kind, `${path}.criterion.kind`);
+  // 专业条件的分阶段口径（D03/R02）：结构非法一律拒绝，避免坏数据进入匹配。
+  if (kind === 'major') validateMajorCriterion(criterion, `${path}.criterion`);
   const hard = req.hard;
   if (typeof hard !== 'boolean') fail(`${path}.hard`, '必须是布尔值');
   return {

@@ -359,4 +359,54 @@ describe("M4 审核工作台效率优化", () => {
     expect(html()).not.toContain("有未保存的变更");
     expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toContain("3301A02");
   });
+
+  it("R02：专业字段可分阶段确认，写入结构化新值并随审核提交", async () => {
+    currentRun = makeRun("pending_review");
+    currentRun.candidate.fields.push(
+      jobField("major", "汉语言文学（师范）", "job:3301A01", "3301A01"),
+    );
+    const { container } = await renderPage();
+    await click(findButton(container, "去审核"));
+
+    const fieldRow = container.querySelector('[data-testid="field-row-major"]') as HTMLElement;
+    await click(findButton(fieldRow, "修改"));
+
+    const namesInput = fieldRow.querySelector('[data-testid="major-names-input"]') as HTMLInputElement;
+    await act(async () => setInputValue(namesInput, "汉语言文学、学科教学（语文）"));
+
+    const bachelor = fieldRow.querySelector('[data-testid="major-stage-bachelor"]') as HTMLInputElement;
+    const master = fieldRow.querySelector('[data-testid="major-stage-master"]') as HTMLInputElement;
+    await act(async () => {
+      bachelor.click();
+      master.click();
+    });
+
+    // 多阶段时必须显式选择任一/同时口径（系统不默认猜测）
+    expect(fieldRow.textContent).toContain("任一阶段符合即可");
+    expect(fieldRow.textContent).toContain("各阶段均须符合");
+
+    await click(fieldRow.querySelector('[data-testid="major-structured-apply"]') as HTMLElement);
+
+    const newValueInput = fieldRow.querySelector('input[placeholder="输入 专业要求 的修正值"]') as HTMLInputElement;
+    const structured = JSON.parse(newValueInput.value);
+    expect(structured).toEqual({
+      names: ["汉语言文学", "学科教学（语文）"],
+      stages: ["bachelor", "master"],
+      stageMode: "any",
+    });
+
+    const fieldReason = container.querySelector('[data-testid="field-reason-major"]') as HTMLTextAreaElement;
+    await act(async () => setTextareaValue(fieldReason, "岗位表分阶段口径已确认"));
+    const overallReason = container.querySelector('[data-testid="overall-reason"]') as HTMLTextAreaElement;
+    await act(async () => setTextareaValue(overallReason, "逐字段核对完毕"));
+
+    await click(findButton(container, "提交本分区审核"));
+
+    const reviewCall = fetchMock.mock.calls.find(
+      ([u, i]) => String(u).includes("/review") && (i as RequestInit)?.method === "POST",
+    );
+    const body = JSON.parse(String((reviewCall![1] as RequestInit)?.body));
+    const majorDecision = body.fieldDecisions.find((d: { field: string }) => d.field === "major");
+    expect(majorDecision).toMatchObject({ action: "edit", afterValue: JSON.stringify(structured) });
+  });
 });

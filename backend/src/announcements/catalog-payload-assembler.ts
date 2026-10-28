@@ -23,6 +23,12 @@ import type {
 } from '../matching/types.js';
 import { classifyEmploymentNature } from './normalization.js';
 import {
+  describeStructuredMajor,
+  MajorCriterionError,
+  parseStructuredMajor,
+  type StructuredMajorValue,
+} from './major-criterion.js';
+import {
   normalizeCandidateField,
   type CandidateField,
   type ExtractionCandidate,
@@ -269,6 +275,31 @@ function majorRequirement(
   checkedAt: string,
 ): Requirement {
   const text = field.value;
+  let structured: StructuredMajorValue | null;
+  try {
+    structured = parseStructuredMajor(text, path);
+  } catch (e) {
+    if (e instanceof MajorCriterionError) {
+      throw new CatalogPayloadError(e.path, e.message.replace(`${e.path}: `, ''));
+    }
+    throw e;
+  }
+  if (structured) {
+    return {
+      id: `${idPrefix}-major`,
+      dimension: 'major',
+      description: describeStructuredMajor(structured),
+      hard: true,
+      criterion: {
+        kind: 'major',
+        majorNames: structured.names,
+        ...(structured.stages ? { stages: structured.stages } : {}),
+        ...(structured.stageMode ? { stageMode: structured.stageMode } : {}),
+        ...(structured.ambiguous ? { ambiguous: true } : {}),
+      },
+      evidence: toEvidenceAnchor(field, path, idPrefix, checkedAt),
+    };
+  }
   if (/^(不限|专业不限|不限专业)$/.test(text)) {
     return {
       id: `${idPrefix}-major`,

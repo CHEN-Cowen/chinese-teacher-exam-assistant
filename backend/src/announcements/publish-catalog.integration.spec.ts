@@ -453,3 +453,158 @@ describe('WB5：旧数据兼容', () => {
     expect(Array.isArray(diff)).toBe(true);
   });
 });
+
+// ==================== R02：真实链路分阶段专业规则 ====================
+
+/** 修改岗位 A 的 major 候选值（模拟审核员结构化确认后的候选） */
+function candidateWithMajor(majorValue: string): ExtractionCandidate {
+  const candidate = reviewedCandidate();
+  const majorA = candidate.fields.find(
+    (f) => f.field === 'major' && f.scope === 'job' && f.jobScope?.key === 'job-A-3301A01',
+  );
+  if (!majorA) throw new Error('夹具缺少岗位 A 的 major 字段');
+  majorA.value = majorValue;
+  return candidate;
+}
+
+function stagedProfile(
+  bachelorMajor: string,
+  masterMajor?: string,
+): UserRecruitmentProfile {
+  return {
+    regions: [{ code: '330100', province: '浙江省', city: '杭州市', level: 'required' }],
+    educationExperiences: [
+      {
+        id: 'edu-bachelor',
+        stage: 'bachelor',
+        majorFullName: bachelorMajor,
+        status: 'graduated',
+        degree: 'bachelor',
+        degreeStatus: 'obtained',
+        source: 'user',
+        majorConfirmed: true,
+        teacherTraining: 'yes',
+      },
+      ...(masterMajor
+        ? [{
+            id: 'edu-master',
+            stage: 'master' as const,
+            majorFullName: masterMajor,
+            status: 'graduated' as const,
+            degree: 'master' as const,
+            degreeStatus: 'obtained' as const,
+            source: 'user' as const,
+            majorConfirmed: true,
+            teacherTraining: 'no' as const,
+          }]
+        : []),
+    ],
+    acceptedEmploymentNatures: ['public_institution_staff'],
+  };
+}
+
+/**
+ * 候选 → 审核（已采纳决策）→ 发布 → 目录投影 → 用户匹配。
+ * 返回目录中岗位 A 的专业条件与用户匹配结论。
+ */
+async function publishAndMatch(majorValue: string, profile: UserRecruitmentProfile) {
+  const state: FakeState = {
+    runs: [makeRunRow({ candidate: candidateWithMajor(majorValue) })],
+    versions: [],
+    transactionCalls: 0,
+    transactionEntered: false,
+  };
+  const prisma = makePrisma(state);
+  await new AnnouncementsService(prisma).publish('run-1', 'test');
+
+  const catalog = await new PublishedCatalogRepository(prisma).listPublished(new Date());
+  expect(catalog).toHaveLength(1);
+
+  const projectedUnitA = catalog[0]!.versions[0]!.units.find((unit) => unit.code === '3301A01');
+  const projectedMajor = projectedUnitA?.requirements.find((req) => req.dimension === 'major');
+  expect(projectedMajor?.criterion.kind).toBe('major');
+
+  const candidates = buildCandidates(catalog, profile, '2026-10-28T00:00:00.000Z');
+  const unitA = candidates.find((c) => c.unit.code === '3301A01');
+  if (!unitA) throw new Error('未生成岗位 A 的匹配候选');
+  const majorResult = unitA.match.dimensions.find((d) => d.dimension === 'major');
+  if (!majorResult) throw new Error('岗位 A 缺少专业匹配结论');
+
+  return { projectedMajor: projectedMajor!, majorResult };
+}
+
+describe('R02：真实发布链路中的分阶段专业规则', () => {
+  it('只要求本科：本科专业符合即通过，硕士专业不同不影响', async () => {
+    const { projectedMajor, majorResult } = await publishAndMatch(
+      '{"names":["汉语言文学"],"stages":["bachelor"]}',
+      stagedProfile('汉语言文学', '学科教学（语文）'),
+    );
+    expect(projectedMajor.criterion).toMatchObject({ stages: ['bachelor'], majorNames: ['汉语言文学'] });
+    expect(majorResult.value).toBe('PASS');
+    expect(majorResult.adoptedEducation?.[0]).toMatchObject({ stage: 'bachelor', majorFullName: '汉语言文学' });
+  });
+
+  it('只要求本科：登记在硕士阶段的同名专业不能替代本科专业', async () => {
+    const { majorResult } = await publishAndMatch(
+      '{"names":["汉语言文学"],"stages":["bachelor"]}',
+      stagedProfile('数学与应用数学', '汉语言文学'),
+    );
+    expect(majorResult.value).toBe('FAIL');
+  });
+
+  it('只要求研究生：硕士专业符合通过，缺硕士阶段资料为 UNKNOWN', async () => {
+    const passCase = await publishAndMatch(
+      '{"names":["学科教学（语文）"],"stages":["master"]}',
+      stagedProfile('汉语言文学', '学科教学（语文）'),
+    );
+    expect(passCase.majorResult.value).toBe('PASS');
+
+    const unknownCase = await publishAndMatch(
+      '{"names":["学科教学（语文）"],"stages":["master"]}',
+      stagedProfile('汉语言文学'),
+    );
+    expect(unknownCase.majorResult.value).toBe('UNKNOWN');
+    expect(unknownCase.majorResult.reason).toContain('硕士研究生');
+  });
+
+  it('本科或研究生任一满足：任一段命中即 PASS（stageMode=any）', async () => {
+    const viaBachelor = await publishAndMatch(
+      '{"names":["汉语言文学","学科教学（语文）"],"stages":["bachelor","master"],"stageMode":"any"}',
+      stagedProfile('汉语言文学', '数学与应用数学'),
+    );
+    expect(viaBachelor.projectedMajor.criterion).toMatchObject({ stageMode: 'any' });
+    expect(viaBachelor.majorResult.value).toBe('PASS');
+
+    const viaMaster = await publishAndMatch(
+      '{"names":["汉语言文学","学科教学（语文）"],"stages":["bachelor","master"],"stageMode":"any"}',
+      stagedProfile('数学与应用数学', '学科教学（语文）'),
+    );
+    expect(viaMaster.majorResult.value).toBe('PASS');
+  });
+
+  it('本科和研究生同时满足：任一段不符即 FAIL（stageMode=all）', async () => {
+    const failCase = await publishAndMatch(
+      '{"names":["汉语言文学"],"stages":["bachelor","master"],"stageMode":"all"}',
+      stagedProfile('汉语言文学', '数学与应用数学'),
+    );
+    expect(failCase.projectedMajor.criterion).toMatchObject({ stageMode: 'all' });
+    expect(failCase.majorResult.value).toBe('FAIL');
+
+    const passCase = await publishAndMatch(
+      '{"names":["汉语言文学"],"stages":["bachelor","master"],"stageMode":"all"}',
+      stagedProfile('汉语言文学', '汉语言文学'),
+    );
+    expect(passCase.majorResult.value).toBe('PASS');
+  });
+
+  it('未明确阶段：发布版本不带 stages，不自动当成最高学历阶段要求', async () => {
+    const { projectedMajor, majorResult } = await publishAndMatch(
+      '汉语言文学',
+      stagedProfile('汉语言文学', '学科教学（语文）'),
+    );
+    // 数据层：旧格式文本没有被自动补上 stages/stageMode
+    expect(projectedMajor.criterion).toEqual({ kind: 'major', majorNames: ['汉语言文学'] });
+    // 匹配仍返回明确结论（阶段歧义的语义修正由 R03 覆盖），不崩溃、不静默
+    expect(['PASS', 'FAIL', 'UNKNOWN', 'MANUAL_REVIEW']).toContain(majorResult.value);
+  });
+});
