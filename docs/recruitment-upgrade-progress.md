@@ -71,7 +71,7 @@ D04（多原因空态与覆盖）覆盖。
 | D06 往年参考目录与详情 | U06 | 已完成 | `2644a86` | `target/codex/modular-development`，远端 SHA 一致 | 本地 lint/test/build 与浏览器验证通过；远端 CI 待 D10 核对 |
 | D07 关注对象与站内动态 | U07 | 已完成 | `ef35388` | `target/codex/modular-development`，远端 SHA 一致 | 本地 lint/test/build 与浏览器验证通过；远端 CI 待 D10 核对 |
 | D08 纠错补录与管理处理 | U08 | 已完成 | `fd61e13` | `target/codex/modular-development`，远端 SHA 一致 | 本地 lint/test/build 与浏览器 10 步验证通过；远端 CI 待 D10 核对 |
-| D09 导航整合与采集可观察性 | U09、U10 | 未开始 | | | |
+| D09 导航整合与采集可观察性 | U09、U10 | 进行中 | | | |
 | D10 全项目验收与交付 | U01—U10 | 未开始 | | | |
 
 ## 4. 模块执行记录
@@ -544,6 +544,47 @@ NotificationRecord（versionChangeBody 含旧值新值），提醒基线 lastNot
 不做自动推断；单位关注新增 `FollowedOrganization` 表（Prisma 迁移 SQL 提供，本机无
 PostgreSQL，迁移验证留 D10）；旧跟进状态与个人待办保留。
 
+### D09 差距确认（2026-10-28，实现前已读调用链）
+
+> 更正：本节初稿误判「PRIMARY_NAV 已是四入口、D06/D07 已落地」。浏览器验证
+> 证据推翻该判断：改动前主导航实际为 v7.0 三入口（机会 /opportunities、
+> 日程 /schedule、我的 /me），/history、/follows 页面虽在 D06/D07 落地，但
+> 未接入主导航（D06 记录「往年参考入口在本轮放 /opportunities 页，四入口
+> 整合属 D09」）。D09 的四入口整合代码已在本地实现（`src/lib/ia/nav.ts`、
+> `DesktopNav`/`BottomNav`/`Sidebar`、me 页次级入口），但**尚未提交、尚未完成
+> 浏览器复测**；采集总览与观察模板同样待复核。D09 与 R06 一并收口，本节不据此
+> 声明 D09 完成。
+
+导航现状（核实后）：`src/lib/ia/nav.ts` 的 `PRIMARY_NAV` 原为 v7.0 三入口
+（机会 /opportunities、日程 /schedule、我的 /me）；桌面 `DesktopNav`、移动
+`BottomNav`、登录后 `Sidebar` 共享该常量。`/history`（往年参考，D06）、
+`/follows`（我的关注，D07）、`/applications`（报考中心聚合）、`/schedule`
+（日程时间线）、`/study`（备考）、`/materials`（学习资料）均为真实页面。
+
+确认的差距（本模块要实现）：
+
+- me 页「资料与设置」次级入口：仍保留「我的关注」（已升主入口，重复），且缺
+  日程与报考（/applications）、日程时间线（/schedule）、备考练习（/study）——
+  按 dev D09「保留日程材料备考等次级入口及旧链接」调整：移除重复的关注入口，
+  新增三个次级入口；其余（教育经历、学习资料、通知、隐私）保留。
+- 采集可观察性（U10）缺跨阶段汇总：/admin/sources 已有来源健康/队列积压/暂停恢复/
+  最近成功/下次检查；/admin/pipeline 已有提取任务队列（提交→提取→待审核→发布）。
+  但「来源检查、正文附件、解析、审核、发布、用户目录各阶段数量与错误」无一处
+  汇总视图。新增后端 `GET /announcements/admin/pipeline-summary`（AdminGuard）
+  返回真实持久化计数：来源（总数/健康状态分布/最近成功检查）、快照（总数/24h 新增）、
+  解析任务按状态（pending/parsed/pending_manual/failed/unsupported_format）、
+  提取任务按状态（submitted/extracting/pending_review/approved/published/rejected/failed）、
+  已发布版本（published/superseded/withdrawn/最新发布时间）；前端 /admin/pipeline
+  顶部渲染总览卡，加载失败显示错误态不编造数字，显示统计生成时间；面板文案区分
+  「来源异常（覆盖缺口）」与「检查正常但无新增」（U10 出口要求）。
+- 连续采集观察方法与记录模板缺失（dev D09 出口）：新增
+  `docs/source-observation-template.md`，含每日记录表与使用方法；连续 7 天真实
+  观察未执行，保持待验（与 PRD 5 一致）。
+
+实现边界：导航响应式（320/768/1024/1440px）浏览器工具不支持任意视口，
+以桌面视口浏览器验证 + CSS 检查 + 构建覆盖，真机视口留 D10 记录边界；
+不新增埋点事件（导航事件既有 track/trackView 已覆盖）。
+
 ### D08 纠错补录与管理处理（U08，提交 `fd61e13`）
 
 实现：
@@ -652,7 +693,35 @@ demo 通道 demoApi.submitCorrection/listMyCorrections（localStorage 按用户�
 守卫）；resource_reviewer 只读队列；真实 PostgreSQL 迁移验证留 D10（本机无 Docker）；
 不接外部通知渠道；匹配重算与关注联动复用既有版本发布机制，本模块补齐受理侧证据。
 
-## 6. 恢复点
+## 6. R00—R08 本轮审查修复台账（2026-10-28）
 
-当前：D00—D07 已完成并推送。下一步：D08 纠错补录与管理处理。
-任何中断后从“模块状态”中第一个非“已完成”模块继续，不重复已验收模块。
+参考审查版本：`c4502d22b72785b6e1ad95c9411bc5a11304fe75`。
+本节只记录核实到的事实；状态取值：待修复 / 修复中 / 已修复（含验证证据）/ 待验（外部条件不足）。
+
+核对方法：`git fetch target` → 对比 `c4502d2..HEAD` → 逐项读当前实现 → 判断问题是否仍存在。
+
+| 编号 | 问题 | 需求 | 参考版本仍未修复的证据（核实点） | 状态 | 提交 |
+| --- | --- | --- | --- | --- | --- |
+| R00 | 状态核实与台账 | U10 | 本节；D09 仅本地实现未提交 | 已完成 | 见本节提交 |
+| R01-1 | 已登录时访客经历自动替换服务端 | U01 | `me/education/page.tsx` 加载时 `local.length>0` 覆盖服务端 | 修复中 | |
+| R01-2 | 访客迁移只迁旧单字段、静默覆盖 | U01 | `profileApi.migrateGuestProfileIfNeeded` 只带基础+补充事实 | 修复中 | |
+| R01-3 | 本机草稿/撤销快照不按身份隔离 | U01 | `guestSession`、`supplementFacts`、`educationStore` 共用全局键 | 修复中 | |
+| R01-4 | 教育/偏好整份 PUT 覆盖 + 无版本校验 | U01 | `me/education` `saveProfile({...current})`；`PreferencePreviewCard` 同 | 修复中 | |
+| R01-5 | 旧客户端 PUT 删除新字段 | U01 | `profile.service.saveProfile` 整体替换 profile | 修复中 | |
+| R01-6 | 读取失败伪装成无画像 | U01 | `profileApi.getProfile` 失败返回 `null` | 修复中 | |
+| R02 | 真实发布只生成 majorNames | U02 | `catalog-payload-assembler.ts` `majorRequirement` 无 stages/stageMode | 待修复 | |
+| R03-1 | any 模式任一命中仍因他阶段缺失返回 UNKNOWN | U03 | `engine.ts` `missingStages.length>0` 先于命中判断 | 待修复 | |
+| R03-2 | 学位判断不区分取得状态 | U03 | `engine.ts` `case 'degree'` 只读 level | 待修复 | |
+| R03-3 | 未明确阶段时按最高学历直接判 FAIL | U03 | `engine.ts` `stages.length===0` 分支 | 待修复 | |
+| R04-1 | 以“历史键为空”判首次同步 → 永久漏报 | U07 | `organization-follow.domain.ts` `isFirstSync = ownKeys.size===0` | 待修复 | |
+| R04-2 | 先发通知后记去重、无事务 → 重复/漏发 | U07 | `opportunities.service.ts` `syncOrganizationFollows` | 待修复 | |
+| R05-1 | 无修正版本也可结案并称“已更正” | U08 | `reviewCorrection` `resolvedVersionId ?? row.resolvedVersionId` 仍发“已更正” | 待修复 | |
+| R05-2 | 只校验同公告，不校验版本有效性与修正内容 | U08 | 同上，仅 `versions.some(v=>v.id===…)` | 待修复 | |
+| R06 | 历史详情无“关注单位”、筛选缺学历/专业、四入口与 D09 | U06/U09/U10 | `/history` 详情无关注入口；`/admin/pipeline` 无跨阶段总览 | 待修复 | |
+| R07 | 超时用例、真实迁移、真浏览器流程 | U10 | 本机无 PostgreSQL/Docker；CI 历史结果仅作线索 | 待验 | |
+| R08 | 全项目验收与交付 | U01—U10 | 待前序完成 | 待开始 | |
+
+## 7. 恢复点
+
+当前：D00—D08 已完成并推送；D09 代码本地实现未提交；R00 台账已建立，R01 起逐模块修复。
+下一次中断后：从本节台账中第一个非「已修复」的 R 编号继续。
