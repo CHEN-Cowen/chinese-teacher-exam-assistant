@@ -7,8 +7,8 @@ import { DocumentParseStore } from '../document-processing/document-parse-store.
 import { FakeObjectStore, FakePrisma } from '../sourcing/testing/crawl-testing.js';
 import type { ExtractionCandidate } from './domain.js';
 
-const root = path.resolve(process.cwd(), '../tests/fixtures/golden-sources/ningbo');
-const outside = 'C:/Users/cchen/AppData/Local/Temp/wb-cap/s5-task4';
+const root = path.resolve(import.meta.dirname, '../../../tests/fixtures/golden-sources/ningbo');
+const attachmentsRoot = path.resolve(import.meta.dirname, '../../../tests/fixtures/real-attachments');
 
 describe('S5 真实附件提取探测', () => {
   it('宁波 xlsx 与南京 xls 能进入材料包', async () => {
@@ -33,12 +33,12 @@ describe('S5 真实附件提取探测', () => {
             name: '招聘单位岗位学历专业及资格条件表.xlsx',
             mimeType:
               'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            bytes: readFileSync(path.join(outside, 'ningbo-att-1.bin')),
+            bytes: readFileSync(path.join(attachmentsRoot, 'ningbo-att-1.xlsx')),
           },
           {
             name: '南京核减计划情况表.xls',
             mimeType: 'application/vnd.ms-excel',
-            bytes: readFileSync(path.join(outside, 'nanjing-correction-1.xls')),
+            bytes: readFileSync(path.join(attachmentsRoot, 'nanjing-correction-1.xls')),
           },
         ],
       },

@@ -1,7 +1,7 @@
 /**
  * S5 任务 4：真实附件进入既有审核发布链路。
  *
- * 输入是 2026-10-26 只读下载的官方原件，保存在仓库外，不写入黄金样本：
+ * 输入是官方原件，固定在 tests/fixtures/real-attachments，不覆盖黄金样本：
  * - 宁波岗位表 xlsx（1,682,093 字节，sha256 5edcbe86370a…）
  * - 南京核减表 xls（33,280 字节，sha256 749f8eba21c5…）
  *
@@ -25,13 +25,13 @@ import {
 import { ManualExtractionService } from './manual-extraction.service.js';
 import { FakeObjectStore, FakePrisma } from '../sourcing/testing/crawl-testing.js';
 
-const outside = 'C:/Users/cchen/AppData/Local/Temp/wb-cap/s5-task4';
+const attachmentsRoot = path.resolve(import.meta.dirname, '../../../tests/fixtures/real-attachments');
 const ningboHtml = readFileSync(
-  path.resolve(process.cwd(), '../tests/fixtures/golden-sources/ningbo/public-detail.html'),
+  path.resolve(import.meta.dirname, '../../../tests/fixtures/golden-sources/ningbo/public-detail.html'),
   'utf8',
 );
-const ningboXlsx = readFileSync(path.join(outside, 'ningbo-att-1.bin'));
-const nanjingXls = readFileSync(path.join(outside, 'nanjing-correction-1.xls'));
+const ningboXlsx = readFileSync(path.join(attachmentsRoot, 'ningbo-att-1.xlsx'));
+const nanjingXls = readFileSync(path.join(attachmentsRoot, 'nanjing-correction-1.xls'));
 const ningboUrl =
   'https://jyj.ningbo.gov.cn/col/col1229166692/art/2026/art_c58c701a5e034741ab977dfe7f771545.html';
 
