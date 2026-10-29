@@ -71,8 +71,10 @@ D04（多原因空态与覆盖）覆盖。
 | D06 往年参考目录与详情 | U06 | 已完成 | `2644a86` | `target/codex/modular-development`，远端 SHA 一致 | 本地 lint/test/build 与浏览器验证通过；远端 CI 待 D10 核对 |
 | D07 关注对象与站内动态 | U07 | 已完成 | `ef35388` | `target/codex/modular-development`，远端 SHA 一致 | 本地 lint/test/build 与浏览器验证通过；远端 CI 待 D10 核对 |
 | D08 纠错补录与管理处理 | U08 | 已完成 | `fd61e13` | `target/codex/modular-development`，远端 SHA 一致 | 本地 lint/test/build 与浏览器 10 步验证通过；远端 CI 待 D10 核对 |
-| D09 导航整合与采集可观察性 | U09、U10 | 进行中 | | | |
-| D10 全项目验收与交付 | U01—U10 | 未开始 | | | |
+| D09 导航整合与采集可观察性 | U09、U10 | 已完成 | `1580595f`（随 R06 收口） | target/codex/modular-development，远端 SHA 一致 | 本地 lint/test/build 与浏览器验证通过；远端 CI 待 R08 核对 |
+| D10 全项目验收与交付 | U01—U10 | 进行中 | | | |
+
+R07 后续补充：测试稳定性已修复（`cf519ce`）；浏览器 demo 模式 6 场景 PASS；Prisma 迁移真实验证和后端链路浏览器验证因本机无 PostgreSQL/Docker 阻塞，属外部条件。
 
 ## 4. 模块执行记录
 
@@ -718,8 +720,8 @@ demo 通道 demoApi.submitCorrection/listMyCorrections（localStorage 按用户�
 | R05-1 | 无修正版本也可结案并称“已更正” | U08 | `reviewCorrection` `resolvedVersionId ?? row.resolvedVersionId` 仍发“已更正” | 已修复 | 见下 |
 | R05-2 | 只校验同公告，不校验版本有效性与修正内容 | U08 | 同上，仅 `versions.some(v=>v.id===…)` | 已修复 | 见下 |
 | R06 | 历史详情无“关注单位”、筛选缺学历/专业、四入口与 D09 | U06/U09/U10 | `/history` 详情无关注入口；`/admin/pipeline` 无跨阶段总览 | 已修复 | 见下 |
-| R07 | 超时用例、真实迁移、真浏览器流程 | U10 | 本机无 PostgreSQL/Docker；CI 历史结果仅作线索 | 待验 | |
-| R08 | 全项目验收与交付 | U01—U10 | 待前序完成 | 待开始 | |
+| R07 | 超时用例、真实迁移、真浏览器流程 | U10 | vitest 默认 5s 超时致 Nest 模块编译/PDF 解析等 9 个重初始化用例失败；本机无 PostgreSQL/Docker，迁移无法实跑 | 已修复（含边界） | `cf519ce` |
+| R08 | 全项目验收与交付 | U01—U10 | 待前序完成 | 进行中 | |
 
 ### R01 资料隔离、覆盖保存与旧客户端兼容（U01）
 
@@ -987,7 +989,86 @@ demo 通道 demoApi.submitCorrection/listMyCorrections（localStorage 按用户�
 导航响应式以 CSS 与构建覆盖，任意视口真机复测留 R07/R08 浏览器验证；
 `/admin/pipeline` 汇总卡需要后端运行与管理员账号，浏览器验证留 R07。
 
+## 7. R07：测试稳定性、迁移与浏览器验证（2026-10-29，提交 `cf519ce`）
+
+### 7.1 基线建立
+
+| 范围 | 命令 | 结果 |
+| --- | --- | --- |
+| 后端全量单测（修复前） | `cd backend && npm test` | **9 failed / 90 passed (99) 文件；9 failed / 1256 passed / 1 expected fail / 2 skipped (1268)**。全部 9 个失败均为 Windows 高并发下超时：5 个 Nest 模块真实编译 + 3 个 PDF.js 首次加载/解析 + 1 个 OCR 触发条件。vitest 默认并发 ~CPU 核数 + 默认 5s 超时不适合这些重初始化用例 |
+| 后端全量单测（修复后） | 同上 | **99 文件 / 1265 通过 / 1 expected fail / 2 skipped**。0 failed，修复全绿 |
+| 后端 lint | `cd backend && npm run lint` | 0 error / 6 warning（既有 engine.ts 风格警告） |
+| 后端构建 | `cd backend && npx nest build` | 通过（tsconfig.build.json 排除 spec） |
+| Prisma validate | `cd backend && npx prisma validate` | schema 有效 |
+| 前端测试 | `npm test` | **74 文件 / 794 通过** |
+| 前端 tsc | `npx tsc --noEmit` | 0 错误 |
+| 前端 lint | `npm run lint` | 0 error / 2 warning（scripts/ 独立脚本） |
+| 前端 build + postbuild | `npm run build` | 30 页静态生成 + 外部依赖检查通过（阻断项 0 / 密钥泄漏 0） |
+
+### 7.2 超时修复策略
+
+**根因**：vitest 默认 pool=forks + maxWorkers=CPU 核数 + 默认 5s timeout。Windows 上多 worker 并发导致：
+- Nest `Test.createTestingModule().compile()` 真实模块图编译（5–12 秒）
+- PDF.js 首次加载 + 解析（2–10 秒）
+
+**修复**：
+1. vitest.config.ts 全局：`pool: 'forks'` + `maxWorkers: 4` + `testTimeout: 15_000`（降低并发 + 全局 15s 保底）
+2. 7 个重用例单独加 `{ timeout: 60_000 }`（不影响其他快用例的超时检测能力）：
+   - 5 个 Nest 模块编译：CatalogModule、DocumentProcessingModule、AnnouncementsModule、SourcingModule（4 个 it 全部）、SafeFetcherFactory
+   - 2 个 PDF 解析：pdf-document.parser bbox 定位、document-parse.service PDF 投递
+   - 已有人工作区里预先添加的 2 处：document-parser.service PDF 开关、document-processing.module DOCX 开关（一并纳入 R07 提交）
+3. previewEngine.test.ts 的 1 处断言同步（R03 语义更新：未明确阶段 + 专业不命中 → MANUAL_REVIEW 而非 FAIL）
+
+**验证**：先单独跑 7 个之前的失败文件（37 用例），全绿且每个 2–13 秒；再跑后端全量，全绿 0 failed。
+
+**未纳入**：src/app/onboarding/page.tsx（用户未提交修改，进度文档明确保留）、publish-catalog.integration.spec.ts 等末尾空行（CRLF 噪音）。
+
+### 7.3 Prisma 迁移验证（本机阻塞）
+
+24 个迁移 SQL 逐份审阅，全部为安全增量：
+- `20261028120000_followed_organizations`（D07）：全新表 + @@unique(user_id, identity_key)
+- `20261028140000_announcement_submissions`（D08）：全新表 + opportunity_corrections 加可空列 resolved_version_id
+- `20261028150000_follow_baseline_synced_at`（R04）：followed_organizations 加可空列 baseline_synced_at
+
+**无法执行真实验证**：本机无 Docker、无 psql。`docker --version` 和 `psql --version` 均未安装。进度文档历史记录已如实登记此边界。
+
+**后续命令**（有 PostgreSQL/Docker 环境时执行）：
+```bash
+cd backend
+npx prisma migrate deploy          # 空库按顺序初始化
+# 导入代表性测试数据后再次
+npx prisma migrate deploy          # 确认幂等
+npx prisma migrate diff --from-migrations --to-schema-datasource # schema 与 DB 一致
+npm run build && node dist/main.js # API 启动健康检查
+node dist/worker.js                # Worker 启动
+```
+
+### 7.4 浏览器端到端验证（demo 模式）
+
+生产构建 + `NEXT_PUBLIC_APP_ENV=demo` + `NEXT_PUBLIC_FF_NEW_RESULTS=true` + `NEXT_PUBLIC_FF_DB_CATALOG=false` + `NEXT_PUBLIC_FF_TARGETED_SUPPLEMENT=true`，端口 3100。
+
+| 场景 | 结果 | 证据 |
+| --- | --- | --- |
+| 1. 桌面 1440px 四入口导航 | ✅ PASS | 顶部导航 DOM 顺序：当年招聘→往年参考→我的关注→我的资料；依次跳转 /opportunities、/history、/follows、/me |
+| 2. 移动 375px 底部导航 | ✅ PASS | BottomNav 四个入口顺序与桌面一致 |
+| 3. 往年参考筛选与详情 | ✅ PASS | /history 标题「往年参考」；筛选器 6 项（年份/地区/学段/用工性质/最低学历/专业）；4 条 2024/2025 demo 数据；无报名按钮；详情有「往年已截止，仅供参考」提示 + 「关注该单位的新公告」按钮 |
+| 4. 资料与匹配解释 | ✅ PASS | 浙江+本科+汉语言文学画像→结果按四档分组；详情页有「公告怎么写（官方事实）」/「根据你填写的报考信息判断」两栏 + 逐条件解释 |
+| 5. 无结果面板（上海覆盖缺口） | ✅ PASS | 选择上海→/preview 显示「暂时没有可优先推进的机会」覆盖缺口面板 |
+| 6. 我的关注入口 | ✅ PASS | /me 次级入口可达 /follows，页面正常渲染 |
+
+console/network：若干 net::ERR_ABORTED RSC 预取噪声，均为页面重定向/清除存储触发的净刷新，非阻塞失败。
+
+**demo 模式不可覆盖（需真实后端 + PostgreSQL/Redis）**：
+- A. 服务端资料隔离（PATCH + expectedUpdatedAt + 409 乐观锁 + 双标签页并发）
+- B. 规则从真实公告结构化→审核→发布进入匹配（不只是手工拼装 demo 数据）
+- D. 关注与通知（服务端事务 + 幂等去重 + 首次同步基线）
+- E. 纠错与补录（服务端权限 + 修正版本有效性校验）
+- F. /admin/pipeline 真实采集汇总接口
+
+以上后端链路的单测已覆盖（后端 1265 通过），浏览器端真实验证需隔离数据库环境。
+
 ## 8. 恢复点
 
-当前：D00—D08 已完成并推送；D09 随 R06 收口推送；R00 台账已建立，R01—R06 已修复推送。
+当前：D00—D08 已完成并推送；D09 随 R06 收口推送；R00 台账已建立，R01—R07 已修复推送（R07=cf519ce）。
+R07 待补充：Prisma 迁移真实验证（需 PostgreSQL/Docker）、后端链路浏览器验证（需隔离数据库）。
 下一次中断后：从本节台账中第一个非「已修复」的 R 编号继续。
