@@ -11,6 +11,8 @@ import { safeReturnPath } from "@/lib/auth/return-to";
 import {
   CITY_OPTIONS,
   CREDENTIAL_LEVEL_OPTIONS,
+  DEGREE_OPTIONS,
+  EMPLOYMENT_STATUS_OPTIONS,
   NATURE_PREFERENCE_OPTIONS,
   PROVINCE_OPTIONS,
   REGION_LEVEL_OPTIONS,
@@ -31,6 +33,7 @@ import {
   type GuestProfileDraft,
 } from "@/lib/guest/guestSession";
 import { GUEST_COVERAGE } from "@/lib/guest/coverage";
+import { isDemoMode } from "@/lib/demo/config";
 import { profileApi } from "@/lib/profile/profileApi";
 import { track, trackOncePerUser } from "@/lib/analytics/eventService";
 import type { SubjectCode } from "@/lib/announcements/types";
@@ -405,6 +408,21 @@ function OnboardingForm() {
               <div className="mt-5 border-t border-line pt-4">
                 <StepCert draft={draft} onChange={updateDraft} />
               </div>
+              {isDemoMode && (
+                <div className="mt-5 space-y-4 border-t border-line pt-4">
+                  <p className="text-sm text-ink-muted">演示补充资料：填写学位与就业状态，以便完整体验示例岗位匹配。</p>
+                  <fieldset className="m-0 border-0 p-0">
+                    <legend className="mb-2 text-sm font-medium text-ink">最高学位</legend>
+                    <OptionList options={DEGREE_OPTIONS} value={draft.degree}
+                      onSelect={(degree) => updateDraft({ degree })} />
+                  </fieldset>
+                  <fieldset className="m-0 border-0 p-0">
+                    <legend className="mb-2 text-sm font-medium text-ink">当前就业状态</legend>
+                    <OptionList options={EMPLOYMENT_STATUS_OPTIONS} value={draft.employmentStatus}
+                      onSelect={(employmentStatus) => updateDraft({ employmentStatus })} />
+                  </fieldset>
+                </div>
+              )}
               <div className="mt-5 border-t border-line pt-4">
                 <StepEmploymentPreference
                   value={draft.employmentNaturePreference}
