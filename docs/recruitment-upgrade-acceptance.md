@@ -15,13 +15,13 @@
 | --- | --- |
 | 仓库 | `https://github.com/CHEN-Cowen/chinese-teacher-exam-assistant.git`（远端名 `target`） |
 | 分支 | `codex/modular-development` |
-| 被测 HEAD | `7b203792`（R07 hookTimeout 补充），业务代码 HEAD `cf519ce`，进度文档 `62d4b90` |
+| 被测 HEAD | `cabf2b2`（R07 测试修复：e2e fake + ConsultationPanel），此前 `7b20379`（hookTimeout 补充），业务代码 HEAD `cf519ce` |
 | 基线提交 | `1580595f`（R06 完成） |
 | 环境 | 本机 Windows；后端 NestJS 12 + Prisma 6；前端 Next.js 16.3.8 + React 19 + Tailwind 4 |
 | Node.js | 24 |
-| PostgreSQL | 本机无 Docker/psql，不可用 |
-| Redis | 本机无，不可用 |
-| 后端运行 | 本机无 PostgreSQL/Redis，未启动 API/Worker；进程级启动验证需隔离环境 |
+| PostgreSQL | 便携版 17.6-2（隔离实例 127.0.0.1:5544，验证后已清理） |
+| Redis | 便携版 8.10.3-msys2（隔离实例 127.0.0.1:6379，验证后已清理） |
+| 后端运行 | 已在隔离环境实测：`node dist/main`（PORT=3901）+ `node dist/worker.js` 启动，/health 全 up |
 | 前端运行 | demo 模式生产构建端口 3100（`NEXT_PUBLIC_APP_ENV=demo`） |
 
 ## 3. 基线检查结果（2026-10-29，cf519ce）
@@ -31,6 +31,7 @@
 | 检查 | 命令 | 结果 |
 | --- | --- | --- |
 | 全量单测 | `cd backend && npm test` | **99 文件 / 1265 通过 / 1 expected fail / 2 skipped**（修复前 9 failed 全为超时；hookTimeout 补充后两轮连续稳定全绿） |
+| e2e | `cd backend && npm run test:e2e` | **2 文件 / 9 通过**（修复前 4 failed：fake Prisma 缺 updateMany、2 个用例期望停留在 R01 之前；修复后 EXIT=0） |
 | 静态检查 | `cd backend && npm run lint` | **0 error / 6 warning**（既有 engine.ts unicorn/no-useless-spread 风格警告） |
 | 构建 | `cd backend && npx nest build` | 通过 |
 | Schema | `cd backend && npx prisma validate` | schema 有效 |
@@ -42,7 +43,7 @@
 | --- | --- | --- |
 | 类型检查 | `npx tsc --noEmit` | **0 错误** |
 | 静态检查 | `npm run lint` | **0 error / 2 warning**（scripts/ 独立脚本未使用变量） |
-| 单测 | `npm test` | **74 文件 / 794 通过** |
+| 单测 | `npm test` | **74 文件 / 794 通过 / 0 unhandled error**（ConsultationPanel 卸载清理修复后全量复跑确认） |
 | 生产构建 | `npm run build` | **30 页静态生成，通过** |
 | postbuild 外部依赖 | 同上 | **阻断项 0 / 客户端密钥泄漏 0** |
 
@@ -66,9 +67,9 @@
 | R05-1 | 无修正版本也可结案并称"已更正" | `2644a86`（D06）+ `ef35388`（D07） | corrections.domain 6 通过 | — | ✅ 已修复 |
 | R05-2 | 只校验同公告，不校验版本有效性与修正内容 | 同上 | opportunities.service 53 通过 | — | ✅ 已修复 |
 | R06 | 历史详情无"关注单位"、筛选缺学历/专业、四入口与 D09 | `1580595f` | history.spec 33 通过 | ✅ demo 场景 3 | ✅ 已修复 |
-| R07 | 超时用例、迁移、浏览器 | `cf519ce` + `7b20379` | 后端全绿（两轮稳定） | ✅ demo 6 场景 | ⚠️ 含边界 |
+| R07 | 超时用例、迁移、浏览器 | `cf519ce` + `7b20379` + `cabf2b2` | 后端单测全绿 + e2e 9/9 | ✅ demo 6 场景 | ✅ 已收口（边界见下） |
 
-**R07 边界**：Prisma 迁移真实验证和后端链路浏览器验证因本机无 PostgreSQL/Docker 阻塞；后端 1265 通过已覆盖所有迁移 SQL 的业务层逻辑（Prisma service 测试、schema validate、迁移命令存在），但空库按顺序执行、已有旧库升级、二次 deploy 幂等性、真实启动健康检查等需隔离数据库环境。
+**R07 边界（2026-10-29 补充）**：迁移真实验证与后端启动健康检查已在隔离便携环境（PostgreSQL 17.6-2 + Redis 8.10.3，127.0.0.1 独立端口）实测通过——空库 24/24 迁移顺序初始化、二次 deploy 幂等、旧库（前 21 迁移 + 校验和 + 代表性数据）升级只应用剩余 3 个且数据保留、新表/新列/唯一索引核验通过、schema diff 仅 1 处索引命名漂移（旧版 camelCase 默认名，零功能影响）；API + Worker 真实启动后 /health 全 up（含 Worker 心跳），种子用户 GET/PATCH 200、正确 expectedUpdatedAt 推进版本、过期版本 409 VERSION_CONFLICT、无身份头 401、非管理员访问 /admin/sources/health 403。剩余仅 B/D/E 完整多角色浏览器编排需真实部署。
 
 ## 5. 浏览器端到端场景（demo 模式，2026-10-29）
 
@@ -102,9 +103,7 @@
 
 | 类别 | 项 | 原因 | 阻塞解除条件 |
 | --- | --- | --- | --- |
-| Prisma 迁移 | 24 个迁移的空库初始化、旧库升级、幂等性 | 本机无 PostgreSQL | 可用隔离 PostgreSQL/Docker 环境 |
-| API + Worker 启动 | 真实启动健康检查 | 本机无 PostgreSQL/Redis | 同上 |
-| 后端链路浏览器 | 服务端 PATCH 409、关注事务、纠错版本校验等 | 本机无后端 | 同上 |
+| 后端链路浏览器 | B/D/E 完整多角色编排（关注事务、纠错版本校验等） | 需真实部署 | 部署后编排复验（A 组 PATCH 409/401/403 已在隔离环境实测通过） |
 | 连续 7 天采集观察 | 11 个来源每日健康/覆盖/异常记录 | 需真实部署 | 部署后每日记录，7 天填满 |
 | 线上 CI | 远端 GitHub Actions 的 verify workflow | 未触发本轮（手动推送） | 后续触发 |
 | 真实支付 | 微信商户资质、APIv3 | 外部资质 | PRD 2 明确关闭售卖 |
@@ -126,24 +125,28 @@
 | **R07 超时修复** | `cf519ce` | 同上 | target（已推送，已验证远端存在） |
 | **R07 hookTimeout 补充** | `7b20379` | 同上 | target（已推送，连续两轮后端全量稳定全绿） |
 | **进度文档更新** | `62d4b90` | 同上 | target（已推送，已验证远端存在） |
+| **R07/R08 验收文档** | `766efb44` | 同上 | target（已推送，已验证远端存在） |
+| **R07 测试修复** | `cabf2b2` | 同上 | target（已推送，远端 SHA 已核对一致） |
 
-远端目标仓库：`https://github.com/CHEN-Cowen/chinese-teacher-exam-assistant.git`，分支 `codex/modular-development` 最新 HEAD 为 `7b203792`。
+远端目标仓库：`https://github.com/CHEN-Cowen/chinese-teacher-exam-assistant.git`，分支 `codex/modular-development` 最新代码 HEAD 为 `cabf2b2`（其后仅本文档提交）。
 
 CI：未手动触发远端 GitHub Actions，结果待后续核对。本地全部 lint/test/build 通过不自动等同于 CI 通过。
 
 ## 9. 结论
 
 **代码与本地集成验收完成（R00—R07）**：
-- 后端 99 文件 / 1265 通过 / 1 expected fail / 2 skipped（hookTimeout 补充后两轮连续稳定全绿）
-- 前端 74 文件 / 794 通过（连续两轮稳定全绿）；tsc 0 错；lint 0 error；build + postbuild 通过
+- 后端 99 文件 / 1265 通过 / 1 expected fail / 2 skipped（hookTimeout 补充后两轮连续稳定全绿）；e2e 2 文件 / 9 通过
+- 前端 74 文件 / 794 通过 / 0 unhandled error（ConsultationPanel 修复后全量复跑确认）；tsc 0 错；lint 0 error；build + postbuild 通过
 - 浏览器 demo 模式 6 场景全部 PASS
+- Prisma 迁移真实验证已在隔离便携环境实跑通过：空库 24/24 初始化、二次 deploy 幂等、旧库升级只应用剩余 3 个迁移且数据保留、结构核验通过、schema diff 仅 1 处索引命名漂移
+- 后端 API + Worker 真实启动健康检查通过：/health 全 up（含 Worker 心跳），PATCH 正确版本 200 / 过期版本 409 / 无身份 401 / 非管理员 403 实测符合预期
 - 后端 9 个 Windows 高并发 flaky 用例已最小修复：vitest 并发控制 + 全局 hookTimeout=15s + 7 个重初始化用例针对性 60s timeout（不改断言）
 - 工作区中用户未提交的 `src/app/onboarding/page.tsx`（演示模式补充学位/就业状态，+18 行）及 CRLF 噪音文件均未纳入 R07/R08 提交
 
 **不能宣称的**：
-- 真实 PostgreSQL 迁移已验证 —— 需隔离数据库环境
-- 后端 API/Worker 启动健康 —— 需 PostgreSQL/Redis
+- B/D/E 完整多角色浏览器编排已验证 —— 需真实部署
 - 连续 7 天采集观察已完成 —— 需真实部署
+- 远端 CI 已验证 —— 本轮手动推送，未触发 GitHub Actions
 - 商业可上线 —— 需真实微信支付/备案域名等外部条件
 
-**当前可陈述的状态**：R00—R07 代码修复与本地验证完成并推送至指定仓库分支；R08 交付文档完成。剩余 4 项外部条件阻塞在上线前必须解除。
+**当前可陈述的状态**：R00—R07 代码修复、本地验证与隔离环境验证完成并推送至指定仓库分支；R08 交付文档完成。剩余外部条件见 §7（B/D/E 编排、7 天观察、CI、支付/备案），上线前必须解除。

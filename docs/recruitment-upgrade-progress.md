@@ -998,6 +998,7 @@ demo 通道 demoApi.submitCorrection/listMyCorrections（localStorage 按用户�
 | 后端全量单测（修复前） | `cd backend && npm test` | **9 failed / 90 passed (99) 文件；9 failed / 1256 passed / 1 expected fail / 2 skipped (1268)**。全部 9 个失败均为 Windows 高并发下超时：5 个 Nest 模块真实编译 + 3 个 PDF.js 首次加载/解析 + 1 个 OCR 触发条件。vitest 默认并发 ~CPU 核数 + 默认 5s 超时不适合这些重初始化用例 |
 | 后端全量单测（cf519ce 修复后） | 同上 | **99 文件 / 1265 通过 / 1 expected fail / 2 skipped**。0 failed，修复全绿 |
 | 后端全量单测（7b20379 hookTimeout 后） | 同上（连续两轮） | 两轮均 **99 文件 / 1265 通过 / 1 expected fail / 2 skipped**。消除 `beforeEach` 钩子在 Windows 高并发下偶发的 10s 超时（`app.controller.spec.ts` 等），彻底稳定 |
+| 后端 e2e（`npm run test:e2e`，历史未纳入基线） | vitest e2e 配置 | 修复前 **4 failed / 5 passed**（profile-patch fake 陈旧：缺 `updateMany`，且白名单期望停留在 R01 之前——regions/employmentNaturePreference 自 R01 起属白名单）；修复后 **2 文件 / 9 通过 / 0 failed** |
 | 后端 lint | `cd backend && npm run lint` | 0 error / 6 warning（既有 engine.ts 风格警告） |
 | 后端构建 | `cd backend && npx nest build` | 通过（tsconfig.build.json 排除 spec） |
 | Prisma validate | `cd backend && npx prisma validate` | schema 有效 |
@@ -1025,27 +1026,48 @@ demo 通道 demoApi.submitCorrection/listMyCorrections（localStorage 按用户�
 
 **未纳入**：src/app/onboarding/page.tsx（用户未提交修改，进度文档明确保留）、publish-catalog.integration.spec.ts 等末尾空行（CRLF 噪音）。
 
-### 7.3 Prisma 迁移验证（本机阻塞）
+### 7.2.1 补充修复（2026-10-29 第二轮）
+
+1. `backend/test/profile-patch.e2e-spec.ts`：内存 fake Prisma 补 `updateMany`（userId+updatedAt 条件匹配语义），白名单过滤用例改用真正非白名单字段 `educationLevel`/`majorFullName`（regions 自 R01 起在白名单内，原期望已过期）。e2e 套件由 4 failed 恢复 9/9 通过。
+2. `src/components/opportunities/ConsultationPanel.tsx`：复制反馈的 2 秒 `setTimeout` 原未在卸载时清理，测试环境 teardown 后回调触发 `setState` → vitest 报 unhandled error `window is not defined`（用例全过但进程 exit 1）。改为 `useRef` 持有计时器 + `useEffect` 卸载清理 + 重复触发先清旧计时器。组件行为不变。
+
+### 7.3 Prisma 迁移真实验证（2026-10-29 补充：已在隔离便携环境实跑通过）
+
+环境：便携版 PostgreSQL 17.6（EDB 官方 binaries，监听 127.0.0.1:5544）+ 便携版 Redis 8.10.3（msys2 构建，127.0.0.1:6379），均放在系统临时目录，不触碰仓库与生产。`DATABASE_URL` 以进程环境变量注入（优先级高于 backend/.env），运行前用 `prisma migrate status` 输出确认数据源确为隔离实例。
+
+| 验证项 | 方法 | 结果 |
+| --- | --- | --- |
+| 空库按顺序初始化 | `kaobian_empty` 空库 `npx prisma migrate deploy` | ✅ 24/24 按序应用成功 |
+| 二次 deploy 幂等 | 同库再次 `migrate deploy` | ✅ `No pending migrations to apply` |
+| 旧库升级 | `kaobian_old` 手工应用前 21 个迁移 SQL + 按 SHA-256 校验和登记 `_prisma_migrations` + 插入 1 用户 1 画像，再 `migrate deploy` | ✅ 只应用剩余 3 个（followed_organizations / announcement_submissions / follow_baseline_synced_at），旧数据完整保留 |
+| 新结构核验 | psql 查表/列/索引 | ✅ 新表 2 张、新列 baseline_synced_at 与 resolved_version_id、唯一索引 followed_organizations_user_id_identity_key_key 等全部存在 |
+| schema 与迁移一致性 | `migrate diff --from-url <已部署库> --to-schema-datamodel` | ⚠️ 仅 1 处索引命名漂移：`notification_records_userId_eventKey_reminderStage_key`（20261012130000 迁移按旧版 Prisma 默认 camelCase 命名）vs 当前 schema 默认解析为 snake_case。约束语义完全一致，纯命名差异，无功能影响；后续 `migrate dev` 会生成一次重命名迁移 |
+| Prisma 客户端读写 | 真实 API 驱动（见 7.4） | ✅ GET/PATCH /profile 读写 migrated 旧库正常 |
+
+### 7.4 后端 + Worker 真实启动与健康检查（2026-10-29，同一隔离环境）
+
+`CRAWL_SCHEDULER_ENABLED=false`、`CRAWL_WORKER_PAUSED=true`（禁止真实外网抓取），API 端口 3901，AUTH_MODE=demo。
+
+| 检查 | 结果 |
+| --- | --- |
+| `node dist/main` 启动 | ✅ Nest application successfully started |
+| `GET /health` | ✅ `{api:up, db:up, redis:up}`；Worker 启动 30s 后 `worker:up` + `workerLastSeenAt` 有心跳时间戳 |
+| `node dist/worker.js` | ✅ 日志「抓取 Worker 已启动，等待队列任务」，按开关暂停消费、进程在线 |
+| GET /profile（旧库种子用户） | ✅ 返回种子画像，证明客户端读取升级后旧库 |
+| PATCH /profile 无版本 | ✅ 字段级合并，旧字段保留，updatedAt 推进 |
+| PATCH 正确 expectedUpdatedAt | ✅ 200，版本推进 |
+| PATCH 过期 expectedUpdatedAt | ✅ HTTP 409 VERSION_CONFLICT（真实数据库 updateMany 条件更新生效） |
+| 无身份头 | ✅ 401 |
+| 普通用户访问 GET /admin/sources/health | ✅ 403（AdminGuard 生效） |
+
+以下历史记录保留为当时状态：~~Prisma 迁移验证（本机阻塞）~~
 
 24 个迁移 SQL 逐份审阅，全部为安全增量：
 - `20261028120000_followed_organizations`（D07）：全新表 + @@unique(user_id, identity_key)
 - `20261028140000_announcement_submissions`（D08）：全新表 + opportunity_corrections 加可空列 resolved_version_id
 - `20261028150000_follow_baseline_synced_at`（R04）：followed_organizations 加可空列 baseline_synced_at
 
-**无法执行真实验证**：本机无 Docker、无 psql。`docker --version` 和 `psql --version` 均未安装。进度文档历史记录已如实登记此边界。
-
-**后续命令**（有 PostgreSQL/Docker 环境时执行）：
-```bash
-cd backend
-npx prisma migrate deploy          # 空库按顺序初始化
-# 导入代表性测试数据后再次
-npx prisma migrate deploy          # 确认幂等
-npx prisma migrate diff --from-migrations --to-schema-datasource # schema 与 DB 一致
-npm run build && node dist/main.js # API 启动健康检查
-node dist/worker.js                # Worker 启动
-```
-
-### 7.4 浏览器端到端验证（demo 模式）
+### 7.5 浏览器端到端验证（demo 模式）
 
 生产构建 + `NEXT_PUBLIC_APP_ENV=demo` + `NEXT_PUBLIC_FF_NEW_RESULTS=true` + `NEXT_PUBLIC_FF_DB_CATALOG=false` + `NEXT_PUBLIC_FF_TARGETED_SUPPLEMENT=true`，端口 3100。
 
@@ -1065,14 +1087,15 @@ console/network：若干 net::ERR_ABORTED RSC 预取噪声，均为页面重定�
 - B. 规则从真实公告结构化→审核→发布进入匹配（不只是手工拼装 demo 数据）
 - D. 关注与通知（服务端事务 + 幂等去重 + 首次同步基线）
 - E. 纠错与补录（服务端权限 + 修正版本有效性校验）
-- F. /admin/pipeline 真实采集汇总接口
+- F. /admin/sources 真实采集汇总接口
 
-以上后端链路的单测已覆盖（后端 1265 通过），浏览器端真实验证需隔离数据库环境。
+2026-10-29 补充：A 的服务端 PATCH 乐观锁（409/VERSION_CONFLICT/版本推进）、身份隔离（401）与管理端权限（403）已在隔离 PostgreSQL/Redis 环境用真实 API 实测通过（见 7.4）。B/D/E 的完整多角色浏览器编排（双标签页并发、首次同步通知渲染、纠错闭环 UI）仍需真实部署环境。
 
 ## 8. 恢复点
 
-当前：D00—D08 已完成并推送；D09 随 R06 收口推送；R00 台账已建立，R01—R07 已修复推送（R07=`cf519ce` + `7b20379` hookTimeout 补充）。
-最新 HEAD：`7b203792`，远端 `target/codex/modular-development` SHA 一致。
-工作区残留：`src/app/onboarding/page.tsx`（用户未提交，+18 行，保留）、3 个文件末尾空行（CRLF 噪音）、`docs/recruitment-upgrade-acceptance.md`（新建，待提交）。
-R07 待补充：Prisma 迁移真实验证（需 PostgreSQL/Docker）、后端链路浏览器验证（需隔离数据库）。
+当前：D00—D08 已完成并推送；D09 随 R06 收口推送；R00 台账已建立，R01—R07 已修复推送（R07=`cf519ce` + `7b20379` hookTimeout 补充 + 本轮 e2e fake/ConsultationPanel 修复）。
+最新已推送 HEAD：`7b203792`；本轮（隔离环境迁移验证 + e2e/组件修复 + 文档更新）提交后更新此值。
+隔离环境验证已补：24 迁移空库初始化/幂等/旧库升级/数据保留/新结构核验全部通过（便携 PostgreSQL 17.6 + Redis 8.10.3，临时目录）；后端 API + Worker 真实启动、健康检查、401/403/409 实测通过。
+工作区残留：`src/app/onboarding/page.tsx`（用户未提交，+18 行，保留）、若干文件末尾空行（CRLF 噪音）。
+R07/R08 仍待补充：连续 7 天采集观察（需真实部署）、远端 CI workflow 核对（仓库暂无 .github/workflows）。
 下一次中断后：从本节台账中第一个非「已修复」的 R 编号继续。
