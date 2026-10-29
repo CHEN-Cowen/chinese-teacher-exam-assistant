@@ -46,7 +46,8 @@ describe('DocumentParserService（分发）', () => {
     expect(et.format).toBe('spreadsheet');
   });
 
-  it('PDF 文本层 → pdf；损坏 PDF → CORRUPT_FILE', async () => {
+  // PDF.js 首次加载在本机高并发下可能超过 vitest 默认 5 秒（D00 基线，断言不变）
+  it('PDF 文本层 → pdf；损坏 PDF → CORRUPT_FILE', { timeout: 60_000 }, async () => {
     const service = new DocumentParserService({ limits, flags: readFeatureFlags({}) });
     const pdf = await service.parse(
       input(buildTextPdf(['Hangzhou 2026 teacher recruitment announcement with enough text content here.'])),

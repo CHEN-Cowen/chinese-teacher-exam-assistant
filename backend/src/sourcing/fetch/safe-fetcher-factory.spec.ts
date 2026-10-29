@@ -55,7 +55,8 @@ describe('SafeFetcherFactory Nest 注入（UnknownDependenciesException 回归�
     vi.unstubAllGlobals();
   });
 
-  it('作为 provider 被 Nest 编译并实例化，不注入运行时 Object', async () => {
+  // Nest 测试模块编译在本机高并发下可能超过 vitest 默认 5 秒（D00 基线，断言不变）
+  it('作为 provider 被 Nest 编译并实例化，不注入运行时 Object', { timeout: 60_000 }, async () => {
     const moduleRef = await Test.createTestingModule({
       providers: [SafeFetcherFactory],
     }).compile();

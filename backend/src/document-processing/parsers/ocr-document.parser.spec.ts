@@ -121,7 +121,8 @@ describe('OcrDocumentParser', () => {
 });
 
 describe('DocumentParserService（OCR 触发条件）', () => {
-  it('OCR 未启用：扫描件 → pending_manual + pendingManualReason（诚实标记）', async () => {
+  // 内部调用 PDF.js 加载扫描件，首次加载在 Windows 并发下可能超时
+  it('OCR 未启用：扫描件 → pending_manual + pendingManualReason（诚实标记）', { timeout: 60_000 }, async () => {
     const service = new DocumentParserService({ limits, flags: readFeatureFlags({}) });
     const doc = await service.parse(scannedInput());
     expect(doc.pendingManualReason).toContain('人工处理');

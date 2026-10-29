@@ -70,7 +70,8 @@ describe('DocumentParseService.handle', () => {
     expect(outcome.errorSummary).toBe('snapshot_not_found');
   });
 
-  it('文本 PDF → parsed + 投递 announcement.extract（独立抽取版本）', async () => {
+  // 内部调用 PDF.js 解析，Windows 并发下可能超时
+  it('文本 PDF → parsed + 投递 announcement.extract（独立抽取版本）', { timeout: 60_000 }, async () => {
     const ctx = makeService();
     const snapshot = seedSnapshot(ctx, 'aabb', buildTextPdf([
       'Hangzhou Municipal Education Bureau 2026 teacher recruitment announcement with detailed content.',

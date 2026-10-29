@@ -137,16 +137,20 @@ describe("buildGuestPreview：未填写条件只能 UNKNOWN，绝不判不符合
 });
 
 describe("buildGuestPreview：返回修改后重新计算（纯函数确定性）", () => {
-  it("把专业改成公告外专业：杭州从初步符合变为明确不符合", () => {
+  it("把专业改成公告外专业：杭州离开初步符合，转人工确认（公告未明确专业适用阶段时不直接判不符合）", () => {
     const before = ready();
     expect(
       before.view.preliminary.some((row) => row.unitId === "unit-hangzhou-01"),
     ).toBe(true);
 
     const after = ready(completeDraft({ majorFullName: "计算机科学与技术" }));
+    // R03：公告未明确阶段、专业均不命中 → 官方确认，不再自动判 FAIL
+    expect(
+      after.view.manualReview.some((row) => row.unitId === "unit-hangzhou-01"),
+    ).toBe(true);
     expect(
       after.view.notEligible.some((row) => row.unitId === "unit-hangzhou-01"),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       after.view.preliminary.some((row) => row.unitId === "unit-hangzhou-01"),
     ).toBe(false);
