@@ -48,6 +48,22 @@ function createFakePrisma() {
         rows.set(create.userId, row);
         return row;
       },
+      // R01 乐观锁路径：仅当 userId + updatedAt 同时匹配时才更新，返回受影响行数
+      updateMany: async ({
+        where,
+        data,
+      }: {
+        where: { userId: string; updatedAt: Date };
+        data: { profile: unknown };
+      }) => {
+        const existing = rows.get(where.userId);
+        if (!existing || existing.updatedAt.getTime() !== where.updatedAt.getTime()) {
+          return { count: 0 };
+        }
+        existing.profile = data.profile;
+        existing.updatedAt = new Date(Date.now() + ++clock);
+        return { count: 1 };
+      },
     },
   };
 }
@@ -99,7 +115,7 @@ describe('PATCH /profile (e2e)', () => {
     expect(typeof res.body.updatedAt).toBe('string');
   });
 
-  it('PATCH 白名单过滤：regions（非白名单）+ birthDate 仅 birthDate 入库', async () => {
+  it('PATCH 白名单过滤：educationLevel（非白名单）+ birthDate 仅 birthDate 入库', async () => {
     await http()
       .put('/profile')
       .set(authHeaders)
@@ -109,7 +125,7 @@ describe('PATCH /profile (e2e)', () => {
     const res = await http()
       .patch('/profile')
       .set(authHeaders)
-      .send({ changes: { regions: [{ code: '320000' }], birthDate: '1995-06-15' } })
+      .send({ changes: { educationLevel: 'master', birthDate: '1995-06-15' } })
       .expect(200);
 
     expect(res.body.profile).toEqual({
@@ -129,7 +145,7 @@ describe('PATCH /profile (e2e)', () => {
     await http()
       .patch('/profile')
       .set(authHeaders)
-      .send({ changes: { regions: [{ code: '320000' }], educationLevel: 'master' } })
+      .send({ changes: { educationLevel: 'master', majorFullName: '汉语言文学' } })
       .expect(409);
   });
 
