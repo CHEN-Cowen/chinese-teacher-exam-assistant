@@ -608,3 +608,4 @@ describe('R02：真实发布链路中的分阶段专业规则', () => {
     expect(['PASS', 'FAIL', 'UNKNOWN', 'MANUAL_REVIEW']).toContain(majorResult.value);
   });
 });
+
