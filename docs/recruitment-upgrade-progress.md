@@ -989,14 +989,15 @@ demo 通道 demoApi.submitCorrection/listMyCorrections（localStorage 按用户�
 导航响应式以 CSS 与构建覆盖，任意视口真机复测留 R07/R08 浏览器验证；
 `/admin/pipeline` 汇总卡需要后端运行与管理员账号，浏览器验证留 R07。
 
-## 7. R07：测试稳定性、迁移与浏览器验证（2026-10-29，提交 `cf519ce`）
+## 7. R07：测试稳定性、迁移与浏览器验证（2026-10-29，提交 `cf519ce` + hookTimeout 补充 `7b20379`）
 
 ### 7.1 基线建立
 
 | 范围 | 命令 | 结果 |
 | --- | --- | --- |
 | 后端全量单测（修复前） | `cd backend && npm test` | **9 failed / 90 passed (99) 文件；9 failed / 1256 passed / 1 expected fail / 2 skipped (1268)**。全部 9 个失败均为 Windows 高并发下超时：5 个 Nest 模块真实编译 + 3 个 PDF.js 首次加载/解析 + 1 个 OCR 触发条件。vitest 默认并发 ~CPU 核数 + 默认 5s 超时不适合这些重初始化用例 |
-| 后端全量单测（修复后） | 同上 | **99 文件 / 1265 通过 / 1 expected fail / 2 skipped**。0 failed，修复全绿 |
+| 后端全量单测（cf519ce 修复后） | 同上 | **99 文件 / 1265 通过 / 1 expected fail / 2 skipped**。0 failed，修复全绿 |
+| 后端全量单测（7b20379 hookTimeout 后） | 同上（连续两轮） | 两轮均 **99 文件 / 1265 通过 / 1 expected fail / 2 skipped**。消除 `beforeEach` 钩子在 Windows 高并发下偶发的 10s 超时（`app.controller.spec.ts` 等），彻底稳定 |
 | 后端 lint | `cd backend && npm run lint` | 0 error / 6 warning（既有 engine.ts 风格警告） |
 | 后端构建 | `cd backend && npx nest build` | 通过（tsconfig.build.json 排除 spec） |
 | Prisma validate | `cd backend && npx prisma validate` | schema 有效 |
@@ -1012,7 +1013,8 @@ demo 通道 demoApi.submitCorrection/listMyCorrections（localStorage 按用户�
 - PDF.js 首次加载 + 解析（2–10 秒）
 
 **修复**：
-1. vitest.config.ts 全局：`pool: 'forks'` + `maxWorkers: 4` + `testTimeout: 15_000`（降低并发 + 全局 15s 保底）
+1. vitest.config.ts 全局：`pool: 'forks'` + `maxWorkers: 4` + `testTimeout: 15_000` + `hookTimeout: 15_000`（降低并发 + 全局 15s 保底 + 钩子超时对齐）
+   - `hookTimeout` 为 7b20379 补充：vitest 默认 hookTimeout 独立于 testTimeout 且仅 10s，Nest `compile()` 在 Windows 高并发下偶发超 10s 导致 `beforeEach`/`beforeAll` 超时（`app.controller.spec.ts` 等最基础用例）
 2. 7 个重用例单独加 `{ timeout: 60_000 }`（不影响其他快用例的超时检测能力）：
    - 5 个 Nest 模块编译：CatalogModule、DocumentProcessingModule、AnnouncementsModule、SourcingModule（4 个 it 全部）、SafeFetcherFactory
    - 2 个 PDF 解析：pdf-document.parser bbox 定位、document-parse.service PDF 投递
@@ -1069,6 +1071,8 @@ console/network：若干 net::ERR_ABORTED RSC 预取噪声，均为页面重定�
 
 ## 8. 恢复点
 
-当前：D00—D08 已完成并推送；D09 随 R06 收口推送；R00 台账已建立，R01—R07 已修复推送（R07=cf519ce）。
+当前：D00—D08 已完成并推送；D09 随 R06 收口推送；R00 台账已建立，R01—R07 已修复推送（R07=`cf519ce` + `7b20379` hookTimeout 补充）。
+最新 HEAD：`7b203792`，远端 `target/codex/modular-development` SHA 一致。
+工作区残留：`src/app/onboarding/page.tsx`（用户未提交，+18 行，保留）、3 个文件末尾空行（CRLF 噪音）、`docs/recruitment-upgrade-acceptance.md`（新建，待提交）。
 R07 待补充：Prisma 迁移真实验证（需 PostgreSQL/Docker）、后端链路浏览器验证（需隔离数据库）。
 下一次中断后：从本节台账中第一个非「已修复」的 R 编号继续。
