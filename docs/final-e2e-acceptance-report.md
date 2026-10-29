@@ -28,7 +28,7 @@
 | M11 免费权益、限期会员与价格透明 | `78e96b9b` | 已推送 |
 | M12 微信支付、退款、对账与上线验收 | `c1cdee9a` | 已推送（真实微信支付受阻，见 §7） |
 
-模块级细节见 `docs/development-execution-log.md` 与 `docs/m08-source-acceptance-report.md`。
+模块级历史记录可从 Git 历史追溯；来源证据见 `docs/m08-source-acceptance-report.md`，当前升级状态见 `docs/recruitment-upgrade-acceptance.md`。
 
 ## 3. 实际运行的检查与结果
 

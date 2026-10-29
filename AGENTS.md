@@ -14,8 +14,8 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 修改产品流程、页面、路由、领域模型、演示数据、会员或验收标准前，先读根目录 `PRD.md`；它是唯一产品需求基线。技术架构与启动方式见 `README.md`。
 
-涉及外部请求或国内运行依赖，读取 `docs/china-network-accessibility.md`。涉及部署和发布，读取 `DEPLOYMENT.md` 与 `deploy/` 对应手册。核对已完成/待验证状态时，读取 `docs/final-e2e-acceptance-report.md` 和 `docs/m08-source-acceptance-report.md`，历史测试通过不代表当前生产已验收。
+涉及外部请求或国内运行依赖，读取 `docs/china-network-accessibility.md`。涉及部署和发布，读取 `DEPLOYMENT.md` 与 `deploy/` 对应手册。核对已完成/待验证状态时，先读 `docs/recruitment-upgrade-acceptance.md`；历史证据见 `docs/final-e2e-acceptance-report.md` 和 `docs/m08-source-acceptance-report.md`，历史测试通过不代表当前生产已验收。
 
-`docs/prototypes/`、旧版本技术与实施记录仅作参考；其原型、章节号和阶段判断不覆盖当前 PRD。需求冲突按“用户最新明确要求 → PRD.md → 技术与历史参考”处理。后续直接更新 PRD.md，不新增并行 PRD。
+历史任务稿和阶段指南已从当前文件树精简，可从 Git 历史追溯；原型及旧记录不覆盖当前 PRD。需求冲突按“用户最新明确要求 → PRD.md → 技术与历史参考”处理。后续直接更新 PRD.md，不新增并行 PRD。
 
 <!-- END:product-docs-pointer -->

@@ -4,19 +4,20 @@
 
 产品要求统一维护在 **[PRD.md](PRD.md)**。本文介绍当前架构与开发入口，不代表生产已部署或商业服务已开放。
 
-本轮教育经历、可解释匹配与往年参考升级：先读 [完整开发任务需求稿](docs/recruitment-upgrade-development.md)。开发提示词由用户在本地另行提供，不纳入远端文档。新增需求当前为待开发，既有能力继续按实际验收状态记录。
+教育经历、分阶段匹配、往年参考、关注与纠错升级已进入开发分支。当前版本检查与待验项见 [升级验收报告](docs/recruitment-upgrade-acceptance.md)。旧任务稿、阶段指南和提示词从当前文件树移除，需要时从 Git 历史查阅。
 
 **分支说明：** 当前功能盘点基于 [`codex/modular-development`](https://github.com/CHEN-Cowen/chinese-teacher-exam-assistant/tree/codex/modular-development)。`main` 本轮仅同步文档整理，尚未合并该分支的业务代码；开发和运行最新功能请使用对应开发分支。
 
 ## 当前状态
 
-截至 2026-10-27，开发分支已包含来源采集、审核发布、画像匹配、报考推进、账号恢复、燕麦可可棕视觉、会员及模拟支付等实现。
+截至 2026-10-29，开发分支 `623f501b` 已包含来源采集、审核发布、分学历教育经历、可解释匹配、往年参考、单位关注、纠错闭环、报考推进、账号恢复、燕麦可可棕视觉、会员及模拟支付等实现。该提交的 GitHub Actions 已通过前后端检查、浏览器测试和真实运行冒烟，前后端镜像发布成功；这不等于完整生产验收通过。
 
 - 现有 11 个官方来源适配器，覆盖浙江、江苏、安徽部分地区，证据等级不同；连续 7 天线上采集观察尚未完成。
 - 订单、权益授予、全额退款和手动对账有模拟链路。**真实微信渠道尚未实现，当前只有 `wechat_mock`**；Native/JSAPI/H5 是预留标识。
 - 会员增值权益清单为空，售卖默认关闭；价格配置不代表可以收费，年卡另有独立开关。
 - SMTP、线上 HTTPS 会话、生产迁移/回退及真实发布流水线等仍需验证。
-- 本地集成结果见 [历史验收报告](docs/final-e2e-acceptance-report.md)；本次文档整理未重跑应用测试，不将历史报告作为当前线上证明。
+- 真实发布匹配、关注通知、纠错处理的完整多角色联调仍待验；可先测试部署补验，再决定扩大试用。
+- 本轮核对了 [GitHub Actions](https://github.com/CHEN-Cowen/chinese-teacher-exam-assistant/actions/runs/40826135151)，没有重新执行全项目本地测试；最新结论见 [升级验收报告](docs/recruitment-upgrade-acceptance.md)，历史证据见 [集成验收报告](docs/final-e2e-acceptance-report.md)。
 
 ## 技术架构
 
@@ -167,6 +168,7 @@ fixture、真实材料、模拟支付与线上观察分别记录；缺快照而�
 | [国内网络基线](docs/china-network-accessibility.md) | 依赖与验证 |
 | [来源验收](docs/m08-source-acceptance-report.md) | 来源证据与持续观察缺口 |
 | [集成验收](docs/final-e2e-acceptance-report.md) | 历史本地测试及待生产验证 |
-| [开发记录](docs/development-execution-log.md) | 模块交付、提交与受阻历史 |
+| [升级验收](docs/recruitment-upgrade-acceptance.md) | 当前版本、CI、已知问题与部署门槛 |
+| [采集观察](docs/source-observation-template.md) | 连续运行记录模板 |
 
 旧 PRD、阶段商业化方案、分模块提示词和生成效果图已从当前文件树移除，可通过 Git 历史追溯。后续产品变更直接更新 PRD，不新增并行需求基线。
