@@ -62,7 +62,7 @@ function ResetPasswordForm() {
           </p>
         </div>
 
-        <div className="rounded-3xl border border-line bg-surface p-6 shadow-[0_18px_50px_rgba(42,69,112,0.08)]">
+        <div className="rounded-2xl border border-line bg-surface p-6 shadow-2">
           {done ? (
             <div className="space-y-4">
               <div className="p-3 rounded-lg bg-brand-soft/50 border border-brand/25">
@@ -88,7 +88,7 @@ function ResetPasswordForm() {
                   placeholder="至少 8 位，含字母和数字"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="h-12 w-full rounded-xl border border-line bg-surface px-3.5 text-sm text-ink transition-colors placeholder:text-ink-muted/60 hover:border-brand/30 focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/10"
+                  className="h-11 w-full rounded-lg border border-line bg-surface px-3.5 text-sm text-ink transition-colors placeholder:text-ink-muted/60 hover:border-brand/30 focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/10"
                 />
               </div>
               <div>
@@ -103,7 +103,7 @@ function ResetPasswordForm() {
                   placeholder="再次输入新密码"
                   value={confirm}
                   onChange={(e) => setConfirm(e.target.value)}
-                  className="h-12 w-full rounded-xl border border-line bg-surface px-3.5 text-sm text-ink transition-colors placeholder:text-ink-muted/60 hover:border-brand/30 focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/10"
+                  className="h-11 w-full rounded-lg border border-line bg-surface px-3.5 text-sm text-ink transition-colors placeholder:text-ink-muted/60 hover:border-brand/30 focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/10"
                 />
               </div>
 

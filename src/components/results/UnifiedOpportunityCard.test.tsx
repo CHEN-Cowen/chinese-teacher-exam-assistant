@@ -7,7 +7,7 @@
  * - 地图链接位于 location-row 内，同一张卡不存在两个地图入口；
  * - 地图不在折叠依据区；
  * - 无明确城市时只隐藏地图链接，地点文字保留；
- * - 两操作按钮同高 h-11、同圆角 rounded-xl；
+ * - 两操作按钮同高 h-11、同圆角 rounded-lg；
  * - consult 卡显示「建议向招聘单位确认」；outOfScope 使用安静视觉。
  *
  * 无交互断言，使用 renderToString。
@@ -166,7 +166,7 @@ describe("UnifiedOpportunityCard：DOM 顺序（标题 → 地点行 → 岗位�
 });
 
 describe("UnifiedOpportunityCard：按钮系统（同高同圆角）", () => {
-  it("查看依据与保存按钮都使用 h-11 + rounded-xl", () => {
+  it("查看依据与保存按钮都使用 h-11 + rounded-lg", () => {
     const html = render(makeVm());
     const viewStart = html.indexOf('data-testid="view-evidence-button"');
     const saveStart = html.indexOf('data-testid="save-button"');
@@ -174,9 +174,9 @@ describe("UnifiedOpportunityCard：按钮系统（同高同圆角）", () => {
     const viewTag = html.slice(Math.max(0, viewStart - 400), viewStart);
     const saveTag = html.slice(Math.max(0, saveStart - 400), saveStart);
     expect(viewTag).toContain("h-11");
-    expect(viewTag).toContain("rounded-xl");
+    expect(viewTag).toContain("rounded-lg");
     expect(saveTag).toContain("h-11");
-    expect(saveTag).toContain("rounded-xl");
+    expect(saveTag).toContain("rounded-lg");
   });
 
   it("saveBusy 时按钮 disabled 但尺寸类不变", () => {
@@ -192,7 +192,7 @@ describe("UnifiedOpportunityCard：按钮系统（同高同圆角）", () => {
     const saveStart = html.indexOf('data-testid="save-button"');
     const saveTag = html.slice(Math.max(0, saveStart - 400), saveStart);
     expect(saveTag).toContain("h-11");
-    expect(saveTag).toContain("rounded-xl");
+    expect(saveTag).toContain("rounded-lg");
   });
 });
 

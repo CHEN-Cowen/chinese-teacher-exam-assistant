@@ -241,7 +241,7 @@ export default function OpportunitiesPage() {
   );
 
   return (
-    <div className="mx-auto max-w-[1280px] space-y-7 px-4 pb-2 sm:px-5 lg:px-6">
+    <div className="mx-auto max-w-[1440px] space-y-7 px-4 pb-2 sm:px-5 lg:px-6">
       {actionFeedback && (
         <StatusMessageRegion>
           <StatusMessage
@@ -367,7 +367,7 @@ export default function OpportunitiesPage() {
             {view.uncoveredRegions.map((region) => (
               <span
                 key={region.code}
-                className="inline-flex items-center rounded-full bg-surface px-2 py-0.5 font-medium text-ink-muted ring-1 ring-line"
+                className="inline-flex h-6 items-center rounded bg-surface px-2 font-medium text-ink-muted ring-1 ring-line"
               >
                 {region.label}
               </span>

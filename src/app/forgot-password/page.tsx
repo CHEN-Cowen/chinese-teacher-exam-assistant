@@ -55,7 +55,7 @@ export default function ForgotPasswordPage() {
           </p>
         </div>
 
-        <div className="rounded-3xl border border-line bg-surface p-6 shadow-[0_18px_50px_rgba(42,69,112,0.08)]">
+        <div className="rounded-2xl border border-line bg-surface p-6 shadow-2">
           {submitted ? (
             <div className="space-y-4">
               <div className="p-3 rounded-lg bg-brand-soft/50 border border-brand/25">
@@ -82,7 +82,7 @@ export default function ForgotPasswordPage() {
                   placeholder="邮箱"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="h-12 w-full rounded-xl border border-line bg-surface px-3.5 text-sm text-ink transition-colors placeholder:text-ink-muted/60 hover:border-brand/30 focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/10"
+                  className="h-11 w-full rounded-lg border border-line bg-surface px-3.5 text-sm text-ink transition-colors placeholder:text-ink-muted/60 hover:border-brand/30 focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/10"
                 />
               </div>
 

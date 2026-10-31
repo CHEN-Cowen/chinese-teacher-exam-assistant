@@ -13,12 +13,15 @@ import { NavIcon } from "./navIcons";
 import { BrandMark } from "./BrandMark";
 
 // U09：主导航为 当年招聘 / 往年参考 / 我的关注 / 我的资料 四个入口；
-// 日程、备考为次级入口（从「我的资料」页与目标上下文进入）；
-// 设置、资料、通知、账号进入头像菜单或「我的资料」页面，不在主导航中。
-//
-// v6.1 模块 0A：移除常驻大型目标卡（核心方案 §3.7：桌面端移除宽侧栏中常驻的目标卡）；
-// 用 BrandMark 替代 📝 Emoji Logo；侧栏收窄到 w-56，颜色切品牌墨蓝；
-// 头像菜单与运营后台入口保留。
+// 侧栏下半为日程、材料、备考、设置等次级入口。
+// 桌面侧栏宽 190px，内边距左右 14px、上下 24px；主导航项 48px 高。
+
+const SECONDARY_NAV = [
+  { id: "schedule", href: "/schedule", label: "日程" },
+  { id: "materials", href: "/materials", label: "材料清单" },
+  { id: "study", href: "/study", label: "辅助备考" },
+  { id: "settings", href: "/settings", label: "账号设置" },
+];
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -26,7 +29,6 @@ export function Sidebar() {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  // 点击菜单外部时收起头像菜单
   useEffect(() => {
     if (!menuOpen) return;
     const onClick = (e: MouseEvent) => {
@@ -38,27 +40,24 @@ export function Sidebar() {
     return () => document.removeEventListener("mousedown", onClick);
   }, [menuOpen]);
 
-  // 会话恢复完成前只渲染与服务端一致的静态骨架，
-  // 避免硬刷新时"服务端无会话 / 客户端 localStorage 有会话"造成水合不匹配
   const ready = status === "authenticated";
 
   return (
     <aside
       className={cn(
-        "fixed inset-y-0 z-40 hidden w-56 flex-col border-r border-line bg-surface md:flex",
-        // 演示模式：为顶部固定横幅让出空间
+        "fixed inset-y-0 left-0 z-40 hidden w-[190px] flex-col border-r border-line bg-surface md:flex",
         isDemoMode && "top-8 h-[calc(100%-2rem)]"
       )}
     >
       {/* 品牌 Logo */}
-      <div className="flex h-16 items-center border-b border-line px-5">
+      <div className="flex h-16 items-center px-3.5">
         <Link href="/opportunities" aria-label="教招有据首页">
           <BrandMark size="sm" />
         </Link>
       </div>
 
-      {/* Navigation */}
-      <nav aria-label="主导航" className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
+      {/* 主导航 */}
+      <nav aria-label="主导航" className="flex-1 space-y-0.5 overflow-y-auto px-2.5 py-3">
         {PRIMARY_NAV.map((item) => {
           const active = isNavActive(pathname, item.href);
           return (
@@ -67,20 +66,14 @@ export function Sidebar() {
               href={item.href}
               aria-current={active ? "page" : undefined}
               className={cn(
-                "relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                "flex h-12 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors",
                 active
                   ? "bg-brand-soft font-semibold text-brand"
-                  : "text-ink-muted hover:bg-canvas hover:text-ink"
+                  : "text-ink-muted hover:bg-surface-2 hover:text-ink"
               )}
             >
-              {active && (
-                <span
-                  aria-hidden="true"
-                  className="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full bg-brand"
-                />
-              )}
-              <NavIcon id={item.id} className="h-5 w-5" />
-              {item.label}
+              <NavIcon id={item.id} className="h-5 w-5 shrink-0" />
+              <span className="truncate">{item.label}</span>
               {active && <span className="sr-only">（当前页面）</span>}
             </Link>
           );
@@ -90,27 +83,52 @@ export function Sidebar() {
           <Link
             href="/admin"
             className={cn(
-              "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+              "flex h-12 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors",
               pathname.startsWith("/admin")
                 ? "bg-ink text-white"
-                : "text-ink-muted hover:bg-canvas hover:text-ink"
+                : "text-ink-muted hover:bg-surface-2 hover:text-ink"
             )}
           >
-            <span aria-hidden="true">🛡️</span>
-            运营后台
+            <svg aria-hidden="true" className="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <path d="M12 2 4 5v6c0 5 3.5 8.5 8 11 4.5-2.5 8-6 8-11V5l-8-3Z" strokeLinejoin="round" />
+            </svg>
+            <span className="truncate">运营后台</span>
           </Link>
         )}
+
+        {/* 分隔线 */}
+        <hr className="my-3 border-line" />
+
+        {/* 次级导航：日程、材料、备考、设置 */}
+        {SECONDARY_NAV.map((item) => {
+          const active = pathname === item.href;
+          return (
+            <Link
+              key={item.id}
+              href={item.href}
+              aria-current={active ? "page" : undefined}
+              className={cn(
+                "flex h-12 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors",
+                active
+                  ? "bg-brand-soft font-semibold text-brand"
+                  : "text-ink-muted hover:bg-surface-2 hover:text-ink"
+              )}
+            >
+              <span className="truncate">{item.label}</span>
+            </Link>
+          );
+        })}
       </nav>
 
-      {/* 头像菜单：设置、我的资料与退出登录；通知为上下文入口 */}
-      <div className="relative border-t border-line px-3 py-3" ref={menuRef}>
+      {/* 头像菜单 */}
+      <div className="relative border-t border-line px-2.5 py-3" ref={menuRef}>
         {!ready ? (
-          <div className="h-[52px] animate-pulse rounded-lg bg-canvas" aria-hidden="true" />
+          <div className="h-11 animate-pulse rounded-lg bg-surface-2" aria-hidden="true" />
         ) : (
           user && (
             <>
               {menuOpen && (
-                <div className="absolute bottom-full left-3 right-3 z-50 mb-2 rounded-xl border border-line bg-surface py-1 shadow-lg">
+                <div className="absolute bottom-full left-2.5 right-2.5 z-50 mb-2 overflow-hidden rounded-lg border border-line bg-surface shadow-2">
                   <div className="border-b border-line px-3 py-2">
                     <p className="truncate text-sm font-medium text-ink">{user.name}</p>
                     <p className="text-xs text-ink-muted">
@@ -120,16 +138,16 @@ export function Sidebar() {
                   <Link
                     href="/settings"
                     onClick={() => setMenuOpen(false)}
-                    className="flex items-center gap-2 px-3 py-2 text-sm text-ink hover:bg-canvas"
+                    className="flex items-center gap-2 px-3 py-2 text-sm text-ink hover:bg-surface-2"
                   >
-                    <span aria-hidden="true">⚙️</span> 设置
+                    设置
                   </Link>
                   <Link
                     href="/materials"
                     onClick={() => setMenuOpen(false)}
-                    className="flex items-center gap-2 px-3 py-2 text-sm text-ink hover:bg-canvas"
+                    className="flex items-center gap-2 px-3 py-2 text-sm text-ink hover:bg-surface-2"
                   >
-                    <span aria-hidden="true">📚</span> 学习资料
+                    学习资料
                   </Link>
                   <button
                     type="button"
@@ -137,9 +155,9 @@ export function Sidebar() {
                       setMenuOpen(false);
                       logout();
                     }}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-ink hover:bg-canvas"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-ink hover:bg-surface-2"
                   >
-                    <span aria-hidden="true">🚪</span> 退出登录
+                    退出登录
                   </button>
                 </div>
               )}
@@ -147,12 +165,12 @@ export function Sidebar() {
                 <button
                   type="button"
                   onClick={() => setMenuOpen((v) => !v)}
-                  className="flex flex-1 items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-canvas"
+                  className="flex flex-1 items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-surface-2"
                   aria-haspopup="menu"
                   aria-expanded={menuOpen}
                 >
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-soft text-brand">
-                    <span className="text-base" aria-hidden="true">👤</span>
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-soft text-sm font-semibold text-brand">
+                    {(user.name || "我").slice(0, 1)}
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-ink">{user.name}</p>

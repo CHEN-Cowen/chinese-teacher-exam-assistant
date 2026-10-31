@@ -89,7 +89,7 @@ export function ActionChain({
     <section className="space-y-3 rounded-xl border border-brand/30 bg-brand-soft/40 p-4">
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="text-sm font-semibold text-ink">报考行动</h2>
-        <span className="inline-flex items-center rounded-full bg-surface px-2.5 py-0.5 text-xs font-medium text-ink-muted ring-1 ring-line">
+        <span className="inline-flex h-6 items-center rounded bg-surface px-2.5 text-xs font-medium text-ink-muted ring-1 ring-line">
           {FOLLOW_STATUS_LABELS[status]}
         </span>
       </div>

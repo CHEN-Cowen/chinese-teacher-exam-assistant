@@ -254,7 +254,7 @@ function ProfileCard() {
 
   if (!profile) {
     return (
-      <Card className="rounded-3xl border-brand/15 p-5 shadow-[0_12px_36px_rgba(30,64,120,0.07)]">
+      <Card className="border-brand/15 p-5 shadow-2">
         <p className="text-xs font-semibold tracking-wide text-brand">报考信息</p>
         <h2 className="mt-2 text-2xl font-semibold tracking-tight text-ink">
           先填写报考信息
@@ -331,7 +331,7 @@ function ProfileCard() {
     .join(" · ");
 
   return (
-    <Card className="rounded-3xl border-brand/15 p-5 shadow-[0_12px_36px_rgba(30,64,120,0.07)]">
+    <Card className="border-brand/15 p-5 shadow-2">
       <p className="text-xs font-semibold tracking-wide text-brand">报考信息</p>
       <h2 className="mt-2 text-2xl font-semibold tracking-tight text-ink">
         {missingGraduationDate
@@ -385,7 +385,7 @@ function MyProgressCard() {
 
   if (failed) {
     return (
-      <Card className="rounded-3xl">
+      <Card>
         <p className="text-xs font-semibold tracking-wide text-brand">当前进度</p>
         <h2 className="mt-2 text-xl font-semibold text-ink">进度暂时没有加载出来</h2>
         <p className="mt-1 text-sm text-ink-muted">你的记录没有丢失，可以稍后再试。</p>
@@ -407,7 +407,7 @@ function MyProgressCard() {
 
   if (!data) {
     return (
-      <Card className="rounded-3xl">
+      <Card>
         <p className="text-sm text-ink-muted">正在整理你的进度…</p>
       </Card>
     );
@@ -416,7 +416,7 @@ function MyProgressCard() {
   const view = buildMyProgressView(data);
 
   return (
-    <Card className="rounded-3xl border-brand/15 p-5 shadow-[0_12px_36px_rgba(30,64,120,0.07)]">
+    <Card className="border-brand/15 p-5 shadow-2">
       <p className="text-xs font-semibold tracking-wide text-brand">当前进度</p>
       <h2 className="mt-2 text-2xl font-semibold tracking-tight text-ink">{view.conclusion}</h2>
       <p className="mt-2 text-sm leading-6 text-ink-muted">{view.description}</p>

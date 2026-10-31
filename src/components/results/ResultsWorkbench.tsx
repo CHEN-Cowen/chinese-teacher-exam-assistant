@@ -163,7 +163,7 @@ export function ResultsWorkbench({
         aria-orientation="horizontal"
         id={tablistId}
         onKeyDown={onKeyDown}
-        className="mb-4 flex gap-1 overflow-x-auto rounded-xl border border-line bg-surface p-1"
+        className="mb-5 flex gap-5 overflow-x-auto border-b border-line"
       >
         {TABS.map((tab) => {
           const selected = tab.id === activeTab;
@@ -182,24 +182,28 @@ export function ResultsWorkbench({
               tabIndex={selected ? 0 : -1}
               onClick={() => selectTab(tab.id)}
               className={cn(
-                "min-h-10 flex-1 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-1",
+                "relative flex h-12 shrink-0 items-center gap-1.5 whitespace-nowrap text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2",
                 selected
-                  ? "bg-brand-soft text-brand"
-                  : "text-ink-muted hover:bg-canvas hover:text-ink",
+                  ? "font-semibold text-brand"
+                  : "font-medium text-ink-muted hover:text-ink",
               )}
             >
               <span>{tab.label}</span>
               <span
                 aria-label={`${count} 个`}
                 className={cn(
-                  "ml-1.5 inline-flex min-w-5 items-center justify-center rounded-full px-1.5 text-xs font-semibold",
-                  selected
-                    ? "bg-brand/15 text-brand"
-                    : "bg-canvas text-ink-muted",
+                  "text-xs",
+                  selected ? "text-brand" : "text-ink-muted",
                 )}
               >
                 {count}
               </span>
+              {selected && (
+                <span
+                  aria-hidden="true"
+                  className="absolute inset-x-0 -bottom-px h-[3px] rounded-t bg-brand"
+                />
+              )}
             </button>
           );
         })}

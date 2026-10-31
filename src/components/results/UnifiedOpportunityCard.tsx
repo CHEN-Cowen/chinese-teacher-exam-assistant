@@ -117,11 +117,11 @@ export function UnifiedOpportunityCard({
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span data-testid="dataset-tag">
                 {vm.dataset === "demo" ? (
-                  <span className="inline-flex items-center rounded-full bg-canvas px-2 py-0.5 text-xs font-medium text-ink-muted ring-1 ring-line">
+                  <span className="inline-flex h-6 items-center rounded bg-canvas px-2 text-xs font-medium text-ink-muted ring-1 ring-line">
                     {vm.reviewLabel}
                   </span>
                 ) : (
-                  <span className="inline-flex items-center rounded-full bg-warn-soft px-2 py-0.5 text-xs font-medium text-warn">
+                  <span className="inline-flex h-6 items-center rounded bg-warn-soft px-2 text-xs font-medium text-warn">
                     {vm.reviewLabel}
                   </span>
                 )}
@@ -263,7 +263,7 @@ export function UnifiedOpportunityCard({
               {safeEvidenceHref ? (
                 <Link
                   href={safeEvidenceHref}
-                  className="inline-flex h-11 items-center justify-center rounded-xl bg-brand px-4 text-sm font-semibold text-white shadow-1 transition hover:bg-brand-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
+                  className="inline-flex h-11 items-center justify-center rounded-lg bg-brand px-4 text-sm font-semibold text-white transition-colors hover:bg-brand-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
                   data-testid="view-evidence-button"
                 >
                   {evidenceLabel}
@@ -273,7 +273,7 @@ export function UnifiedOpportunityCard({
                   type="button"
                   onClick={handleViewEvidence}
                   aria-expanded={evidenceOpen}
-                  className="inline-flex h-11 items-center justify-center rounded-xl bg-brand px-4 text-sm font-semibold text-white shadow-1 transition hover:bg-brand-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
+                  className="inline-flex h-11 items-center justify-center rounded-lg bg-brand px-4 text-sm font-semibold text-white transition-colors hover:bg-brand-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
                   data-testid="view-evidence-button"
                 >
                   {evidenceLabel}
@@ -285,7 +285,7 @@ export function UnifiedOpportunityCard({
                   onClick={capabilities.onSave}
                   disabled={capabilities.saveBusy}
                   aria-busy={capabilities.saveBusy || undefined}
-                  className="inline-flex h-11 items-center justify-center rounded-xl border border-line bg-surface px-4 text-sm font-semibold text-ink transition hover:border-brand/30 hover:bg-brand-soft/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-45"
+                  className="inline-flex h-11 items-center justify-center rounded-lg border border-line bg-surface px-4 text-sm font-semibold text-ink transition-colors hover:border-brand/30 hover:bg-brand-soft/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-45"
                   data-testid="save-button"
                 >
                   {capabilities.saveBusy ? "处理中…" : saveLabel}

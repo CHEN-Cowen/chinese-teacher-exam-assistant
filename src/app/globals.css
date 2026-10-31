@@ -1,77 +1,105 @@
 @import "tailwindcss";
 
 /*
- * 设计 Token（v7.2 M09 方案 B：燕麦＋可可棕，大圆角、克制阴影）
+ * 设计 Token（蓝白界面重构 v1.1，用户最终评审确认）
  *
- * - 色板来源：PRD.md「视觉与交互」中的当前产品基线：
- *   背景 #F8F4EE / 表面 #FFFFFF / 品牌 #735544 / 弱强调底 #EFE6DD /
- *   主文字 #332E2B / 次文字 #766D65 / 点缀 #70816A。
- * - 已取消蓝紫渐变（hero 为品牌纯色）；不做旧、不加纸纹、不做多主题。
- * - 品牌色（可可棕）与资格状态色（ok/miss/ask/no/note，保留文字+图标）分离；
- *   状态色为信息语义蓝/绿/琥珀/红，不随品牌变化。
+ * - 色板来源：implementation-prompt-zh.md「视觉规格」+ handoff.md v1.1
+ *   页面底色 #F5F7FC / 表面 #FFFFFF / 品牌 #425CC7 / 悬停 #344BB0 /
+ *   选中底 #EDF1FF / 主文字 #252927 / 次文字 #626B7C / 分隔线 #DCE2ED。
+ * - 状态色与品牌色分离：已满足 #167347/#E7F6ED、待补充 #925700/#FFF2DA、
+ *   明确不符 #B53038/#FFEDEF。
  * - Token 名保持不变（bg-canvas / bg-brand / text-ink-muted 等），只重定值，
  *   避免大面积类名迁移破坏既有流程与测试。
- * - 对比度（WCAG，canvas/surface 上）：ink 12.1:1、ink-muted 4.7:1、brand 6.2:1、
- *   on-dark on brand 6.5:1，普通文字 ≥4.5:1、大字号/控件 ≥3:1。
+ * - 同层级一致性：按钮/输入框固定 44px 高、标签 24px 高、卡片圆角 10px、
+ *   控件圆角 8px、标签圆角 4px。字号层级严格区分。
  * - 国内网络基线：不加载任何网络字体、不引入远程图标，仅设备自带字体。
  */
 :root {
-  /* 主语义层（方案 B 燕麦＋可可棕） */
-  --color-canvas: #F8F4EE;        /* 页面主背景：燕麦米白 */
+  /* 主语义层（蓝白） */
+  --color-canvas: #F5F7FC;        /* 页面主背景：浅蓝灰 */
   --color-surface: #FFFFFF;       /* 内容表面：白 */
-  --color-surface-2: #F3EDE4;     /* 次级燕麦：分组/卡片底 */
-  --color-ink: #332E2B;           /* 主深色：可可主文字 */
-  --color-ink-2: #5C4232;         /* 次级深可可：强调与链接 */
-  --color-ink-muted: #766D65;     /* 次文字：暖灰棕 */
-  --color-brand: #735544;         /* 品牌：可可棕 */
-  --color-brand-strong: #5C4232;  /* 品牌悬停：深可可 */
-  --color-brand-soft: #EFE6DD;    /* 弱强调底：燕麦浅棕 */
-  --color-accent: #70816A;        /* 点缀：鼠尾草绿（仅大字号≥3:1/非文本元素，不作正文） */
-  --color-accent-soft: #E9F0E4;   /* 点缀弱底 */
-  --color-bar: #E4D8CA;           /* 弱强调 hover 加深档 */
-  --color-line: #E3DACE;          /* 暖浅边框 */
-  --color-grey-bg: #EDE7DD;       /* 暖浅背景 */
-  --color-fit: #E9F0E4;           /* 辅助浅鼠尾草绿（适配/正向） */
-  --color-violet: #E7DBCE;        /* 辅助浅暖土（演示/标记，替代旧浅紫） */
-  --color-cyan: #E3EBE1;          /* 辅助浅绿（替代旧浅青） */
-  --color-on-dark: #F8F4EE;       /* 深色背景上的前景 */
+  --color-surface-2: #F0F3FA;     /* 次级浅蓝底：分组/卡片底/hover 浅底 */
+  --color-ink: #252927;           /* 主深色：深灰 */
+  --color-ink-2: #344BB0;         /* 次级强调：品牌悬停（链接/激活文字） */
+  --color-ink-muted: #626B7C;     /* 次文字：灰蓝 */
+  --color-brand: #425CC7;         /* 品牌：蓝 */
+  --color-brand-strong: #344BB0;  /* 品牌悬停：深蓝 */
+  --color-brand-soft: #EDF1FF;    /* 弱强调底：浅蓝（选中/激活） */
+  --color-accent: #425CC7;        /* 点缀：同品牌蓝 */
+  --color-accent-soft: #EDF1FF;   /* 点缀弱底 */
+  --color-bar: #F0F3FA;           /* hover 加深档 */
+  --color-line: #DCE2ED;          /* 边框/分隔线 */
+  --color-grey-bg: #EEF1F8;       /* 浅背景 */
+  --color-fit: #E7F6ED;           /* 辅助浅绿（适配/正向） */
+  --color-violet: #EDF1FF;        /* 辅助浅蓝（演示/标记） */
+  --color-cyan: #E8EEF9;          /* 辅助浅蓝 */
+  --color-on-dark: #FFFFFF;       /* 深色背景上的前景 */
 
-  /* Hero：方案 B 取消蓝紫渐变，品牌纯色 */
-  --color-hero: #735544;
+  /* 输入框边框状态 */
+  --color-input-border: #BFC9D9;  /* 普通输入边框 */
+  --color-input-focus: #425CC7;   /* 聚焦输入边框 */
+  --color-input-error: #B53038;   /* 错误输入边框 */
+  --color-disabled-bg: #E9EDF5;   /* 禁用按钮底 */
 
-  /* 四档匹配状态（资格判断分层表达：建议关注 / 待补充 / 需确认 / 可能不符合）
+  /* Hero：品牌纯色 */
+  --color-hero: #425CC7;
+
+  /* 四档匹配状态（资格判断分层表达：已满足 / 待补充 / 需确认 / 明确不符合）
      —— 与品牌色分离的信息语义色，全部保留文字与图标，不单靠颜色 */
-  --color-ok-ink: #2F6B2B;    --color-ok-bg: #F2F8DE;    --color-ok-line: #CFE0A8;
-  --color-miss-ink: #0E396A;  --color-miss-bg: #E8EEF5;  --color-miss-line: #C7D6E6;
-  --color-ask-ink: #8A5A00;   --color-ask-bg: #FDF3DC;   --color-ask-line: #EBD6A6;
-  --color-no-ink: #9B3B33;    --color-no-bg: #FBEAE7;    --color-no-line: #EFC9C2;
-  --color-note-ink: #0E396A;  --color-note-bg: #C1DEFE;
+  --color-ok-ink: #167347;    --color-ok-bg: #E7F6ED;    --color-ok-line: #B8E0C5;
+  --color-miss-ink: #425CC7;  --color-miss-bg: #EDF1FF;  --color-miss-line: #C5D0F5;
+  --color-ask-ink: #925700;   --color-ask-bg: #FFF2DA;   --color-ask-line: #F0D7A8;
+  --color-no-ink: #B53038;    --color-no-bg: #FFEDEF;    --color-no-line: #F5C4C6;
+  --color-note-ink: #425CC7;  --color-note-bg: #EDF1FF;
 
   /* 语义状态（业务原有 success/warn/danger/info，对齐状态色） */
-  --color-success: #2F6B2B;       --color-success-soft: #F2F8DE;
-  --color-warn: #8A5A00;          --color-warn-soft: #FDF3DC;
-  --color-danger: #9B3B33;        --color-danger-soft: #FBEAE7;
-  --color-info: #0E396A;           --color-info-soft: #C1DEFE;
+  --color-success: #167347;       --color-success-soft: #E7F6ED;
+  --color-warn: #925700;          --color-warn-soft: #FFF2DA;
+  --color-danger: #B53038;        --color-danger-soft: #FFEDEF;
+  --color-info: #425CC7;           --color-info-soft: #EDF1FF;
 
-  /* 圆角阶梯 */
-  --radius-xs: 8px;
-  --radius-sm: 12px;
-  --radius: 16px;
-  --radius-md: 16px;
-  --radius-lg: 24px;
-  --radius-xl: 32px;
-  --radius-2xl: 40px;
+  /* 圆角阶梯（v1.1 精确尺寸）
+     Tailwind 类名映射：rounded→4px、rounded-sm→8px、rounded-md→10px、
+     rounded-lg→8px（按钮/输入框）、rounded-xl→10px（卡片）、rounded-2xl→12px（弹窗） */
+  --radius-xs: 4px;     /* 标签 */
+  --radius-sm: 8px;     /* 小控件 */
+  --radius: 10px;       /* 默认卡片 */
+  --radius-md: 10px;    /* 卡片 */
+  --radius-lg: 8px;     /* 按钮/输入框/下拉框 */
+  --radius-xl: 10px;    /* 卡片 */
+  --radius-2xl: 12px;   /* 弹窗/大容器 */
   --radius-pill: 999px;
 
-  /* 阴影：默认不使用；仅悬浮 / 选中 / 浮层使用（可可棕基色，替代旧海军蓝） */
-  --shadow-1: 0 1px 2px rgba(51, 46, 43, 0.06);
-  --shadow-2: 0 8px 24px rgba(51, 46, 43, 0.08);
-  --shadow-3: 0 20px 48px rgba(51, 46, 43, 0.12);
+  /* 控件高度（v1.1 同层级一致性） */
+  --control-height: 44px;   /* 标准按钮、输入框、下拉框 */
+  --tag-height: 24px;       /* 状态与分类标签 */
+  --nav-item-height: 48px;  /* 侧栏项、分类标签页 */
+  --bottom-nav-height: 56px;/* 手机底部主导航 */
+
+  /* 字号层级（v1.1 同层级一致性，斜杠前字号后行高，单位 px） */
+  --type-page: 28px;        --lh-page: 38px;        /* 页面标题 700 */
+  --type-page-mobile: 25px; --lh-page-mobile: 34px;
+  --type-section: 20px;     --lh-section: 28px;     /* 区块标题 700 */
+  --type-item: 16px;        --lh-item: 24px;        /* 条目/岗位标题 600 */
+  --type-body: 15px;        --lh-body: 24px;        /* 正文 400 */
+  --type-helper: 13px;      --lh-helper: 20px;      /* 辅助说明 400 */
+  --type-field: 14px;       --lh-field: 20px;       /* 字段名称 600 */
+  --type-tag: 12px;         --lh-tag: 20px;         /* 标签 500 */
+  --type-control: 14px;     --lh-control: 20px;     /* 按钮/输入框文字 */
+  --type-hero: 48px;        --lh-hero: 58px;        /* 首页主宣传标题 700 */
+  --type-hero-mobile: 36px; --lh-hero-mobile: 44px;
+  --type-brand: 22px;       --lh-brand: 30px;       /* 品牌字标 */
+  --type-conclusion: 22px;  --lh-conclusion: 30px;  /* 资格总判定 */
+
+  /* 阴影：默认卡片无阴影；仅浮层使用 */
+  --shadow-1: 0 1px 2px rgba(25, 36, 59, 0.06);
+  --shadow-2: 0 8px 24px rgba(25, 36, 59, 0.12);
+  --shadow-3: 0 20px 48px rgba(25, 36, 59, 0.16);
 
   /* 动效时长与缓动（尊重 prefers-reduced-motion） */
-  --dur-feedback: 240ms;
-  --dur-quiet: 340ms;
-  --dur-page: 460ms;
+  --dur-feedback: 140ms;
+  --dur-quiet: 200ms;
+  --dur-page: 300ms;
   --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
 
   /* 兼容层：保留旧变量名，指向新色值 */
@@ -153,7 +181,6 @@
   --radius-xl: var(--radius-xl);
   --radius-2xl: var(--radius-2xl);
   --radius-pill: var(--radius-pill);
-
   --shadow-1: var(--shadow-1);
   --shadow-2: var(--shadow-2);
   --shadow-3: var(--shadow-3);
@@ -172,8 +199,6 @@
  * v7.1 M1：首页 hero 左列在窄屏（<lg）撑满首屏视口并垂直居中，
  * 确保右侧结果示例卡完全折叠到首屏线下，只能通过「先看结果示例」锚点到达。
  * 桌面端（≥lg）不受影响，仍为双列并排。
- * 用原生 @media 而非 Tailwind max-lg: 变体，避免 v4 任意值+变体组合在
- * PostCSS 编译中被丢弃的已知问题。
  */
 @media (max-width: 1023.98px) {
   .hero-left-fold {
@@ -188,6 +213,8 @@ body {
   background: var(--color-canvas);
   color: var(--color-ink);
   font-family: var(--font-sans);
+  font-size: var(--type-body);
+  line-height: var(--lh-body);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -203,7 +230,7 @@ samp {
   font-family: var(--font-mono);
 }
 
-/* 自定义滚动条：低调、不喧宾夺主，对齐米白系 */
+/* 自定义滚动条：低调、不喧宾夺主，对齐蓝白系 */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -214,19 +241,19 @@ samp {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #e3dace;
+  background: #c5cfe0;
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #cbbfaf;
+  background: #aebcd4;
 }
 
-/* 焦点可见：键盘操作清晰，不只靠颜色（深可可，canvas 上对比 8.5:1） */
+/* 焦点可见：键盘操作清晰，2px #425CC7 轮廓 + 2px 偏移 */
 :focus-visible {
-  outline: 3px solid #5C4232;
+  outline: 2px solid #425CC7;
   outline-offset: 2px;
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-sm);
 }
 
 /* 尊重用户的减少动效偏好（核心交互仍可用） */

@@ -255,7 +255,7 @@ export default function StudyPage() {
 /** 门禁一：无主要目标 —— 只给明确下一步，不生成计划 */
 function NoPrimaryGate({ nextStep }: { nextStep: string }) {
   return (
-    <Card className="overflow-hidden rounded-3xl border-brand/15 shadow-[0_12px_36px_rgba(30,64,120,0.07)]">
+    <Card className="overflow-hidden border-brand/15 shadow-2">
       <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-brand-soft text-brand">
         <svg
           aria-hidden="true"
@@ -323,7 +323,7 @@ function ExamUnverifiedGate({
   };
 
   return (
-    <Card className="rounded-3xl border-brand/20 shadow-[0_12px_36px_rgba(30,64,120,0.07)]">
+    <Card className="border-brand/20 shadow-2">
         <p className="text-xs font-semibold tracking-wide text-brand">下一步</p>
         {reason === "version_changed" && (
           <p className="mt-3 rounded-xl bg-warn-soft px-3 py-2 text-sm text-warn">
@@ -509,7 +509,7 @@ function ReadySection({
   let firstScreen: ReactNode;
   if (!currentPlan) {
     firstScreen = readiness && !readiness.ready ? (
-      <Card className="rounded-3xl">
+      <Card className="rounded-xl">
         <CardHeader
           title="还差一点，暂时不能生成计划"
           description="先补全下面的信息"
@@ -532,7 +532,7 @@ function ReadySection({
         </div>
       </Card>
     ) : (
-      <Card className="rounded-3xl border-brand/15 shadow-[0_12px_36px_rgba(30,64,120,0.06)]">
+      <Card className="border-brand/15 shadow-2">
         <p className="text-xs font-semibold tracking-wide text-brand">备考结论</p>
         <CardHeader
           title="可以开始安排这 7 天了"
@@ -560,7 +560,7 @@ function ReadySection({
     );
   } else if (currentPlan.status === "draft") {
     firstScreen = (
-      <Card className="rounded-3xl border-brand/20">
+      <Card className="border-brand/20">
         <p className="mb-2 text-xs font-semibold tracking-wide text-brand">下一步</p>
         <CardHeader
           title="计划草稿待确认"
@@ -585,7 +585,7 @@ function ReadySection({
     );
   } else if (planEnded) {
     firstScreen = (
-      <Card className="rounded-3xl text-center py-8">
+      <Card className="text-center py-8">
         <p className="text-xs font-semibold tracking-wide text-success">本周结论</p>
         <h2 className="text-xl font-bold text-ink">这 7 天的安排结束了</h2>
         <p className="text-sm text-ink-muted mt-2">
@@ -604,7 +604,7 @@ function ReadySection({
         onDismiss={() => setNextStep(null)}
       />
     ) : (
-      <Card className="rounded-3xl text-center py-8">
+      <Card className="text-center py-8">
         <p className="text-xs font-semibold tracking-wide text-brand">今日结论</p>
         <h2 className="text-xl font-bold text-ink">今天没有安排任务</h2>
         <p className="text-sm text-ink-muted mt-2">
@@ -623,7 +623,7 @@ function ReadySection({
 
     if (pendingTasks.length === 0) {
       firstScreen = (
-        <Card className="rounded-3xl text-center py-8">
+        <Card className="text-center py-8">
           <p className="text-xs font-semibold tracking-wide text-success">今日结论</p>
           <h2 className="text-xl font-bold text-ink">今天的任务都完成了</h2>
           <p className="text-sm text-ink-muted mt-2">
@@ -638,7 +638,7 @@ function ReadySection({
       const sourceUrl = sourceUrlOf(currentTask);
       const blocked = currentTask.executable === false;
       firstScreen = (
-        <Card className="rounded-3xl border-brand/20 shadow-[0_12px_36px_rgba(30,64,120,0.07)]">
+        <Card className="border-brand/20 shadow-2">
           <p className="text-xs font-semibold tracking-wide text-brand">今天先做这一项</p>
           {todayPlan.isMinimumViable && (
             <div className="mt-2"><Badge variant="warning">今天时间少，完成这一项就好</Badge></div>

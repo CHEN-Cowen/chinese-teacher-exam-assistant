@@ -52,7 +52,7 @@ export function ConditionRows({
                 )}
                 <span
                   className={cn(
-                    "inline-flex shrink-0 items-center gap-1 rounded-full bg-canvas px-2 py-0.5 text-xs font-medium",
+                    "inline-flex h-6 shrink-0 items-center gap-1 rounded bg-canvas px-2 text-xs font-medium",
                     meta.className,
                   )}
                 >

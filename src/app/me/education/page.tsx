@@ -38,7 +38,7 @@ import { DEGREE_OPTIONS } from "@/lib/guest/guestSession";
 const AUTH_MODE_INVITED = AUTH_MODE === "invited";
 
 const FIELD_CLASS =
-  "mt-1.5 h-11 w-full rounded-xl border border-line bg-surface px-3 text-sm text-ink transition-colors hover:border-brand/30 focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/10";
+  "mt-1.5 h-11 w-full rounded-lg border border-line bg-surface px-3 text-sm text-ink transition-colors hover:border-brand/30 focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/10";
 
 function newId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -509,7 +509,7 @@ export default function EducationPage() {
         </Button>
         <Link
           href="/opportunities"
-          className="inline-flex min-h-12 items-center justify-center rounded-xl border border-line px-4 text-sm font-medium text-ink hover:border-brand/30"
+          className="inline-flex h-11 items-center justify-center rounded-lg border border-line px-4 text-sm font-medium text-ink hover:border-brand/30"
         >
           去看筛选结果
         </Link>
@@ -712,7 +712,7 @@ function EducationCard({
                   type="button"
                   aria-pressed={selected}
                   onClick={() => onUpdate({ teacherTraining: value })}
-                  className={`min-h-11 rounded-xl border px-2 text-sm font-medium transition-colors ${
+                  className={`h-11 rounded-lg border px-2 text-sm font-medium transition-colors ${
                     selected
                       ? "border-brand bg-brand-soft text-brand"
                       : "border-line bg-surface text-ink-muted hover:border-brand/30"

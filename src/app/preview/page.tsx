@@ -490,7 +490,7 @@ function ReadyPreview({
         {/* 示例判断：只解释产品会怎样帮助，不提供保存或报名动作。 */}
         <section id="demo-opportunity" className="scroll-mt-20 space-y-3">
           <div>
-            <span className="inline-flex rounded-pill bg-warn-soft px-2.5 py-1 text-xs font-semibold text-warn">
+            <span className="inline-flex h-6 items-center rounded bg-warn-soft px-2.5 text-xs font-semibold text-warn">
               功能示例 · 不是当前真实岗位
             </span>
             <h2 className="mt-2 text-lg font-semibold text-ink">看看以后会怎样帮你判断</h2>

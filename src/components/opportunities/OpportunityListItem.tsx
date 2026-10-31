@@ -87,17 +87,17 @@ export function OpportunityListItem({
     <>
       {follow && (
         <p className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
-          <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 font-medium text-ink-muted">
+          <span className="inline-flex h-6 items-center rounded bg-slate-100 px-2 font-medium text-ink-muted">
             {FOLLOW_STATUS_LABELS[follow.status]}
           </span>
           {follow.role && (
-            <span className="inline-flex items-center rounded-full bg-brand-soft px-2 py-0.5 font-medium text-brand">
+            <span className="inline-flex h-6 items-center rounded bg-brand-soft px-2 font-medium text-brand">
               {follow.role === "primary" ? "★ " : ""}
               {STUDY_TARGET_ROLE_LABELS[follow.role]}
             </span>
           )}
           {follow.newerVersion && (
-            <span className="inline-flex items-center rounded-full bg-warn-soft px-2 py-0.5 font-medium text-warn">
+            <span className="inline-flex h-6 items-center rounded bg-warn-soft px-2 font-medium text-warn">
               公告有新版本
             </span>
           )}

@@ -27,7 +27,7 @@ function AdminChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-canvas">
       {/* 后台顶栏 */}
       <header className="bg-slate-900 text-white">
         <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
@@ -99,7 +99,7 @@ function AdminChrome({ children }: { children: React.ReactNode }) {
  */
 function AdminClosedNotice() {
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-canvas">
       <div className={DEMO_BANNER_SPACER_CLASS} />
       <div className="max-w-md mx-auto px-4 pt-20 text-center">
         <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-4">
@@ -114,7 +114,7 @@ function AdminClosedNotice() {
         </p>
         <Link
           href="/opportunities"
-          className="inline-flex h-10 items-center justify-center rounded-lg bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+          className="inline-flex h-11 items-center justify-center rounded-lg bg-brand px-4 text-sm font-medium text-white hover:bg-brand-strong transition-colors"
         >
           返回用户端演示
         </Link>

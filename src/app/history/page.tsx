@@ -293,7 +293,7 @@ export default function HistoryPage() {
                         {item.announcement.title}
                       </p>
                     </div>
-                    <span className="shrink-0 rounded-full bg-canvas px-2 py-0.5 text-xs font-medium text-ink-muted ring-1 ring-line">
+                    <span className="inline-flex h-6 shrink-0 items-center rounded bg-canvas px-2 text-xs font-medium text-ink-muted ring-1 ring-line">
                       {item.batchYear !== null ? `${item.batchYear} 年批次` : "批次年待定"}
                     </span>
                   </div>

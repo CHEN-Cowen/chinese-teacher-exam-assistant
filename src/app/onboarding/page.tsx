@@ -273,7 +273,7 @@ function OnboardingForm() {
             </svg>
             退出
           </Link>
-          <span className="rounded-pill bg-surface px-3 py-1.5 text-xs font-medium text-ink-muted ring-1 ring-line">
+          <span className="inline-flex h-6 items-center rounded bg-surface px-2.5 text-xs font-medium text-ink-muted ring-1 ring-line">
             {view} / {TOTAL_PROFILE_STEPS}
           </span>
         </div>
@@ -574,7 +574,7 @@ function StepRegions({
           const cityCode = region.code.endsWith("0000") ? "" : region.code;
           const cities = CITY_OPTIONS[provinceCode] ?? [];
           return (
-            <div key={index} className="space-y-4 rounded-2xl border border-line bg-canvas/60 p-4">
+            <div key={index} className="space-y-4 rounded-xl border border-line bg-canvas/60 p-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <label className="block">
                   <span className="text-xs font-medium text-ink-muted">省份</span>
@@ -583,7 +583,7 @@ function StepRegions({
                     onChange={(e) =>
                       updateRow(index, regionFromSelect(e.target.value, "", region.level))
                     }
-                    className="mt-1.5 h-12 w-full rounded-xl border border-line bg-surface px-3.5 text-base text-ink transition-colors hover:border-brand/30 focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/10 sm:text-sm"
+                    className="mt-1.5 h-11 w-full rounded-lg border border-line bg-surface px-3.5 text-base text-ink transition-colors hover:border-brand/30 focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/10 sm:text-sm"
                   >
                     {PROVINCE_OPTIONS.map((p) => (
                       <option key={p.code} value={p.code}>
@@ -599,7 +599,7 @@ function StepRegions({
                     onChange={(e) =>
                       updateRow(index, regionFromSelect(provinceCode, e.target.value, region.level))
                     }
-                    className="mt-1.5 h-12 w-full rounded-xl border border-line bg-surface px-3.5 text-base text-ink transition-colors hover:border-brand/30 focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/10 sm:text-sm"
+                    className="mt-1.5 h-11 w-full rounded-lg border border-line bg-surface px-3.5 text-base text-ink transition-colors hover:border-brand/30 focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/10 sm:text-sm"
                   >
                     <option value="">全省均可</option>
                     {cities.map((c) => (
@@ -633,7 +633,7 @@ function StepRegions({
                         }}
                         title={opt.hint}
                         aria-pressed={selected}
-                        className={`min-h-11 rounded-xl border px-2 py-2 text-sm font-medium transition-all ${
+                        className={`h-11 rounded-lg border px-2 text-sm font-medium transition-all ${
                           selected
                             ? "border-brand bg-brand-soft text-brand ring-1 ring-brand/10"
                             : "border-line bg-surface text-ink-muted hover:border-brand/30 hover:text-ink"
@@ -658,7 +658,7 @@ function StepRegions({
           );
         })}
         {rows.length === 0 && (
-          <div className="rounded-2xl border border-dashed border-brand/30 bg-brand-soft/30 p-5 text-center">
+          <div className="rounded-xl border border-dashed border-brand/30 bg-brand-soft/30 p-5 text-center">
             <button
               type="button"
               onClick={() => onChange([{ code: "330000", province: "浙江省", level: "required" }])}
@@ -703,7 +703,7 @@ function OptionList<T extends string>({
             type="button"
             onClick={() => onSelect(opt.value)}
             aria-pressed={selected}
-            className={`flex min-h-12 items-center justify-between rounded-xl border p-3 text-left text-sm font-medium transition-all ${
+            className={`flex h-11 items-center justify-between rounded-lg border px-3.5 text-left text-sm font-medium transition-all ${
               selected
                 ? "border-brand bg-brand-soft text-brand ring-1 ring-brand/10"
                 : "border-line bg-surface text-ink hover:border-brand/30 hover:bg-brand-soft/30"
@@ -764,7 +764,7 @@ function StepMajor({
         placeholder="例如：汉语言文学（师范）"
         autoComplete="off"
         // text-base 防止 iOS Safari 聚焦时自动放大页面
-        className="h-12 w-full rounded-xl border border-line bg-surface px-3.5 text-base text-ink transition-colors placeholder:text-ink-muted/60 hover:border-brand/30 focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/10 sm:text-sm"
+        className="h-11 w-full rounded-lg border border-line bg-surface px-3.5 text-base text-ink transition-colors placeholder:text-ink-muted/60 hover:border-brand/30 focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/10 sm:text-sm"
       />
       <p className="mt-2 text-xs leading-5 text-ink-muted">
         请与毕业证保持一致，包含括号中的方向
@@ -796,7 +796,7 @@ function StepGraduation({
         onChange={(e) =>
           onChange({ graduationDate: e.target.value ? `${e.target.value}-15` : undefined })
         }
-        className="h-12 w-full rounded-xl border border-line bg-surface px-3.5 text-base text-ink transition-colors hover:border-brand/30 focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/10 sm:text-sm"
+        className="h-11 w-full rounded-lg border border-line bg-surface px-3.5 text-base text-ink transition-colors hover:border-brand/30 focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/10 sm:text-sm"
       />
       <p className="mt-2 text-xs leading-5 text-ink-muted">
         是否属于应届生会按每条公告单独判断
@@ -879,7 +879,7 @@ function StepCert({
             <select
               value={subjectValue ?? ""}
               onChange={changeIntendedSubject}
-              className="mt-1.5 h-12 w-full rounded-xl border border-line bg-surface px-3.5 text-base text-ink transition-colors hover:border-brand/30 focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/10 sm:text-sm"
+              className="mt-1.5 h-11 w-full rounded-lg border border-line bg-surface px-3.5 text-base text-ink transition-colors hover:border-brand/30 focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/10 sm:text-sm"
             >
               <option value="" disabled>
                 请选择学科
@@ -897,7 +897,7 @@ function StepCert({
               <select
                 value={cert.stage ?? ""}
                 onChange={(e) => updateCert({ stage: e.target.value as TeacherCertInfo["stage"] })}
-                className="mt-1.5 h-12 w-full rounded-xl border border-line bg-surface px-3.5 text-base text-ink transition-colors hover:border-brand/30 focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/10 sm:text-sm"
+                className="mt-1.5 h-11 w-full rounded-lg border border-line bg-surface px-3.5 text-base text-ink transition-colors hover:border-brand/30 focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/10 sm:text-sm"
               >
                 <option value="" disabled>
                   请选择学段
@@ -922,13 +922,13 @@ function StepCert({
             onChange={(e) =>
               updateCert({ expectedDate: e.target.value ? `${e.target.value}-15` : undefined })
             }
-            className="mt-1.5 h-12 w-full rounded-xl border border-line bg-surface px-3.5 text-base text-ink transition-colors hover:border-brand/30 focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/10 sm:text-sm"
+            className="mt-1.5 h-11 w-full rounded-lg border border-line bg-surface px-3.5 text-base text-ink transition-colors hover:border-brand/30 focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/10 sm:text-sm"
           />
         </label>
       )}
 
       {!subjectOpen && cert.status !== undefined && (
-        <div className="rounded-xl border border-warn/20 bg-warn-soft px-3.5 py-3 text-sm leading-6 text-warn">
+        <div className="rounded-lg border border-warn/20 bg-warn-soft px-3.5 py-3 text-sm leading-6 text-warn">
           当前先开放<strong>语文</strong>教师公开招聘；其他学科暂未开放匹配，完成后可以在结果页留下开注意向，
           不会为你生成不相关的匹配结果。
         </div>
@@ -982,7 +982,7 @@ function StepEmploymentPreference({
                 aria-pressed={selected}
                 data-testid={`employment-preference-${opt.value}`}
                 aria-describedby={`employment-preference-${opt.value}-hint`}
-                className={`min-h-11 rounded-xl border px-3.5 py-2.5 text-left transition-all ${
+                className={`h-11 rounded-lg border px-3.5 py-2 text-left transition-all ${
                   selected
                     ? "border-brand bg-brand-soft ring-1 ring-brand/10"
                     : "border-line bg-canvas/50 hover:border-brand/30"

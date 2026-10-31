@@ -59,8 +59,8 @@ function StatusChips({
           key={status}
           className={
             warnKeys.includes(status) && count > 0
-              ? "inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-800"
-              : "inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600"
+              ? "inline-flex h-6 items-center gap-1 rounded bg-amber-50 px-2 text-xs text-amber-800"
+              : "inline-flex h-6 items-center gap-1 rounded bg-slate-100 px-2 text-xs text-slate-600"
           }
         >
           {labels[status] ?? status}

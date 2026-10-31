@@ -71,7 +71,7 @@ export function MaterialsList({
               </div>
               <span
                 className={cn(
-                  "inline-flex shrink-0 items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
+                  "inline-flex h-6 shrink-0 items-center rounded px-2.5 text-xs font-medium",
                   STATUS_TONE[status],
                 )}
               >

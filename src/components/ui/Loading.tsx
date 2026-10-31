@@ -19,11 +19,11 @@ export function LoadingSpinner({ size = "md" }: { size?: "sm" | "md" | "lg" }) {
 export function LoadingPage() {
   return (
     <div className="mx-auto min-h-[400px] w-full max-w-2xl space-y-4 px-4 py-8" role="status" aria-label="正在加载页面">
-      <div className="animate-pulse rounded-3xl border border-brand/10 bg-surface p-6">
+      <div className="animate-pulse rounded-2xl border border-brand/10 bg-surface p-6">
         <div className="h-3 w-28 rounded-full bg-brand-soft" />
         <div className="mt-4 h-7 w-4/5 rounded-lg bg-brand-soft/80" />
         <div className="mt-3 h-4 w-3/5 rounded bg-canvas" />
-        <div className="mt-6 h-12 rounded-xl bg-brand-soft" />
+        <div className="mt-6 h-11 rounded-lg bg-brand-soft" />
       </div>
       <div className="animate-pulse space-y-3" aria-hidden="true">
         <div className="h-4 w-24 rounded bg-line" />

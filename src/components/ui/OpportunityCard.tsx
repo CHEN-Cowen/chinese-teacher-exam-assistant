@@ -136,7 +136,7 @@ export function OpportunityCard({
               }}
               aria-pressed={isFollowed}
               className={cn(
-                "inline-flex items-center px-3 py-1.5 rounded-pill text-xs font-semibold transition-colors",
+                "inline-flex h-8 items-center rounded-lg px-3 text-xs font-semibold transition-colors",
                 isFollowed
                   ? "bg-brand-soft text-brand-strong"
                   : "border border-line bg-surface text-ink hover:border-brand/40"

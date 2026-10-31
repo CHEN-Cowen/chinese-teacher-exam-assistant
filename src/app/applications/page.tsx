@@ -362,7 +362,7 @@ export default function ApplicationsPage() {
                 <>
                   <Link
                     href={`/opportunities/${goal.unitId}`}
-                    className="inline-flex items-center px-3 py-1.5 rounded-pill text-xs font-medium text-ink border border-line hover:bg-surface-2 transition-colors"
+                    className="inline-flex h-8 items-center rounded-lg px-3 text-xs font-medium text-ink border border-line hover:bg-surface-2 transition-colors"
                   >
                     查看进展
                   </Link>
@@ -371,7 +371,7 @@ export default function ApplicationsPage() {
                       type="button"
                       onClick={() => void handleSetPrimary(goal)}
                       disabled={busy}
-                      className="inline-flex items-center px-3 py-1.5 rounded-pill text-xs font-medium text-brand border border-brand/30 hover:bg-brand-soft/40 transition-colors disabled:opacity-50"
+                      className="inline-flex h-8 items-center rounded-lg px-3 text-xs font-medium text-brand border border-brand/30 hover:bg-brand-soft/40 transition-colors disabled:opacity-50"
                     >
                       设为主目标
                     </button>
@@ -382,7 +382,7 @@ export default function ApplicationsPage() {
                         type="button"
                         onClick={() => setRegisteredConfirm(goal)}
                         disabled={busy}
-                        className="inline-flex items-center px-3 py-1.5 rounded-pill text-xs font-medium bg-brand text-on-dark hover:bg-brand-strong transition-colors disabled:opacity-50"
+                        className="inline-flex h-8 items-center rounded-lg px-3 text-xs font-medium bg-brand text-on-dark hover:bg-brand-strong transition-colors disabled:opacity-50"
                       >
                         我已报名
                       </button>

@@ -162,7 +162,7 @@ function LoginForm() {
           </p>
         </div>
 
-        <div className="rounded-3xl border border-line bg-surface p-6 shadow-[0_18px_50px_rgba(42,69,112,0.08)]">
+        <div className="rounded-2xl border border-line bg-surface p-6 shadow-2">
           {/* Demo 声明 */}
           {demo && (
             <div className="mb-4 p-3 rounded-lg bg-warn-soft border border-warn/30">
@@ -208,7 +208,7 @@ function LoginForm() {
                   placeholder="例如：考生小张"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="h-12 w-full rounded-xl border border-line bg-surface px-3.5 text-sm text-ink transition-colors placeholder:text-ink-muted/60 hover:border-brand/30 focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/10"
+                  className="h-11 w-full rounded-lg border border-line bg-surface px-3.5 text-sm text-ink transition-colors placeholder:text-ink-muted/60 hover:border-brand/30 focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/10"
                 />
               </div>
             )}
@@ -227,7 +227,7 @@ function LoginForm() {
                 placeholder={demo ? "演示邮箱，例如 student@demo.app" : "邮箱"}
                 value={account}
                 onChange={(e) => setAccount(e.target.value)}
-                className="h-12 w-full rounded-xl border border-line bg-surface px-3.5 text-sm text-ink transition-colors placeholder:text-ink-muted/60 hover:border-brand/30 focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/10"
+                className="h-11 w-full rounded-lg border border-line bg-surface px-3.5 text-sm text-ink transition-colors placeholder:text-ink-muted/60 hover:border-brand/30 focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/10"
               />
             </div>
 
@@ -245,7 +245,7 @@ function LoginForm() {
                 placeholder={demo ? "演示密码：demo1234" : mode === "register" ? "至少 8 位，含字母和数字" : "密码"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="h-12 w-full rounded-xl border border-line bg-surface px-3.5 text-sm text-ink transition-colors placeholder:text-ink-muted/60 hover:border-brand/30 focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/10"
+                className="h-11 w-full rounded-lg border border-line bg-surface px-3.5 text-sm text-ink transition-colors placeholder:text-ink-muted/60 hover:border-brand/30 focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/10"
               />
             </div>
 

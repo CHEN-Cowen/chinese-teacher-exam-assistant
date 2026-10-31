@@ -122,13 +122,13 @@ export function FollowControls({
     <section className="space-y-3 rounded-xl border border-line bg-surface p-4">
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm font-semibold text-ink">我的跟进</span>
-        <span className="inline-flex items-center rounded-full bg-canvas px-2.5 py-0.5 text-xs font-medium text-ink-muted">
+        <span className="inline-flex h-6 items-center rounded bg-canvas px-2.5 text-xs font-medium text-ink-muted">
           {FOLLOW_STATUS_LABELS[follow.status]}
         </span>
         {follow.role && (
           <span
             className={cn(
-              "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
+              "inline-flex h-6 items-center rounded px-2.5 text-xs font-medium",
               follow.role === "primary"
                 ? "bg-brand-soft text-brand"
                 : "bg-canvas text-ink-muted",

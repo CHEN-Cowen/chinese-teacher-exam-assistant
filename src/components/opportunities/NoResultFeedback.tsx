@@ -105,7 +105,7 @@ export function NoResultFeedback({
           {panel.stageCounts.map((item) => (
             <span
               key={item.label}
-              className="inline-flex items-center rounded-full bg-surface px-2 py-0.5 ring-1 ring-line"
+              className="inline-flex h-6 items-center rounded bg-surface px-2 ring-1 ring-line"
             >
               {item.label} {item.count}
             </span>

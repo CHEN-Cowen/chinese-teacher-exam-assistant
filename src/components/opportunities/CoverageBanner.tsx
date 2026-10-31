@@ -96,8 +96,8 @@ export function CoverageBanner({
               <span
                 className={
                   province.status === "not_started"
-                    ? "inline-flex items-center rounded-full bg-canvas px-2 py-0.5 text-xs font-medium text-ink-muted ring-1 ring-line"
-                    : "inline-flex items-center rounded-full bg-success-soft px-2 py-0.5 text-xs font-medium text-success"
+                    ? "inline-flex h-6 items-center rounded bg-canvas px-2 text-xs font-medium text-ink-muted ring-1 ring-line"
+                    : "inline-flex h-6 items-center rounded bg-success-soft px-2 text-xs font-medium text-success"
                 }
               >
                 {province.statusLabel}

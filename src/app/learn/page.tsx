@@ -77,7 +77,7 @@ export default function LearnPage() {
         </p>
 
         <ol
-          className="mt-8 overflow-hidden rounded-3xl border border-line bg-surface px-5 shadow-[0_12px_36px_rgba(30,64,120,0.06)]"
+          className="mt-8 overflow-hidden rounded-2xl border border-line bg-surface px-5 shadow-2"
           aria-label="我们怎么判断：三段说明"
         >
           {CARDS.map((card, i) => (
