@@ -207,17 +207,17 @@ describe("v7.2 结果先行首页：内容与结构", () => {
     mockNewHome = true;
   });
 
-  it("主标题为「哪些教师岗，你能报？」且只有一个高强调 CTA「开始匹配岗位」", async () => {
+  it("主标题为「哪些教师岗，你能报？」且只有一个高强调 CTA「开始资格预筛」", async () => {
     const page = await renderHome();
     cleanup = page.unmount;
     const html = page.html();
     expect(html).toContain("哪些教师岗");
     expect(html).toContain("你能报？");
-    expect(html).toContain("开始匹配岗位");
+    expect(html).toContain("开始资格预筛");
     // 唯一高强调 CTA：只有一个 start-onboarding 按钮
     expect((html.match(/data-testid="start-onboarding"/g) ?? []).length).toBe(1);
-    // 旧首页主按钮文案不再出现
-    expect(html).not.toContain("开始资格预筛");
+    // 渲染的是新首页而非旧首页：result-example-card 是旧首页独有的结构标记
+    expect(html).not.toContain('data-testid="result-example-card"');
   });
 
   it("CTA 点击进入 /onboarding 并记录埋点", async () => {
@@ -429,6 +429,9 @@ describe("v7.2 Feature Flag 回退：ff_new_home 关闭时旧首页可回退", (
     expect(html).toContain("开始资格预筛");
     expect(html).not.toContain("开始匹配岗位");
     expect(html).not.toContain("哪些教师岗位，你现在就能报？");
+    // 旧首页结构标记在场，新首页结果预览不在场（回退方向的结构守卫）
+    expect(html).toContain('data-testid="result-example-card"');
+    expect(html).not.toContain('data-testid="result-preview"');
   });
 
   it("Flag 关闭时旧首页主按钮仍进入 /onboarding", async () => {

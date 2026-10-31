@@ -66,8 +66,25 @@ next-env.d.ts
 
 # 本地抓取/探针临时产物
 /.tmp-probe/
+/backend/.tmp-probe/
 /.workbuddy/
 /outputs/
+
+# 设计交接包解压目录（临时对照用，不入库）
+/.design-handoff/
+
+# 本地运行日志与测试产物
+/debug.log
+/frontend-test-result.log
+/test-results/
+
+# QA 录制/评审的运行时产物（脚本与 helpers 仍保留跟踪）
+/.qa-harness/node-compile-cache/
+/.qa-harness/record-cdp.jsonl
+/.qa-harness/record-relay.log
+/.qa-harness/review-*
+/.qa-harness/*-record-step.js
+/.qa-harness/playwriter-guide.txt
 
 # ===== 嵌套 frontend 子目录构建副本（主工程在根目录，子目录是误入的构建产物）=====
 /frontend/

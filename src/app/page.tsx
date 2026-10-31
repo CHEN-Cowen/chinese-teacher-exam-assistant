@@ -91,9 +91,9 @@ export default function Home() {
   /**
    * v7.2 结果先行首页（ff_new_home 开启时渲染）。
    *
-   * PRD 7.4.1 / 7.2 + UIUX方案 §5：
-   * - 主标题「哪些教师岗位，你现在就能报？」
-   * - 唯一高强调按钮「开始匹配岗位」→ /onboarding
+   * PRD 7.4.1 / 7.2 + UIUX方案 §5（蓝白重构确认文案）：
+   * - 主标题「哪些教师岗，你能报？」
+   * - 唯一高强调按钮「开始资格预筛」→ /onboarding
    * - 右侧只展示结果形状（三类标签 + 一个简化岗位 + 少量状态），不展开完整公告
    * - 示例只做一次页面级标识（aside aria-label + "结果预览 · 示例"）
    * - 桌面 5:7 左右布局，内容容器 max-w-1280px 居中
@@ -144,7 +144,7 @@ export default function Home() {
                     </svg>
                   }
                 >
-                  开始匹配岗位
+                  开始资格预筛
                 </Button>
                 <span className="text-[13px] text-ink-muted" data-testid="home-time-hint">
                   无需登录 · 约 30 秒
