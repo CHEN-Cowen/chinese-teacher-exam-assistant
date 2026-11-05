@@ -1,0 +1,80 @@
+name: RAG Real-Model Acceptance
+
+# 手动触发的最终验收任务：真实百炼 + 临时 PostgreSQL/Redis/API/Worker。
+# 密钥只从仓库 Secret DASHSCOPE_API_KEY 读取，不写入仓库、日志或前端产物。
+on:
+  workflow_dispatch:
+    inputs:
+      embedding_model:
+        description: '百炼 Embedding 模型'
+        required: false
+        default: 'text-embedding-v4'
+      rerank_model:
+        description: '百炼 Rerank 模型'
+        required: false
+        default: 'qwen3-rerank'
+      chat_model:
+        description: '百炼 Chat 模型'
+        required: false
+        default: 'qwen-plus'
+      db_image:
+        description: 'PostgreSQL 镜像（需含 pgvector 扩展）'
+        required: false
+        default: 'pgvector/pgvector:pg17'
+
+permissions:
+  contents: read
+
+jobs:
+  real-model:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check DASHSCOPE_API_KEY secret
+        env:
+          DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
+        run: |
+          if [ -z "$DASHSCOPE_API_KEY" ]; then
+            echo "::error::缺少仓库 Secret DASHSCOPE_API_KEY；请在 GitHub 仓库设置中添加，不要提交到仓库。"
+            exit 1
+          fi
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Build backend
+        working-directory: backend
+        run: npm run build
+
+      - name: Run real-model isolated acceptance
+        working-directory: backend
+        env:
+          SMOKE_REAL_AI: '1'
+          DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
+          DB_IMAGE: ${{ inputs.db_image }}
+          BAILIAN_EMBEDDING_MODEL: ${{ inputs.embedding_model }}
+          BAILIAN_RERANK_MODEL: ${{ inputs.rerank_model }}
+          BAILIAN_CHAT_MODEL: ${{ inputs.chat_model }}
+          BAILIAN_MAX_RETRIES: '1'
+        run: |
+          set -o pipefail
+          node scripts/smoke-runtime.mjs 2>&1 | tee "$GITHUB_WORKSPACE/rag-acceptance.log"
+
+      - name: Upload acceptance log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rag-acceptance-${{ github.sha }}
+          path: rag-acceptance.log
+          retention-days: 30

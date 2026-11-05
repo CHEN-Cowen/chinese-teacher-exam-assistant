@@ -34,12 +34,16 @@
  *
  * 环境变量：
  *   DB_IMAGE    覆盖 PostgreSQL 镜像（默认 postgres:17-alpine，
- *               境内可 docker.nju.edu.cn/postgres:17-alpine）
+ *               境内可 docker.nju.edu.cn/postgres:17-alpine；
+ *               最终验收可用 pgvector/pgvector:pg17 验证真实向量路径）
  *   REDIS_IMAGE 覆盖 Redis 镜像（默认 redis:7-alpine）
+ *   SMOKE_REAL_AI=1  切换真实百炼 Embedding/Rerank/Chat（需 DASHSCOPE_API_KEY，
+ *               可选 BAILIAN_*_MODEL 覆盖模型）；默认 mock
  *
  * 清理保证：无论成败都会结束临时进程、删除本测试创建的临时容器；
  * 不使用具名数据卷，不触碰开发者已有容器、数据卷与数据库。
- * 超时：整体看门狗 5 分钟，失败时输出 API / Worker / 迁移 / 容器日志。
+ * 超时：整体看门狗默认 8 分钟、真实模型模式 15 分钟；
+ * 失败时输出 API / Worker / 迁移 / 容器日志。
  */
 import { spawn, execFile } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
@@ -51,6 +55,8 @@ const execFileAsync = promisify(execFile);
 
 const BACKEND_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DB_IMAGE = process.env.DB_IMAGE ?? 'postgres:17-alpine';
+/** SMOKE_REAL_AI=1 时切换真实百炼 Embedding/Rerank/Chat；密钥只从环境变量读取。 */
+const REAL_AI = process.env.SMOKE_REAL_AI === '1';
 const REDIS_IMAGE = process.env.REDIS_IMAGE ?? 'redis:7-alpine';
 const SUFFIX = `${process.pid}-${Date.now().toString(36)}`;
 const PG_NAME = `kb-smoke-pg-${SUFFIX}`;
@@ -62,7 +68,7 @@ const API_PORT = 20000 + (process.pid % 20000);
 const DEMO_PORT = API_PORT + 1;
 const AI_OFF_PORT = API_PORT + 2;
 const INTERNAL_TOKEN = 'ci-smoke-token';
-const WATCHDOG_MS = 8 * 60 * 1000;
+const WATCHDOG_MS = (REAL_AI ? 15 : 8) * 60 * 1000;
 const HEALTH_TIMEOUT_MS = 120_000;
 const FORBIDDEN_LOG_PATTERNS = [
   'UnknownExportException',
@@ -304,8 +310,8 @@ async function runKnowledgeFlow() {
     );
   }
 
-  // 3) 等 Worker 完成索引（AI mock，不联网）
-  await waitFor('知识索引 ready', 90_000, async () => {
+  // 3) 等 Worker 完成索引（默认 mock；SMOKE_REAL_AI=1 时走真实百炼）
+  await waitFor('知识索引 ready', REAL_AI ? 180_000 : 90_000, async () => {
     const result = await apiCall(DEMO_PORT, '/knowledge/index-jobs?limit=50', admin);
     check(result.status === 200, `索引任务查询 HTTP ${result.status}`);
     const item = (result.json?.items ?? []).find(
@@ -474,7 +480,7 @@ async function publishKnowledge(admin, body, label) {
 }
 
 async function waitForPolicyIndex(admin, versionIds, label) {
-  await waitFor(label, 90_000, async () => {
+  await waitFor(label, REAL_AI ? 180_000 : 90_000, async () => {
     const result = await apiCall(DEMO_PORT, '/knowledge/index-jobs?limit=100', admin);
     policyCheck(result.status === 200, `索引任务查询 HTTP ${result.status}`);
     const items = result.json?.items ?? [];
@@ -786,6 +792,9 @@ async function main() {
   console.log('[smoke] 迁移成功 ✓');
 
   // 4-5. 启动编译后的 API 与 Worker
+  if (REAL_AI && !process.env.DASHSCOPE_API_KEY?.trim()) {
+    fail('SMOKE_REAL_AI=1 但缺少 DASHSCOPE_API_KEY（不得写入仓库/日志）');
+  }
   const baseEnv = {
     NODE_ENV: 'production',
     DATABASE_URL: databaseUrl,
@@ -793,10 +802,17 @@ async function main() {
     AUTH_MODE: 'invited',
     INTERNAL_TOKEN,
     FF_DB_CATALOG: 'off',
-    // W4 隔离知识库流程使用 mock 模型：只验证代码链路，不代表真实百炼联调
+    // 默认 mock，只验证代码链路；SMOKE_REAL_AI=1 才调用真实百炼（密钥由外部环境提供）
     AI_ENABLED: 'true',
-    AI_MOCK_MODE: 'true',
+    AI_MOCK_MODE: REAL_AI ? 'false' : 'true',
   };
+  if (REAL_AI) {
+    console.log(
+      `[smoke] 真实百炼模式：embedding=${process.env.BAILIAN_EMBEDDING_MODEL ?? 'text-embedding-v4'} ` +
+        `rerank=${process.env.BAILIAN_RERANK_MODEL ?? 'qwen3-rerank'} ` +
+        `chat=${process.env.BAILIAN_CHAT_MODEL ?? 'qwen-plus'}`,
+    );
+  }
   console.log('[smoke] 启动 node dist/main.js …');
   spawnLogged('API', 'api', process.execPath, [path.join('dist', 'main.js')], {
     ...baseEnv,
