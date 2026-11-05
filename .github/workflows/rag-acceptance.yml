@@ -1,8 +1,14 @@
 name: RAG Real-Model Acceptance
 
-# 手动触发的最终验收任务：真实百炼 + 临时 PostgreSQL/Redis/API/Worker。
+# 最终验收任务：真实百炼 + 临时 PostgreSQL/Redis/API/Worker。
+# 触发方式：
+#   - 专用分支 push 且提交信息包含 [rag-acceptance]（GitHub 要求 workflow_dispatch
+#     文件先存在于默认分支，本仓库不允许把验收脚本合并到默认分支，因此保留 push 触发）；
+#   - 默认分支合入后也可手动 workflow_dispatch。
 # 密钥只从仓库 Secret DASHSCOPE_API_KEY 读取，不写入仓库、日志或前端产物。
 on:
+  push:
+    branches: [codex/all-subject-rag]
   workflow_dispatch:
     inputs:
       embedding_model:
@@ -27,6 +33,8 @@ permissions:
 
 jobs:
   real-model:
+    # push 触发只接受显式验收提交，避免每次普通推送都消耗真实模型额度。
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[rag-acceptance]')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -62,10 +70,10 @@ jobs:
         env:
           SMOKE_REAL_AI: '1'
           DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
-          DB_IMAGE: ${{ inputs.db_image }}
-          BAILIAN_EMBEDDING_MODEL: ${{ inputs.embedding_model }}
-          BAILIAN_RERANK_MODEL: ${{ inputs.rerank_model }}
-          BAILIAN_CHAT_MODEL: ${{ inputs.chat_model }}
+          DB_IMAGE: ${{ inputs.db_image || 'pgvector/pgvector:pg17' }}
+          BAILIAN_EMBEDDING_MODEL: ${{ inputs.embedding_model || 'text-embedding-v4' }}
+          BAILIAN_RERANK_MODEL: ${{ inputs.rerank_model || 'qwen3-rerank' }}
+          BAILIAN_CHAT_MODEL: ${{ inputs.chat_model || 'qwen-plus' }}
           BAILIAN_MAX_RETRIES: '1'
         run: |
           set -o pipefail
