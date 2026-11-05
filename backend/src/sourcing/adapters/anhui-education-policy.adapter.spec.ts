@@ -52,7 +52,7 @@ describe('AnhuiEducationPolicyAdapter（W5 首批政策扩源）', () => {
       url: 'https://jyt.ah.gov.cn/xwzx/tzgg/40792015.html',
       mimeType: 'text/html',
       content: recruitHtml,
-      fetchedAt: '2026-11-05T09:40:00.000Z',
+      fetchedAt: '2026-11-05T09:44:29.000Z',
     });
 
     expect(article.canonicalUrl).toContain('/xwzx/tzgg/40792015.html');
