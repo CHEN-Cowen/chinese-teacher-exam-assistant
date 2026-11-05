@@ -16,13 +16,17 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AdminGuard } from '../../auth/admin.guard.js';
+import {
+  resolveAuthenticatedUser,
+  type AuthenticatedRequest,
+} from '../../auth/identity.js';
 import type { KnowledgeScope } from '../knowledge-search.service.js';
 import { KnowledgeSearchService } from '../knowledge-search.service.js';
 import { QaError, QaService, toQaError } from './qa.service.js';
 
-interface AuthenticatedRequest {
-  user?: { id: string; role: string };
-  ip?: string;
+/** 身份与 AdminGuard 一致：invited 取会话，demo 取 x-user-* 头，绝不混用。 */
+function currentUserId(req: AuthenticatedRequest): string | undefined {
+  return resolveAuthenticatedUser(req)?.id;
 }
 
 interface AskBody {
@@ -42,7 +46,7 @@ export class QaController {
 
   @Post('qa')
   async ask(@Body() body: AskBody, @Req() req: AuthenticatedRequest) {
-    const userId = req.user?.id;
+    const userId = currentUserId(req);
     if (!userId) throw new QaError('unauthorized', '请先登录后再提问', 401);
     try {
       return await this.qa.ask({
@@ -62,7 +66,7 @@ export class QaController {
     @Body() body: { type?: string; comment?: string },
     @Req() req: AuthenticatedRequest,
   ) {
-    const userId = req.user?.id;
+    const userId = currentUserId(req);
     if (!userId) throw new QaError('unauthorized', '请先登录', 401);
     const type = body?.type;
     if (type !== 'helpful' && type !== 'not_helpful' && type !== 'incorrect') {
@@ -81,7 +85,7 @@ export class QaController {
     @Query('limit') limit: string | undefined,
     @Req() req: AuthenticatedRequest,
   ) {
-    const userId = req.user?.id;
+    const userId = currentUserId(req);
     if (!userId) throw new QaError('unauthorized', '请先登录', 401);
     return this.qa.history(userId, limit ? Number(limit) : 10);
   }

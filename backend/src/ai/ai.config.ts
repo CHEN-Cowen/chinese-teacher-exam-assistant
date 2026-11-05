@@ -36,6 +36,7 @@ export interface AiConfig {
     questionMaxChars: number;
     dailyRequestsPerUser: number;
     dailyRequestsPerIp: number;
+    dailyRequestsGlobal: number;
     dailyTokensGlobal: number;
   };
 }
@@ -89,6 +90,7 @@ export function loadAiConfig(env: NodeJS.ProcessEnv = process.env): AiConfig {
       questionMaxChars: intFromEnv(env.QA_QUESTION_MAX_CHARS, 200),
       dailyRequestsPerUser: intFromEnv(env.QA_DAILY_REQUESTS_PER_USER, 30),
       dailyRequestsPerIp: intFromEnv(env.QA_DAILY_REQUESTS_PER_IP, 20),
+      dailyRequestsGlobal: intFromEnv(env.QA_DAILY_REQUESTS_GLOBAL, 2_000),
       dailyTokensGlobal: intFromEnv(env.QA_DAILY_TOKENS_GLOBAL, 500_000),
     },
   };

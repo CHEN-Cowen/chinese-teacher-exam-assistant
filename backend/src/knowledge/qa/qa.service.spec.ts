@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { PrismaService } from '../../prisma.service.js';
 import type { AiService } from '../../ai/ai.service.js';
+import { AiError } from '../../ai/ai.errors.js';
 import type {
   KnowledgeSearchService,
   RetrievalResult,
@@ -57,6 +58,7 @@ function createService(options: {
   chatText?: string;
   userUsage?: number | null;
   ipUsage?: number | null;
+  globalUsage?: { requests: number; tokens: number } | null;
 }) {
   const prisma = {
     qaAnswer: {
@@ -68,8 +70,8 @@ function createService(options: {
     },
     qaFeedback: {
       findFirst: vi.fn().mockResolvedValue(null),
-      create: vi.fn(),
-      update: vi.fn(),
+      create: vi.fn().mockResolvedValue({ id: 'feedback-1' }),
+      update: vi.fn().mockResolvedValue({ id: 'feedback-1' }),
     },
     aiUsageDaily: {
       findUnique: vi.fn().mockImplementation(async (args: { where: { scope_subject_day: { scope: string } } }) => {
@@ -78,6 +80,9 @@ function createService(options: {
         }
         if (args.where.scope_subject_day.scope === 'ip' && options.ipUsage) {
           return { requests: options.ipUsage, tokens: 0 };
+        }
+        if (args.where.scope_subject_day.scope === 'global' && options.globalUsage) {
+          return options.globalUsage;
         }
         return null;
       }),
@@ -94,7 +99,13 @@ function createService(options: {
     mode: options.mode ?? 'mock',
     available: options.available ?? true,
     config: {
-      limits: { questionMaxChars: 200, dailyRequestsPerUser: 30, dailyRequestsPerIp: 20, dailyTokensGlobal: 500_000 },
+      limits: {
+        questionMaxChars: 200,
+        dailyRequestsPerUser: 30,
+        dailyRequestsPerIp: 20,
+        dailyRequestsGlobal: 2_000,
+        dailyTokensGlobal: 500_000,
+      },
     },
     embed: vi.fn(),
     rerank: vi.fn(),
@@ -185,5 +196,81 @@ describe('QaService 编排链路', () => {
     const { service } = createService({ available: false });
 
     await expect(service.ask(baseInput)).rejects.toMatchObject({ code: 'ai_disabled', status: 503 });
+  });
+
+  it('当日全局请求额度用尽时返回 429，不检索', async () => {
+    const { service, search } = createService({
+      globalUsage: { requests: 2_000, tokens: 0 },
+    });
+
+    await expect(service.ask(baseInput)).rejects.toMatchObject({
+      code: 'quota_exceeded',
+      status: 429,
+    });
+    expect(search.retrieve).not.toHaveBeenCalled();
+  });
+
+  it('供应商故障时保留明确错误码，不写回答记录也不计 token', async () => {
+    const { service, prisma, ai } = createService({ mode: 'real' });
+    (ai.chat as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new AiError('provider_unavailable', '模型服务暂不可用', true),
+    );
+
+    await expect(
+      service.ask(baseInput),
+    ).rejects.toMatchObject({ code: 'provider_unavailable' });
+    expect(prisma.qaAnswer.create).not.toHaveBeenCalled();
+    expect(prisma.aiUsageDaily.upsert).not.toHaveBeenCalled();
+  });
+
+  it('反馈只能作用于本人回答，横向 ID 返回 404 且不写反馈', async () => {
+    const { service, prisma } = createService({});
+    (prisma.qaAnswer.findUnique as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'answer-1',
+      userId: 'user-2',
+    });
+
+    await expect(
+      service.feedback({
+        answerId: 'answer-2',
+        userId: 'user-1',
+        type: 'helpful',
+      }),
+    ).rejects.toMatchObject({ code: 'answer_not_found', status: 404 });
+    expect(prisma.qaFeedback.create).not.toHaveBeenCalled();
+  });
+
+  it('本人回答可以提交反馈，重复提交走更新', async () => {
+    const { service, prisma } = createService({});
+    (prisma.qaAnswer.findUnique as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'answer-1',
+      userId: 'user-1',
+    });
+
+    const result = await service.feedback({
+      answerId: 'answer-1',
+      userId: 'user-1',
+      type: 'incorrect',
+      comment: '截止时间与原文不一致',
+    });
+
+    expect(result).toMatchObject({ id: 'feedback-1' });
+    expect(prisma.qaFeedback.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ userId: 'user-1', type: 'incorrect' }),
+    });
+  });
+
+  it('历史记录按当前用户过滤，不返回他人回答', async () => {
+    const { service, prisma } = createService({});
+    (prisma as unknown as { qaAnswer: { findMany: ReturnType<typeof vi.fn> } }).qaAnswer.findMany =
+      vi.fn().mockResolvedValue([]);
+
+    const result = await service.history('user-1', 10);
+
+    expect(result.items).toEqual([]);
+    expect(
+      (prisma.qaAnswer.findMany as unknown as ReturnType<typeof vi.fn>).mock
+        .calls[0]![0],
+    ).toMatchObject({ where: { userId: 'user-1' } });
   });
 });

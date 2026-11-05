@@ -7,10 +7,15 @@ import { Module } from '@nestjs/common';
 import { DocumentProcessingModule } from '../document-processing/document-processing.module.js';
 import { KnowledgeCoreModule } from './knowledge-core.module.js';
 import { KnowledgeIndexService } from './knowledge-index.service.js';
+import { KnowledgeIndexRecoveryService } from './knowledge-index-recovery.service.js';
 import { KnowledgeIndexProcessor } from './jobs/knowledge-index.processor.js';
 
 @Module({
   imports: [KnowledgeCoreModule, DocumentProcessingModule],
-  providers: [KnowledgeIndexService, KnowledgeIndexProcessor],
+  providers: [
+    KnowledgeIndexService,
+    KnowledgeIndexProcessor,
+    KnowledgeIndexRecoveryService,
+  ],
 })
 export class KnowledgeWorkerModule {}

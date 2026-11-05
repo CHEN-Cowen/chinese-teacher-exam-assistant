@@ -205,7 +205,69 @@
 | 跨公告作用域隔离 | 单测仅验证过滤参数与 unitId 过滤 | 隔离环境用两份不同公告交叉提问，确认不串材料 |
 | Mock 与真实模式区分 | Mock 已跑通 | 响应 `mode` 字段与 UI 提示需在真实环境复核 |
 
-## 5. 阶段状态
+## 5. W4 加固与受控验收（2026-11-05）
+
+### 5.1 实现范围
+
+| 类别 | 产物 | 说明 |
+| --- | --- | --- |
+| 身份一致性 | `backend/src/knowledge/qa/qa.controller.ts` | 与 `AdminGuard` 同一身份来源：`invited` 取会话，`demo` 取 `x-user-*` 头；不再出现 demo 下问答恒 401 |
+| 横向越权 | `backend/src/knowledge/qa/qa.service.ts` | 反馈只能作用于本人回答；他人回答统一 `404 answer_not_found`，不泄露存在性；历史按 `userId` 过滤 |
+| 检索范围 | `backend/src/knowledge/knowledge-search.service.ts` | 同时要求 `version.status=published` 与 `document.status=published`；只采用 `activeIndexVersion` 对应 chunk；岗位范围包含未绑定岗位的公告级材料，排除显式绑定其他岗位的片段 |
+| 索引并发 | `backend/src/knowledge/knowledge-index.service.ts` | 迟到旧任务标记 `superseded`，不切换 `activeIndexVersion`、不覆盖新索引并清理本次产物；完成时用 `updateMany` 条件原子切换，只保留当前索引版本 chunk |
+| 重启恢复 | `backend/src/knowledge/knowledge-index-recovery.service.ts`、`knowledge.service.ts` | Worker `OnApplicationBootstrap` 重新投递 `queued/running` 索引任务；BullMQ 中仍存在的任务由 `enqueue` 去重；恢复失败不阻塞启动 |
+| 预算与日志 | `backend/src/ai/ai.config.ts`、`qa.service.ts` | 新增 `QA_DAILY_REQUESTS_GLOBAL`（默认 2000）；`refused` 也计请求；日志只记录范围/状态/候选数/引用数/tokens/耗时，不记录问题正文、用户标识或密钥 |
+| 健康语义 | `backend/src/health.controller.ts` | `/health` 增加 `ai=off|mock|real`；AI 关闭或供应商故障不影响招聘公告/岗位接口存活 |
+| 隔离冒烟 | `backend/scripts/smoke-runtime.mjs` | 同一隔离 DB/Redis 新增 demo 角色实例与 AI-off 实例：入库→审核→发布→Worker 索引→检索→问答→横向反馈→撤回→AI 关闭；AI 使用 mock，明确标注非真实联调 |
+
+### 5.2 权限与可见性矩阵（代码与冒烟均覆盖）
+
+| 操作 | 访客（invited） | 访客（demo） | 普通用户 | 管理员 |
+| --- | --- | --- | --- | --- |
+| `GET /subjects`、`GET /opportunities/coverage` | 200 | 200 | 200 | 200 |
+| `POST /knowledge/qa` | 403（会话守卫） | 401（控制器） | 可用（预算内） | 可用 |
+| `POST /knowledge/documents`、`/knowledge/search`、`GET /knowledge/index-jobs` | 403 | 401 | 403 | 可用 |
+| 对他人回答提交反馈 | — | — | 404 | 404（同一规则，管理员不放宽） |
+
+### 5.3 阶段验证（2026-11-05）
+
+| 检查 | 命令 | 结果 |
+| --- | --- | --- |
+| 后端知识/问答单测 | `npx vitest run src/knowledge` | 7 files / 41 passed（新增检索范围 4、恢复/撤回 3、索引并发 2、问答预算/越权 5） |
+| 后端全量单测 | `npm test` | 107 files / 1314 passed，1 expected fail，2 skipped（预期项为既有用例） |
+| 后端 lint | `npm run lint` | 0 error |
+| 后端构建 | `npm run build` | 成功 |
+| 前端全量单测 | `npm test -- --run` | 74 files / 796 passed |
+| 前端构建 | `npm run build` | 成功（31 页静态生成、外部依赖扫描 0 阻断） |
+| 模块依赖图 | 包含于后端全量 | 2 passed |
+| 隔离运行时冒烟 | CI `node scripts/smoke-runtime.mjs` | 见 5.5（推送后按同一提交 CI 结果填写） |
+
+### 5.4 明确预期失败 / 跳过（不得借其隐藏失败）
+
+- 后端全量中的 1 expected fail、2 skipped 为既有用例，不属于本任务新增；本任务新增用例全部执行。
+- 真实百炼 Embedding / Rerank / Chat 仍未联调（未配置 Key）：本阶段隔离冒烟使用 `AI_MOCK_MODE=true`，只能证明代码链路与拒答/权限逻辑，不能写成真实模型质量通过。
+- CI 部署镜像 `postgres:17-alpine` 不含 pgvector：继续走 `Float[]` + 应用余弦降级；真实 pgvector 写入/检索待具备扩展的环境验证。
+- 真实公告多格式（PDF/Word/岗位表）定位、跨公告真实材料串用检查：留给最终隔离验收，用真实官方材料 + 真实 Key。
+
+### 5.5 隔离运行时冒烟（CI 证据）
+
+待推送后填写同一提交 CI run 的 `smoke-runtime` 结果。脚本按失败即退出执行，覆盖：
+
+1. demo 访客入库 401、普通用户入库/检索调试 403；
+2. 管理员入库→送审→批准→发布→Worker 索引 `ready`；
+3. 管理员检索有命中；用户 A 问答 `answered` 且带引用、`mode=mock`；
+4. 用户 B 对用户 A 回答反馈 404；用户 B 历史为空；
+5. 撤回后检索 0 命中、问答转 `refused`；
+6. AI 关闭实例 `/health.ai=off`、问答 `503 ai_disabled`，`GET /opportunities/coverage` 仍 200。
+
+### 5.6 真实联调前必须完成的配置（再次提醒）
+
+- 文件：`backend/.env`（模板 `backend/.env.example` 的“W2/W3 阿里云百炼”段）；部署时用同名环境变量。
+- 最少必填：`AI_ENABLED=true`、`DASHSCOPE_API_KEY=实际值`、`AI_MOCK_MODE=false`（或删除该行）。
+- 运行前提：数据库迁移已执行、Redis 可达、Worker 进程运行；需 pgvector 效果时镜像须含 `vector` 扩展。
+- 缺 Key 时问答明确 `503 ai_disabled`、索引任务 `ai_not_configured`，不会伪装接通；密钥不通过聊天发送、不提交 Git。
+
+## 6. 阶段状态
 
 | 阶段 | 状态 | 提交 | CI | 证据 |
 | --- | --- | --- | --- | --- |

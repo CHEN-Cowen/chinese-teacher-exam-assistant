@@ -115,7 +115,16 @@ export class QaService {
 
     const day = dayKey(new Date());
     const ipHash = input.ip ? hashIp(input.ip) : null;
-    await this.assertQuota(day, input.userId, ipHash);
+    try {
+      await this.assertQuota(day, input.userId, ipHash);
+    } catch (error) {
+      if (error instanceof QaError && error.code === 'quota_exceeded') {
+        this.logger.warn(
+          `问答预算拒绝 scope=${scopeTypeOf(input.scope)} code=${error.code}`,
+        );
+      }
+      throw error;
+    }
 
     const scope: KnowledgeScope = normalizeScope(input.scope);
     const retrieval = await this.search.retrieve(question, scope, CONTEXT_LIMIT);
@@ -148,10 +157,21 @@ export class QaService {
         answerText = extractiveAnswer(context.map((item) => ({ content: item.content })));
         model = 'mock-extractive';
       } else {
-        const chat = await this.ai.chat([
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: buildUserPrompt(question, context) },
-        ]);
+        let chat: Awaited<ReturnType<AiService['chat']>>;
+        try {
+          chat = await this.ai.chat([
+            { role: 'system', content: SYSTEM_PROMPT },
+            { role: 'user', content: buildUserPrompt(question, context) },
+          ]);
+        } catch (error) {
+          // 生成失败明确返回，不落“空回答”，也不影响检索与原有招聘功能
+          this.logger.warn(
+            `问答生成失败 scope=${scopeTypeOf(scope)} code=${
+              error instanceof AiError ? error.code : 'qa_error'
+            }`,
+          );
+          throw error;
+        }
         answerText = chat.text.trim();
         model = chat.model;
         tokens = chat.tokens ?? 0;
@@ -176,13 +196,7 @@ export class QaService {
     const latencyMs = Date.now() - startedAt;
     const record = await this.prisma.qaAnswer.create({
       data: {
-        scopeType: scope.announcementId
-          ? 'announcement'
-          : scope.unitId
-            ? 'unit'
-            : scope.regionCode
-              ? 'region'
-              : 'general',
+        scopeType: scopeTypeOf(scope),
         announcementId: scope.announcementId ?? null,
         unitId: scope.unitId ?? null,
         regionCode: scope.regionCode ?? null,
@@ -210,6 +224,13 @@ export class QaService {
     });
 
     await this.consumeUsage(day, input.userId, ipHash, tokens);
+
+    // 运维日志只记录范围/状态/用量，不记录问题正文、用户标识或密钥
+    this.logger.log(
+      `qa ask scope=${scopeTypeOf(scope)} status=${status} mode=${this.ai.mode} ` +
+        `candidates=${retrieval.meta.candidates} citations=${citations.length} ` +
+        `tokens=${tokens} latencyMs=${latencyMs}`,
+    );
 
     return {
       id: record.id,
@@ -240,7 +261,10 @@ export class QaService {
     const answer = await this.prisma.qaAnswer.findUnique({
       where: { id: input.answerId },
     });
-    if (!answer) throw new QaError('answer_not_found', '回答不存在', 404);
+    // 横向越权保护：只能对本人提问产生的回答打标；不向他人暴露回答是否存在
+    if (!answer || answer.userId !== input.userId) {
+      throw new QaError('answer_not_found', '回答不存在', 404);
+    }
     const existing = await this.prisma.qaFeedback.findFirst({
       where: { answerId: input.answerId, userId: input.userId },
     });
@@ -317,6 +341,13 @@ export class QaService {
         const row = await this.prisma.aiUsageDaily.findUnique({
           where: { scope_subject_day: { scope: 'global', subject: 'all', day } },
         });
+        if (row && row.requests >= limits.dailyRequestsGlobal) {
+          throw new QaError(
+            'quota_exceeded',
+            '今日问答总额度已用完，请明天再试',
+            429,
+          );
+        }
         if (row && row.tokens >= limits.dailyTokensGlobal) {
           throw new QaError(
             'quota_exceeded',
@@ -401,6 +432,13 @@ function normalizeScope(scope: KnowledgeScope | undefined): KnowledgeScope {
     ...(scope.regionCode ? { regionCode: scope.regionCode } : {}),
     ...(scope.documentTypes?.length ? { documentTypes: scope.documentTypes } : {}),
   };
+}
+
+function scopeTypeOf(scope: KnowledgeScope | undefined): string {
+  if (scope?.announcementId) return 'announcement';
+  if (scope?.unitId) return 'unit';
+  if (scope?.regionCode) return 'region';
+  return 'general';
 }
 
 function snippetOf(chunk: RetrievedChunk): string {

@@ -557,6 +557,41 @@ export class KnowledgeService {
     return { documentId: version.documentId, ...result };
   }
 
+  /**
+   * Worker 重启恢复：把仍处于 queued/running 的索引任务重新投递。
+   * BullMQ 中仍存在的任务由 enqueue 去重；已丢失或失败的任务会重新入队，
+   * 任务本身可重入（run 会清理本 indexVersion 的旧产物）。
+   */
+  async recoverPendingIndexJobs(): Promise<{
+    scanned: number;
+    requeued: number;
+    deduplicated: number;
+    failed: number;
+  }> {
+    const rows = await this.prisma.knowledgeIndexJob.findMany({
+      where: { status: { in: ['queued', 'running'] } },
+      orderBy: { createdAt: 'asc' },
+      take: 100,
+      select: { id: true },
+    });
+    let requeued = 0;
+    let deduplicated = 0;
+    let failed = 0;
+    for (const row of rows) {
+      try {
+        const result = await this.queue.enqueue(bullJobId(row.id), {
+          retry: true,
+        });
+        if (result.queued) requeued += 1;
+        else if (result.deduplicated) deduplicated += 1;
+        else failed += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+    return { scanned: rows.length, requeued, deduplicated, failed };
+  }
+
   async status() {
     const [documents, versions, jobs, chunks] = await this.prisma.$transaction([
       this.prisma.knowledgeDocument.count(),

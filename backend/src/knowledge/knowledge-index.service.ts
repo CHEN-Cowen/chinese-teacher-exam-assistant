@@ -36,7 +36,7 @@ export class KnowledgeIndexError extends Error {
 }
 
 export interface KnowledgeIndexOutcome {
-  status: 'ready' | 'failed' | 'reused';
+  status: 'ready' | 'failed' | 'reused' | 'superseded';
   jobId: string;
   indexVersion: number;
   chunkCount: number;
@@ -100,6 +100,18 @@ export class KnowledgeIndexService {
 
     const version = job.version;
     try {
+      // 旧任务晚到：更新的索引已生效时不得覆盖，也不重复消耗模型额度
+      if (
+        version.activeIndexVersion !== null &&
+        version.activeIndexVersion > job.indexVersion
+      ) {
+        return await this.markSuperseded(
+          jobId,
+          version.id,
+          job.indexVersion,
+          '已有更新的索引版本生效，本次旧任务结果未启用',
+        );
+      }
       if (!version.storageKey) {
         throw new KnowledgeIndexError('storage_unavailable', '版本缺少原件存储引用');
       }
@@ -171,31 +183,51 @@ export class KnowledgeIndexService {
         }
       }
 
-      await this.prisma.$transaction([
-        this.prisma.knowledgeDocumentVersion.update({
-          where: { id: version.id },
-          data: {
-            parserVersion: loaded.parserVersion,
-            chunkerVersion: CHUNKER_VERSION,
-            activeIndexVersion: job.indexVersion,
-          },
-        }),
-        this.prisma.knowledgeDocument.update({
-          where: { id: version.documentId },
-          data: { activeIndexVersion: job.indexVersion },
-        }),
-        this.prisma.knowledgeIndexJob.update({
-          where: { id: jobId },
-          data: {
-            status: 'ready',
-            chunkCount: chunks.length,
-            embeddedCount,
-            embeddingModel: embedding.model,
-            embeddingDim: embedding.dimension,
-            finishedAt: new Date(),
-          },
-        }),
-      ]);
+      // 原子切换：仅当没有更新索引生效时才把本索引设为有效版本。
+      // 旧任务迟到时 updateMany 不命中，随后清理本次产物，绝不覆盖新索引。
+      const activation = await this.prisma.knowledgeDocumentVersion.updateMany({
+        where: {
+          id: version.id,
+          OR: [
+            { activeIndexVersion: null },
+            { activeIndexVersion: { lt: job.indexVersion } },
+          ],
+        },
+        data: {
+          parserVersion: loaded.parserVersion,
+          chunkerVersion: CHUNKER_VERSION,
+          activeIndexVersion: job.indexVersion,
+        },
+      });
+
+      if (activation.count === 0) {
+        return await this.markSuperseded(
+          jobId,
+          version.id,
+          job.indexVersion,
+          '索引完成前已有更新版本生效，本次结果未启用',
+        );
+      }
+
+      // 只清理更旧索引的 chunk；更高 indexVersion 的并发任务产物不受影响
+      await this.prisma.knowledgeChunk.deleteMany({
+        where: { versionId: version.id, indexVersion: { lt: job.indexVersion } },
+      });
+      await this.prisma.knowledgeDocument.update({
+        where: { id: version.documentId },
+        data: { activeIndexVersion: job.indexVersion },
+      });
+      await this.prisma.knowledgeIndexJob.update({
+        where: { id: jobId },
+        data: {
+          status: 'ready',
+          chunkCount: chunks.length,
+          embeddedCount,
+          embeddingModel: embedding.model,
+          embeddingDim: embedding.dimension,
+          finishedAt: new Date(),
+        },
+      });
 
       this.logger.log(
         `知识索引完成 job=${jobId} version=${version.id} chunks=${chunks.length} model=${embedding.model}`,
@@ -231,6 +263,45 @@ export class KnowledgeIndexService {
         vectorStore: await this.vectorStore.isAvailable() ? 'pgvector' : 'float-array',
       };
     }
+  }
+
+  /**
+   * 旧索引任务迟到：清理本次产物并把任务标记为 superseded。
+   * 新索引的 chunk 与 activeIndexVersion 保持不动。
+   */
+  private async markSuperseded(
+    jobId: string,
+    versionId: string,
+    indexVersion: number,
+    message: string,
+  ): Promise<KnowledgeIndexOutcome> {
+    await this.prisma.knowledgeChunk.deleteMany({
+      where: { versionId, indexVersion },
+    });
+    await this.prisma.knowledgeIndexJob.update({
+      where: { id: jobId },
+      data: {
+        status: 'superseded',
+        errorClass: 'superseded',
+        errorMessage: message.slice(0, 500),
+        chunkCount: 0,
+        embeddedCount: 0,
+        finishedAt: new Date(),
+      },
+    });
+    this.logger.warn(`知识索引被更新版本超越 job=${jobId} indexVersion=${indexVersion}`);
+    return {
+      status: 'superseded',
+      jobId,
+      indexVersion,
+      chunkCount: 0,
+      embeddedCount: 0,
+      errorClass: 'superseded',
+      errorMessage: message,
+      vectorStore: (await this.vectorStore.isAvailable())
+        ? 'pgvector'
+        : 'float-array',
+    };
   }
 
   private async loadBlocks(

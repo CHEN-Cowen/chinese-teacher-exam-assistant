@@ -57,6 +57,7 @@ function createService(options: {
   aiAvailable?: boolean;
   text?: string;
   vectorAvailable?: boolean;
+  activationCount?: number;
 }) {
   const prisma = {
     knowledgeIndexJob: {
@@ -70,14 +71,11 @@ function createService(options: {
       })),
     },
     knowledgeDocumentVersion: {
-      update: vi.fn().mockResolvedValue(versionRow),
+      updateMany: vi.fn().mockResolvedValue({ count: options.activationCount ?? 1 }),
     },
     knowledgeDocument: {
       update: vi.fn().mockResolvedValue({ id: 'doc-1' }),
     },
-    $transaction: vi.fn().mockImplementation(async (ops: Array<Promise<unknown>>) =>
-      Promise.all(ops),
-    ),
   };
 
   const ai = {
@@ -169,6 +167,48 @@ describe('KnowledgeIndexService', () => {
 
     expect(outcome.status).toBe('failed');
     expect(outcome.errorClass).toBe('storage_unavailable');
+  });
+
+  it('旧任务晚到时直接标记 superseded，不重复向量化、不覆盖新索引', async () => {
+    const ctx = createService({
+      job: {
+        ...jobRow,
+        version: { ...versionRow, activeIndexVersion: 2 },
+      } as unknown as typeof jobRow,
+    });
+    const outcome = await ctx.service.run('job-1');
+
+    expect(outcome.status).toBe('superseded');
+    expect(ctx.ai.embed).not.toHaveBeenCalled();
+    expect(ctx.prisma.knowledgeDocumentVersion.updateMany).not.toHaveBeenCalled();
+    expect(ctx.prisma.knowledgeIndexJob.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: 'superseded' }),
+      }),
+    );
+  });
+
+  it('索引完成时若已有更新版本生效，不切换有效索引并清理本次产物', async () => {
+    const ctx = createService({ activationCount: 0 });
+
+    const outcome = await ctx.service.run('job-1');
+
+    expect(outcome.status).toBe('superseded');
+    expect(ctx.prisma.knowledgeDocumentVersion.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          OR: expect.arrayContaining([
+            { activeIndexVersion: { lt: jobRow.indexVersion } },
+          ]),
+        }),
+      }),
+    );
+    expect(ctx.prisma.knowledgeDocument.update).not.toHaveBeenCalled();
+    expect(ctx.prisma.knowledgeChunk.deleteMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { versionId: versionRow.id, indexVersion: jobRow.indexVersion },
+      }),
+    );
   });
 });
 

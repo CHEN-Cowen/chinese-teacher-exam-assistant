@@ -17,6 +17,9 @@
  *      { status:"ok", api:"up", db:"up", redis:"up", worker:"up" }；
  *   7. API 与 Worker 日志不得出现 UnknownExportException /
  *      UnknownDependenciesException / "Nest can't resolve dependencies"。
+ *   8. W4：在隔离 DB/Redis 上验证知识库多角色权限、横向越权、索引后撤回、
+ *      AI 关闭时问答明确失败而招聘公告闭环仍可用（AI 使用 mock，不联网）。
+ *      注意：mock 只证明代码链路，真实百炼 API 需另配 Key 联调。
  *
  * 安全配置（与任务约定一致）：
  *   AUTH_MODE=invited INTERNAL_TOKEN=ci-smoke-token
@@ -53,6 +56,8 @@ const PG_USER = 'jiaozhao';
 const PG_PASSWORD = 'jiaozhao-smoke';
 const PG_DB = 'jiaozhao';
 const API_PORT = 20000 + (process.pid % 20000);
+const DEMO_PORT = API_PORT + 1;
+const AI_OFF_PORT = API_PORT + 2;
 const INTERNAL_TOKEN = 'ci-smoke-token';
 const WATCHDOG_MS = 5 * 60 * 1000;
 const HEALTH_TIMEOUT_MS = 120_000;
@@ -62,7 +67,7 @@ const FORBIDDEN_LOG_PATTERNS = [
   "Nest can't resolve dependencies",
 ];
 
-const logs = { api: '', worker: '', migrate: '' };
+const logs = { api: '', worker: '', migrate: '', demo: '', aioff: '' };
 const children = [];
 let failed = false;
 let failureReason = '';
@@ -168,6 +173,8 @@ async function dumpDiagnostics() {
     ['migrate 输出', logs.migrate],
     ['API (dist/main.js) 日志', logs.api],
     ['Worker (dist/worker.js) 日志', logs.worker],
+    ['W4 Demo API 日志', logs.demo],
+    ['W4 AI-off API 日志', logs.aioff],
   ];
   for (const name of [PG_NAME, REDIS_NAME]) {
     try {
@@ -184,6 +191,248 @@ async function dumpDiagnostics() {
     console.error(content.trim() || '(空)');
   }
   console.error('============================================\n');
+}
+
+async function apiCall(port, pathname, options = {}) {
+  const headers = { 'x-internal-token': INTERNAL_TOKEN };
+  if (options.user) {
+    headers['x-user-id'] = options.user;
+    headers['x-user-role'] = options.role ?? 'user';
+  }
+  let body;
+  if (options.body !== undefined) {
+    headers['content-type'] = 'application/json';
+    body = JSON.stringify(options.body);
+  }
+  const response = await fetch(`http://127.0.0.1:${port}${pathname}`, {
+    method: options.method ?? 'GET',
+    headers,
+    body,
+    signal: AbortSignal.timeout(10_000),
+  });
+  const text = await response.text();
+  let json = null;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    /* 非 JSON 响应（如 403 文本） */
+  }
+  return { status: response.status, json, text };
+}
+
+function check(condition, message) {
+  if (!condition) fail(`W4 知识库隔离验证失败：${message}`);
+}
+
+async function waitForApi(port, label) {
+  await waitFor(label, 90_000, async () => {
+    const response = await apiCall(port, '/health');
+    if (response.status !== 200) throw new Error(`HTTP ${response.status}`);
+    if (response.json?.status !== 'ok' || response.json?.db !== 'up') {
+      throw new Error(`health 未就绪：${JSON.stringify(response.json)}`);
+    }
+    return true;
+  });
+}
+
+/**
+ * W4 隔离环境知识库流程：
+ * 多角色（访客/普通用户/管理员）→ 入库审核发布 → Worker 索引 → 检索/问答
+ * → 横向越权反馈 → 撤回后不可检索 → AI 关闭时问答 503 且招聘闭环仍 200。
+ */
+async function runKnowledgeFlow() {
+  const admin = { user: 'w4-admin', role: 'admin' };
+  const userA = { user: 'w4-user-a', role: 'user' };
+  const userB = { user: 'w4-user-b', role: 'user' };
+
+  // 1) 访客与普通用户不能入库/调试检索
+  let response = await apiCall(DEMO_PORT, '/knowledge/documents', {
+    method: 'POST',
+    body: { title: '匿名不应创建', documentType: 'announcement', content: '' },
+  });
+  check(response.status === 401, `demo 访客入库应为 401，实际 ${response.status}`);
+  response = await apiCall(DEMO_PORT, '/knowledge/documents', {
+    method: 'POST',
+    ...userA,
+    body: { title: '用户不应创建', documentType: 'announcement', content: '' },
+  });
+  check(response.status === 403, `普通用户入库应为 403，实际 ${response.status}`);
+  response = await apiCall(DEMO_PORT, '/knowledge/search', {
+    method: 'POST',
+    ...userA,
+    body: { question: '报名截止时间' },
+  });
+  check(response.status === 403, `普通用户检索调试应为 403，实际 ${response.status}`);
+
+  // 2) 管理员入库 → 送审 → 批准 → 发布
+  const created = await apiCall(DEMO_PORT, '/knowledge/documents', {
+    method: 'POST',
+    ...admin,
+    body: {
+      title: 'W4 隔离验证公告',
+      documentType: 'announcement',
+      content:
+        '<html><body><h1>W4 隔离验证公告</h1><p>报名截止时间为 2026 年 11 月 15 日 17:00。</p><p>资格审查结果于 2026 年 11 月 20 日公布。</p></body></html>',
+      mimeType: 'text/html',
+      officialUrl: 'https://example.gov.cn/w4-smoke',
+    },
+  });
+  check(
+    created.status === 201 || created.status === 200,
+    `入库失败 HTTP ${created.status}: ${created.text.slice(0, 200)}`,
+  );
+  const versionId = created.json?.versionId;
+  const documentId = created.json?.documentId;
+  check(Boolean(versionId && documentId), '入库响应缺少 versionId/documentId');
+
+  for (const action of ['submit-review', 'approve', 'publish']) {
+    const result = await apiCall(
+      DEMO_PORT,
+      `/knowledge/versions/${versionId}/${action}`,
+      {
+        method: 'POST',
+        ...admin,
+        body: action === 'approve' ? { note: 'W4 自动验收' } : {},
+      },
+    );
+    check(
+      result.status === 201 || result.status === 200,
+      `${action} 失败 HTTP ${result.status}: ${result.text.slice(0, 200)}`,
+    );
+  }
+
+  // 3) 等 Worker 完成索引（AI mock，不联网）
+  await waitFor('知识索引 ready', 90_000, async () => {
+    const result = await apiCall(DEMO_PORT, '/knowledge/index-jobs?limit=50', admin);
+    check(result.status === 200, `索引任务查询 HTTP ${result.status}`);
+    const item = (result.json?.items ?? []).find(
+      (row) => row.versionId === versionId,
+    );
+    if (!item || item.status !== 'ready') {
+      throw new Error(`索引未就绪：${item ? item.status : '无任务'}`);
+    }
+    return true;
+  });
+  console.log('[smoke] W4 知识索引 ready ✓');
+
+  // 4) 发布后管理员检索有命中
+  const searchBefore = await apiCall(DEMO_PORT, '/knowledge/search', {
+    method: 'POST',
+    ...admin,
+    body: { question: '报名截止时间' },
+  });
+  check(
+    searchBefore.status === 201 || searchBefore.status === 200,
+    `管理员检索 HTTP ${searchBefore.status}`,
+  );
+  check(
+    (searchBefore.json?.items ?? []).length > 0,
+    '发布后检索应有命中',
+  );
+
+  // 5) 用户 A 提问；用户 B 不能对他人回答反馈（横向越权）
+  const ask = await apiCall(DEMO_PORT, '/knowledge/qa', {
+    method: 'POST',
+    ...userA,
+    body: { question: '报名截止时间是什么时候' },
+  });
+  check(
+    ask.status === 201 || ask.status === 200,
+    `用户 A 问答 HTTP ${ask.status}: ${ask.text.slice(0, 200)}`,
+  );
+  check(
+    ask.json?.status === 'answered',
+    `问答状态应为 answered，实际 ${ask.json?.status}`,
+  );
+  check((ask.json?.citations ?? []).length > 0, '回答缺少原文引用');
+  check(ask.json?.mode === 'mock', `隔离验证应标记 mock，实际 ${ask.json?.mode}`);
+  const answerId = ask.json?.id;
+
+  const crossFeedback = await apiCall(
+    DEMO_PORT,
+    `/knowledge/qa/${answerId}/feedback`,
+    { method: 'POST', ...userB, body: { type: 'helpful' } },
+  );
+  check(
+    crossFeedback.status === 404,
+    `用户 B 对他人回答反馈应为 404，实际 ${crossFeedback.status}`,
+  );
+  const ownFeedback = await apiCall(
+    DEMO_PORT,
+    `/knowledge/qa/${answerId}/feedback`,
+    {
+      method: 'POST',
+      ...userA,
+      body: { type: 'incorrect', comment: 'W4 自动验收打标' },
+    },
+  );
+  check(
+    ownFeedback.status === 201 || ownFeedback.status === 200,
+    `用户 A 反馈失败 HTTP ${ownFeedback.status}`,
+  );
+
+  const historyB = await apiCall(DEMO_PORT, '/knowledge/qa/history', userB);
+  check(historyB.status === 200, `用户 B 历史 HTTP ${historyB.status}`);
+  check(
+    (historyB.json?.items ?? []).length === 0,
+    '用户 B 历史不应包含他人回答',
+  );
+
+  // 6) 撤回后立刻不可检索、问答转拒答
+  const withdraw = await apiCall(
+    DEMO_PORT,
+    `/knowledge/documents/${documentId}/withdraw`,
+    {
+      method: 'POST',
+      ...admin,
+      body: { reason: 'W4 隔离验收：撤回后不可检索' },
+    },
+  );
+  check(
+    withdraw.status === 201 || withdraw.status === 200,
+    `撤回失败 HTTP ${withdraw.status}: ${withdraw.text.slice(0, 200)}`,
+  );
+  const searchAfter = await apiCall(DEMO_PORT, '/knowledge/search', {
+    method: 'POST',
+    ...admin,
+    body: { question: '报名截止时间' },
+  });
+  check(
+    (searchAfter.json?.items ?? []).length === 0,
+    '撤回后检索不应再有命中',
+  );
+  const askAfter = await apiCall(DEMO_PORT, '/knowledge/qa', {
+    method: 'POST',
+    ...userA,
+    body: { question: '报名截止时间是什么时候' },
+  });
+  check(
+    askAfter.json?.status === 'refused',
+    `撤回后应拒答，实际 ${askAfter.json?.status}`,
+  );
+
+  // 7) AI 关闭：问答明确 503，招聘公告覆盖接口仍可用
+  const demoCoverage = await apiCall(DEMO_PORT, '/opportunities/coverage');
+  check(demoCoverage.status === 200, `招聘覆盖接口 HTTP ${demoCoverage.status}`);
+
+  const offHealth = await apiCall(AI_OFF_PORT, '/health');
+  check(offHealth.json?.ai === 'off', `AI-off 健康应报告 off，实际 ${offHealth.json?.ai}`);
+  const offAsk = await apiCall(AI_OFF_PORT, '/knowledge/qa', {
+    method: 'POST',
+    ...userA,
+    body: { question: '报名截止时间是什么时候' },
+  });
+  check(
+    offAsk.status === 503 && offAsk.json?.code === 'ai_disabled',
+    `AI 关闭问答应 503 ai_disabled，实际 ${offAsk.status} ${offAsk.text.slice(0, 200)}`,
+  );
+  const offCoverage = await apiCall(AI_OFF_PORT, '/opportunities/coverage');
+  check(
+    offCoverage.status === 200,
+    `AI 关闭时招聘覆盖接口应 200，实际 ${offCoverage.status}`,
+  );
+
+  console.log('[smoke] W4 多角色/横向越权/撤回/AI 关闭隔离验证 ✓');
 }
 
 async function main() {
@@ -267,6 +516,9 @@ async function main() {
     AUTH_MODE: 'invited',
     INTERNAL_TOKEN,
     FF_DB_CATALOG: 'off',
+    // W4 隔离知识库流程使用 mock 模型：只验证代码链路，不代表真实百炼联调
+    AI_ENABLED: 'true',
+    AI_MOCK_MODE: 'true',
   };
   console.log('[smoke] 启动 node dist/main.js …');
   spawnLogged('API', 'api', process.execPath, [path.join('dist', 'main.js')], {
@@ -278,6 +530,24 @@ async function main() {
   spawnLogged('Worker', 'worker', process.execPath, [path.join('dist', 'worker.js')], {
     ...baseEnv,
     CRAWL_WORKER_PAUSED: 'true',
+  });
+
+  // 4b. W4 额外实例：demo 角色头（AI mock）与 AI 关闭对照，共用隔离 DB/Redis
+  console.log('[smoke] 启动 W4 Demo API（demo 身份，AI mock）…');
+  spawnLogged('Demo API', 'demo', process.execPath, [path.join('dist', 'main.js')], {
+    ...baseEnv,
+    AUTH_MODE: 'demo',
+    PORT: String(DEMO_PORT),
+    CRAWL_SCHEDULER_ENABLED: 'false',
+  });
+  console.log('[smoke] 启动 W4 AI-off API（AI_ENABLED=false）…');
+  spawnLogged('AI-off API', 'aioff', process.execPath, [path.join('dist', 'main.js')], {
+    ...baseEnv,
+    AUTH_MODE: 'demo',
+    PORT: String(AI_OFF_PORT),
+    CRAWL_SCHEDULER_ENABLED: 'false',
+    AI_ENABLED: 'false',
+    AI_MOCK_MODE: 'false',
   });
 
   // 6. 轮询 /health 直到五字段全 up（Worker 心跳间隔 10s，窗口放宽到 120s）
@@ -310,9 +580,25 @@ async function main() {
   }
   console.log('[smoke] 日志无 Nest DI 致命异常 ✓');
 
-  // 持续运行确认：两个进程都活到健康检查通过（exit 事件会把 failed 置位）
+  // 8. W4：invited 访客不能访问知识库后台（招聘公开闭环仍可用）
+  const visitorState = await apiCall(API_PORT, '/knowledge/index-jobs');
+  check(visitorState.status === 403, `invited 访客访问知识后台应为 403，实际 ${visitorState.status}`);
+  const visitorQa = await apiCall(API_PORT, '/knowledge/qa', {
+    method: 'POST',
+    body: { question: '报名截止时间' },
+  });
+  check(visitorQa.status === 403, `invited 访客问答应为 403，实际 ${visitorQa.status}`);
+  const publicCoverage = await apiCall(API_PORT, '/opportunities/coverage');
+  check(publicCoverage.status === 200, `招聘覆盖接口应公开可用，实际 ${publicCoverage.status}`);
+
+  await waitForApi(DEMO_PORT, 'W4 Demo API /health');
+  await waitForApi(AI_OFF_PORT, 'W4 AI-off API /health');
+  await runKnowledgeFlow();
+  console.log('[smoke] W4 隔离知识库流程 ✓');
+
+  // 持续运行确认：全部进程都活到流程结束（exit 事件会把 failed 置位）
   if (failed) fail(failureReason);
-  console.log('[smoke] API 与 Worker 持续运行 ✓');
+  console.log('[smoke] API、Worker 与 W4 实例持续运行 ✓');
 }
 
 const watchdog = setTimeout(() => {

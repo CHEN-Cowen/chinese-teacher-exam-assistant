@@ -73,7 +73,9 @@ export class KnowledgeSearchService {
       where: {
         version: {
           status: 'published',
+          // 文档级撤回/权限变更与版本状态双保险：任一未发布都不进入检索
           document: {
+            status: 'published',
             ...(scope.announcementId ? { announcementId: scope.announcementId } : {}),
             ...(scope.regionCode ? { regionCode: scope.regionCode } : {}),
             ...(scope.documentTypes?.length
@@ -87,12 +89,19 @@ export class KnowledgeSearchService {
       take: MAX_CANDIDATES,
     });
 
+    // 只采用当前有效索引版本：重建索引完成前的旧 chunk、迟到任务的产物都不能进入回答
+    const activeRows = rows.filter(
+      (row) => row.version.activeIndexVersion === row.indexVersion,
+    );
+
+    // 岗位范围：未绑定岗位的公告/政策级材料对该公告下所有岗位可见；
+    // 显式绑定其他岗位的片段必须排除，避免岗位条件串用。
     const filtered = scope.unitId
-      ? rows.filter((row) => {
+      ? activeRows.filter((row) => {
           const unitIds = Array.isArray(row.unitIds) ? (row.unitIds as string[]) : [];
-          return unitIds.includes(scope.unitId!);
+          return unitIds.length === 0 || unitIds.includes(scope.unitId!);
         })
-      : rows;
+      : activeRows;
 
     let queryVector: number[] | null = null;
     let vectorUsed = false;
