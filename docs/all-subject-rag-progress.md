@@ -301,7 +301,7 @@
 | 检索层 | `backend/src/knowledge/knowledge-search.service.ts` | 新增 `year`、`includeNational`、`applicableSubjects`、`applicableAudience`、`asOf`；地区精确匹配，全国政策仅在 `includeNational` 且 `documentType=policy` 时纳入；失效材料在 SQL 与应用层双重排除；检索结果补齐地区/年份/有效期/适用范围元数据 |
 | 政策问答 | `backend/src/knowledge/qa/qa.service.ts`、`qa.controller.ts` | `POST /knowledge/questions`（登录，地区/年份必填）：先查覆盖，无覆盖直接 `no_coverage` 落库、不检索不调用模型；覆盖查询失败 `503 coverage_unavailable`、检索失败 `503 retrieval_failed`、AI 关闭 `503 ai_disabled`，与无覆盖分离；回答追加范围说明、冲突提示、未生效提示、partial 覆盖提示；引用补齐类型/地区/年份/有效期/适用范围；落库 `scopeType=policy`、`regionCode`、`year` |
 | 公开覆盖 | `backend/src/knowledge/qa/qa.controller.ts`、`auth/session.guard.ts` | `GET /knowledge/policy-coverage` 公开只读聚合（regionCode/year/subject/subjects）；查询失败 503，不伪装成无覆盖 |
-| 前端入口 | `src/app/policy/page.tsx`、`src/lib/knowledge/policy-api.ts`、`src/app/me/page.tsx` | 地区（全国+34 省级）与年份必选，可选学科/适用对象；覆盖面板区分本地区/全国/待索引/已失效/学科筛除/同省城市/其他年份；公告与政策冲突并列展示两侧原文摘录；引用卡片展示类型、有效期状态、适用范围、定位与官方链接；演示环境不开放问答 |
+| 前端入口 | `src/app/policy/page.tsx`、`src/lib/knowledge/policy-api.ts`、`src/app/me/page.tsx` | 地区（全国+31 个大陆省级行政区）与年份必选，可选学科/适用对象；覆盖面板区分本地区/全国/待索引/已失效/学科筛除/同省城市/其他年份；公告与政策冲突并列展示两侧原文摘录；引用卡片展示类型、有效期状态、适用范围、定位与官方链接；演示环境不开放问答 |
 | 首批官方来源 | `backend/src/sourcing/source-catalog.ts`、`adapters/anhui-education-policy.adapter.ts`、`adapter-registry.ts`、`sourcing-core.module.ts` | 新增省级政策来源“安徽省教育厅通知公告”（`anhui-education-policy`，`340000`，`contentKind=policy`）；服务端渲染列表 `a[title] + span.right.date`，正文 `meta[ArticleTitle]/PubDate + .j-fontContent`；目录校验区分 `recruitment` 与 `policy`，省级政策来源允许登记栏目列表，但不得冒充市县招聘覆盖 |
 | 真实快照 | `tests/fixtures/golden-sources/anhui-policy/` | 列表首屏、竞赛活动通告、特岗教师招聘公告三份真实快照及 manifest（含 URL、抓取时间、sha256）；适配器测试直接解析真实快照 |
 | 隔离冒烟 | `backend/scripts/smoke-runtime.mjs` | 新增 W5 流程：真实特岗公告快照入库→审核→发布→索引；省级覆盖只算省级材料、城市材料单列、过期材料单列；范围问答带真实官方链接；公告×政策冲突并列；无材料城市 `no_coverage` 且零引用；过期材料不被引用；AI 关闭时政策问答 503 而覆盖查询仍 200 |
@@ -379,4 +379,18 @@
 | W3 | 完成 | `6277ddb` | 通过（run 41981679441） | 本文第 4 节 |
 | W4 | 完成 | `128308f`（过程提交 `09e06e2`/`3ac7a80`/`99f97fd`/`effefd7`） | 通过（run 41992002619） | 本文第 5 节 |
 | W5 | 完成 | `c7df42d` | 通过（run `42008914142`，`verify` 含 W5 冒烟） | 本文第 6 节 |
-| 最终验收 | 未开始 | - | - | - |
+| 最终验收 | 有阻塞未完成 | `4f38df4`（验收脚本）/ 本报告提交 | 通过（run `42016047880`、`42016047916`） | `docs/all-subject-rag-final-acceptance.md` |
+
+## 8. 最终隔离端到端验收（2026-11-05）
+
+报告：`docs/all-subject-rag-final-acceptance.md`。被测提交 `4f38df4f0022662d8f4fef5b65b67db86df93f26`。
+
+| 项 | 结果 |
+| --- | --- |
+| 常规 CI | run `42016047880`：`verify`、`frontend-verify`、两个 `publish` 全部 success |
+| 真实百炼隔离验收 | run `42016047916`：`real-model` success（59s），`pgvector/pgvector:pg17` + Redis + API + Worker + `text-embedding-v4` / `qwen3-rerank` / `qwen-plus` |
+| 单测 | 后端 110 files / 1338 passed（1 expected fail / 2 skipped）；前端 74 files / 794 passed（2 skipped）；Playwright 25 passed |
+| W4 + W5 流程 | `/health ai=real`；索引 ready；多角色/越权/撤回/AI 关闭；政策覆盖/冲突/无覆盖/失效排除全部断言通过 |
+| 结论 | **有阻塞未完成**：浏览器未与真实模型同实例联动、固定样本量化指标未执行、连续七天观察 0/7 天 |
+
+失败历史（已修复）：`42014523204`（Secret 缺失）、`42015542140`（Node 22/npm 10 锁文件不兼容）；`42014484167` 为触发条件 skipped。证据与缺口详见报告。
