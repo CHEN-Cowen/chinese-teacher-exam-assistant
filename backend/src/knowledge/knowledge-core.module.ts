@@ -12,6 +12,8 @@ import { KNOWLEDGE_QUEUE_NAME } from './knowledge.tokens.js';
 import { KnowledgeService } from './knowledge.service.js';
 import { KnowledgeQueueService } from './knowledge-queue.service.js';
 import { VectorStoreService } from './vector-store.service.js';
+import { KnowledgeSearchService } from './knowledge-search.service.js';
+import { QaService } from './qa/qa.service.js';
 
 @Module({
   imports: [
@@ -19,12 +21,20 @@ import { VectorStoreService } from './vector-store.service.js';
     AiModule,
     BullModule.registerQueue({ name: KNOWLEDGE_QUEUE_NAME }),
   ],
-  providers: [KnowledgeService, KnowledgeQueueService, VectorStoreService],
+  providers: [
+    KnowledgeService,
+    KnowledgeQueueService,
+    VectorStoreService,
+    KnowledgeSearchService,
+    QaService,
+  ],
   // 转出解析所需的对象存储与模型依赖（转出模块，Worker 复用同一实例）
   exports: [
     KnowledgeService,
     KnowledgeQueueService,
     VectorStoreService,
+    KnowledgeSearchService,
+    QaService,
     SourcingCoreModule,
     AiModule,
   ],

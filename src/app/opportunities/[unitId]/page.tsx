@@ -54,6 +54,7 @@ import {
 import { CorrectionModal } from "@/components/opportunities/CorrectionModal";
 import { MaterialsList } from "@/components/opportunities/MaterialsList";
 import { ConsultationPanel } from "@/components/opportunities/ConsultationPanel";
+import { QaPanel } from "@/components/opportunities/QaPanel";
 import { SavedNextActionPanel } from "@/components/opportunities/SavedNextActionPanel";
 import {
   selectSavedNextAction,
@@ -993,6 +994,9 @@ export default function OpportunityDetailPage() {
           />
         </div>
       </details>
+
+      {/* W3：问这份公告（仅受邀环境有后端问答；演示环境自动隐藏） */}
+      <QaPanel unitId={unitId} announcementId={unit.announcement.id} />
 
       <CorrectionModal
         isOpen={correctionOpen}

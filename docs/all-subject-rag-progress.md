@@ -161,14 +161,58 @@
 | pgvector 写入/检索 | 当前部署镜像无扩展 | 在具备 pgvector 的隔离库执行迁移并重建索引 |
 | HTML/PDF/Word/岗位表真实材料定位 | W2 仅单测与离线解析样例 | 最终隔离验收用真实公告与附件 |
 
-## 4. 阶段状态
+## 4. W3 公告级问答与引用（2026-11-05）
+
+### 4.1 实现范围
+
+| 层 | 产物 | 说明 |
+| --- | --- | --- |
+| 检索 | `backend/src/knowledge/knowledge-search.service.ts` | 只取 `version.status=published` 的 chunk；公告/岗位/地区/材料类型收窄；向量余弦 + 中文二元组词法混合；前 30 条调用 Rerank，重排失败明确降级 |
+| 纯函数 | `backend/src/knowledge/qa/qa-domain.ts` | 二元组切词、词法覆盖、余弦、混合分、引用解析/校验、抽取式回答、拒答文案 |
+| 编排 | `backend/src/knowledge/qa/qa.service.ts` | 问题校验（≤200 字）→ 当日预算（用户/IP/全局）→ 检索 → 证据阈值（默认 0.16）→ 生成（真实 Chat / Mock 抽取式）→ 引用校验（answered/unverified/refused）→ `qa_answers` 落库 → `ai_usage_daily` 记账 |
+| 接口 | `backend/src/knowledge/qa/qa.controller.ts` | `POST /knowledge/qa`、`POST /knowledge/qa/:id/feedback`、`GET /knowledge/qa/history`（登录）；`POST /knowledge/search`（AdminGuard，返回分数明细） |
+| 前端 | `src/lib/knowledge/qa-api.ts`、`src/components/opportunities/QaPanel.tsx` | 详情页「问这份公告」：范围=`unitId + announcementId`；回答状态、引用原文位置/摘录、反馈；演示环境自动隐藏，不伪造答案 |
+| 模块 | `knowledge-core.module.ts`、`knowledge.module.ts` | `KnowledgeSearchService`、`QaService` 注册并导出；`QaController` 挂载 |
+
+### 4.2 诚实边界（代码内已实现）
+
+- 无证据或最高分低于阈值：返回 `refused`，不调用生成模型；
+- 真实模型回答没有有效 `[n]` 引用：标记 `unverified` 并追加核对提示；
+- 引用编号越界：只保留有效编号，并记录 warning，不把它当依据；
+- 模型未配置/未启用：`503 ai_disabled`，不返回伪造答案；
+- 预算超限：`429 quota_exceeded`，不检索、不写回答；
+- 响应与日志不含密钥；IP 仅存 sha256 截断哈希。
+
+### 4.3 阶段验证（2026-11-05）
+
+| 检查 | 命令 | 结果 |
+| --- | --- | --- |
+| 后端知识/问答单测 | `npx vitest run src/knowledge` | 27 passed（切分 3、问答纯函数 7、问答编排 7、索引 6、向量 4） |
+| 后端全量单测 | `npm test` | 见 W4 回归（本阶段先跑模块内） |
+| 后端 lint | `npm run lint` | 0 error |
+| 后端构建 | `npm run build` | 成功 |
+| 前端 lint | `npx eslint`（改动文件） | 0 error |
+| 前端构建 | `npm run build` | 成功（31 页静态生成，外部依赖扫描通过） |
+| 前端全量单测 | `npm test` | 74 files / 796 tests passed |
+| 模块依赖图 | `npx vitest run src/module-graph.spec.ts` | 2 passed（API/Worker 模块可编译，DI 可解析） |
+
+### 4.4 待真实验证（当前不声明通过）
+
+| 项 | 原因 | 验证方式 |
+| --- | --- | --- |
+| 百炼 Chat 真实回答质量 | 未配置 Key | 配置后按固定 10 题样本测 Recall@5、引用定位率、拒答率、p95 延迟 |
+| Rerank 真实效果 | 未配置 Key | 同一问题对比 `rerankUsed=true/false` 的前 5 条相关性 |
+| 跨公告作用域隔离 | 单测仅验证过滤参数与 unitId 过滤 | 隔离环境用两份不同公告交叉提问，确认不串材料 |
+| Mock 与真实模式区分 | Mock 已跑通 | 响应 `mode` 字段与 UI 提示需在真实环境复核 |
+
+## 5. 阶段状态
 
 | 阶段 | 状态 | 提交 | CI | 证据 |
 | --- | --- | --- | --- | --- |
 | W0 | 完成（盘点） | `ddd4fd87` | 通过（run 41970922907） | 本文第 1 节 |
 | W1 | 完成 | `c1579d5b` | 通过（run 41976619675） | 本文第 2 节 |
-| W2 | 实现完成，待提交/CI | 待填 | 待核对 | 本文第 3 节 |
-| W3 | 未开始 | - | - | - |
+| W2 | 完成 | `7fbe324` | 通过（run 41978689823） | 本文第 3 节 |
+| W3 | 实现与模块验证完成，待提交/CI | 待填 | 待核对 | 本文第 4 节 |
 | W4 | 未开始 | - | - | - |
 | W5 | 未开始 | - | - | - |
 | 最终验收 | 未开始 | - | - | - |
