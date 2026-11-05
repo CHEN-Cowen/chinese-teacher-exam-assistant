@@ -324,12 +324,14 @@ export function locateOfficialArticle(
   if (!title || !date || !body.text().trim())
     throw new AdapterParseError('DOM_MISMATCH', '公开正文缺少标题、日期或正文');
   const attachments = new Map<string, { name: string; url: string }>();
-  // 部分官方站点把「文件下载」区块放在正文容器之外（亳州 .m-filbox），
-  // 仍需按附件链接规则一并收集，否则会漏掉岗位表/报名表。
+  // 部分官方站点把「文件下载」区块放在正文容器之外（亳州 .m-filbox、
+  // 阜阳 .m-dtdownload），仍需按附件链接规则一并收集，否则会漏掉岗位表/报名表。
   const anchors = body.find('a[href]').toArray();
-  $('.m-filbox a[href], .m-file-download a[href]').each((_i, e) => {
-    anchors.push(e);
-  });
+  $('.m-filbox a[href], .m-file-download a[href], .m-dtdownload a[href]').each(
+    (_i, e) => {
+      anchors.push(e);
+    },
+  );
   for (const anchor of anchors) {
     const e = anchor as never;
     const href = $(e).attr('href')!;
@@ -694,9 +696,9 @@ export function serverRenderedListPages(
 }
 
 /**
- * 亳州市政府信息公开「教师管理」栏目：
- * 服务端渲染静态列表，结构为 section.m-tglist li > a[href][title] + 同级 span（YYYY-MM-DD）。
- * 详情页形如 /OpennessContent/show/<id>.html，仅接受匹配该路径的条目。
+ * 政府信息公开栏目静态列表（亳州 section.m-tglist / 阜阳 div.m-cglist.m-liststyle1）：
+ * li 内 a[href][title] + 同级 span（YYYY-MM-DD）；日期与链接先后顺序不固定。
+ * 详情路径由调用方传入的 detailPathPattern 限制，跨站条目直接跳过。
  */
 export function discoverGovInfoList(
   baseUrl: string,
@@ -704,11 +706,13 @@ export function discoverGovInfoList(
   detailPathPattern: RegExp,
 ): DiscoveredDocument[] {
   const $ = load(content);
-  const rows = $('section.m-tglist li').has('a[href]');
+  const rows = $('section.m-tglist li, div.m-cglist.m-liststyle1 li').has(
+    'a[href]',
+  );
   if (!rows.length)
     throw new AdapterParseError(
       'DOM_MISMATCH',
-      '政府信息公开列表未找到 section.m-tglist li > a[href] 结构',
+      '政府信息公开列表未找到 section.m-tglist / div.m-cglist.m-liststyle1 li > a[href] 结构',
     );
   const items: DiscoveredDocument[] = [];
   const seen = new Set<string>();

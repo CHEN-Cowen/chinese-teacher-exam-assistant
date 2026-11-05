@@ -246,6 +246,21 @@ export const SOURCE_CATALOG: readonly SourceCatalogEntry[] = [
       '「教师管理」栏目真实核验（2026-11-05）：服务端渲染静态列表（section.m-tglist）、pagination pagecount 分页（13 页 / 191 条）、正文 #zoom 与官方 /upload_bz/download 附件链接离线回放通过；含新任教师公开招聘、递补与拟聘用公示；持续监测见检查记录。',
   },
   {
+    sourceKey: 'fuyang-education',
+    publisher: '阜阳市教育局',
+    regionCode: '341200',
+    authorityLevel: 'city',
+    officialUrl: 'https://edu.fy.gov.cn/',
+    listUrls: ['https://edu.fy.gov.cn/Content/showList/843/page_1.html'],
+    allowedHosts: ['edu.fy.gov.cn'],
+    adapterKey: 'fuyang-education',
+    status: 'ready',
+    verifiedAt: '2026-11-05',
+    sampleRef: 'tests/fixtures/golden-sources/fuyang',
+    coverageNote:
+      '「师资建设」栏目真实核验（2026-11-05）：服务端渲染静态列表（div.m-cglist.m-liststyle1）、pagination 分页（12 页 / 175 条）、正文 #zoom 与官方 /download?siteId= 附件链接离线回放通过；首屏含新任教师公开招聘成绩通知与选聘教师资格复审公告；跨站转载条目按详情路径过滤；持续监测见检查记录。',
+  },
+  {
     sourceKey: 'changzhou-education',
     publisher: '常州市教育局',
     regionCode: '320400',
@@ -730,6 +745,26 @@ export const SOURCE_MONITORING_RECORDS: readonly SourceMonitoringRecord[] = [
         contentHash:
           '1121e3fdb87209b40cbf90504548402b8a54372d3cfded6078453d74a30d9e0c',
         note: 'N1 第二次真实采样（距首次约 9.5 分钟）：列表 15 条标题/日期/链接与首次样本完全一致；指纹为条目字段 sha256。7 天持续观察窗口尚未完成。',
+      },
+    ],
+  },
+  {
+    sourceKey: 'fuyang-education',
+    checks: [
+      {
+        checkedAt: '2026-11-05T15:54:03.976Z',
+        outcome: 'succeeded',
+        discoveredCount: 10,
+        contentHash: null,
+        note: 'N1 首次真实采样：师资建设栏目首屏 HTTP 200，15 条中 10 条为本域 /Content/show/ 详情（5 条跨站转载按路径过滤）；pagination pagecount=12（共 12 页 / 175 条）；正文 #zoom 与官方 /download?siteId= 附件链接离线回放通过。',
+      },
+      {
+        checkedAt: '2026-11-05T15:55:12.318Z',
+        outcome: 'no_new',
+        discoveredCount: 10,
+        contentHash:
+          '89f12b18de0d87ccea7fd1283ff10204fe827d244ff0dbd3e5de6c790b7051b5',
+        note: 'N1 第二次真实采样（距首次约 1 分钟）：本域 10 条标题/日期/链接与首次样本完全一致；指纹为条目字段 sha256。7 天持续观察窗口尚未完成。',
       },
     ],
   },

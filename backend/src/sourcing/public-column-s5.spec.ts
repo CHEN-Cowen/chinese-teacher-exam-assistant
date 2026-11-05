@@ -28,6 +28,7 @@ import { LishuiEducationAdapter } from './adapters/lishui-education.adapter.js';
 import { HuzhouEducationAdapter } from './adapters/huzhou-education.adapter.js';
 import { TaizhouEducationAdapter } from './adapters/taizhou-education.adapter.js';
 import { BozhouEducationAdapter } from './adapters/bozhou-education.adapter.js';
+import { FuyangEducationAdapter } from './adapters/fuyang-education.adapter.js';
 
 function fixtureDir(key: string): string {
   return path.resolve(process.cwd(), '../tests/fixtures/golden-sources', key);
@@ -747,6 +748,7 @@ const MANIFEST_SOURCES = [
   'huzhou',
   'taizhou',
   'bozhou',
+  'fuyang',
 ] as const;
 
 describe('S5 真实快照 manifest schema 统一', () => {
@@ -1093,6 +1095,96 @@ describe('N1 跨省首批来源真实样本回放', () => {
     expect(() =>
       bozhou.discover({
         url: 'https://www.bozhou.gov.cn/XxgkContent/showList/295/65767/page_1.html',
+        mimeType: 'application/json',
+        content: '{"success":true,"data":{"html":"<ul></ul>"}}',
+        fetchedAt: '2026-11-05T00:00:00.000Z',
+      }),
+    ).toThrow(/静态列表/);
+  });
+
+  it('阜阳师资建设：CMS 静态列表、跨站过滤、pagination 与正文附件一致', () => {
+    const manifest = readManifest('fuyang', 'public-manifest.json');
+    const shellFile = manifest.files.find(
+      (file) => file.name === 'public-shell.html',
+    )!;
+    const shell = readFixture('fuyang', 'public-shell.html');
+    expect(createHash('sha256').update(shell).digest('hex')).toBe(
+      shellFile.sha256,
+    );
+    const items = discoverGovInfoList(
+      shellFile.url,
+      shell,
+      /\/Content\/show\/\d+\.html(?:[?#]|$)/,
+    );
+    // 首屏 15 行中 5 条为省厅/教育部跨站转载，只保留本域 10 条
+    expect(items).toHaveLength(10);
+    expect(
+      items.every((item) => /^\d{4}-\d{2}-\d{2}$/.test(item.publishedAt)),
+    ).toBe(true);
+    expect(
+      items.every((item) =>
+        item.url.startsWith('https://edu.fy.gov.cn/Content/show/'),
+      ),
+    ).toBe(true);
+    expect(
+      items.some(
+        (item) =>
+          item.title.includes('公开招聘') || item.title.includes('选聘教师'),
+      ),
+    ).toBe(true);
+
+    // 官方 pagination：pagecount=12 → 后续 11 页（page_2..page_12.html）
+    const pages = govInfoListPages(shellFile.url, shell);
+    expect(pages).toHaveLength(11);
+    expect(pages[0]).toBe(
+      'https://edu.fy.gov.cn/Content/showList/843/page_2.html',
+    );
+    const page2 = discoverGovInfoList(
+      pages[0],
+      readFixture('fuyang', 'public-page2.html'),
+      /\/Content\/show\/\d+\.html(?:[?#]|$)/,
+    );
+    expect(page2.length).toBeGreaterThan(5);
+    const firstUrls = new Set(items.map((item) => item.url));
+    expect(page2.every((item) => !firstUrls.has(item.url))).toBe(true);
+
+    const detail = readManifest('fuyang', 'public-detail-manifest.json');
+    const detailFile = detail.files[0];
+    const detailBytes = readFileSync(
+      path.join(fixtureDir('fuyang'), detailFile.name),
+    );
+    expect(createHash('sha256').update(detailBytes).digest('hex')).toBe(
+      detailFile.sha256,
+    );
+    const article = locateOfficialArticle(
+      detailFile.url,
+      detailBytes.toString('utf8'),
+    );
+    expect(article.title).toContain('新任教师公开招聘');
+    expect(article.publishedAt).toBe('2026-07-15');
+    expect(article.bodyText.length).toBeGreaterThan(100);
+    expect(article.attachments).toHaveLength(1);
+    expect(article.attachments[0].url).toContain('/download?siteId=28&id=');
+    expect(article.attachments[0].name).toContain('.xlsx');
+  });
+
+  it('阜阳适配器在真实样本上不抛 DOM 失配', () => {
+    const adapter = new FuyangEducationAdapter();
+    const shell = readFixture('fuyang', 'public-shell.html');
+    const base =
+      'https://edu.fy.gov.cn/Content/showList/843/page_1.html';
+    expect(
+      adapter.discover({
+        url: base,
+        mimeType: 'text/html',
+        content: shell,
+        fetchedAt: '2026-11-05T00:00:00.000Z',
+      }),
+    ).toHaveLength(10);
+    expect(adapter.paginationListings(base, shell)).toHaveLength(11);
+    expect(() =>
+      adapter.discover({
+        url: base,
         mimeType: 'application/json',
         content: '{"success":true,"data":{"html":"<ul></ul>"}}',
         fetchedAt: '2026-11-05T00:00:00.000Z',

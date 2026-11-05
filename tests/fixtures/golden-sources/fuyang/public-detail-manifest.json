@@ -1,0 +1,13 @@
+{
+  "capturedAt": "2026-11-05T15:54:04.456Z",
+  "sourceKind": "official-live-snapshot",
+  "scope": "article-and-attachment-links-only",
+  "stableMonitoringVerified": false,
+  "files": [
+    {
+      "name": "public-detail.html",
+      "url": "https://edu.fy.gov.cn/Content/show/1333452.html",
+      "sha256": "199a20888e40dc5ef89309ca8b91dc2c2b24f79ce8012247ab916199069624ec"
+    }
+  ]
+}

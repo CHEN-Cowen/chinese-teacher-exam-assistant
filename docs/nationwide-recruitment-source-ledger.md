@@ -20,9 +20,9 @@
 |---|---|---|
 | 省级行政区目录登记 | 31 / 31 | 已建立省级目录行；多数入口仍待逐站核验 |
 | 有招聘来源实际接入的省级行政区 | 3 / 31 | 浙江、江苏、安徽；其余 28 个省级行政区无已接入招聘来源 |
-| 已登记来源总数 | 18 | 14 个教师招聘 ready + 1 个政策 ready + 2 个省级候选 + 1 个受阻 |
-| 已接入招聘来源 | 14 | 浙江 8、江苏 4、安徽 2 |
-| 样本通过来源 | 3 | 宁波（B 级真实材料闭环）、南京与丽水（A 级独立清单发现对账）；其余 11 个为 fixture 级（含 N1 三个真实样本回放） |
+| 已登记来源总数 | 19 | 15 个教师招聘 ready + 1 个政策 ready + 2 个省级候选 + 1 个受阻 |
+| 已接入招聘来源 | 15 | 浙江 8、江苏 4、安徽 3 |
+| 样本通过来源 | 3 | 宁波（B 级真实材料闭环）、南京与丽水（A 级独立清单发现对账）；其余 12 个为 fixture 级（含 N1 四个真实样本回放） |
 | 持续运行通过来源 | 0 | 连续 7 天观察 0/7，不能声称持续运行通过 |
 | 市级/区县级目录分母 | 待建立 | 现有账本覆盖已接入的 11 个市级/区县地区，不能据此计算全国缺口 |
 | 全国完整召回 | 未验证 | 无全国独立清单，不能声称完整召回 |
@@ -51,7 +51,7 @@
 | 9 | 上海市 | 310000 | 上海市教育委员会 | https://shehr.shec.edu.cn/ | 上海教育人才网；招聘栏目待核验 | 0 | 未覆盖 | 省级/区级招聘入口待接入 |
 | 10 | 江苏省 | 320000 | 江苏省教育厅 | https://jyt.jiangsu.gov.cn/（教育厅）；http://www.jste.net.cn（江苏教师教育网） | 教育厅入口已登记；省级不发布市县招聘，候选 | 4 | 部分接入 | 南京、苏州、常州、泰州已接入；其余地市与区县待补齐 |
 | 11 | 浙江省 | 330000 | 浙江省教育厅 | https://jyt.zj.gov.cn/（教育厅）；http://www.zjzs.net（教育考试网） | 省级候选；“公告公示”为聚合页，无独立教师招聘栏目 | 8 | 部分接入 | 杭州、宁波、鄞州、丽水、绍兴、嘉兴、萧山、湖州已接入；其余地市与区县待补齐 |
-| 12 | 安徽省 | 340000 | 安徽省教育厅 | http://jyt.ah.gov.cn/ | 教育厅门户；省级政策源已接入，招聘栏目待核验 | 2 | 部分接入 | 蚌埠、亳州已接入；其余地市与区县待补齐；省级政策不计招聘覆盖 |
+| 12 | 安徽省 | 340000 | 安徽省教育厅 | http://jyt.ah.gov.cn/ | 教育厅门户；省级政策源已接入，招聘栏目待核验 | 3 | 部分接入 | 蚌埠、亳州、阜阳已接入；其余地市与区县待补齐；省级政策不计招聘覆盖 |
 | 13 | 福建省 | 350000 | 福建省教育厅 | http://www.fjjszg.com | 教师资格入口；教育厅门户待补 | 0 | 未覆盖 | 省级统一招聘与市县入口待接入 |
 | 14 | 江西省 | 360000 | 江西省教育厅 | http://jyt.jiangxi.gov.cn | 教育厅门户；招聘栏目待核验 | 0 | 未覆盖 | 同上 |
 | 15 | 山东省 | 370000 | 山东省教育厅 | http://edu.shandong.gov.cn | 教育厅门户；招聘栏目待核验 | 0 | 未覆盖 | 同上 |
@@ -92,6 +92,7 @@
 | huzhou-education | 湖州市教育局 | 330500 | 市 | 招聘 | ready | 2026-11-05 | fixture 级（真实样本） | 未通过 | 「公示公告」混合栏目；jpaas 表格行 + initJpage 3 页；正文与 xlsx 附件回放通过；7 天观察未完成 |
 | taizhou-education | 泰州市教育局 | 321200 | 市 | 招聘 | ready | 2026-11-05 | fixture 级（真实样本） | 未通过 | 「最新文件」混合栏目；jpaas li + DOM 属性分页 2 页；正文与 xls 附件回放通过；7 天观察未完成 |
 | bozhou-education | 亳州市人民政府 | 341600 | 市 | 招聘 | ready | 2026-11-05 | fixture 级（真实样本） | 未通过 | 「教师管理」栏目；静态列表 + pagination 13 页 / 191 条；正文与 /upload_bz/download 附件回放通过；7 天观察未完成 |
+| fuyang-education | 阜阳市教育局 | 341200 | 市 | 招聘 | ready | 2026-11-05 | fixture 级（真实样本） | 未通过 | 「师资建设」栏目；静态列表 + pagination 12 页 / 175 条；正文与 /download?siteId= 附件回放通过；跨站转载按路径过滤；7 天观察未完成 |
 | anhui-education-policy | 安徽省教育厅 | 340000 | 省 | 政策 | ready | 2026-11-05 | fixture 级 | 未通过 | 只服务政策检索，不计招聘覆盖 |
 | jiangsu-education-candidate | 江苏省教育厅 | 320000 | 省 | 招聘候选 | candidate | 未核验 | 无 | 未接入 | 省级不发布市县招聘，不能替代市县覆盖 |
 | zhejiang-education-candidate | 浙江省教育厅 | 330000 | 省 | 招聘候选 | candidate | 未核验 | 无 | 未接入 | 公告公示为聚合页，无独立教师招聘栏目 |
@@ -132,34 +133,35 @@
 
 ## 8. N1 首批接入记录与 7 天观察（进行中）
 
-### 8.1 首批三个跨省来源（2026-11-05 接入）
+### 8.1 首批四个跨省来源（2026-11-05 接入）
 
 | sourceKey | 省份 | 页面形态 | 列表解析 | 分页 | 正文容器 | 附件 | 真实样本 |
 |---|---|---|---|---|---|---|---|
 | huzhou-education | 浙江湖州 | jpaas 公开接口 + 表格行 | `.page-content tr`，`a[title]` + `td.yd_no` | `initJpage` rows=15/count=41 → 3 页 | `#zoom` + meta | jpaas `front/document/download`（xlsx） | `tests/fixtures/golden-sources/huzhou` |
 | taizhou-education | 江苏泰州 | jpaas 公开接口 + li | `.page-content li`，`a[href]` + `span`，title 占位符回退链接文本 | DOM 属性 rows=15/count=30 → 2 页 | `.content` + meta | jpaas `front/document/download`（xls） | `tests/fixtures/golden-sources/taizhou` |
 | bozhou-education | 安徽亳州 | 服务端渲染静态列表 | `section.m-tglist li`，`a[title]` + `span` | `<pagination>` pagecount=13 → 13 页 / 191 条 | `#zoom` + meta | `/upload_bz/download?siteId=&id=`（doc/et） | `tests/fixtures/golden-sources/bozhou` |
+| fuyang-education | 安徽阜阳 | 服务端渲染静态列表 | `div.m-cglist.m-liststyle1 li`，`span` + `a[title]`（跨站按详情路径过滤） | `<pagination>` pagecount=12 → 12 页 / 175 条 | `#zoom` + meta | `/download?siteId=28&id=`（xlsx/docx） | `tests/fixtures/golden-sources/fuyang` |
 
 新增能力（复用而非单点硬编码）：
 
 - `PublicColumnKind` 增加 `huzhou`、`taizhou`，列表行/标题/日期分支随 kind 复用；
 - `ARTICLE_BODY_SELECTORS` 增加 `.content`（泰州），附件正则增加 `/download?`（亳州）；
 - 新增 `discoverGovInfoList` / `govInfoListPages`，覆盖 `section.m-tglist` + `<pagination>` 静态分页族；
-- 正文附件收集增加 `.m-filbox` / `.m-file-download` 容器，避免岗位表在正文容器外被漏采。
+- 正文附件收集增加 `.m-filbox` / `.m-file-download` / `.m-dtdownload` 容器，避免岗位表在正文容器外被漏采。
 
 ### 8.2 逐来源验证状态
 
-| 验证项 | 湖州 | 泰州 | 亳州 | 证据 |
-|---|---|---|---|---|
-| 自动发现公告 | 通过 | 通过 | 通过 | 真实列表首屏 15 条，`public-column-s5.spec.ts` 回放 |
-| 正文抓取 | 通过 | 通过 | 通过 | 真实正文快照，标题/日期/正文非空 |
-| 岗位/附件抓取 | 通过 | 通过 | 通过 | 真实附件链接（xlsx / xls / doc、et） |
-| 去重 | 通过 | 通过 | 通过 | 第一页与第二页 URL 无交集断言 |
-| 补充通知关联 | 待验证 | 待验证 | 待验证 | 需审核发布链路真实运行后确认 |
-| 失败重试 | 待验证 | 待验证 | 待验证 | 需调度失败注入后确认 |
-| 告警 | 待验证 | 待验证 | 待验证 | 需结构漂移注入后确认 |
-| 审核发布 | 待验证 | 待验证 | 待验证 | 需生产/预发审核链路 |
-| 用户侧可见性 | 待验证 | 待验证 | 待验证 | 需发布后用户侧抽查 |
+| 验证项 | 湖州 | 泰州 | 亳州 | 阜阳 | 证据 |
+|---|---|---|---|---|---|
+| 自动发现公告 | 通过 | 通过 | 通过 | 通过 | 真实列表首屏 15/15/15/10 条，`public-column-s5.spec.ts` 回放 |
+| 正文抓取 | 通过 | 通过 | 通过 | 通过 | 真实正文快照，标题/日期/正文非空 |
+| 岗位/附件抓取 | 通过 | 通过 | 通过 | 通过 | 真实附件链接（xlsx / xls / doc、et / xlsx） |
+| 去重 | 通过 | 通过 | 通过 | 通过 | 第一页与第二页 URL 无交集断言 |
+| 补充通知关联 | 待验证 | 待验证 | 待验证 | 待验证 | 需审核发布链路真实运行后确认 |
+| 失败重试 | 待验证 | 待验证 | 待验证 | 待验证 | 需调度失败注入后确认 |
+| 告警 | 待验证 | 待验证 | 待验证 | 待验证 | 需结构漂移注入后确认 |
+| 审核发布 | 待验证 | 待验证 | 待验证 | 待验证 | 需生产/预发审核链路 |
+| 用户侧可见性 | 待验证 | 待验证 | 待验证 | 待验证 | 需发布后用户侧抽查 |
 
 说明：自动发现、正文、附件、去重已有真实样本证据；补充通知、重试、告警、审核发布与用户可见性属于**运行链路**验证，尚未执行，因此不标记通过。
 
@@ -173,9 +175,9 @@
 ## 9. 当前结论与缺口
 
 1. 省级目录登记 31/31，但仅 3 个省级行政区有招聘来源实际接入；28 个省级行政区未覆盖。
-2. 已接入 14 个招聘来源，其中样本级证据 3 个，持续运行通过 0 个。
-3. N1 首批新增湖州、泰州、亳州 3 个跨省市级来源，均完成真实样本回放；运行链路验证与 7 天观察尚未完成。
-4. 市级、区县级全国分母尚未建立，现有 11 个市级/区县地区不能代表全国。
+2. 已接入 15 个招聘来源，其中样本级证据 3 个，持续运行通过 0 个。
+3. N1 新增湖州、泰州、亳州、阜阳 4 个跨省市级来源，均完成真实样本回放；运行链路验证与 7 天观察尚未完成。
+4. 市级、区县级全国分母尚未建立，现有 15 个市级/区县地区不能代表全国。
 5. 全国完整召回未验证；本文件不宣称全部覆盖或完整召回。
 6. 下一步：继续 N1 补齐浙江、江苏、安徽其余市级/区县缺口，同时推进 7 天真实观察；随后按网站类型推进 N2—N5。
 
@@ -185,3 +187,4 @@
 |---|---|---|
 | 2026-11-05 | 建立 31 省目录账本、现有来源四档盘点、分批计划与验收指标 | 本文件；PRD 第 13 节；`backend/src/sourcing/source-catalog.ts`；`docs/m08-source-acceptance-report.md` |
 | 2026-11-05 | N1 首批接入湖州、泰州、亳州 3 个市级来源；新增静态 `section.m-tglist` 分页族能力；启动 7 天观察首日记录 | `backend/src/sourcing/adapters/{huzhou,taizhou,bozhou}-education.adapter.ts`；`backend/src/sourcing/public-column.ts`；`tests/fixtures/golden-sources/{huzhou,taizhou,bozhou}`；`backend/src/sourcing/public-column-s5.spec.ts` |
+| 2026-11-05 | N1 第二批接入阜阳「师资建设」来源；静态列表解析扩展 `div.m-cglist.m-liststyle1` 与正文外附件容器 `.m-dtdownload`，跨站转载按详情路径过滤 | `backend/src/sourcing/adapters/fuyang-education.adapter.ts`；`tests/fixtures/golden-sources/fuyang`；`backend/src/sourcing/public-column-s5.spec.ts` |
