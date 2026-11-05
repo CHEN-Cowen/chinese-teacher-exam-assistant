@@ -354,7 +354,11 @@ async function runKnowledgeFlow() {
     `问答状态应为 answered，实际 ${ask.json?.status}`,
   );
   check((ask.json?.citations ?? []).length > 0, '回答缺少原文引用');
-  check(ask.json?.mode === 'mock', `隔离验证应标记 mock，实际 ${ask.json?.mode}`);
+  const expectedMode = REAL_AI ? 'real' : 'mock';
+  check(
+    ask.json?.mode === expectedMode,
+    `隔离验证应标记 ${expectedMode}，实际 ${ask.json?.mode}`,
+  );
   const answerId = ask.json?.id;
 
   const crossFeedback = await apiCall(
