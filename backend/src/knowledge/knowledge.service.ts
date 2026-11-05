@@ -467,7 +467,8 @@ export class KnowledgeService {
       };
     }
 
-    const result = await this.queue.enqueue(bullJobId(job.id), {
+    const result = await this.queue.enqueue(job.id, {
+      bullJobId: bullJobId(job.id),
       retry: Boolean(options.retry || reset),
     });
     return {
@@ -579,7 +580,8 @@ export class KnowledgeService {
     let failed = 0;
     for (const row of rows) {
       try {
-        const result = await this.queue.enqueue(bullJobId(row.id), {
+        const result = await this.queue.enqueue(row.id, {
+          bullJobId: bullJobId(row.id),
           retry: true,
         });
         if (result.queued) requeued += 1;

@@ -233,23 +233,30 @@
 
 | 检查 | 命令 | 结果 |
 | --- | --- | --- |
-| 后端知识/问答单测 | `npx vitest run src/knowledge` | 7 files / 41 passed（新增检索范围 4、恢复/撤回 3、索引并发 2、问答预算/越权 5） |
-| 后端全量单测 | `npm test` | 107 files / 1314 passed，1 expected fail，2 skipped（预期项为既有用例） |
+| 后端知识/问答单测 | `npx vitest run src/knowledge` | 8 files / 44 passed（新增检索范围 4、恢复/撤回 3、索引并发 2、问答预算/越权 5、队列载荷契约 3） |
+| 后端全量单测 | `npm test` | 108 files / 1317 passed，1 expected fail，2 skipped（预期项为既有用例） |
 | 后端 lint | `npm run lint` | 0 error |
 | 后端构建 | `npm run build` | 成功 |
 | 前端全量单测 | `npm test -- --run` | 74 files / 796 passed |
 | 前端构建 | `npm run build` | 成功（31 页静态生成、外部依赖扫描 0 阻断） |
 | 模块依赖图 | 包含于后端全量 | 2 passed |
-| 隔离运行时冒烟 | CI `node scripts/smoke-runtime.mjs` | 见 5.5（推送后按同一提交 CI 结果填写） |
+| 隔离运行时冒烟 | CI `node scripts/smoke-runtime.mjs` | 见 5.6（推送后按同一提交 CI 结果填写） |
 
-### 5.4 明确预期失败 / 跳过（不得借其隐藏失败）
+### 5.4 W4 发现并修复的 W1—W3 集成缺陷
+
+- **索引任务永远停在 `queued`（严重）**：生产者把 `bullJobId(job.id)`（`kidx-<hash>`）既当 BullMQ jobId 又当任务载荷 `jobId`，Worker 用哈希值查数据库必然 `job_not_found`，而处理器把该失败当普通结果返回、BullMQ 标记完成，数据库任务永远不更新。已把“数据库主键”和“BullMQ jobId”拆成两个参数（`enqueue(dbJobId, { bullJobId })`），并新增队列载荷契约测试；隔离冒烟必须实际跑到 `ready` 才算通过。
+- **demo 身份问答恒 401**：QA 控制器只读 `req.user`，demo 模式不写 `req.user`；改为与 AdminGuard 同源 `resolveAuthenticatedUser`。
+- **岗位范围误排除公告级材料**：公开公告/政策材料通常不绑定具体岗位，原来的 `unitIds.includes(unitId)` 会把整份公告过滤掉；改为“未绑定岗位＝对该公告下所有岗位可见，显式绑定其他岗位才排除”。
+- **旧索引并发覆盖**：完成时改为条件 `updateMany` 原子切换，迟到任务标记 `superseded`，且只清理更低 `indexVersion` 的旧 chunk，避免误删并发新任务产物。
+
+### 5.5 明确预期失败 / 跳过（不得借其隐藏失败）
 
 - 后端全量中的 1 expected fail、2 skipped 为既有用例，不属于本任务新增；本任务新增用例全部执行。
 - 真实百炼 Embedding / Rerank / Chat 仍未联调（未配置 Key）：本阶段隔离冒烟使用 `AI_MOCK_MODE=true`，只能证明代码链路与拒答/权限逻辑，不能写成真实模型质量通过。
 - CI 部署镜像 `postgres:17-alpine` 不含 pgvector：继续走 `Float[]` + 应用余弦降级；真实 pgvector 写入/检索待具备扩展的环境验证。
 - 真实公告多格式（PDF/Word/岗位表）定位、跨公告真实材料串用检查：留给最终隔离验收，用真实官方材料 + 真实 Key。
 
-### 5.5 隔离运行时冒烟（CI 证据）
+### 5.6 隔离运行时冒烟（CI 证据）
 
 待推送后填写同一提交 CI run 的 `smoke-runtime` 结果。脚本按失败即退出执行，覆盖：
 
@@ -261,7 +268,7 @@
 5. 撤回后检索 0 命中、问答转 `refused`；
 6. AI 关闭实例 `/health.ai=off`、问答 `503 ai_disabled`，`GET /opportunities/coverage` 仍 200。
 
-### 5.6 真实联调前必须完成的配置（再次提醒）
+### 5.7 真实联调前必须完成的配置（再次提醒）
 
 - 文件：`backend/.env`（模板 `backend/.env.example` 的“W2/W3 阿里云百炼”段）；部署时用同名环境变量。
 - 最少必填：`AI_ENABLED=true`、`DASHSCOPE_API_KEY=实际值`、`AI_MOCK_MODE=false`（或删除该行）。

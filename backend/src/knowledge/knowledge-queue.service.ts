@@ -36,11 +36,13 @@ export class KnowledgeQueueService {
 
   async enqueue(
     jobId: string,
-    options: { retry?: boolean } = {},
+    options: { retry?: boolean; bullJobId?: string } = {},
   ): Promise<KnowledgeEnqueueResult> {
+    // jobId 必须是数据库任务主键；BullMQ 的 jobId 是哈希后的稳定键，二者不能混用
+    const bullId = options.bullJobId ?? jobId;
     const payload: KnowledgeIndexPayload = { jobId };
     try {
-      const existing = await withTimeout(this.queue.getJob(jobId), enqueueTimeoutMs());
+      const existing = await withTimeout(this.queue.getJob(bullId), enqueueTimeoutMs());
       if (existing) {
         if (!options.retry) return { queued: true, deduplicated: true };
         const state = await withTimeout(existing.getState(), enqueueTimeoutMs());
@@ -51,7 +53,7 @@ export class KnowledgeQueueService {
       }
       await withTimeout(
         this.queue.add(KNOWLEDGE_INDEX_JOB, payload, {
-          jobId,
+          jobId: bullId,
           attempts: 3,
           backoff: { type: 'exponential', delay: 1000 },
           removeOnComplete: true,

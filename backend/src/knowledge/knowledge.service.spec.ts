@@ -88,6 +88,14 @@ describe('KnowledgeService 恢复与撤回', () => {
       where: { status: { in: ['queued', 'running'] } },
     });
     expect(queue.enqueue).toHaveBeenCalledTimes(3);
+    expect(queue.enqueue).toHaveBeenNthCalledWith(
+      1,
+      'job-1',
+      expect.objectContaining({
+        bullJobId: expect.stringMatching(/^kidx-/),
+        retry: true,
+      }),
+    );
   });
 
   it('撤回已发布版本立即清理向量并移出公开状态', async () => {

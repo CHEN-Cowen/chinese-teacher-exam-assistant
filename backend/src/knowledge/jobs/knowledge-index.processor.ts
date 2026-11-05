@@ -54,14 +54,27 @@ export class KnowledgeIndexProcessor
 
   async process(job: Job<KnowledgeIndexPayload>): Promise<KnowledgeIndexOutcome> {
     this.logger.log(`开始处理知识索引 job=${job.id} dbJob=${job.data.jobId}`);
-    const outcome = await this.indexService.run(job.data.jobId);
-    if (
-      outcome.status === 'failed' &&
-      outcome.errorClass &&
-      RETRYABLE_CODES.has(outcome.errorClass)
-    ) {
-      throw new Error(`知识索引瞬时失败：${outcome.errorClass}`);
+    try {
+      const outcome = await this.indexService.run(job.data.jobId);
+      this.logger.log(
+        `知识索引结果 job=${job.id} status=${outcome.status}` +
+          (outcome.errorClass ? ` code=${outcome.errorClass}` : ''),
+      );
+      if (
+        outcome.status === 'failed' &&
+        outcome.errorClass &&
+        RETRYABLE_CODES.has(outcome.errorClass)
+      ) {
+        throw new Error(`知识索引瞬时失败：${outcome.errorClass}`);
+      }
+      return outcome;
+    } catch (error) {
+      this.logger.error(
+        `知识索引处理异常 job=${job.id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      throw error;
     }
-    return outcome;
   }
 }
