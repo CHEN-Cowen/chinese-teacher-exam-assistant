@@ -14,7 +14,7 @@
 | 最终提交 | `4f38df4f0022662d8f4fef5b65b67db86df93f26` |
 | 分支 | `codex/all-subject-rag` |
 | 远端 | `origin` = https://github.com/CHEN-Cowen/chinese-teacher-exam-assistant-project |
-| 最终提交内容 | 仅修改 `backend/scripts/smoke-runtime.mjs` 的真实模式断言（+5/-1），无业务代码变更；本报告与台账提交只改 docs |
+| 最终提交内容 | 仅修改 `backend/scripts/smoke-runtime.mjs` 的真实模式断言（+5/-1），无业务代码变更；本报告提交只改 docs |
 | 工作区 | 存在与本任务无关的既有未提交文件（旧文档/探针脚本/CSV 等），未纳入验收提交 |
 
 ### 1.2 W0—W5 交付提交
