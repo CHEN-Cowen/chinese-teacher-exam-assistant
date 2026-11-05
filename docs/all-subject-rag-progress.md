@@ -260,9 +260,20 @@
 
 ### 5.6 隔离运行时冒烟（CI 证据）
 
-待推送后填写同一提交 CI run 的 `smoke-runtime` 结果。脚本按失败即退出执行，覆盖：
+同一提交 `128308f1d1e7ddf0c3089b4854f88191646ba118`，CI run `41992002619`（`verify`、`frontend-verify`、`publish` 全部 success），`smoke-runtime` 输出：
 
-0. 生产实例（`invited`）访客不可访问知识后台，招聘覆盖接口公开可用；生产环境启用 demo 鉴权会被 runtime-security 直接拒绝；
+```text
+[smoke] 执行 prisma migrate deploy …
+[smoke] 迁移成功 ✓
+[smoke] /health ✓ {"status":"ok","api":"up","db":"up","redis":"up","worker":"up","ai":"mock"}
+[smoke] W4 知识索引 ready ✓
+[smoke] W4 多角色/横向越权/撤回/AI 关闭隔离验证 ✓
+[smoke] PASS：后端与 Worker 真实启动冒烟通过
+```
+
+该证据来自全新 PostgreSQL/Redis 容器；前几次同流程 CI 失败分别暴露“索引任务 id 混用”和“问答表缺迁移”，修复后按同一流程重跑至全绿。脚本覆盖：
+
+0. 生产实例（`invited`）访客不可访问知识后台，招聘覆盖接口公开可用；生产环境启用 demo 鉴权会被 runtime-security 直接拒绝（曾以 500 暴露，已作为约束写入脚本）；
 1. demo 访客入库 401、普通用户入库/检索调试 403；
 2. 管理员入库→送审→批准→发布→Worker 索引 `ready`；
 3. 管理员检索有命中；用户 A 问答 `answered` 且带引用、`mode=mock`；
@@ -285,6 +296,6 @@
 | W1 | 完成 | `c1579d5b` | 通过（run 41976619675） | 本文第 2 节 |
 | W2 | 完成 | `7fbe324` | 通过（run 41978689823） | 本文第 3 节 |
 | W3 | 完成 | `6277ddb` | 通过（run 41981679441） | 本文第 4 节 |
-| W4 | 未开始 | - | - | - |
+| W4 | 完成 | `128308f`（过程提交 `09e06e2`/`3ac7a80`/`99f97fd`/`effefd7`） | 通过（run 41992002619） | 本文第 5 节 |
 | W5 | 未开始 | - | - | - |
 | 最终验收 | 未开始 | - | - | - |
