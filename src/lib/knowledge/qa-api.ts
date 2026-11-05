@@ -13,6 +13,7 @@ export interface QaCitationDTO {
   chunkId: string;
   documentId: string;
   documentTitle: string;
+  documentType?: string;
   officialUrl: string | null;
   locator: {
     anchor?: string;
@@ -24,9 +25,17 @@ export interface QaCitationDTO {
   };
   snippet: string;
   score: number;
+  regionCode?: string | null;
+  year?: number | null;
+  effectiveFrom?: string | null;
+  effectiveTo?: string | null;
+  validity?: "effective" | "expired" | "not_yet_effective" | "unknown";
+  applicableAudience?: string | null;
+  applicableSubjects?: string[];
+  applicableStages?: string[];
 }
 
-export type QaStatus = "answered" | "unverified" | "refused" | "error";
+export type QaStatus = "answered" | "unverified" | "refused" | "no_coverage" | "error";
 
 export interface QaAnswerDTO {
   id: string;

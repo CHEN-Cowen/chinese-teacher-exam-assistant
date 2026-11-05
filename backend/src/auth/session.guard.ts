@@ -26,6 +26,8 @@ const PUBLIC_PATHS = new Set([
   // W1：全学科字典与原文解析（只读、不含用户数据）
   '/subjects',
   '/subjects/resolve',
+  // W5：政策覆盖查询是公开只读聚合（只统计已发布材料，不含用户数据）
+  '/knowledge/policy-coverage',
 ]);
 
 /**

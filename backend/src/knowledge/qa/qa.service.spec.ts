@@ -24,6 +24,13 @@ function chunk(overrides: Partial<RetrievedChunk> = {}): RetrievedChunk {
     officialUrl: 'https://example.gov.cn/notice',
     documentType: 'announcement',
     publishedAt: '2026-10-01T00:00:00.000Z',
+    regionCode: '320100',
+    year: 2026,
+    effectiveFrom: null,
+    effectiveTo: null,
+    applicableAudience: null,
+    applicableSubjects: [],
+    applicableStages: [],
     lexicalScore: 1,
     vectorScore: null,
     hybridScore: 1,
@@ -59,6 +66,8 @@ function createService(options: {
   userUsage?: number | null;
   ipUsage?: number | null;
   globalUsage?: { requests: number; tokens: number } | null;
+  coverageStatus?: 'covered' | 'partial' | 'no_coverage';
+  coverageResult?: Record<string, unknown>;
 }) {
   const prisma = {
     qaAnswer: {
@@ -116,8 +125,41 @@ function createService(options: {
     retrieve: vi.fn().mockResolvedValue(retrieval(options.chunks ?? [chunk()])),
   } as unknown as KnowledgeSearchService;
 
-  const service = new QaService(prisma, ai, search);
-  return { service, prisma, ai: ai as unknown as { chat: typeof chat }, search };
+  const coverage = {
+    coverage: vi.fn().mockResolvedValue(
+      options.coverageResult ?? {
+        status: options.coverageStatus ?? 'covered',
+        regionCode: '320100',
+        regionLabel: '江苏省（320100）',
+        year: 2026,
+        exact: {
+          documents: 1,
+          policy: 1,
+          announcement: 0,
+          queryable: options.coverageStatus === 'no_coverage' ? 0 : 1,
+          publishedNotIndexed: 0,
+          undated: 0,
+        },
+        national: {
+          documents: 0,
+          policy: 0,
+          announcement: 0,
+          queryable: 0,
+          publishedNotIndexed: 0,
+          undated: 0,
+        },
+        descendants: [],
+        sources: [],
+        years: [{ year: 2026, documents: 1, queryable: 1 }],
+        subjectExcluded: 0,
+        note: '',
+        generatedAt: '2026-11-05T00:00:00.000Z',
+      },
+    ),
+  };
+
+  const service = new QaService(prisma, ai, search, coverage as never);
+  return { service, prisma, ai: ai as unknown as { chat: typeof chat }, search, coverage };
 }
 
 const baseInput: AskInput = { question: '报名截止时间是什么时候', userId: 'user-1', ip: '10.0.0.1' };
@@ -272,5 +314,141 @@ describe('QaService 编排链路', () => {
       (prisma.qaAnswer.findMany as unknown as ReturnType<typeof vi.fn>).mock
         .calls[0]![0],
     ).toMatchObject({ where: { userId: 'user-1' } });
+  });
+});
+
+describe('QaService 政策问答（W5）', () => {
+  const policyInput = {
+    question: '2026 年南京教师招聘对语文教师有什么政策要求？',
+    regionCode: '320100',
+    year: 2026,
+    applicableSubjects: ['chinese'],
+    userId: 'user-1',
+    ip: '10.0.0.1',
+  };
+
+  it('地区或年份不明确时返回 400，不查询覆盖也不检索', async () => {
+    const { service, coverage, search } = createService({});
+
+    await expect(
+      service.askPolicy({ ...policyInput, regionCode: 'Nanjing' }),
+    ).rejects.toMatchObject({ code: 'region_invalid', status: 400 });
+    await expect(
+      service.askPolicy({ ...policyInput, year: 1999 }),
+    ).rejects.toMatchObject({ code: 'year_invalid', status: 400 });
+    expect(coverage.coverage).not.toHaveBeenCalled();
+    expect(search.retrieve).not.toHaveBeenCalled();
+  });
+
+  it('无覆盖时返回 no_coverage，不检索、不调用模型，并落库记录', async () => {
+    const { service, prisma, search, ai, coverage } = createService({
+      coverageStatus: 'no_coverage',
+    });
+
+    const answer = await service.askPolicy(policyInput);
+
+    expect(answer.status).toBe('no_coverage');
+    expect(answer.answer).toContain('暂不能回答');
+    expect(answer.scope).toMatchObject({ regionCode: '320100', year: 2026 });
+    expect(search.retrieve).not.toHaveBeenCalled();
+    expect(ai.chat).not.toHaveBeenCalled();
+    expect(coverage.coverage).toHaveBeenCalledWith(
+      expect.objectContaining({ regionCode: '320100', year: 2026, subjects: ['chinese'] }),
+    );
+    expect(prisma.qaAnswer.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ scopeType: 'policy', status: 'no_coverage', year: 2026 }),
+    });
+  });
+
+  it('覆盖查询失败返回 503 coverage_unavailable，不伪装成无覆盖', async () => {
+    const { service, coverage, search } = createService({});
+    coverage.coverage.mockRejectedValueOnce(new Error('db down'));
+
+    await expect(service.askPolicy(policyInput)).rejects.toMatchObject({
+      code: 'coverage_unavailable',
+      status: 503,
+    });
+    expect(search.retrieve).not.toHaveBeenCalled();
+  });
+
+  it('检索失败返回 503 retrieval_failed，不返回无覆盖结论', async () => {
+    const { service, search } = createService({});
+    search.retrieve.mockRejectedValueOnce(new Error('search down'));
+
+    await expect(service.askPolicy(policyInput)).rejects.toMatchObject({
+      code: 'retrieval_failed',
+      status: 503,
+    });
+  });
+
+  it('用明确范围检索，并把年份/学科/全国政策开关传给检索层', async () => {
+    const { service, search } = createService({});
+
+    await service.askPolicy(policyInput);
+
+    expect(search.retrieve).toHaveBeenCalledWith(
+      policyInput.question,
+      expect.objectContaining({
+        regionCode: '320100',
+        year: 2026,
+        includeNational: true,
+        documentTypes: ['policy', 'announcement'],
+        applicableSubjects: ['chinese'],
+      }),
+      6,
+    );
+  });
+
+  it('公告与政策同时命中时并列展示冲突候选并建议核实，不自动判定覆盖', async () => {
+    const { service } = createService({
+      chunks: [
+        chunk({ chunkId: 'policy-1', documentId: 'policy-doc', documentType: 'policy', documentTitle: '教师招聘政策' }),
+        chunk({ chunkId: 'ann-1', documentId: 'ann-doc', documentType: 'announcement', documentTitle: '招聘公告' }),
+      ],
+    });
+
+    const answer = await service.askPolicy(policyInput);
+
+    expect(answer.status).toBe('answered');
+    expect(answer.conflicts).toHaveLength(1);
+    expect(answer.conflicts[0]!.announcement.documentType).toBe('announcement');
+    expect(answer.conflicts[0]!.policy.documentType).toBe('policy');
+    expect(answer.needsOfficialConfirmation).toBe(true);
+    expect(answer.answer).toContain('不会自动认定');
+  });
+
+  it('引用会标注有效期与适用范围，未到生效日期给出提示', async () => {
+    const { service } = createService({
+      chunks: [
+        chunk({
+          documentType: 'policy',
+          effectiveFrom: '2027-01-01T00:00:00.000Z',
+          effectiveTo: null,
+          applicableSubjects: ['chinese'],
+          applicableStages: ['小学'],
+        }),
+      ],
+      coverageResult: {
+        status: 'partial',
+        regionCode: '320100',
+        regionLabel: '江苏省（320100）',
+        year: 2026,
+        exact: { documents: 0, policy: 0, announcement: 0, queryable: 0, publishedNotIndexed: 0, undated: 0 },
+        national: { documents: 1, policy: 1, announcement: 0, queryable: 1, publishedNotIndexed: 0, undated: 0 },
+        descendants: [],
+        sources: [],
+        years: [{ year: 2026, documents: 1, queryable: 1 }],
+        subjectExcluded: 0,
+        note: '',
+        generatedAt: '2026-11-05T00:00:00.000Z',
+      },
+    });
+
+    const answer = await service.askPolicy(policyInput);
+
+    expect(answer.citations[0]!.validity).toBe('not_yet_effective');
+    expect(answer.citations[0]!.applicableSubjects).toEqual(['chinese']);
+    expect(answer.answer).toContain('尚未到生效日期');
+    expect(answer.answer).toContain('仅命中全国性政策');
   });
 });

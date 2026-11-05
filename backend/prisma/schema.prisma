@@ -1078,6 +1078,12 @@ model KnowledgeDocument {
   officialUrl           String?   @map("official_url")
   effectiveFrom         DateTime? @map("effective_from")
   effectiveTo           DateTime? @map("effective_to")
+  /** W5：政策适用对象（如「教师公开招聘」「中小学教师」），自由文本 */
+  applicableAudience    String?   @map("applicable_audience")
+  /** W5：适用学科代码数组；空表示不限学科，不能当作已匹配具体学科 */
+  applicableSubjects    Json?     @map("applicable_subjects")
+  /** W5：适用学段标签数组；空表示不限学段 */
+  applicableStages      Json?     @map("applicable_stages")
   currentVersionId      String?   @map("current_version_id")
   activeIndexVersion    Int?      @map("active_index_version")
   createdBy             String?   @map("created_by")
@@ -1088,6 +1094,7 @@ model KnowledgeDocument {
 
   @@index([announcementId])
   @@index([documentType, regionCode, status])
+  @@index([documentType, regionCode, year, status])
   @@map("knowledge_documents")
 }
 
@@ -1184,6 +1191,8 @@ model QaAnswer {
   announcementId        String?  @map("announcement_id")
   unitId                String?  @map("unit_id")
   regionCode            String?  @map("region_code")
+  /** W5：政策问答的适用年份（公告问答为 null） */
+  year                  Int?
   question              String
   answer                String
   status                String

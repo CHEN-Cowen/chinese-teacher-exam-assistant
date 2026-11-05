@@ -112,6 +112,11 @@ export default function MePage() {
             description="按已保存机会生成的每日备考任务"
           />
           <SettingsRow
+            href="/policy"
+            title="政策检索"
+            description="按地区和年份检索已发布的官方政策与招聘材料"
+          />
+          <SettingsRow
             href="/me/education"
             title="教育经历"
             description="按本科、硕士等阶段分别填写专业与师范背景"

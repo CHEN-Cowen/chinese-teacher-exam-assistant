@@ -72,6 +72,10 @@ export default function AdminKnowledgePage() {
   const [regionCode, setRegionCode] = useState("");
   const [year, setYear] = useState("");
   const [officialUrl, setOfficialUrl] = useState("");
+  const [effectiveFrom, setEffectiveFrom] = useState("");
+  const [effectiveTo, setEffectiveTo] = useState("");
+  const [applicableAudience, setApplicableAudience] = useState("");
+  const [applicableSubjects, setApplicableSubjects] = useState("");
   const [content, setContent] = useState("");
   const [base64, setBase64] = useState("");
   const [fileName, setFileName] = useState("");
@@ -135,6 +139,17 @@ export default function AdminKnowledgePage() {
       ...(regionCode.trim() ? { regionCode: regionCode.trim() } : {}),
       ...(year.trim() ? { year: Number(year) } : {}),
       ...(officialUrl.trim() ? { officialUrl: officialUrl.trim() } : {}),
+      ...(effectiveFrom.trim() ? { effectiveFrom: effectiveFrom.trim() } : {}),
+      ...(effectiveTo.trim() ? { effectiveTo: effectiveTo.trim() } : {}),
+      ...(applicableAudience.trim() ? { applicableAudience: applicableAudience.trim() } : {}),
+      ...(applicableSubjects.trim()
+        ? {
+            applicableSubjects: applicableSubjects
+              .split(/[,，、]/)
+              .map((item) => item.trim())
+              .filter(Boolean),
+          }
+        : {}),
       ...(base64 ? { base64, fileName } : {}),
       ...(!base64 && content.trim() ? { content } : {}),
     };
@@ -223,6 +238,10 @@ export default function AdminKnowledgePage() {
           />
           <Input label="地区代码（可选）" value={regionCode} onChange={(e) => setRegionCode(e.target.value)} placeholder="如 330100" />
           <Input label="适用年份（可选）" value={year} onChange={(e) => setYear(e.target.value)} placeholder="如 2026" />
+          <Input label="生效日期（可选）" value={effectiveFrom} onChange={(e) => setEffectiveFrom(e.target.value)} placeholder="如 2026-01-01" />
+          <Input label="失效日期（可选）" value={effectiveTo} onChange={(e) => setEffectiveTo(e.target.value)} placeholder="如 2026-12-31；留空表示未标注" />
+          <Input label="适用对象（可选）" value={applicableAudience} onChange={(e) => setApplicableAudience(e.target.value)} placeholder="如：教师公开招聘" />
+          <Input label="适用学科（可选，逗号分隔）" value={applicableSubjects} onChange={(e) => setApplicableSubjects(e.target.value)} placeholder="如：chinese,mathematics；留空表示不限" />
           <Input label="官方链接（可选）" value={officialUrl} onChange={(e) => setOfficialUrl(e.target.value)} placeholder="填写官方原文链接" />
           <div>
             <label className="mb-2 block text-sm font-semibold text-ink">原件上传（PDF/Word/Excel/HTML）</label>

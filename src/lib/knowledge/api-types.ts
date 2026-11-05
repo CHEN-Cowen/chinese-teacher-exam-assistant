@@ -18,6 +18,11 @@ export interface KnowledgeDocumentSummary {
   announcementId: string | null;
   regionCode: string | null;
   year: number | null;
+  effectiveFrom?: string | null;
+  effectiveTo?: string | null;
+  applicableAudience?: string | null;
+  applicableSubjects?: string[];
+  applicableStages?: string[];
   currentVersionId: string | null;
   activeIndexVersion: number | null;
   versionCount: number;
@@ -88,5 +93,10 @@ export interface CreateKnowledgeDocumentInput {
   year?: number;
   publisher?: string;
   officialUrl?: string;
+  effectiveFrom?: string;
+  effectiveTo?: string;
+  applicableAudience?: string;
+  applicableSubjects?: string[];
+  applicableStages?: string[];
   unitIds?: string[];
 }

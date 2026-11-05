@@ -40,6 +40,7 @@ describe('S5 来源目录', () => {
       'lishui-education',
       'bengbu-education',
       'xiaoshan-education',
+      'anhui-education-policy',
     ]);
     expect(
       SOURCE_CATALOG.filter((entry) => entry.status === 'candidate'),
@@ -138,7 +139,7 @@ describe('S5 来源目录', () => {
         : entry,
     );
     expect(validateSourceCatalog(invalid)).toContain(
-      '省级来源不得登记栏目列表: jiangsu-education-candidate',
+      '省级招聘来源不得登记栏目列表: jiangsu-education-candidate',
     );
   });
 
@@ -158,13 +159,14 @@ describe('S5 来源目录', () => {
     expect(verifiedAtOf('lishui-education')).toBe('2026-10-26');
     expect(verifiedAtOf('bengbu-education')).toBe('2026-10-26');
     expect(verifiedAtOf('xiaoshan-education')).toBe('2026-10-26');
+    expect(verifiedAtOf('anhui-education-policy')).toBe('2026-11-05');
   });
 });
 
 describe('S5 来源级检查记录与监测状态', () => {
   it('ready 来源完成两次真实检查后，才可声称正常监测', () => {
     const ready = SOURCE_CATALOG.filter((entry) => entry.status === 'ready');
-    expect(ready.length).toBe(11);
+    expect(ready.length).toBe(12);
     for (const entry of ready) {
       const record = getSourceMonitoringRecord(entry.sourceKey);
       expect(record.checks.length, entry.sourceKey).toBe(2);
@@ -176,14 +178,14 @@ describe('S5 来源级检查记录与监测状态', () => {
         /^[0-9a-f]{64}$/,
       );
     }
-    // 只有南京第二次发现了新公告；其余 10 个列表条目未变，记 no_new 仍算成功。
+    // 只有南京第二次发现了新公告；其余 11 个列表条目未变，记 no_new 仍算成功。
     expect(
       getSourceMonitoringRecord('nanjing-education').checks[1]?.outcome,
     ).toBe('succeeded');
     const unchanged = SOURCE_MONITORING_RECORDS.filter(
       (record) => record.sourceKey !== 'nanjing-education',
     );
-    expect(unchanged).toHaveLength(10);
+    expect(unchanged).toHaveLength(11);
     for (const record of unchanged) {
       expect(record.checks[1]?.outcome, record.sourceKey).toBe('no_new');
     }

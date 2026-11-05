@@ -125,6 +125,15 @@ export class KnowledgeService {
             ...(input.year !== undefined ? { year: input.year } : {}),
             ...(input.publisher !== undefined ? { publisher: input.publisher } : {}),
             ...(input.officialUrl !== undefined ? { officialUrl: input.officialUrl } : {}),
+            ...(input.applicableAudience !== undefined
+              ? { applicableAudience: input.applicableAudience }
+              : {}),
+            ...(input.applicableSubjects !== undefined
+              ? { applicableSubjects: input.applicableSubjects as Prisma.InputJsonValue }
+              : {}),
+            ...(input.applicableStages !== undefined
+              ? { applicableStages: input.applicableStages as Prisma.InputJsonValue }
+              : {}),
             ...(input.announcementId !== undefined
               ? { announcementId: input.announcementId }
               : {}),
@@ -149,6 +158,13 @@ export class KnowledgeService {
             officialUrl: input.officialUrl ?? null,
             effectiveFrom: parseDate(input.effectiveFrom),
             effectiveTo: parseDate(input.effectiveTo),
+            applicableAudience: input.applicableAudience ?? null,
+            applicableSubjects: input.applicableSubjects
+              ? (input.applicableSubjects as Prisma.InputJsonValue)
+              : undefined,
+            applicableStages: input.applicableStages
+              ? (input.applicableStages as Prisma.InputJsonValue)
+              : undefined,
             createdBy: actorId,
           },
         });

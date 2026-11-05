@@ -25,6 +25,7 @@ const STATUS_LABELS: Record<QaAnswerDTO["status"], string> = {
   answered: "依据已发布材料回答",
   unverified: "未核对到原文，请以公告为准",
   refused: "材料不足，暂不能回答",
+  no_coverage: "该范围暂无已发布材料",
   error: "回答失败",
 };
 
@@ -35,6 +36,7 @@ const STATUS_VARIANTS: Record<
   answered: "success",
   unverified: "warning",
   refused: "muted",
+  no_coverage: "muted",
   error: "danger",
 };
 

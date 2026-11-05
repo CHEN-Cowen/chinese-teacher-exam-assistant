@@ -288,7 +288,88 @@
 - 运行前提：数据库迁移已执行、Redis 可达、Worker 进程运行；需 pgvector 效果时镜像须含 `vector` 扩展。
 - 缺 Key 时问答明确 `503 ai_disabled`、索引任务 `ai_not_configured`，不会伪装接通；密钥不通过聊天发送、不提交 Git。
 
-## 6. 阶段状态
+## 6. W5 地区政策检索与首批官方来源扩展（2026-11-05）
+
+### 6.1 实现范围
+
+| 类别 | 产物 | 说明 |
+| --- | --- | --- |
+| 政策领域模型 | `backend/src/knowledge/policy/policy-domain.ts` | 地区只接受全国 `000000` 或 6 位行政区划代码；省份识别、地区标签、有效期判定（有效/已失效/尚未生效/未标注）；公告×政策冲突候选并列，文案明确“系统不自动判定谁覆盖谁”；范围/未生效提示 |
+| 覆盖投影 | `backend/src/knowledge/policy/policy-coverage.service.ts` | 只统计 `published` 文档；`queryable` 额外要求 `activeIndexVersion` 已生效；`publishedNotIndexed`、`expired`、`undated`、`subjectExcluded` 单列；省级选择把同省城市/区县材料放入 `descendants`，不计入全省可检索数；查询失败抛错而不是返回无覆盖 |
+| 数据模型 | `backend/prisma/migrations/20261105120000_policy_scope/migration.sql` | `knowledge_documents` 增加 `applicable_audience`、`applicable_subjects`、`applicable_stages` 与 `(document_type, region_code, year, status)` 索引；`qa_answers` 增加 `year` |
+| 入库/更新 | `backend/src/knowledge/knowledge.service.ts`、`knowledge.types.ts` | 创建与追加版本写入适用对象/学科/学段、地区、年份、有效期；学科数组以 JSONB 存储 |
+| 检索层 | `backend/src/knowledge/knowledge-search.service.ts` | 新增 `year`、`includeNational`、`applicableSubjects`、`applicableAudience`、`asOf`；地区精确匹配，全国政策仅在 `includeNational` 且 `documentType=policy` 时纳入；失效材料在 SQL 与应用层双重排除；检索结果补齐地区/年份/有效期/适用范围元数据 |
+| 政策问答 | `backend/src/knowledge/qa/qa.service.ts`、`qa.controller.ts` | `POST /knowledge/questions`（登录，地区/年份必填）：先查覆盖，无覆盖直接 `no_coverage` 落库、不检索不调用模型；覆盖查询失败 `503 coverage_unavailable`、检索失败 `503 retrieval_failed`、AI 关闭 `503 ai_disabled`，与无覆盖分离；回答追加范围说明、冲突提示、未生效提示、partial 覆盖提示；引用补齐类型/地区/年份/有效期/适用范围；落库 `scopeType=policy`、`regionCode`、`year` |
+| 公开覆盖 | `backend/src/knowledge/qa/qa.controller.ts`、`auth/session.guard.ts` | `GET /knowledge/policy-coverage` 公开只读聚合（regionCode/year/subject/subjects）；查询失败 503，不伪装成无覆盖 |
+| 前端入口 | `src/app/policy/page.tsx`、`src/lib/knowledge/policy-api.ts`、`src/app/me/page.tsx` | 地区（全国+34 省级）与年份必选，可选学科/适用对象；覆盖面板区分本地区/全国/待索引/已失效/学科筛除/同省城市/其他年份；公告与政策冲突并列展示两侧原文摘录；引用卡片展示类型、有效期状态、适用范围、定位与官方链接；演示环境不开放问答 |
+| 首批官方来源 | `backend/src/sourcing/source-catalog.ts`、`adapters/anhui-education-policy.adapter.ts`、`adapter-registry.ts`、`sourcing-core.module.ts` | 新增省级政策来源“安徽省教育厅通知公告”（`anhui-education-policy`，`340000`，`contentKind=policy`）；服务端渲染列表 `a[title] + span.right.date`，正文 `meta[ArticleTitle]/PubDate + .j-fontContent`；目录校验区分 `recruitment` 与 `policy`，省级政策来源允许登记栏目列表，但不得冒充市县招聘覆盖 |
+| 真实快照 | `tests/fixtures/golden-sources/anhui-policy/` | 列表首屏、竞赛活动通告、特岗教师招聘公告三份真实快照及 manifest（含 URL、抓取时间、sha256）；适配器测试直接解析真实快照 |
+| 隔离冒烟 | `backend/scripts/smoke-runtime.mjs` | 新增 W5 流程：真实特岗公告快照入库→审核→发布→索引；省级覆盖只算省级材料、城市材料单列、过期材料单列；范围问答带真实官方链接；公告×政策冲突并列；无材料城市 `no_coverage` 且零引用；过期材料不被引用；AI 关闭时政策问答 503 而覆盖查询仍 200 |
+
+### 6.2 诚实边界
+
+- 全国选择只汇总标注为全国适用的材料，不代表全国所有地区已有招聘或政策材料。
+- 省级选择只把省级材料计入“本地区可检索”；同省城市/区县材料单列，**不能算作全省完成**；未列出的城市一律视为暂未收录。
+- 已失效材料不计入 `queryable`，检索层排除且不进入引用；“尚未生效”材料仍可展示，但回答追加提示。
+- 公告与政策同时命中只做并列候选，不自动判定最新文件或更高层级文件覆盖招聘条款。
+- `no_coverage` / `coverage_unavailable` / `retrieval_failed` / `ai_disabled` 四种语义分开，不互相伪装。
+- 演示环境不开放政策问答，不返回伪造答案。
+- 首批只新增安徽一个省级官方来源；其他省份的政策覆盖仍为空，不能把该来源计为全国完成。
+
+### 6.3 阶段验证（2026-11-05）
+
+| 检查 | 命令 | 结果 |
+| --- | --- | --- |
+| W5 目标单测 | `npx vitest run src/knowledge/policy src/knowledge/qa src/knowledge/knowledge-search.service.spec.ts` | 4 files / 41 passed（policy-domain 11、qa 19、qa-domain 7、search 4） |
+| 来源适配器 | `npx vitest run src/sourcing/adapters/anhui-education-policy.adapter.spec.ts` | 1 file / 3 passed（列表发现、公告正文、特岗招聘公告正文） |
+| 后端全量单测 | `npm test` | 110 files / 1338 passed，1 expected fail，2 skipped（预期项为既有用例） |
+| 后端 lint | `npm run lint` | 0 error（既有 30 warning，本阶段新增源码 0 warning） |
+| 后端构建 | `npm run build` | 成功 |
+| 前端全量单测 | `npm test -- --run` | 74 files / 796 passed |
+| 前端 lint | `npm run lint` | 0 error / 3 warning（既有） |
+| 前端构建 | `npm run build` | 成功（外部依赖扫描 0 阻断、客户端密钥检查通过） |
+| 隔离运行时冒烟 | CI `node scripts/smoke-runtime.mjs` | 待推送后按同一提交 CI 结果填写（本地无 Docker，不能冒充已通过） |
+
+### 6.4 首批官方来源证据（发现 / 抓取 / 解析）
+
+| 项 | 证据 |
+| --- | --- |
+| 来源条目 | `anhui-education-policy`：安徽省教育厅通知公告，`officialUrl=https://jyt.ah.gov.cn/`，列表 `https://jyt.ah.gov.cn/xwzx/tzgg/index.html`，`regionCode=340000`，`authorityLevel=province`，`contentKind=policy`，`verifiedAt=2026-11-05` |
+| 发现（实测） | 首查 `succeeded` 32 条；约 3 分钟后复查 `no_new` 32 条，内容哈希 `60d5514d6cb330f0a4f3264aa2f1fb1eea40838a63bd21029a2ed8bf0913326a` |
+| 抓取（实测） | 列表首屏 `200`、33,370 字节，sha256 `d1e1e77032150b1dcf4b71ae879fc1e3401303921c612eab2d5d0e6cfdfbb236`；特岗招聘公告 `200`、35,660 字节，sha256 `daae5b9a5c5f118990cc1ed0bf4c2173f1ee88c66f3375455e7a0748eda7bbdc`；竞赛活动通告 sha256 `8d23599c9ef6854af53c0bdb034463cf017629807b659abfb3a3caa7151a3b60` |
+| 解析（实测） | 适配器直接解析真实快照：列表提取标题/URL/日期；正文提取标题“安徽省2026年农村义务教育阶段学校教师特设岗位计划招聘公告”、日期 `2026-06-02`、正文 5,000+ 字与附件链接 |
+| 采集合规 | `https://jyt.ah.gov.cn/robots.txt` 返回 404，无显式禁止条款；只采集公开通知公告、低频轮询、保留官方原文链接与抓取时间，不采集登录/验证码页面 |
+| 已知限制 | 仅首屏最新通知，未全站回溯；两次监测为人工实测记录，不等于持续监测已稳定运行；来源为“通知公告”综合栏目，不是独立教师招聘栏目 |
+
+### 6.5 真实材料全链路（隔离环境，待 CI 确认）
+
+冒烟脚本把**真实抓取的特岗招聘公告快照**作为知识材料：
+
+1. 管理员入库（`documentType=announcement`，地区 `340000`，年份 `2026`，官方 URL 保留）→ 送审 → 批准 → 发布；
+2. Worker 索引 `ready` 后才参与覆盖与问答；
+3. 省级覆盖 `covered`，可检索 2 份（真实公告 + 对照政策），过期政策 1 份单列，同省芜湖市材料在 `descendants` 单列且不计入全省；
+4. 政策问答 `answered`，引用同时包含公告与政策，且包含 `jyt.ah.gov.cn` 真实链接；冲突候选 ≥1 且要求官方核实；
+5. 无材料城市返回 `no_coverage` 且零引用；仅命中过期材料时不引用过期文档；
+6. AI 关闭实例政策问答 `503 ai_disabled`，公开覆盖查询仍 `200`。
+
+> 该流程不联网抓取，使用已落盘的真实快照；真实站点发现/抓取/解析另见 6.4。CI 结果未回填前，本节状态为“待验证”。
+
+### 6.6 明确预期失败 / 跳过（不得借其隐藏失败）
+
+- 后端全量中的 1 expected fail、2 skipped 为既有用例，不属于本阶段新增。
+- 真实百炼 Embedding / Rerank / Chat 仍未联调（Key 由用户自行保管）；W5 冒烟使用 `AI_MOCK_MODE=true`，只能证明范围/覆盖/引用/冲突链路，不能写成真实模型质量通过。
+- 部署镜像 `postgres:17-alpine` 不含 pgvector，继续应用余弦降级；真实 pgvector 效果待具备扩展的环境验证。
+- 真实站点持续监测、分页回溯、附件正文抽取未在本阶段完成；当前只证明首屏通知公告可发现、可抓取、可解析。
+- 其他省份尚无政策来源；安徽来源不能扩展为全国或全省所有城市已覆盖。
+
+### 6.7 真实联调前必须完成的配置（再次提醒）
+
+- 文件：`backend/.env`（模板 `backend/.env.example` 的“W2/W3 阿里云百炼”段）；部署时用同名环境变量。
+- 最少必填：`AI_ENABLED=true`、`DASHSCOPE_API_KEY=实际值`、`AI_MOCK_MODE=false`（或删除该行）。
+- 运行前提：数据库迁移已执行（含 `20261105120000_policy_scope`）、Redis 可达、Worker 进程运行；需 pgvector 效果时镜像须含 `vector` 扩展。
+- 缺 Key 时政策问答明确 `503 ai_disabled`、索引任务 `ai_not_configured`，不会伪装接通；密钥不通过聊天发送、不提交 Git。
+
+## 7. 阶段状态
 
 | 阶段 | 状态 | 提交 | CI | 证据 |
 | --- | --- | --- | --- | --- |
@@ -297,5 +378,5 @@
 | W2 | 完成 | `7fbe324` | 通过（run 41978689823） | 本文第 3 节 |
 | W3 | 完成 | `6277ddb` | 通过（run 41981679441） | 本文第 4 节 |
 | W4 | 完成 | `128308f`（过程提交 `09e06e2`/`3ac7a80`/`99f97fd`/`effefd7`） | 通过（run 41992002619） | 本文第 5 节 |
-| W5 | 未开始 | - | - | - |
+| W5 | 进行中（本地验证通过，待推送与 CI） | - | - | 本文第 6 节 |
 | 最终验收 | 未开始 | - | - | - |

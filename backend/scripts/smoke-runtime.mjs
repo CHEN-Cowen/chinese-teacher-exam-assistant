@@ -20,6 +20,9 @@
  *   8. W4：在隔离 DB/Redis 上验证知识库多角色权限、横向越权、索引后撤回、
  *      AI 关闭时问答明确失败而招聘公告闭环仍可用（AI 使用 mock，不联网）。
  *      注意：mock 只证明代码链路，真实百炼 API 需另配 Key 联调。
+ *   9. W5：真实官方来源快照（安徽省教育厅特岗招聘公告）入库→审核→发布→索引，
+ *      验证省级/城市/过期覆盖投影、范围问答、公告×政策冲突并列、
+ *      无覆盖不伪造引用、AI 关闭时政策问答 503 而覆盖查询仍可用。
  *
  * 安全配置（与任务约定一致）：
  *   AUTH_MODE=invited INTERNAL_TOKEN=ci-smoke-token
@@ -39,7 +42,7 @@
  * 超时：整体看门狗 5 分钟，失败时输出 API / Worker / 迁移 / 容器日志。
  */
 import { spawn, execFile } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
@@ -59,7 +62,7 @@ const API_PORT = 20000 + (process.pid % 20000);
 const DEMO_PORT = API_PORT + 1;
 const AI_OFF_PORT = API_PORT + 2;
 const INTERNAL_TOKEN = 'ci-smoke-token';
-const WATCHDOG_MS = 5 * 60 * 1000;
+const WATCHDOG_MS = 8 * 60 * 1000;
 const HEALTH_TIMEOUT_MS = 120_000;
 const FORBIDDEN_LOG_PATTERNS = [
   'UnknownExportException',
@@ -435,6 +438,280 @@ async function runKnowledgeFlow() {
   console.log('[smoke] W4 多角色/横向越权/撤回/AI 关闭隔离验证 ✓');
 }
 
+function policyCheck(condition, message) {
+  if (!condition) fail(`W5 政策检索隔离验证失败：${message}`);
+}
+
+async function publishKnowledge(admin, body, label) {
+  const created = await apiCall(DEMO_PORT, '/knowledge/documents', {
+    method: 'POST',
+    ...admin,
+    body,
+  });
+  policyCheck(
+    created.status === 201 || created.status === 200,
+    `${label}入库 HTTP ${created.status}: ${created.text.slice(0, 200)}`,
+  );
+  const versionId = created.json?.versionId;
+  const documentId = created.json?.documentId;
+  policyCheck(Boolean(versionId && documentId), `${label}缺少 versionId/documentId`);
+  for (const action of ['submit-review', 'approve', 'publish']) {
+    const result = await apiCall(
+      DEMO_PORT,
+      `/knowledge/versions/${versionId}/${action}`,
+      {
+        method: 'POST',
+        ...admin,
+        body: action === 'approve' ? { note: 'W5 自动验收' } : {},
+      },
+    );
+    policyCheck(
+      result.status === 201 || result.status === 200,
+      `${label} ${action} HTTP ${result.status}: ${result.text.slice(0, 200)}`,
+    );
+  }
+  return { documentId, versionId };
+}
+
+async function waitForPolicyIndex(admin, versionIds, label) {
+  await waitFor(label, 90_000, async () => {
+    const result = await apiCall(DEMO_PORT, '/knowledge/index-jobs?limit=100', admin);
+    policyCheck(result.status === 200, `索引任务查询 HTTP ${result.status}`);
+    const items = result.json?.items ?? [];
+    const pending = versionIds.filter((versionId) => {
+      const item = items.find((row) => row.versionId === versionId);
+      return !item || item.status !== 'ready';
+    });
+    if (pending.length > 0) throw new Error(`索引未就绪：${pending.join(',')}`);
+    return true;
+  });
+}
+
+/**
+ * W5 隔离环境政策检索流程：
+ * 真实官方来源快照（安徽省教育厅特岗招聘公告）入库 → 审核发布 → 索引
+ * → 覆盖投影（省级/城市/过期材料）→ 范围问答 → 公告×政策冲突并列
+ * → 无覆盖与故障分开 → AI 关闭时政策问答应 503。
+ */
+async function runPolicyFlow() {
+  const admin = { user: 'w5-admin', role: 'admin' };
+  const user = { user: 'w5-user', role: 'user' };
+  const province = '340000';
+  const cityWithDocs = '340200';
+  const cityWithoutDocs = '340100';
+  const year = 2026;
+
+  // 真实抓取快照：安徽省教育厅通知公告 → 特岗计划招聘公告
+  const recruitHtml = readFileSync(
+    path.join(BACKEND_DIR, '..', 'tests', 'fixtures', 'golden-sources', 'anhui-policy', 'public-detail-recruit.html'),
+    'utf8',
+  );
+
+  const realAnnouncement = await publishKnowledge(
+    admin,
+    {
+      title: '安徽省2026年农村义务教育阶段学校教师特设岗位计划招聘公告',
+      documentType: 'announcement',
+      content: recruitHtml,
+      mimeType: 'text/html',
+      regionCode: province,
+      year,
+      publisher: '安徽省教育厅',
+      officialUrl: 'https://jyt.ah.gov.cn/xwzx/tzgg/40792015.html',
+    },
+    '真实特岗公告',
+  );
+
+  const provincePolicy = await publishKnowledge(
+    admin,
+    {
+      title: '安徽省2026年特岗计划实施方案（W5 对照政策）',
+      documentType: 'policy',
+      content:
+        '<html><body><h1>安徽省2026年特岗计划实施方案</h1><p>安徽省 2026 年农村义务教育阶段学校教师特设岗位计划全省招聘 80 名，实施范围为怀远县、颍州区、宿松县。语文教师须具备本科及以上学历并取得相应教师资格。</p></body></html>',
+      mimeType: 'text/html',
+      regionCode: province,
+      year,
+      publisher: '安徽省教育厅',
+      officialUrl: 'https://jyt.ah.gov.cn/xwzx/tzgg/40792015.html',
+      effectiveFrom: '2026-01-01',
+      effectiveTo: '2026-12-31',
+      applicableAudience: '特岗教师',
+      applicableSubjects: ['chinese'],
+    },
+    '省级政策',
+  );
+
+  const cityPolicy = await publishKnowledge(
+    admin,
+    {
+      title: '芜湖市2026年特岗计划招聘政策（W5 城市对照）',
+      documentType: 'policy',
+      content:
+        '<html><body><h1>芜湖市2026年特岗计划招聘政策</h1><p>芜湖市 2026 年计划招聘特岗教师 20 名，语文教师须具备本科及以上学历。</p></body></html>',
+      mimeType: 'text/html',
+      regionCode: cityWithDocs,
+      year,
+      publisher: '芜湖市教育局',
+      officialUrl: 'https://example.gov.cn/wuhu-policy',
+      effectiveFrom: '2026-01-01',
+      effectiveTo: '2026-12-31',
+    },
+    '城市政策',
+  );
+
+  const expiredPolicy = await publishKnowledge(
+    admin,
+    {
+      title: '2025年过渡期免试认定安排（W5 失效对照）',
+      documentType: 'policy',
+      content:
+        '<html><body><h1>2025年过渡期免试认定安排</h1><p>2025 年过渡期免试认定安排：符合条件的教师可申请免试认定，过渡期于 2025 年 12 月 31 日结束。</p></body></html>',
+      mimeType: 'text/html',
+      regionCode: province,
+      year,
+      publisher: '安徽省教育厅',
+      officialUrl: 'https://example.gov.cn/expired-policy',
+      effectiveFrom: '2025-01-01',
+      effectiveTo: '2025-12-31',
+    },
+    '失效政策',
+  );
+
+  await waitForPolicyIndex(
+    admin,
+    [realAnnouncement.versionId, provincePolicy.versionId, cityPolicy.versionId, expiredPolicy.versionId],
+    'W5 政策材料索引 ready',
+  );
+  console.log('[smoke] W5 真实来源快照入库/审核/发布/索引 ✓');
+
+  // 覆盖：省级只算省级材料；城市材料单列，不冒充全省完成；过期材料不计可问答
+  const provinceCoverage = await apiCall(
+    DEMO_PORT,
+    `/knowledge/policy-coverage?regionCode=${province}&year=${year}`,
+  );
+  policyCheck(provinceCoverage.status === 200, `省级覆盖 HTTP ${provinceCoverage.status}`);
+  const coverage = provinceCoverage.json;
+  policyCheck(coverage.status === 'covered', `省级覆盖状态应为 covered，实际 ${coverage.status}`);
+  policyCheck(
+    coverage.exact.queryable === 2,
+    `省级可检索材料应为 2 份（真实公告+对照政策），实际 ${coverage.exact.queryable}`,
+  );
+  policyCheck(coverage.exact.expired === 1, `过期材料应单列 1 份，实际 ${coverage.exact.expired}`);
+  const cityBucket = (coverage.descendants ?? []).find(
+    (item) => item.regionCode === cityWithDocs,
+  );
+  policyCheck(cityBucket?.queryable === 1, '同省城市材料应单列在 descendants，不计入全省可检索数');
+
+  const uncoveredCoverage = await apiCall(
+    DEMO_PORT,
+    `/knowledge/policy-coverage?regionCode=${cityWithoutDocs}&year=${year}`,
+  );
+  policyCheck(uncoveredCoverage.status === 200, `无材料城市覆盖查询 HTTP ${uncoveredCoverage.status}`);
+  policyCheck(
+    uncoveredCoverage.json?.status === 'no_coverage',
+    `无材料城市应为 no_coverage，实际 ${uncoveredCoverage.json?.status}`,
+  );
+
+  // 问答权限：匿名 401；演示用户可问
+  const anonymousAsk = await apiCall(DEMO_PORT, '/knowledge/questions', {
+    method: 'POST',
+    body: { question: '安徽省2026年特岗计划招聘多少人', regionCode: province, year },
+  });
+  policyCheck(anonymousAsk.status === 401, `匿名政策问答应为 401，实际 ${anonymousAsk.status}`);
+
+  const provinceAnswer = await apiCall(DEMO_PORT, '/knowledge/questions', {
+    method: 'POST',
+    ...user,
+    body: {
+      question: '安徽省2026年特岗计划招聘多少人，实施范围有哪些',
+      regionCode: province,
+      year,
+    },
+  });
+  policyCheck(
+    provinceAnswer.status === 201 || provinceAnswer.status === 200,
+    `省级政策问答 HTTP ${provinceAnswer.status}: ${provinceAnswer.text.slice(0, 200)}`,
+  );
+  const answer = provinceAnswer.json;
+  policyCheck(answer.status === 'answered', `政策回答状态应为 answered，实际 ${answer.status}`);
+  policyCheck((answer.citations ?? []).length >= 2, '政策回答应包含公告与政策引用');
+  policyCheck(
+    (answer.citations ?? []).some((item) => item.documentType === 'announcement') &&
+      (answer.citations ?? []).some((item) => item.documentType === 'policy'),
+    '引用应同时包含公告与政策材料',
+  );
+  policyCheck(
+    (answer.citations ?? []).some(
+      (item) => typeof item.officialUrl === 'string' && item.officialUrl.includes('jyt.ah.gov.cn'),
+    ),
+    '回答引用应包含真实官方来源链接',
+  );
+  policyCheck((answer.conflicts ?? []).length >= 1, '公告与政策同时命中时应并列冲突候选');
+  policyCheck(answer.needsOfficialConfirmation === true, '冲突场景应要求官方核实');
+  policyCheck(
+    answer.coverage?.status === 'covered' &&
+      answer.coverage.descendants?.some((item) => item.regionCode === cityWithDocs),
+    '回答应返回省级覆盖并区分同省城市材料',
+  );
+
+  const uncoveredAnswer = await apiCall(DEMO_PORT, '/knowledge/questions', {
+    method: 'POST',
+    ...user,
+    body: { question: '合肥市2026年特岗计划招聘多少人', regionCode: cityWithoutDocs, year },
+  });
+  policyCheck(
+    uncoveredAnswer.status === 201 || uncoveredAnswer.status === 200,
+    `无覆盖政策问答 HTTP ${uncoveredAnswer.status}`,
+  );
+  policyCheck(
+    uncoveredAnswer.json?.status === 'no_coverage',
+    `无材料城市应返回 no_coverage，实际 ${uncoveredAnswer.json?.status}`,
+  );
+  policyCheck(
+    (uncoveredAnswer.json?.citations ?? []).length === 0,
+    '无覆盖回答不应伪造引用',
+  );
+
+  const expiredAnswer = await apiCall(DEMO_PORT, '/knowledge/questions', {
+    method: 'POST',
+    ...user,
+    body: { question: '过渡期免试认定条件是什么', regionCode: province, year },
+  });
+  policyCheck(
+    expiredAnswer.status === 201 || expiredAnswer.status === 200,
+    `失效材料问答 HTTP ${expiredAnswer.status}`,
+  );
+  policyCheck(
+    !(expiredAnswer.json?.citations ?? []).some(
+      (item) => item.documentId === expiredPolicy.documentId,
+    ),
+    '已失效材料不得作为回答依据',
+  );
+  policyCheck(
+    !(expiredAnswer.json?.answer ?? '').includes('过渡期免试认定安排'),
+    '回答不应摘录已失效材料正文',
+  );
+
+  // AI 关闭：政策问答明确 503，覆盖查询仍可用
+  const offPolicyAsk = await apiCall(AI_OFF_PORT, '/knowledge/questions', {
+    method: 'POST',
+    ...user,
+    body: { question: '安徽省2026年特岗计划招聘多少人', regionCode: province, year },
+  });
+  policyCheck(
+    offPolicyAsk.status === 503 && offPolicyAsk.json?.code === 'ai_disabled',
+    `AI 关闭时政策问答应 503 ai_disabled，实际 ${offPolicyAsk.status} ${offPolicyAsk.text.slice(0, 200)}`,
+  );
+  const offCoverage = await apiCall(
+    AI_OFF_PORT,
+    `/knowledge/policy-coverage?regionCode=${province}&year=${year}`,
+  );
+  policyCheck(offCoverage.status === 200, `AI 关闭时覆盖查询应 200，实际 ${offCoverage.status}`);
+
+  console.log('[smoke] W5 覆盖投影/政策问答/冲突/无覆盖/失效排除/AI 关闭 ✓');
+}
+
 async function main() {
   console.log(`[smoke] 临时容器：${PG_NAME} / ${REDIS_NAME}，API 端口 ${API_PORT}`);
 
@@ -599,6 +876,8 @@ async function main() {
   await waitForApi(AI_OFF_PORT, 'W4 AI-off API /health');
   await runKnowledgeFlow();
   console.log('[smoke] W4 隔离知识库流程 ✓');
+  await runPolicyFlow();
+  console.log('[smoke] W5 隔离政策检索流程 ✓');
 
   // 持续运行确认：全部进程都活到流程结束（exit 事件会把 failed 置位）
   if (failed) fail(failureReason);

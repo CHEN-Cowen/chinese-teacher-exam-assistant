@@ -1,0 +1,13 @@
+{
+  "capturedAt": "2026-11-05T08:50:29.419Z",
+  "sourceKind": "official-live-snapshot",
+  "scope": "first-page-discovery-only",
+  "stableMonitoringVerified": false,
+  "files": [
+    {
+      "name": "public-shell.html",
+      "url": "https://jyt.ah.gov.cn/xwzx/tzgg/index.html",
+      "sha256": "d1e1e77032150b1dcf4b71ae879fc1e3401303921c612eab2d5d0e6cfdfbb236"
+    }
+  ]
+}

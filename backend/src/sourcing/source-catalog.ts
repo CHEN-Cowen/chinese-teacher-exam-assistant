@@ -9,12 +9,16 @@ import {
 
 export type SourceCatalogStatus = 'ready' | 'candidate' | 'blocked';
 export type SourceAuthorityLevel = 'province' | 'city' | 'district';
+/** 来源内容类型：招聘公告源或政策/通知源（默认招聘） */
+export type SourceContentKind = 'recruitment' | 'policy';
 
 export interface SourceCatalogEntry {
   sourceKey: string;
   publisher: string;
   regionCode: string;
   authorityLevel: SourceAuthorityLevel;
+  /** 缺省为 recruitment；policy 源允许省级栏目，但不得计入市县招聘覆盖 */
+  contentKind?: SourceContentKind;
   officialUrl: string;
   listUrls: string[];
   allowedHosts: string[];
@@ -269,6 +273,22 @@ export const SOURCE_CATALOG: readonly SourceCatalogEntry[] = [
     coverageNote:
       '「教师招考」专栏真实核验（2026-10-26）：jpaas 公开动态接口列表（rows=15 / count=173）+ 官方 paramJson 分页、正文 #zoom 与官方附件下载链接离线回放通过；本来源为区县级层级，按 S0 规范 6.2 独立于杭州市级来源提供区县覆盖；持续监测见检查记录。',
   },
+  {
+    sourceKey: 'anhui-education-policy',
+    publisher: '安徽省教育厅',
+    regionCode: '340000',
+    authorityLevel: 'province',
+    contentKind: 'policy',
+    officialUrl: 'https://jyt.ah.gov.cn/',
+    listUrls: ['https://jyt.ah.gov.cn/xwzx/tzgg/index.html'],
+    allowedHosts: ['jyt.ah.gov.cn'],
+    adapterKey: 'anhui-education-policy',
+    status: 'ready',
+    verifiedAt: '2026-11-05',
+    sampleRef: 'tests/fixtures/golden-sources/anhui-policy',
+    coverageNote:
+      '省级教育政策/通知来源（2026-11-05 真实首屏与正文回放）：服务端渲染列表 + meta/ArticleTitle + .j-fontContent 正文；只用于安徽省级政策检索，不代表省市县教师招聘覆盖，不能替代市级公告来源。',
+  },
 ] as const;
 
 export function getSeedableSources(
@@ -315,10 +335,14 @@ export function validateSourceCatalog(
       errors.push(`地区代码无效: ${entry.sourceKey}`);
     if (entry.allowedHosts.length === 0)
       errors.push(`缺少 allowedHosts: ${entry.sourceKey}`);
-    // 省级教育部门通常不发布市县教师招聘公告；省级来源不得挂栏目列表，
-    // 更不得用来代表所辖市县覆盖（见 S0 规范）。
-    if (entry.authorityLevel === 'province' && entry.listUrls.length > 0) {
-      errors.push(`省级来源不得登记栏目列表: ${entry.sourceKey}`);
+    // 省级教育部门通常不发布市县教师招聘公告；招聘类省级来源不得挂栏目列表，
+    // 更不得用来代表所辖市县覆盖（见 S0 规范）。政策类来源允许省级栏目。
+    if (
+      entry.authorityLevel === 'province' &&
+      entry.listUrls.length > 0 &&
+      entry.contentKind !== 'policy'
+    ) {
+      errors.push(`省级招聘来源不得登记栏目列表: ${entry.sourceKey}`);
     }
     for (const host of entry.allowedHosts) hosts.add(host);
     if (entry.status === 'ready') {
@@ -594,6 +618,26 @@ export const SOURCE_MONITORING_RECORDS: readonly SourceMonitoringRecord[] = [
         contentHash:
           '305e3f75f4c007f03f15fbf4c833c5f0faf5132a61569e9578ecfd9b38de3c29',
         note: '第二次真实采样（距首次约 15 分钟）：栏目 HTTP 200，教师招考列表 15 条与首次黄金样本完全一致。',
+      },
+    ],
+  },
+  {
+    sourceKey: 'anhui-education-policy',
+    checks: [
+      {
+        checkedAt: '2026-11-05T08:50:29.419Z',
+        outcome: 'succeeded',
+        discoveredCount: 32,
+        contentHash: null,
+        note: 'W5 首次真实采样：安徽省教育厅通知公告首屏 HTTP 200，32 条服务端渲染条目；正文 meta/ArticleTitle、PubDate 与 .j-fontContent 回放通过。',
+      },
+      {
+        checkedAt: '2026-11-05T08:53:30.774Z',
+        outcome: 'no_new',
+        discoveredCount: 32,
+        contentHash:
+          '60d5514d6cb330f0a4f3264aa2f1fb1eea40838a63bd21029a2ed8bf0913326a',
+        note: 'W5 第二次真实采样（距首次约 3 分钟）：栏目 HTTP 200，32 条标题/日期/链接与首次样本一致；指纹为条目字段 sha256。',
       },
     ],
   },

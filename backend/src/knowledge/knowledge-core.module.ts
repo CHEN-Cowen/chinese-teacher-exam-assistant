@@ -14,6 +14,7 @@ import { KnowledgeQueueService } from './knowledge-queue.service.js';
 import { VectorStoreService } from './vector-store.service.js';
 import { KnowledgeSearchService } from './knowledge-search.service.js';
 import { QaService } from './qa/qa.service.js';
+import { PolicyCoverageService } from './policy/policy-coverage.service.js';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { QaService } from './qa/qa.service.js';
     VectorStoreService,
     KnowledgeSearchService,
     QaService,
+    PolicyCoverageService,
   ],
   // 转出解析所需的对象存储与模型依赖（转出模块，Worker 复用同一实例）
   exports: [
@@ -35,6 +37,7 @@ import { QaService } from './qa/qa.service.js';
     VectorStoreService,
     KnowledgeSearchService,
     QaService,
+    PolicyCoverageService,
     SourcingCoreModule,
     AiModule,
   ],

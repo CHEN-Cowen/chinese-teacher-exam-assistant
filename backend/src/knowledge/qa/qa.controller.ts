@@ -22,6 +22,8 @@ import {
 } from '../../auth/identity.js';
 import type { KnowledgeScope } from '../knowledge-search.service.js';
 import { KnowledgeSearchService } from '../knowledge-search.service.js';
+import { normalizeRegionCode } from '../policy/policy-domain.js';
+import { PolicyCoverageService } from '../policy/policy-coverage.service.js';
 import { QaError, QaService, toQaError } from './qa.service.js';
 
 /** 身份与 AdminGuard 一致：invited 取会话，demo 取 x-user-* 头，绝不混用。 */
@@ -37,11 +39,20 @@ interface AskBody {
   documentTypes?: string[];
 }
 
+interface PolicyAskBody {
+  question?: string;
+  regionCode?: string;
+  year?: number | string;
+  applicableSubjects?: string[];
+  applicableAudience?: string;
+}
+
 @Controller('knowledge')
 export class QaController {
   constructor(
     private readonly qa: QaService,
     private readonly search: KnowledgeSearchService,
+    private readonly coverage: PolicyCoverageService,
   ) {}
 
   @Post('qa')
@@ -98,6 +109,81 @@ export class QaController {
     if (!question) throw new QaError('question_empty', '请输入检索问题', 400);
     return this.search.debugSearch(question, scopeFrom(body), 10);
   }
+
+  /**
+   * W5：范围明确的政策问答。
+   * 必须登录（避免匿名消耗模型预算）；地区/年份必填。
+   */
+  @Post('questions')
+  async askPolicy(@Body() body: PolicyAskBody, @Req() req: AuthenticatedRequest) {
+    const userId = currentUserId(req);
+    if (!userId) throw new QaError('unauthorized', '请先登录后再提问', 401);
+    const year = typeof body?.year === 'string' ? Number(body.year) : body?.year;
+    try {
+      return await this.qa.askPolicy({
+        question: body?.question ?? '',
+        regionCode: body?.regionCode ?? '',
+        year: year as number,
+        applicableSubjects: Array.isArray(body?.applicableSubjects)
+          ? body.applicableSubjects.filter((item) => typeof item === 'string')
+          : undefined,
+        applicableAudience:
+          typeof body?.applicableAudience === 'string' ? body.applicableAudience : undefined,
+        userId,
+        ip: req.ip ?? null,
+      });
+    } catch (error) {
+      throw toQaError(error);
+    }
+  }
+
+  /**
+   * W5：公开覆盖查询。只返回已发布材料的聚合覆盖，不含用户数据。
+   * 与“问答失败”区分：查询失败返回 503，不伪装成无覆盖。
+   */
+  @Get('policy-coverage')
+  async policyCoverage(
+    @Query('regionCode') regionCodeRaw: string | undefined,
+    @Query('year') yearRaw: string | undefined,
+    @Query('subject') subject: string | undefined,
+    @Query('subjects') subjectsRaw: string | undefined,
+  ) {
+    const regionCode = normalizeRegionCode(regionCodeRaw);
+    if (!regionCode) {
+      throw new QaError('region_invalid', '请选择有效的地区（全国或 6 位行政区划代码）', 400);
+    }
+    const year = yearRaw ? Number(yearRaw) : currentYear();
+    if (!Number.isInteger(year) || year < 2000 || year > 2100) {
+      throw new QaError('year_invalid', '请选择有效的适用年份（2000—2100）', 400);
+    }
+    const subjects = [
+      ...(subject ? [subject] : []),
+      ...(subjectsRaw
+        ? subjectsRaw
+            .split(',')
+            .map((item) => item.trim())
+            .filter(Boolean)
+        : []),
+    ];
+    try {
+      return await this.coverage.coverage({ regionCode, year, subjects });
+    } catch {
+      throw new QaError(
+        'coverage_unavailable',
+        '覆盖查询暂不可用，请稍后再试',
+        503,
+      );
+    }
+  }
+}
+
+function currentYear(): number {
+  return Number(
+    new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Shanghai',
+      year: 'numeric',
+    }).format(new Date()),
+  );
 }
 
 function scopeFrom(body: AskBody | undefined): KnowledgeScope {

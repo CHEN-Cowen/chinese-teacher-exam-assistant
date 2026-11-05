@@ -17,6 +17,7 @@ import { SuzhouEducationAdapter } from './adapters/suzhou-education.adapter.js';
 import { ChangzhouEducationAdapter } from './adapters/changzhou-education.adapter.js';
 import { BengbuEducationAdapter } from './adapters/bengbu-education.adapter.js';
 import { XiaoshanEducationAdapter } from './adapters/xiaoshan-education.adapter.js';
+import { AnhuiEducationPolicyAdapter } from './adapters/anhui-education-policy.adapter.js';
 
 /** 过滤掉未注入的可选适配器（保持类型收窄） */
 function defined<T>(value: T | undefined): value is T {
@@ -41,6 +42,7 @@ export class AdapterRegistry {
     // 既有测试按位置传前 9 个适配器，新增参数不能让它们变成 undefined。
     bengbu?: BengbuEducationAdapter,
     xiaoshan?: XiaoshanEducationAdapter,
+    anhuiPolicy?: AnhuiEducationPolicyAdapter,
   ) {
     const adapters: OfficialSiteAdapter[] = [
       hangzhou,
@@ -54,6 +56,7 @@ export class AdapterRegistry {
       lishui,
       bengbu,
       xiaoshan,
+      anhuiPolicy,
     ].filter(defined);
     this.byKey = new Map(adapters.map((adapter) => [adapter.key, adapter]));
   }
