@@ -29,7 +29,8 @@ describe('S5 来源目录', () => {
     // S5 遗留任务 1 补入：蚌埠（服务端渲染静态列表 + pageIndex 分页）、
     // 萧山（区县级 jpaas 公开接口 + paramJson 分页）；
     // N1 跨省首批：湖州（jpaas 表格行 + initJpage）、泰州（jpaas li + span）、
-    // 亳州（服务端渲染 section.m-tglist + pagination）。
+    // 亳州（服务端渲染 section.m-tglist + pagination）、
+    // N2 公开接口族首批：济南（jpaas 表格行 + td.bt_time + DOM 属性分页）。
     expect(seedable.map((source) => source.adapterKey)).toEqual([
       'nanjing-education',
       'hangzhou-education',
@@ -42,6 +43,7 @@ describe('S5 来源目录', () => {
       'taizhou-education',
       'bozhou-education',
       'fuyang-education',
+      'jinan-education',
       'changzhou-education',
       'lishui-education',
       'bengbu-education',
@@ -170,13 +172,14 @@ describe('S5 来源目录', () => {
     expect(verifiedAtOf('taizhou-education')).toBe('2026-11-05');
     expect(verifiedAtOf('bozhou-education')).toBe('2026-11-05');
     expect(verifiedAtOf('fuyang-education')).toBe('2026-11-05');
+    expect(verifiedAtOf('jinan-education')).toBe('2026-11-05');
   });
 });
 
 describe('S5 来源级检查记录与监测状态', () => {
   it('ready 来源完成两次真实检查后，才可声称正常监测', () => {
     const ready = SOURCE_CATALOG.filter((entry) => entry.status === 'ready');
-    expect(ready.length).toBe(16);
+    expect(ready.length).toBe(17);
     for (const entry of ready) {
       const record = getSourceMonitoringRecord(entry.sourceKey);
       expect(record.checks.length, entry.sourceKey).toBe(2);
@@ -195,7 +198,7 @@ describe('S5 来源级检查记录与监测状态', () => {
     const unchanged = SOURCE_MONITORING_RECORDS.filter(
       (record) => record.sourceKey !== 'nanjing-education',
     );
-    expect(unchanged).toHaveLength(15);
+    expect(unchanged).toHaveLength(16);
     for (const record of unchanged) {
       expect(record.checks[1]?.outcome, record.sourceKey).toBe('no_new');
     }
@@ -234,6 +237,7 @@ describe('S5 来源级检查记录与监测状态', () => {
     expect(checkedAtOf('taizhou-education')).toBe('2026-11-05T15:20:46.630Z');
     expect(checkedAtOf('bozhou-education')).toBe('2026-11-05T15:20:53.703Z');
     expect(checkedAtOf('fuyang-education')).toBe('2026-11-05T15:54:03.976Z');
+    expect(checkedAtOf('jinan-education')).toBe('2026-11-05T16:17:30.985Z');
   });
 
   it('补录检查是纯函数，追加后连续成功次数加一且不改原记录', () => {

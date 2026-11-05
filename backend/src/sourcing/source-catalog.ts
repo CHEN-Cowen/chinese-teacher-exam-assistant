@@ -261,6 +261,21 @@ export const SOURCE_CATALOG: readonly SourceCatalogEntry[] = [
       '「师资建设」栏目真实核验（2026-11-05）：服务端渲染静态列表（div.m-cglist.m-liststyle1）、pagination 分页（12 页 / 175 条）、正文 #zoom 与官方 /download?siteId= 附件链接离线回放通过；首屏含新任教师公开招聘成绩通知与选聘教师资格复审公告；跨站转载条目按详情路径过滤；持续监测见检查记录。',
   },
   {
+    sourceKey: 'jinan-education',
+    publisher: '济南市教育局',
+    regionCode: '370100',
+    authorityLevel: 'city',
+    officialUrl: 'https://jnedu.jinan.gov.cn/',
+    listUrls: ['https://jnedu.jinan.gov.cn/col/col19032/index.html'],
+    allowedHosts: ['jnedu.jinan.gov.cn'],
+    adapterKey: 'jinan-education',
+    status: 'ready',
+    verifiedAt: '2026-11-05',
+    sampleRef: 'tests/fixtures/golden-sources/jinan',
+    coverageNote:
+      '「教师招聘专栏」真实核验（2026-11-05）：jpaas 公开接口列表（表格行 + td.bt_time 日期）、DOM 属性分页（6 页 / 79 条）、正文 #zoom 与官方 4 个岗位/材料附件下载链接离线回放通过；含 2027 届部属公费师范生招聘公告；持续监测见检查记录。',
+  },
+  {
     sourceKey: 'changzhou-education',
     publisher: '常州市教育局',
     regionCode: '320400',
@@ -765,6 +780,26 @@ export const SOURCE_MONITORING_RECORDS: readonly SourceMonitoringRecord[] = [
         contentHash:
           '89f12b18de0d87ccea7fd1283ff10204fe827d244ff0dbd3e5de6c790b7051b5',
         note: 'N1 第二次真实采样（距首次约 1 分钟）：本域 10 条标题/日期/链接与首次样本完全一致；指纹为条目字段 sha256。7 天持续观察窗口尚未完成。',
+      },
+    ],
+  },
+  {
+    sourceKey: 'jinan-education',
+    checks: [
+      {
+        checkedAt: '2026-11-05T16:17:30.985Z',
+        outcome: 'succeeded',
+        discoveredCount: 15,
+        contentHash: null,
+        note: 'N2 首次真实采样：教师招聘专栏外壳 + 同源 jpaas 公开接口列表首屏 HTTP 200，解析 15 条；DOM 属性 rows=15/count=79（共 6 页）；正文 #zoom 与 4 个官方 jpaas 附件下载链接离线回放通过。',
+      },
+      {
+        checkedAt: '2026-11-05T16:20:09.050Z',
+        outcome: 'no_new',
+        discoveredCount: 15,
+        contentHash:
+          '7942b9435f8cf4494346473d2f0db94abd2075e3f6b3442b62d33b5400bb2081',
+        note: 'N2 第二次真实采样（距首次约 2.5 分钟）：公开列表 15 条标题/日期/链接与首次样本完全一致；指纹为条目字段 sha256。7 天持续观察窗口尚未完成。',
       },
     ],
   },

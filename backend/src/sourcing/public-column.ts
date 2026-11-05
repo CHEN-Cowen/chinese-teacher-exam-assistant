@@ -52,7 +52,8 @@ export function extractArticlePathDate(text: string, url: string): string {
  * - lishui：li，日期在同级 span（方括号包裹的 YYYY-MM-DD）；
  * - xiaoshan：li，日期在同级 span.info-time（YYYY-MM-DD）；
  * - huzhou：表格行（.page-content tr），日期在 td.yd_no，形如 [YYYY-MM-DD]；
- * - taizhou：li，标题在链接文本（title 属性为模板占位符），日期在同级 span（YYYY-MM-DD）。
+ * - taizhou：li，标题在链接文本（title 属性为模板占位符），日期在同级 span（YYYY-MM-DD）；
+ * - jinan：table 行（.page-content tr），日期在 td.bt_time 内 span（YYYY-MM-DD）。
  */
 export type PublicColumnKind =
   | 'ningbo'
@@ -63,7 +64,8 @@ export type PublicColumnKind =
   | 'lishui'
   | 'xiaoshan'
   | 'huzhou'
-  | 'taizhou';
+  | 'taizhou'
+  | 'jinan';
 
 /** 只读取官网声明的同源公开列表接口，不执行脚本，不接受任意跨域地址。 */
 export function publicColumnRequest(
@@ -416,7 +418,7 @@ export function discoverPublicColumn(
   const rows =
     kind === 'ningbo'
       ? $('.page-content tr').has('td.car_tl a[href]')
-      : kind === 'lishui' || kind === 'huzhou'
+      : kind === 'lishui' || kind === 'huzhou' || kind === 'jinan'
         ? $('.page-content tr').has('a[href]')
         : $('.page-content li').has('a[href]');
   const items: DiscoveredDocument[] = [];
@@ -461,6 +463,12 @@ export function discoverPublicColumn(
       publishedAt = extractDate(
         $(e).find('span').first().text(),
         '泰州公开栏目日期',
+      );
+    } else if (kind === 'jinan') {
+      // 济南表格行日期在 td.bt_time 内 span（YYYY-MM-DD）。
+      publishedAt = extractDate(
+        $(e).find('td.bt_time').text() || $(e).find('span').first().text(),
+        '济南公开栏目日期',
       );
     } else {
       const date =

@@ -29,6 +29,7 @@ import { HuzhouEducationAdapter } from './adapters/huzhou-education.adapter.js';
 import { TaizhouEducationAdapter } from './adapters/taizhou-education.adapter.js';
 import { BozhouEducationAdapter } from './adapters/bozhou-education.adapter.js';
 import { FuyangEducationAdapter } from './adapters/fuyang-education.adapter.js';
+import { JinanEducationAdapter } from './adapters/jinan-education.adapter.js';
 
 function fixtureDir(key: string): string {
   return path.resolve(process.cwd(), '../tests/fixtures/golden-sources', key);
@@ -749,6 +750,7 @@ const MANIFEST_SOURCES = [
   'taizhou',
   'bozhou',
   'fuyang',
+  'jinan',
 ] as const;
 
 describe('S5 真实快照 manifest schema 统一', () => {
@@ -1190,5 +1192,131 @@ describe('N1 跨省首批来源真实样本回放', () => {
         fetchedAt: '2026-11-05T00:00:00.000Z',
       }),
     ).toThrow(/静态列表/);
+  });
+});
+
+/**
+ * N2 公开接口族跨省扩源（2026-11-05）：济南市教育局「教师招聘专栏」。
+ *
+ * 与既有 jpaas 来源共用外壳 → 公开接口协议，但列表单元与分页形态不同：
+ * 表格行 + td.bt_time 日期 + DOM 属性分页（rows=15 / count=79）。
+ */
+describe('N2 公开接口族来源真实样本回放', () => {
+  it('济南教师招聘专栏：外壳接口、列表、分页与正文附件一致', () => {
+    const manifest = readManifest('jinan', 'public-manifest.json');
+    const shellFile = manifest.files.find(
+      (file) => file.name === 'public-shell.html',
+    )!;
+    const shell = readFixture('jinan', 'public-shell.html');
+    expect(createHash('sha256').update(shell).digest('hex')).toBe(
+      shellFile.sha256,
+    );
+    const listUrl = publicColumnRequest(shellFile.url, shell);
+    const listFile = manifest.files.find(
+      (file) => file.name === 'public-list.json',
+    )!;
+    expect(listUrl).toBe(listFile.url);
+    expect(listUrl).toContain('pageId=19032');
+
+    const list = readFixture('jinan', 'public-list.json');
+    expect(createHash('sha256').update(list).digest('hex')).toBe(
+      listFile.sha256,
+    );
+    const items = discoverPublicColumn(listFile.url, list, 'jinan');
+    expect(items).toHaveLength(15);
+    expect(
+      items.every((item) => /^\d{4}-\d{2}-\d{2}$/.test(item.publishedAt)),
+    ).toBe(true);
+    expect(items.some((item) => item.title.includes('公开招聘'))).toBe(true);
+    expect(
+      items.every((item) =>
+        // 官网部分历史条目仍给 http 绝对链接，只校验同域与官方文章路径。
+        /^http:\/\/jnedu\.jinan\.gov\.cn\/col\/col\d+\/art\/\d{4}\/art_[\da-f]+\.html$/.test(
+          item.url,
+        ) ||
+        /^https:\/\/jnedu\.jinan\.gov\.cn\/col\/col\d+\/art\/\d{4}\/art_[\da-f]+\.html$/.test(
+          item.url,
+        ),
+      ),
+    ).toBe(true);
+
+    // 官方 DOM 属性：rows=15 / count=79 → 共 6 页，后续 5 页
+    const pages = publicColumnPages(listFile.url, list);
+    expect(pages).toHaveLength(5);
+    expect(
+      JSON.parse(new URL(pages[0]).searchParams.get('paramJson')!),
+    ).toEqual({ pageNo: 2, pageSize: '15' });
+    const page2 = discoverPublicColumn(
+      pages[0],
+      readFixture('jinan', 'public-page2.json'),
+      'jinan',
+    );
+    expect(page2.length).toBeGreaterThan(5);
+    const firstUrls = new Set(items.map((item) => item.url));
+    expect(page2.every((item) => !firstUrls.has(item.url))).toBe(true);
+
+    const detail = readManifest('jinan', 'public-detail-manifest.json');
+    const detailFile = detail.files[0];
+    const detailBytes = readFileSync(
+      path.join(fixtureDir('jinan'), detailFile.name),
+    );
+    expect(createHash('sha256').update(detailBytes).digest('hex')).toBe(
+      detailFile.sha256,
+    );
+    const article = locateOfficialArticle(
+      detailFile.url,
+      detailBytes.toString('utf8'),
+    );
+    expect(article.title).toContain('公开招聘人员公告');
+    expect(article.publishedAt).toBe('2026-04-16');
+    expect(article.bodyText.length).toBeGreaterThan(100);
+    // 官方 4 个附件（岗位汇总表 PDF、应聘须知 PDF、同意报考证明 doc、身份认定表 docx）
+    expect(article.attachments).toHaveLength(4);
+    expect(
+      article.attachments.every((attachment) =>
+        attachment.url.includes(
+          '/api-gateway/jpaas-web-server/front/document/download?',
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  it('济南适配器在真实样本上不抛 DOM 失配，外壳页显式失败', () => {
+    const adapter = new JinanEducationAdapter();
+    const listFile = readManifest('jinan', 'public-manifest.json').files.find(
+      (file) => file.name === 'public-list.json',
+    )!;
+    expect(
+      adapter.discover({
+        url: listFile.url,
+        mimeType: 'application/json',
+        content: readFixture('jinan', 'public-list.json'),
+        fetchedAt: '2026-11-05T00:00:00.000Z',
+      }),
+    ).toHaveLength(15);
+    expect(
+      adapter.pages({
+        url: listFile.url,
+        mimeType: 'application/json',
+        content: readFixture('jinan', 'public-list.json'),
+        fetchedAt: '2026-11-05T00:00:00.000Z',
+      }),
+    ).toHaveLength(5);
+    expect(() =>
+      adapter.discover({
+        url: 'https://jnedu.jinan.gov.cn/col/col19032/index.html',
+        mimeType: 'text/html',
+        content: readFixture('jinan', 'public-shell.html'),
+        fetchedAt: '2026-11-05T00:00:00.000Z',
+      }),
+    ).toThrow(AdapterParseError);
+    expect(() =>
+      adapter.discover({
+        url: listFile.url,
+        mimeType: 'application/json',
+        content: '{"success":true,"data":{"html":"<div></div>"}}',
+        fetchedAt: '2026-11-05T00:00:00.000Z',
+      }),
+    ).toThrow(/空列表|结构变化/);
   });
 });
