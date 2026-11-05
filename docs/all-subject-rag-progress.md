@@ -240,11 +240,13 @@
 | 前端全量单测 | `npm test -- --run` | 74 files / 796 passed |
 | 前端构建 | `npm run build` | 成功（31 页静态生成、外部依赖扫描 0 阻断） |
 | 模块依赖图 | 包含于后端全量 | 2 passed |
+| 迁移覆盖 | CI 冒烟 `prisma migrate deploy` | 新增 `20261105100000_qa_answers_usage`，全新库建表后问答读写通过（见 5.6） |
 | 隔离运行时冒烟 | CI `node scripts/smoke-runtime.mjs` | 见 5.6（推送后按同一提交 CI 结果填写） |
 
 ### 5.4 W4 发现并修复的 W1—W3 集成缺陷
 
 - **索引任务永远停在 `queued`（严重）**：生产者把 `bullJobId(job.id)`（`kidx-<hash>`）既当 BullMQ jobId 又当任务载荷 `jobId`，Worker 用哈希值查数据库必然 `job_not_found`，而处理器把该失败当普通结果返回、BullMQ 标记完成，数据库任务永远不更新。已把“数据库主键”和“BullMQ jobId”拆成两个参数（`enqueue(dbJobId, { bullJobId })`），并新增队列载荷契约测试；隔离冒烟必须实际跑到 `ready` 才算通过。
+- **问答表未迁移（严重）**：W3 只更新了 `schema.prisma`，没有对应迁移；`prisma migrate deploy` 后 `ai_usage_daily`/`qa_answers`/`qa_feedback` 不存在，问答接口 500。已补 `20261105100000_qa_answers_usage` 迁移，隔离冒烟使用全新数据库验证建表与真实读写。
 - **demo 身份问答恒 401**：QA 控制器只读 `req.user`，demo 模式不写 `req.user`；改为与 AdminGuard 同源 `resolveAuthenticatedUser`。
 - **岗位范围误排除公告级材料**：公开公告/政策材料通常不绑定具体岗位，原来的 `unitIds.includes(unitId)` 会把整份公告过滤掉；改为“未绑定岗位＝对该公告下所有岗位可见，显式绑定其他岗位才排除”。
 - **旧索引并发覆盖**：完成时改为条件 `updateMany` 原子切换，迟到任务标记 `superseded`，且只清理更低 `indexVersion` 的旧 chunk，避免误删并发新任务产物。
