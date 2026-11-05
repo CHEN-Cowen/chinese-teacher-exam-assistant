@@ -110,13 +110,64 @@
 - 旧数据未被批量猜测为语文；仅在读取时做代码归一。
 - 学科别名人工审核表已建模（`subject_alias_reviews`），管理端审核界面留待 W2/W4 与后台页面一起验收。
 
-## 3. 阶段状态
+## 3. W2 官方材料入库与索引（2026-11-05）
+
+### 3.1 实现范围
+
+| 层 | 产物 | 说明 |
+| --- | --- | --- |
+| 数据 | `prisma/schema.prisma`、`prisma/migrations/20261105090000_knowledge_rag` | 文档/版本/chunk/索引任务/学科别名审核；`knowledge_chunk_vectors` 与 HNSW 仅在 pgvector 可用时创建，失败仅 NOTICE |
+| 切分 | `backend/src/knowledge/chunker.ts` | 结构化块切分（标题路径、段落合并、岗位表按行归并），每个 chunk 保留 `locator + spans` 可回原文；版本号 `w2-chunker-v1` |
+| 入库 | `backend/src/knowledge/knowledge.service.ts` | 正文/原件/snapshot 三种来源；上传只建草稿；追加版本；审核→发布→撤回；撤回即清理向量 |
+| 索引 | `backend/src/knowledge/knowledge-index.service.ts` | 解析（复用 DocumentParserService/解析留痕）→切分→批量 Embedding→chunk + Float[]→可选 pgvector；幂等键含内容/切分器/模型/维度；失败分类可重试 |
+| 队列 | `knowledge-queue.service.ts`、`knowledge.tokens.ts`、`jobs/knowledge-index.processor.ts` | 只投递业务 id；Redis 不可用不阻断发布但如实返回未投递；仅瞬时错误重试 |
+| 向量 | `vector-store.service.ts` | 扩展与向量表探测；参数化 SQL；无 pgvector 时降级 Float[]，不伪装成功 |
+| 接口 | `backend/src/knowledge/knowledge.controller.ts` | 后台材料入库/列表/详情/审核/发布/撤回/索引任务/状态；ReviewGuard 与 StrictAdminGuard 分工 |
+| 前端 | `src/lib/knowledge/*`、`src/app/admin/knowledge/page.tsx` | 后台材料管理：上传、审核、发布、撤回、重建索引、索引失败原因可见 |
+| 配置 | `backend/.env.example` | 百炼三路（Embedding/Rerank/Chat）与预算项；密钥只写部署机 `backend/.env` |
+
+### 3.2 索引任务状态机
+
+`queued → running → ready | failed`；失败按 `errorClass` 区分：
+
+- 可重试（BullMQ 退避）：`provider_timeout` / `provider_rate_limited` / `provider_unavailable` / `storage_unavailable`；
+- 不重试（避免无意义消耗）：`ai_not_configured` / `pending_manual` / `no_text` / `unsupported_format` / `embedding_mismatch`。
+
+### 3.3 阶段验证（2026-11-05）
+
+| 检查 | 命令 | 结果 |
+| --- | --- | --- |
+| Prisma Client | `npx prisma generate` | 成功（含新模型与 `Float[]`） |
+| 后端单测 | `npx vitest run src/knowledge` | 13 passed（切分、失败分类、幂等键、向量降级、向量字面量） |
+| 后端全量单测 | `npm test` | 101 files / 1276 passed / 1 expected fail / 2 skipped |
+| 后端 lint | `npm run lint` | 0 error（既有 warning 保留） |
+| 后端构建 | `npm run build` | 成功 |
+| 前端全量单测 | `npm test` | 74 files / 796 passed |
+| 前端构建 | `npm run build` | 成功（TypeScript 检查、31 页静态生成、外部依赖扫描通过） |
+| 模块依赖图 | `npx vitest run src/module-graph.spec.ts src/knowledge` | 15 passed（API/Worker 模块可编译，DI 可解析） |
+
+### 3.4 模型配置（真实联调前必须完成）
+
+- 文件：`backend/.env`（本地）或部署容器的同名环境变量；模板见 `backend/.env.example`“W2/W3 阿里云百炼”段。
+- 最少必填：`AI_ENABLED=true`、`DASHSCOPE_API_KEY=实际值`；可选 `AI_MOCK_MODE=false`、模型/维度/超时/预算。
+- 密钥不得通过聊天传递、不得提交 Git；`AI_ENABLED=false` 时索引任务记录 `ai_not_configured`，不会伪装接通。
+- 首次真实联调还需要：Worker 进程、Redis、数据库迁移已执行；如要 pgvector 检索质量，部署镜像需包含 `vector` 扩展。
+
+### 3.5 待真实验证（当前不声明通过）
+
+| 项 | 原因 | 验证方式 |
+| --- | --- | --- |
+| 百炼 Embedding 真实调用 | 未配置 Key | 配置后重建索引，核对 `mode=real`、维度与向量条数 |
+| pgvector 写入/检索 | 当前部署镜像无扩展 | 在具备 pgvector 的隔离库执行迁移并重建索引 |
+| HTML/PDF/Word/岗位表真实材料定位 | W2 仅单测与离线解析样例 | 最终隔离验收用真实公告与附件 |
+
+## 4. 阶段状态
 
 | 阶段 | 状态 | 提交 | CI | 证据 |
 | --- | --- | --- | --- | --- |
-| W0 | 完成（盘点） | `ddd4fd87` | 待核对 | 本文第 1 节 |
-| W1 | 实现完成，待提交/CI | 待填 | 待核对 | 本文第 2 节 |
-| W2 | 未开始 | - | - | - |
+| W0 | 完成（盘点） | `ddd4fd87` | 通过（run 41970922907） | 本文第 1 节 |
+| W1 | 完成 | `c1579d5b` | 通过（run 41976619675） | 本文第 2 节 |
+| W2 | 实现完成，待提交/CI | 待填 | 待核对 | 本文第 3 节 |
 | W3 | 未开始 | - | - | - |
 | W4 | 未开始 | - | - | - |
 | W5 | 未开始 | - | - | - |

@@ -10,12 +10,15 @@ import { BullModule } from '@nestjs/bullmq';
 import { PrismaModule } from './prisma.module.js';
 import { bullRedisConnection } from './sourcing/redis.js';
 import { SourcingWorkerModule } from './sourcing/sourcing-worker.module.js';
+import { KnowledgeWorkerModule } from './knowledge/knowledge-worker.module.js';
 
 @Module({
   imports: [
     PrismaModule,
     BullModule.forRoot({ connection: bullRedisConnection() }),
     SourcingWorkerModule,
+    // W2：知识索引与抓取共用同一 Worker 进程；解析/向量化只在 Worker 执行
+    KnowledgeWorkerModule,
   ],
 })
 export class WorkerAppModule {}

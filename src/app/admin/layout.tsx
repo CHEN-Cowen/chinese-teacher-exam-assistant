@@ -19,6 +19,7 @@ const ADMIN_NAV = [
   { href: "/admin/corrections", label: "机会纠错", exact: false },
   { href: "/admin/feedback", label: "纠错与治理", exact: false },
   { href: "/admin/resources", label: "资源管理", exact: false },
+  { href: "/admin/knowledge", label: "知识库材料", exact: false },
   { href: "/admin/trial", label: "受邀试用看板", exact: false },
 ];
 
