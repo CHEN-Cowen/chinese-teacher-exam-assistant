@@ -218,7 +218,7 @@
 | 重启恢复 | `backend/src/knowledge/knowledge-index-recovery.service.ts`、`knowledge.service.ts` | Worker `OnApplicationBootstrap` 重新投递 `queued/running` 索引任务；BullMQ 中仍存在的任务由 `enqueue` 去重；恢复失败不阻塞启动 |
 | 预算与日志 | `backend/src/ai/ai.config.ts`、`qa.service.ts` | 新增 `QA_DAILY_REQUESTS_GLOBAL`（默认 2000）；`refused` 也计请求；日志只记录范围/状态/候选数/引用数/tokens/耗时，不记录问题正文、用户标识或密钥 |
 | 健康语义 | `backend/src/health.controller.ts` | `/health` 增加 `ai=off|mock|real`；AI 关闭或供应商故障不影响招聘公告/岗位接口存活 |
-| 隔离冒烟 | `backend/scripts/smoke-runtime.mjs` | 同一隔离 DB/Redis 新增 demo 角色实例与 AI-off 实例：入库→审核→发布→Worker 索引→检索→问答→横向反馈→撤回→AI 关闭；AI 使用 mock，明确标注非真实联调 |
+| 隔离冒烟 | `backend/scripts/smoke-runtime.mjs` | 同一隔离 DB/Redis 新增 demo 角色实例与 AI-off 实例：入库→审核→发布→Worker 索引→检索→问答→横向反馈→撤回→AI 关闭；AI 使用 mock，明确标注非真实联调。角色实例仅在隔离验收中以 `NODE_ENV=development` + 回环地址启用 demo 头；生产实例保持 `invited`，并验证 production 拒绝 demo 鉴权 |
 
 ### 5.2 权限与可见性矩阵（代码与冒烟均覆盖）
 
@@ -253,6 +253,7 @@
 
 待推送后填写同一提交 CI run 的 `smoke-runtime` 结果。脚本按失败即退出执行，覆盖：
 
+0. 生产实例（`invited`）访客不可访问知识后台，招聘覆盖接口公开可用；生产环境启用 demo 鉴权会被 runtime-security 直接拒绝；
 1. demo 访客入库 401、普通用户入库/检索调试 403；
 2. 管理员入库→送审→批准→发布→Worker 索引 `ready`；
 3. 管理员检索有命中；用户 A 问答 `answered` 且带引用、`mode=mock`；

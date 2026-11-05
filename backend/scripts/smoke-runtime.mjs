@@ -536,6 +536,8 @@ async function main() {
   console.log('[smoke] 启动 W4 Demo API（demo 身份，AI mock）…');
   spawnLogged('Demo API', 'demo', process.execPath, [path.join('dist', 'main.js')], {
     ...baseEnv,
+    NODE_ENV: 'development',
+    HOST: '127.0.0.1',
     AUTH_MODE: 'demo',
     PORT: String(DEMO_PORT),
     CRAWL_SCHEDULER_ENABLED: 'false',
@@ -543,6 +545,8 @@ async function main() {
   console.log('[smoke] 启动 W4 AI-off API（AI_ENABLED=false）…');
   spawnLogged('AI-off API', 'aioff', process.execPath, [path.join('dist', 'main.js')], {
     ...baseEnv,
+    NODE_ENV: 'development',
+    HOST: '127.0.0.1',
     AUTH_MODE: 'demo',
     PORT: String(AI_OFF_PORT),
     CRAWL_SCHEDULER_ENABLED: 'false',
