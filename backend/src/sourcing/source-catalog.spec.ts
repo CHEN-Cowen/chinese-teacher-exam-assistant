@@ -27,7 +27,9 @@ describe('S5 来源目录', () => {
     const seedable = getSeedableSources();
     // S5 真实核验通过：南京、宁波、鄞州、杭州、绍兴、嘉兴、苏州、常州、丽水；
     // S5 遗留任务 1 补入：蚌埠（服务端渲染静态列表 + pageIndex 分页）、
-    // 萧山（区县级 jpaas 公开接口 + paramJson 分页）。
+    // 萧山（区县级 jpaas 公开接口 + paramJson 分页）；
+    // N1 跨省首批：湖州（jpaas 表格行 + initJpage）、泰州（jpaas li + span）、
+    // 亳州（服务端渲染 section.m-tglist + pagination）。
     expect(seedable.map((source) => source.adapterKey)).toEqual([
       'nanjing-education',
       'hangzhou-education',
@@ -36,6 +38,9 @@ describe('S5 来源目录', () => {
       'shaoxing-education',
       'jiaxing-education',
       'suzhou-education',
+      'huzhou-education',
+      'taizhou-education',
+      'bozhou-education',
       'changzhou-education',
       'lishui-education',
       'bengbu-education',
@@ -47,7 +52,7 @@ describe('S5 来源目录', () => {
     ).toHaveLength(2);
     expect(
       SOURCE_CATALOG.filter((entry) => entry.status === 'blocked'),
-    ).toHaveLength(2);
+    ).toHaveLength(1);
   });
 
   it('禁止把目录外域名或非 HTTPS 链接投入 seed', () => {
@@ -160,13 +165,16 @@ describe('S5 来源目录', () => {
     expect(verifiedAtOf('bengbu-education')).toBe('2026-10-26');
     expect(verifiedAtOf('xiaoshan-education')).toBe('2026-10-26');
     expect(verifiedAtOf('anhui-education-policy')).toBe('2026-11-05');
+    expect(verifiedAtOf('huzhou-education')).toBe('2026-11-05');
+    expect(verifiedAtOf('taizhou-education')).toBe('2026-11-05');
+    expect(verifiedAtOf('bozhou-education')).toBe('2026-11-05');
   });
 });
 
 describe('S5 来源级检查记录与监测状态', () => {
   it('ready 来源完成两次真实检查后，才可声称正常监测', () => {
     const ready = SOURCE_CATALOG.filter((entry) => entry.status === 'ready');
-    expect(ready.length).toBe(12);
+    expect(ready.length).toBe(15);
     for (const entry of ready) {
       const record = getSourceMonitoringRecord(entry.sourceKey);
       expect(record.checks.length, entry.sourceKey).toBe(2);
@@ -178,14 +186,14 @@ describe('S5 来源级检查记录与监测状态', () => {
         /^[0-9a-f]{64}$/,
       );
     }
-    // 只有南京第二次发现了新公告；其余 11 个列表条目未变，记 no_new 仍算成功。
+    // 只有南京第二次发现了新公告；其余 14 个列表条目未变，记 no_new 仍算成功。
     expect(
       getSourceMonitoringRecord('nanjing-education').checks[1]?.outcome,
     ).toBe('succeeded');
     const unchanged = SOURCE_MONITORING_RECORDS.filter(
       (record) => record.sourceKey !== 'nanjing-education',
     );
-    expect(unchanged).toHaveLength(11);
+    expect(unchanged).toHaveLength(14);
     for (const record of unchanged) {
       expect(record.checks[1]?.outcome, record.sourceKey).toBe('no_new');
     }
@@ -220,6 +228,9 @@ describe('S5 来源级检查记录与监测状态', () => {
     expect(checkedAtOf('lishui-education')).toBe('2026-10-26T04:08:21.242Z');
     expect(checkedAtOf('bengbu-education')).toBe('2026-10-26T08:47:12.061Z');
     expect(checkedAtOf('xiaoshan-education')).toBe('2026-10-26T08:50:44.919Z');
+    expect(checkedAtOf('huzhou-education')).toBe('2026-11-05T15:20:44.363Z');
+    expect(checkedAtOf('taizhou-education')).toBe('2026-11-05T15:20:46.630Z');
+    expect(checkedAtOf('bozhou-education')).toBe('2026-11-05T15:20:53.703Z');
   });
 
   it('补录检查是纯函数，追加后连续成功次数加一且不改原记录', () => {

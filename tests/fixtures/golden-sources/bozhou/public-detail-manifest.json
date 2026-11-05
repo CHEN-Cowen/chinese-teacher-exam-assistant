@@ -1,0 +1,13 @@
+{
+  "capturedAt": "2026-11-05T15:20:54.158Z",
+  "sourceKind": "official-live-snapshot",
+  "scope": "article-and-attachment-links-only",
+  "stableMonitoringVerified": false,
+  "files": [
+    {
+      "name": "public-detail.html",
+      "url": "https://www.bozhou.gov.cn/OpennessContent/show/3014075.html",
+      "sha256": "b6a1078b9e5471b3e34a83cce29c772fd8c0a077b20e0a89325273111ebd0f9b"
+    }
+  ]
+}

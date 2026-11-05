@@ -50,7 +50,9 @@ export function extractArticlePathDate(text: string, url: string): string {
  * - jiaxing：li，日期在 div.time（短格式，年份取自官方文章路径）；
  * - hangzhou：li，日期在 span.suffixContent[origintime]（毫秒时间戳）；
  * - lishui：li，日期在同级 span（方括号包裹的 YYYY-MM-DD）；
- * - xiaoshan：li，日期在同级 span.info-time（YYYY-MM-DD）。
+ * - xiaoshan：li，日期在同级 span.info-time（YYYY-MM-DD）；
+ * - huzhou：表格行（.page-content tr），日期在 td.yd_no，形如 [YYYY-MM-DD]；
+ * - taizhou：li，标题在链接文本（title 属性为模板占位符），日期在同级 span（YYYY-MM-DD）。
  */
 export type PublicColumnKind =
   | 'ningbo'
@@ -59,7 +61,9 @@ export type PublicColumnKind =
   | 'jiaxing'
   | 'hangzhou'
   | 'lishui'
-  | 'xiaoshan';
+  | 'xiaoshan'
+  | 'huzhou'
+  | 'taizhou';
 
 /** 只读取官网声明的同源公开列表接口，不执行脚本，不接受任意跨域地址。 */
 export function publicColumnRequest(
@@ -263,7 +267,7 @@ export function locatePublicArticle(
     const href = $(e).attr('href')!;
     const target = resolveUrl(url, href);
     if (
-      !/\/front\/document\/download\?|\.(pdf|xlsx?|docx?|zip)(?:[?#]|$)/i.test(
+      !/\/front\/document\/download\?|\/download\?|\.(pdf|xlsx?|docx?|zip)(?:[?#]|$)/i.test(
         target,
       )
     )
@@ -282,7 +286,7 @@ export function locatePublicArticle(
   };
 }
 
-/** 正文容器候选顺序：#zoom 为主，实测嘉兴/绍兴亦同，苏州为 .article-content，常州为 .NewsText，蚌埠为 .j-fontContent。 */
+/** 正文容器候选顺序：#zoom 为主，实测嘉兴/绍兴亦同，苏州为 .article-content，常州为 .NewsText，蚌埠为 .j-fontContent，泰州为 .content。 */
 const ARTICLE_BODY_SELECTORS = [
   '#zoom',
   '.article-content',
@@ -290,6 +294,7 @@ const ARTICLE_BODY_SELECTORS = [
   '.bt_content',
   '.art_con',
   '.j-fontContent',
+  '.content',
 ] as const;
 
 /**
@@ -319,20 +324,27 @@ export function locateOfficialArticle(
   if (!title || !date || !body.text().trim())
     throw new AdapterParseError('DOM_MISMATCH', '公开正文缺少标题、日期或正文');
   const attachments = new Map<string, { name: string; url: string }>();
-  body.find('a[href]').each((_i, e) => {
+  // 部分官方站点把「文件下载」区块放在正文容器之外（亳州 .m-filbox），
+  // 仍需按附件链接规则一并收集，否则会漏掉岗位表/报名表。
+  const anchors = body.find('a[href]').toArray();
+  $('.m-filbox a[href], .m-file-download a[href]').each((_i, e) => {
+    anchors.push(e);
+  });
+  for (const anchor of anchors) {
+    const e = anchor as never;
     const href = $(e).attr('href')!;
     const target = resolveUrl(url, href);
     if (
-      !/\/front\/document\/download\?|\.(pdf|xlsx?|docx?|zip)(?:[?#]|$)/i.test(
+      !/\/front\/document\/download\?|\/download\?|\.(pdf|xlsx?|docx?|zip)(?:[?#]|$)/i.test(
         target,
       )
     )
-      return;
+      continue;
     const name = $(e).text().trim();
     if (!name)
       throw new AdapterParseError('DOM_MISMATCH', '公开正文附件缺少名称');
     attachments.set(target, { name, url: target });
-  });
+  }
   return {
     canonicalUrl: normalizeUrl(url),
     title,
@@ -402,13 +414,18 @@ export function discoverPublicColumn(
   const rows =
     kind === 'ningbo'
       ? $('.page-content tr').has('td.car_tl a[href]')
-      : kind === 'lishui'
+      : kind === 'lishui' || kind === 'huzhou'
         ? $('.page-content tr').has('a[href]')
         : $('.page-content li').has('a[href]');
   const items: DiscoveredDocument[] = [];
   rows.each((_i, e) => {
     const link = $(e).find('a[href]').first();
-    const title = (link.attr('title') ?? link.text()).trim();
+    const rawTitle = link.attr('title');
+    // 泰州列表的 title 属性是模板占位符（如 {item.title1}），真实标题在链接文本。
+    const title =
+      kind === 'taizhou' && (!rawTitle || /\{\s*[\w.]+\s*\}/.test(rawTitle))
+        ? link.text().trim()
+        : (rawTitle ?? link.text()).trim();
     if (!title) throw new AdapterParseError('DOM_MISMATCH', '公开栏目缺少标题');
     const href = link.attr('href');
     if (!href) throw new AdapterParseError('DOM_MISMATCH', '公开栏目缺少链接');
@@ -430,6 +447,18 @@ export function discoverPublicColumn(
       publishedAt = extractDate(
         $(e).find('span.info-time').first().text(),
         '萧山公开栏目日期',
+      );
+    } else if (kind === 'huzhou') {
+      // 湖州表格行日期在独立单元格 td.yd_no，形如 [2026-11-04]。
+      publishedAt = extractDate(
+        $(e).find('td.yd_no').first().text(),
+        '湖州公开栏目日期',
+      );
+    } else if (kind === 'taizhou') {
+      // 泰州条目日期在同级 span（YYYY-MM-DD）。
+      publishedAt = extractDate(
+        $(e).find('span').first().text(),
+        '泰州公开栏目日期',
       );
     } else {
       const date =
@@ -660,6 +689,105 @@ export function serverRenderedListPages(
   const urls: string[] = [];
   for (let next = 2; next <= total; next += 1) {
     urls.push(`${origin}/content/column/${columnId}?pageIndex=${next}`);
+  }
+  return urls;
+}
+
+/**
+ * 亳州市政府信息公开「教师管理」栏目：
+ * 服务端渲染静态列表，结构为 section.m-tglist li > a[href][title] + 同级 span（YYYY-MM-DD）。
+ * 详情页形如 /OpennessContent/show/<id>.html，仅接受匹配该路径的条目。
+ */
+export function discoverGovInfoList(
+  baseUrl: string,
+  content: string,
+  detailPathPattern: RegExp,
+): DiscoveredDocument[] {
+  const $ = load(content);
+  const rows = $('section.m-tglist li').has('a[href]');
+  if (!rows.length)
+    throw new AdapterParseError(
+      'DOM_MISMATCH',
+      '政府信息公开列表未找到 section.m-tglist li > a[href] 结构',
+    );
+  const items: DiscoveredDocument[] = [];
+  const seen = new Set<string>();
+  rows.each((_i, e) => {
+    const link = $(e).find('a[href]').first();
+    const href = link.attr('href');
+    const title = (link.attr('title') ?? link.text()).trim();
+    if (!href || !title)
+      throw new AdapterParseError('DOM_MISMATCH', '政府信息公开列表条目缺少链接或标题');
+    const url = resolveUrl(baseUrl, href);
+    if (!detailPathPattern.test(url)) return;
+    if (seen.has(url)) return;
+    const date = $(e).find('span').first().text().trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      throw new AdapterParseError(
+        'DOM_MISMATCH',
+        `政府信息公开列表条目缺少发布日期（YYYY-MM-DD）: ${title}`,
+      );
+    }
+    seen.add(url);
+    items.push({
+      title,
+      publishedAt: extractDate(date, '政府信息公开列表日期'),
+      url: normalizeUrl(url),
+      kind: classifyDocumentKind(title),
+    });
+  });
+  if (!items.length)
+    throw new AdapterParseError(
+      'DOM_MISMATCH',
+      '政府信息公开列表无任何条目（静默 0 条视为故障）',
+    );
+  return items;
+}
+
+/**
+ * 亳州官方分页：<pagination currentpage pagesize pagecount total>，
+ * 后续页为同路径的 page_<n>.html（首屏 page_1.html）。
+ * 已在后续页（currentpage > 1）时返回空数组，避免循环安排分页。
+ */
+export function govInfoListPages(
+  baseUrl: string,
+  content: string,
+  maxPages = 20,
+): string[] {
+  const $ = load(content);
+  const node = $('pagination').first();
+  if (!node.length) return [];
+  const current = Number(node.attr('currentpage'));
+  const size = Number(node.attr('pagesize'));
+  const total = Number(node.attr('pagecount'));
+  if (
+    !Number.isSafeInteger(current) ||
+    current < 1 ||
+    !Number.isSafeInteger(size) ||
+    size < 1 ||
+    !Number.isSafeInteger(total) ||
+    total < 1
+  ) {
+    throw new AdapterParseError('DOM_MISMATCH', '政府信息公开分页参数无效');
+  }
+  if (total > maxPages)
+    throw new AdapterParseError(
+      'DOM_MISMATCH',
+      '政府信息公开分页超出预算，需调整检查范围',
+    );
+  // 已经是后续页：不再重复安排，交给列表去重。
+  if (current > 1) return [];
+  const url = new URL(baseUrl);
+  if (!/page_\d+\.html/.test(url.pathname))
+    throw new AdapterParseError(
+      'DOM_MISMATCH',
+      '政府信息公开分页路径不是 page_<n>.html 形态',
+    );
+  const urls: string[] = [];
+  for (let next = 2; next <= total; next += 1) {
+    const page = new URL(url.href);
+    page.pathname = url.pathname.replace(/page_\d+\.html/, `page_${next}.html`);
+    urls.push(page.href);
   }
   return urls;
 }

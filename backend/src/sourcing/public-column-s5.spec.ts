@@ -6,9 +6,11 @@ import { AdapterParseError } from './official-site-adapter.js';
 import {
   columnTablePages,
   discoverColumnTable,
+  discoverGovInfoList,
   discoverPublicColumn,
   discoverServerRenderedList,
   discoverStaticList,
+  govInfoListPages,
   locateOfficialArticle,
   publicColumnPages,
   publicColumnRequest,
@@ -23,6 +25,9 @@ import { BengbuEducationAdapter } from './adapters/bengbu-education.adapter.js';
 import { XiaoshanEducationAdapter } from './adapters/xiaoshan-education.adapter.js';
 import { HangzhouEducationAdapter } from './adapters/hangzhou-education.adapter.js';
 import { LishuiEducationAdapter } from './adapters/lishui-education.adapter.js';
+import { HuzhouEducationAdapter } from './adapters/huzhou-education.adapter.js';
+import { TaizhouEducationAdapter } from './adapters/taizhou-education.adapter.js';
+import { BozhouEducationAdapter } from './adapters/bozhou-education.adapter.js';
 
 function fixtureDir(key: string): string {
   return path.resolve(process.cwd(), '../tests/fixtures/golden-sources', key);
@@ -739,6 +744,9 @@ const MANIFEST_SOURCES = [
   'lishui',
   'bengbu',
   'xiaoshan',
+  'huzhou',
+  'taizhou',
+  'bozhou',
 ] as const;
 
 describe('S5 真实快照 manifest schema 统一', () => {
@@ -811,3 +819,284 @@ describe('S5 真实快照 manifest schema 统一', () => {
 
 const SHAOXING_LIST =
   'https://jyj.sx.gov.cn/api-gateway/jpaas-publish-server/front/page/build/unit';
+
+/**
+ * N1 首批跨省扩源（2026-11-05）：浙江湖州、江苏泰州、安徽亳州。
+ *
+ * 三个来源覆盖三种此前未接入的形态：
+ * - 湖州：jpaas 表格行 + td.yd_no 日期 + initJpage 内联分页；
+ * - 泰州：jpaas li + span 日期，title 为模板占位符 `{item.title1}`；
+ * - 亳州：服务端渲染 section.m-tglist + <pagination> pagecount 分页。
+ */
+describe('N1 跨省首批来源真实样本回放', () => {
+  it('湖州公示公告：外壳接口、列表、分页与正文附件一致', () => {
+    const manifest = readManifest('huzhou', 'public-manifest.json');
+    const shellFile = manifest.files.find(
+      (file) => file.name === 'public-shell.html',
+    )!;
+    const shell = readFixture('huzhou', 'public-shell.html');
+    expect(createHash('sha256').update(shell).digest('hex')).toBe(
+      shellFile.sha256,
+    );
+    const listUrl = publicColumnRequest(shellFile.url, shell);
+    const listFile = manifest.files.find(
+      (file) => file.name === 'public-list.json',
+    )!;
+    expect(listUrl).toBe(listFile.url);
+    expect(listUrl).toContain('pageId=1229210603');
+    expect(listUrl).toContain('tagId=');
+
+    const list = readFixture('huzhou', 'public-list.json');
+    expect(createHash('sha256').update(list).digest('hex')).toBe(
+      listFile.sha256,
+    );
+    const items = discoverPublicColumn(listFile.url, list, 'huzhou');
+    expect(items.length).toBeGreaterThan(8);
+    expect(
+      items.every((item) => /^\d{4}-\d{2}-\d{2}$/.test(item.publishedAt)),
+    ).toBe(true);
+    expect(items.some((item) => item.title.includes('引进'))).toBe(true);
+    // 条目必须落在官方文章路径 /col/col1229210603/art/YYYY/ 下
+    expect(
+      items.every((item) =>
+        /^https:\/\/huedu\.huzhou\.gov\.cn\/col\/col1229210603\/art\/\d{4}\/art_[\da-f]+\.html$/.test(
+          item.url,
+        ),
+      ),
+    ).toBe(true);
+
+    // 官方 initJpage：rows=15 / count=41 → 共 3 页，后续 2 页
+    const pages = publicColumnPages(listFile.url, list);
+    expect(pages).toHaveLength(2);
+    expect(
+      JSON.parse(new URL(pages[0]).searchParams.get('paramJson')!),
+    ).toEqual({ pageNo: 2, pageSize: '15' });
+    const page2 = discoverPublicColumn(
+      pages[0],
+      readFixture('huzhou', 'public-page2.json'),
+      'huzhou',
+    );
+    expect(page2.length).toBeGreaterThan(5);
+    const firstUrls = new Set(items.map((item) => item.url));
+    expect(page2.every((item) => !firstUrls.has(item.url))).toBe(true);
+
+    const detail = readManifest('huzhou', 'public-detail-manifest.json');
+    const detailFile = detail.files[0];
+    const detailBytes = readFileSync(
+      path.join(fixtureDir('huzhou'), detailFile.name),
+    );
+    expect(createHash('sha256').update(detailBytes).digest('hex')).toBe(
+      detailFile.sha256,
+    );
+    const article = locateOfficialArticle(
+      detailFile.url,
+      detailBytes.toString('utf8'),
+    );
+    expect(article.title).toContain('引进');
+    expect(article.publishedAt).toBe('2026-11-04');
+    expect(article.bodyText.length).toBeGreaterThan(100);
+    expect(article.attachments).toHaveLength(1);
+    expect(article.attachments[0].url).toContain(
+      '/api-gateway/jpaas-web-server/front/document/download?',
+    );
+    expect(article.attachments[0].name).toContain('.xlsx');
+  });
+
+  it('泰州最新文件：模板占位标题回退、分页与正文附件一致', () => {
+    const manifest = readManifest('taizhou', 'public-manifest.json');
+    const shellFile = manifest.files.find(
+      (file) => file.name === 'public-shell.html',
+    )!;
+    const listFile = manifest.files.find(
+      (file) => file.name === 'public-list.json',
+    )!;
+    expect(createHash('sha256').update(readFixture('taizhou', 'public-shell.html')).digest('hex')).toBe(shellFile.sha256);
+    expect(publicColumnRequest(shellFile.url, readFixture('taizhou', 'public-shell.html'))).toBe(listFile.url);
+
+    const list = readFixture('taizhou', 'public-list.json');
+    expect(createHash('sha256').update(list).digest('hex')).toBe(
+      listFile.sha256,
+    );
+    const items = discoverPublicColumn(listFile.url, list, 'taizhou');
+    expect(items.length).toBeGreaterThan(8);
+    expect(
+      items.every((item) => /^\d{4}-\d{2}-\d{2}$/.test(item.publishedAt)),
+    ).toBe(true);
+    // title 属性是 {item.title1} 占位符，标题必须回退到链接文本
+    expect(items.every((item) => !item.title.includes('{'))).toBe(true);
+    expect(items.some((item) => item.title.includes('教师资格'))).toBe(true);
+    expect(
+      items.every((item) =>
+        /^https:\/\/jyj\.taizhou\.gov\.cn\/zxwj\/art\/\d{4}\/art_[\da-f]+\.html$/.test(
+          item.url,
+        ),
+      ),
+    ).toBe(true);
+
+    // 官方 DOM 属性：rows=15 / count=30 → 共 2 页，后续 1 页
+    const pages = publicColumnPages(listFile.url, list);
+    expect(pages).toHaveLength(1);
+    expect(
+      JSON.parse(new URL(pages[0]).searchParams.get('paramJson')!),
+    ).toEqual({ pageNo: 2, pageSize: '15' });
+    const page2 = discoverPublicColumn(
+      pages[0],
+      readFixture('taizhou', 'public-page2.json'),
+      'taizhou',
+    );
+    expect(page2.length).toBeGreaterThan(3);
+
+    const detail = readManifest('taizhou', 'public-detail-manifest.json');
+    const detailFile = detail.files[0];
+    const detailBytes = readFileSync(
+      path.join(fixtureDir('taizhou'), detailFile.name),
+    );
+    expect(createHash('sha256').update(detailBytes).digest('hex')).toBe(
+      detailFile.sha256,
+    );
+    const article = locateOfficialArticle(
+      detailFile.url,
+      detailBytes.toString('utf8'),
+    );
+    expect(article.title).toContain('公开招聘教师');
+    expect(article.publishedAt).toBe('2026-08-20');
+    expect(article.bodyText.length).toBeGreaterThan(100);
+    expect(article.attachments).toHaveLength(1);
+    expect(article.attachments[0].url).toContain(
+      '/api-gateway/jpaas-web-server/front/document/download?',
+    );
+    expect(article.attachments[0].name).toContain('.xls');
+  });
+
+  it('亳州教师管理：静态列表、pagination 分页与正文附件一致', () => {
+    const manifest = readManifest('bozhou', 'public-manifest.json');
+    const shellFile = manifest.files.find(
+      (file) => file.name === 'public-shell.html',
+    )!;
+    const shell = readFixture('bozhou', 'public-shell.html');
+    expect(createHash('sha256').update(shell).digest('hex')).toBe(
+      shellFile.sha256,
+    );
+    const items = discoverGovInfoList(
+      shellFile.url,
+      shell,
+      /\/OpennessContent\/show\/\d+\.html(?:[?#]|$)/,
+    );
+    expect(items.length).toBeGreaterThan(8);
+    expect(
+      items.every((item) => /^\d{4}-\d{2}-\d{2}$/.test(item.publishedAt)),
+    ).toBe(true);
+    expect(
+      items.some(
+        (item) => item.title.includes('公开招聘') || item.title.includes('招募'),
+      ),
+    ).toBe(true);
+    expect(
+      items.every((item) =>
+        item.url.startsWith('https://www.bozhou.gov.cn/OpennessContent/show/'),
+      ),
+    ).toBe(true);
+
+    // 官方 pagination：pagecount=13 → 后续 12 页（page_2..page_13.html）
+    const pages = govInfoListPages(shellFile.url, shell);
+    expect(pages).toHaveLength(12);
+    expect(pages[0]).toBe(
+      'https://www.bozhou.gov.cn/XxgkContent/showList/295/65767/page_2.html',
+    );
+    const page2 = discoverGovInfoList(
+      pages[0],
+      readFixture('bozhou', 'public-page2.html'),
+      /\/OpennessContent\/show\/\d+\.html(?:[?#]|$)/,
+    );
+    expect(page2.length).toBeGreaterThan(8);
+    const firstUrls = new Set(items.map((item) => item.url));
+    expect(page2.every((item) => !firstUrls.has(item.url))).toBe(true);
+    // 已在后续页时不再重复安排分页
+    expect(govInfoListPages(pages[0], readFixture('bozhou', 'public-page2.html'))).toEqual([]);
+
+    const detail = readManifest('bozhou', 'public-detail-manifest.json');
+    const detailFile = detail.files[0];
+    const detailBytes = readFileSync(
+      path.join(fixtureDir('bozhou'), detailFile.name),
+    );
+    expect(createHash('sha256').update(detailBytes).digest('hex')).toBe(
+      detailFile.sha256,
+    );
+    const article = locateOfficialArticle(
+      detailFile.url,
+      detailBytes.toString('utf8'),
+    );
+    expect(article.title).toContain('招募');
+    expect(article.publishedAt).toBe('2026-09-01');
+    expect(article.bodyText.length).toBeGreaterThan(100);
+    // 官方附件走 /upload_bz/download?siteId=1&id=...（.doc/.et）
+    expect(article.attachments).toHaveLength(3);
+    expect(
+      article.attachments.every(
+        (attachment) =>
+          attachment.url.includes('/upload_bz/download?') &&
+          /\.(doc|et)【/i.test(attachment.name),
+      ),
+    ).toBe(true);
+  });
+
+  it('三个 N1 适配器在真实样本上不抛 DOM 失配', () => {
+    const huzhou = new HuzhouEducationAdapter();
+    const huzhouList = readManifest('huzhou', 'public-manifest.json').files.find(
+      (file) => file.name === 'public-list.json',
+    )!;
+    expect(
+      huzhou.discover({
+        url: huzhouList.url,
+        mimeType: 'application/json',
+        content: readFixture('huzhou', 'public-list.json'),
+        fetchedAt: '2026-11-05T00:00:00.000Z',
+      }).length,
+    ).toBeGreaterThan(8);
+    expect(() =>
+      huzhou.discover({
+        url: 'https://huedu.huzhou.gov.cn/col/col1229210603/index.html',
+        mimeType: 'text/html',
+        content: readFixture('huzhou', 'public-shell.html'),
+        fetchedAt: '2026-11-05T00:00:00.000Z',
+      }),
+    ).toThrow(AdapterParseError);
+
+    const taizhou = new TaizhouEducationAdapter();
+    const taizhouList = readManifest(
+      'taizhou',
+      'public-manifest.json',
+    ).files.find((file) => file.name === 'public-list.json')!;
+    expect(
+      taizhou.discover({
+        url: taizhouList.url,
+        mimeType: 'application/json',
+        content: readFixture('taizhou', 'public-list.json'),
+        fetchedAt: '2026-11-05T00:00:00.000Z',
+      }).length,
+    ).toBeGreaterThan(8);
+
+    const bozhou = new BozhouEducationAdapter();
+    const bozhouShell = readFixture('bozhou', 'public-shell.html');
+    expect(
+      bozhou.discover({
+        url: 'https://www.bozhou.gov.cn/XxgkContent/showList/295/65767/page_1.html',
+        mimeType: 'text/html',
+        content: bozhouShell,
+        fetchedAt: '2026-11-05T00:00:00.000Z',
+      }).length,
+    ).toBeGreaterThan(8);
+    expect(bozhou.paginationListings(
+      'https://www.bozhou.gov.cn/XxgkContent/showList/295/65767/page_1.html',
+      bozhouShell,
+    )).toHaveLength(12);
+    expect(() =>
+      bozhou.discover({
+        url: 'https://www.bozhou.gov.cn/XxgkContent/showList/295/65767/page_1.html',
+        mimeType: 'application/json',
+        content: '{"success":true,"data":{"html":"<ul></ul>"}}',
+        fetchedAt: '2026-11-05T00:00:00.000Z',
+      }),
+    ).toThrow(/静态列表/);
+  });
+});

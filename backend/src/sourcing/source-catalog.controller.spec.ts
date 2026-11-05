@@ -19,7 +19,7 @@ describe('S5 来源目录接口', () => {
   it('目录返回候选和可登记配置，读取不写入数据库', () => {
     const { controller, upsertSource } = setup();
     const result = controller.catalog();
-    expect(result.entries).toHaveLength(16);
+    expect(result.entries).toHaveLength(18);
     expect(result.validationErrors).toEqual([]);
     expect(upsertSource).not.toHaveBeenCalled();
   });
@@ -31,19 +31,19 @@ describe('S5 来源目录接口', () => {
       expect(entry.monitoring).toBeTruthy();
       expect(entry.monitoring.sourceKey).toBe(entry.sourceKey);
     }
-    // 12 个 ready 来源都已完成两次真实检查（第二次为 no_new 或 succeeded），
+    // 15 个 ready 来源都已完成两次真实检查（第二次为 no_new 或 succeeded），
     // 连续成功达到阈值，状态为 monitoring；candidate/blocked 仍是 unverified。
     const states = result.entries.map((entry) => entry.monitoring.state);
-    expect(states.filter((state) => state === 'monitoring')).toHaveLength(12);
+    expect(states.filter((state) => state === 'monitoring')).toHaveLength(15);
     expect(states.filter((state) => state === 'verifying')).toHaveLength(0);
-    expect(states.filter((state) => state === 'unverified')).toHaveLength(4);
+    expect(states.filter((state) => state === 'unverified')).toHaveLength(3);
   });
 
   it('seed 只投入已核验来源，不含候选与 blocked 项', async () => {
     const { controller, upsertSource } = setup();
     const result = await controller.seed();
-    expect(result.count).toBe(12);
-    expect(upsertSource).toHaveBeenCalledTimes(12);
+    expect(result.count).toBe(15);
+    expect(upsertSource).toHaveBeenCalledTimes(15);
     const seeded = upsertSource.mock.calls.map(
       (call) => call[0] as { adapterKey: string },
     );
@@ -55,6 +55,9 @@ describe('S5 来源目录接口', () => {
       'shaoxing-education',
       'jiaxing-education',
       'suzhou-education',
+      'huzhou-education',
+      'taizhou-education',
+      'bozhou-education',
       'changzhou-education',
       'lishui-education',
       'bengbu-education',

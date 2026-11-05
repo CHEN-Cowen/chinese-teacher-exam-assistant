@@ -21,6 +21,7 @@ import {
   publicColumnRequest,
   publicColumnPages,
   staticListPages,
+  govInfoListPages,
 } from '../public-column.js';
 import {
   CrawlRunStore,
@@ -215,6 +216,8 @@ export class SourceDiscoverService {
             if (!listUrls.includes(page)) listUrls.push(page);
           for (const page of staticListPages(result.finalUrl, body))
             if (!listUrls.includes(page)) listUrls.push(page);
+          for (const page of govInfoListPages(result.finalUrl, body))
+            if (!listUrls.includes(page)) listUrls.push(page);
           const items = publicUrl
             ? []
             : adapter.discover({
@@ -247,6 +250,8 @@ export class SourceDiscoverService {
         for (const page of publicColumnPages(result.finalUrl, result.body))
           if (!listUrls.includes(page)) listUrls.push(page);
         for (const page of staticListPages(result.finalUrl, result.body))
+          if (!listUrls.includes(page)) listUrls.push(page);
+        for (const page of govInfoListPages(result.finalUrl, result.body))
           if (!listUrls.includes(page)) listUrls.push(page);
         const items = publicUrl
           ? []

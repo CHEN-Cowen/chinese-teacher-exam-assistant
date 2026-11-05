@@ -199,19 +199,51 @@ export const SOURCE_CATALOG: readonly SourceCatalogEntry[] = [
       '2026-10-26 核验：入口连接失败（fetch failed），暂不可用，待网络或站点恢复后重试。',
   },
   {
-    sourceKey: 'huzhou-education-candidate',
+    sourceKey: 'huzhou-education',
     publisher: '湖州市教育局',
     regionCode: '330500',
     authorityLevel: 'city',
     officialUrl: 'https://huedu.huzhou.gov.cn/',
-    listUrls: [],
+    listUrls: ['https://huedu.huzhou.gov.cn/col/col1229210603/index.html'],
     allowedHosts: ['huedu.huzhou.gov.cn'],
-    adapterKey: null,
-    status: 'blocked',
-    verifiedAt: '2026-10-26',
-    sampleRef: null,
+    adapterKey: 'huzhou-education',
+    status: 'ready',
+    verifiedAt: '2026-11-05',
+    sampleRef: 'tests/fixtures/golden-sources/huzhou',
     coverageNote:
-      '2026-10-26 核验：入口连接失败（fetch failed），暂不可用，待网络或站点恢复后重试。',
+      '「公示公告」栏目真实核验（2026-11-05）：jpaas 公开接口列表（表格行 + initJpage 分页）、正文 #zoom 与官方 xlsx 附件下载链接离线回放通过。该栏目为混合栏目，教师招聘相关条目需按标题判定；持续监测见检查记录。',
+  },
+  {
+    sourceKey: 'taizhou-education',
+    publisher: '泰州市教育局',
+    regionCode: '321200',
+    authorityLevel: 'city',
+    officialUrl: 'https://jyj.taizhou.gov.cn/',
+    listUrls: ['https://jyj.taizhou.gov.cn/zxwj/index.html'],
+    allowedHosts: ['jyj.taizhou.gov.cn'],
+    adapterKey: 'taizhou-education',
+    status: 'ready',
+    verifiedAt: '2026-11-05',
+    sampleRef: 'tests/fixtures/golden-sources/taizhou',
+    coverageNote:
+      '「最新文件」栏目真实核验（2026-11-05）：jpaas 公开接口列表（li + span 日期，title 占位符回退链接文本）、DOM 属性分页、正文 .content 与官方 xls 附件下载链接离线回放通过。该栏目为混合栏目，教师招聘相关条目需按标题判定；持续监测见检查记录。',
+  },
+  {
+    sourceKey: 'bozhou-education',
+    publisher: '亳州市人民政府',
+    regionCode: '341600',
+    authorityLevel: 'city',
+    officialUrl: 'https://www.bozhou.gov.cn/',
+    listUrls: [
+      'https://www.bozhou.gov.cn/XxgkContent/showList/295/65767/page_1.html',
+    ],
+    allowedHosts: ['www.bozhou.gov.cn'],
+    adapterKey: 'bozhou-education',
+    status: 'ready',
+    verifiedAt: '2026-11-05',
+    sampleRef: 'tests/fixtures/golden-sources/bozhou',
+    coverageNote:
+      '「教师管理」栏目真实核验（2026-11-05）：服务端渲染静态列表（section.m-tglist）、pagination pagecount 分页（13 页 / 191 条）、正文 #zoom 与官方 /upload_bz/download 附件链接离线回放通过；含新任教师公开招聘、递补与拟聘用公示；持续监测见检查记录。',
   },
   {
     sourceKey: 'changzhou-education',
@@ -638,6 +670,66 @@ export const SOURCE_MONITORING_RECORDS: readonly SourceMonitoringRecord[] = [
         contentHash:
           '60d5514d6cb330f0a4f3264aa2f1fb1eea40838a63bd21029a2ed8bf0913326a',
         note: 'W5 第二次真实采样（距首次约 3 分钟）：栏目 HTTP 200，32 条标题/日期/链接与首次样本一致；指纹为条目字段 sha256。',
+      },
+    ],
+  },
+  {
+    sourceKey: 'huzhou-education',
+    checks: [
+      {
+        checkedAt: '2026-11-05T15:20:44.363Z',
+        outcome: 'succeeded',
+        discoveredCount: 15,
+        contentHash: null,
+        note: 'N1 首次真实采样：栏目外壳 + 同源 jpaas 公开接口列表首屏 HTTP 200，解析 15 条；initJpage rows=15/count=41（共 3 页）；正文 #zoom 与官方 xlsx 附件下载链接离线回放通过。',
+      },
+      {
+        checkedAt: '2026-11-05T15:30:14.807Z',
+        outcome: 'no_new',
+        discoveredCount: 15,
+        contentHash:
+          'e571e2ed712d1bdfd09e376cc522400aa19696507d1709b155cb3d27581e7e3f',
+        note: 'N1 第二次真实采样（距首次约 9.5 分钟）：公开列表 15 条标题/日期/链接与首次样本完全一致；指纹为条目字段 sha256。7 天持续观察窗口尚未完成。',
+      },
+    ],
+  },
+  {
+    sourceKey: 'taizhou-education',
+    checks: [
+      {
+        checkedAt: '2026-11-05T15:20:46.630Z',
+        outcome: 'succeeded',
+        discoveredCount: 15,
+        contentHash: null,
+        note: 'N1 首次真实采样：栏目外壳 + 同源 jpaas 公开接口列表首屏 HTTP 200，解析 15 条（title 占位符回退链接文本）；DOM 属性 rows=15/count=30（共 2 页）；正文 .content 与官方 xls 附件下载链接离线回放通过。',
+      },
+      {
+        checkedAt: '2026-11-05T15:30:15.593Z',
+        outcome: 'no_new',
+        discoveredCount: 15,
+        contentHash:
+          '470c9faa5610f1a48a0cfc3a3f04854f735ecc7bfc0a984df0673f0ce1e62074',
+        note: 'N1 第二次真实采样（距首次约 9.5 分钟）：公开列表 15 条标题/日期/链接与首次样本完全一致；指纹为条目字段 sha256。7 天持续观察窗口尚未完成。',
+      },
+    ],
+  },
+  {
+    sourceKey: 'bozhou-education',
+    checks: [
+      {
+        checkedAt: '2026-11-05T15:20:53.703Z',
+        outcome: 'succeeded',
+        discoveredCount: 15,
+        contentHash: null,
+        note: 'N1 首次真实采样：教师管理栏目首屏 HTTP 200，解析 15 条服务端渲染条目；pagination pagecount=13（共 13 页 / 191 条）；正文 #zoom 与官方 /upload_bz/download 附件链接离线回放通过。',
+      },
+      {
+        checkedAt: '2026-11-05T15:30:16.344Z',
+        outcome: 'no_new',
+        discoveredCount: 15,
+        contentHash:
+          '1121e3fdb87209b40cbf90504548402b8a54372d3cfded6078453d74a30d9e0c',
+        note: 'N1 第二次真实采样（距首次约 9.5 分钟）：列表 15 条标题/日期/链接与首次样本完全一致；指纹为条目字段 sha256。7 天持续观察窗口尚未完成。',
       },
     ],
   },

@@ -1,0 +1,18 @@
+{
+  "capturedAt": "2026-11-05T15:20:53.703Z",
+  "sourceKind": "official-live-snapshot",
+  "scope": "first-page-discovery-only",
+  "stableMonitoringVerified": false,
+  "files": [
+    {
+      "name": "public-shell.html",
+      "url": "https://www.bozhou.gov.cn/XxgkContent/showList/295/65767/page_1.html",
+      "sha256": "483dc5a7da9f323d9356cbfea6d5bcdda808536f94847b372d92d1afb4dac62d"
+    },
+    {
+      "name": "public-page2.html",
+      "url": "https://www.bozhou.gov.cn/XxgkContent/showList/295/65767/page_2.html",
+      "sha256": "aa141c93b3ee1b5543897ce5a19f26d2d89c3dd3eab87f21eb3d72565b93484e"
+    }
+  ]
+}
