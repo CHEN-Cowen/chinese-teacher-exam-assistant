@@ -118,6 +118,13 @@ export interface LegacyEducationConfirmation {
 export interface BaseRecruitmentProfile {
   /** 1. 可接受就业地区 */
   regions: RegionPreference[];
+  /**
+   * W1：意向报考学科（与教师资格证学科分开存储）。
+   * 空/缺省 = 未填写，不得从资格证学科自动推断。
+   */
+  intendedSubjects?: SubjectCode[];
+  /** W1：意向学段（与学科分开筛选；空/缺省 = 不限） */
+  preferredStages?: StageCode[];
   /** 2. 最高学历；暂不提供时缺省，匹配只能得到 UNKNOWN */
   educationLevel?: CredentialLevel;
   /** 2. 最高学位（无学位可为 none）；暂不提供时缺省 */

@@ -81,12 +81,41 @@
 - 风险 R3：CI 的 `smoke-runtime.mjs` 使用无扩展的 `postgres:17-alpine` → 迁移必须对扩展缺失安全。
 - 风险 R4：材料版权与来源范围 → 只接入官方公开页面/附件，保留来源链接与抓取时间；首批来源按 W5 清单扩展并记录实际覆盖。
 
-## 2. 阶段状态
+## 2. W1 全学科闭环（2026-11-05）
+
+### 2.1 实现范围
+
+| 层 | 产物 | 说明 |
+| --- | --- | --- |
+| 字典 | `backend/src/subjects/subject-catalog.ts`、`subject-catalog.spec.ts` | 23 个稳定学科代码；歧义（艺术/计算机）多候选；未知保留原名并标记审核；旧代码归一（math→mathematics 等） |
+| 接口 | `backend/src/subjects/subjects.controller.ts` | `GET /subjects`、`GET /subjects/resolve`；只读，已加入会话守卫公开路径 |
+| 兼容 | `backend/src/matching/*`、`catalog/publication-projector.ts` | 岗位支持 `subjects` 多学科 + `subjectOriginal`；任一学科开放即通过闸门；旧单值 `subject` 继续生效 |
+| 订阅/历史 | `backend/src/opportunities/*` | 订阅新增 `subjects`（保留旧 `subject`）；筛选按任一岗位学科匹配；订阅变更触发条件同步 |
+| 画像 | `backend/src/profile/profile.service.ts` | `intendedSubjects` / `preferredStages` 校验与归一；未知代码保留不猜测 |
+| 迁移 | `backend/prisma/migrations/20261105080000_subscription_subjects` | 只新增 `subjects JSONB`，可重复执行，不批量改写旧数据 |
+| 前端 | `src/lib/subjects/catalog.ts`、画像/订阅/历史/标签 | 全学科选项、多学科订阅、历史学科筛选、未知学科显示原文；不默认锁定语文 |
+
+### 2.2 阶段验证（2026-11-05）
+
+| 检查 | 命令 | 结果 |
+| --- | --- | --- |
+| 后端学科/切分单测 | `npx vitest run src/knowledge src/subjects` | 11 passed |
+| 后端 lint | `npm run lint` | 0 error（8 warning 为既有/风格项） |
+| 后端构建 | `npm run build` | 成功 |
+| 前端全量单测 | `npm test` | 74 files / 796 tests passed |
+| 前端类型 | 以 `npm run build` 为准（`.next/dev` 生成类型噪声不作为结论） | 待 CI 复核 |
+
+### 2.3 遗留
+
+- 旧数据未被批量猜测为语文；仅在读取时做代码归一。
+- 学科别名人工审核表已建模（`subject_alias_reviews`），管理端审核界面留待 W2/W4 与后台页面一起验收。
+
+## 3. 阶段状态
 
 | 阶段 | 状态 | 提交 | CI | 证据 |
 | --- | --- | --- | --- | --- |
-| W0 | 完成（盘点） | 待提交 | 待核对 | 本文第 1 节 |
-| W1 | 未开始 | - | - | - |
+| W0 | 完成（盘点） | `ddd4fd87` | 待核对 | 本文第 1 节 |
+| W1 | 实现完成，待提交/CI | 待填 | 待核对 | 本文第 2 节 |
 | W2 | 未开始 | - | - | - |
 | W3 | 未开始 | - | - | - |
 | W4 | 未开始 | - | - | - |

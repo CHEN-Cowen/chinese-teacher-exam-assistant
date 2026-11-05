@@ -8,6 +8,7 @@ import { Disclosure } from "@/components/ui/Disclosure";
 import { FeedbackBar } from "@/components/ui/FeedbackBar";
 import { useCurrentUser, AUTH_MODE } from "@/lib/auth";
 import { safeReturnPath } from "@/lib/auth/return-to";
+import { isOpenSubject } from "@/lib/subjects/catalog";
 import {
   CITY_OPTIONS,
   CREDENTIAL_LEVEL_OPTIONS,
@@ -818,7 +819,8 @@ function StepCert({
   const cert: Partial<TeacherCertInfo> = draft.teacherCert ?? {};
   const certNone = cert.status === "none";
   const subjectValue = certNone ? draft.intendedSubject : cert.subject;
-  const subjectOpen = subjectValue === "chinese";
+  // W1：全学科开放；只有无法识别/未开放的长尾学科才提示分流。
+  const subjectOpen = subjectValue ? isOpenSubject(subjectValue) : true;
 
   const updateCert = (patch: Partial<TeacherCertInfo>) => {
     const nextCert = {
@@ -837,12 +839,14 @@ function StepCert({
     if (status === "none") {
       onChange({
         teacherCert: { status },
-        intendedSubject: draft.intendedSubject ?? "chinese",
+        // 不默认成语文：意向学科必须由用户选择
+        intendedSubject: draft.intendedSubject,
       });
     } else {
       const nextCert: TeacherCertInfo = {
         status,
-        subject: cert.subject ?? "chinese",
+        // 不默认成语文：资格证学科必须由用户选择，缺失时由步骤校验拦截
+        subject: cert.subject,
         stage: cert.stage ?? "middle",
         ...(status === "in_progress" ? { expectedDate: cert.expectedDate } : {}),
       };
@@ -929,8 +933,7 @@ function StepCert({
 
       {!subjectOpen && cert.status !== undefined && (
         <div className="rounded-lg border border-warn/20 bg-warn-soft px-3.5 py-3 text-sm leading-6 text-warn">
-          当前先开放<strong>语文</strong>教师公开招聘；其他学科暂未开放匹配，完成后可以在结果页留下开注意向，
-          不会为你生成不相关的匹配结果。
+          该学科暂无法识别，请核对公告中的官方学科名称；识别前不会为你生成不相关的匹配结果。
         </div>
       )}
     </div>

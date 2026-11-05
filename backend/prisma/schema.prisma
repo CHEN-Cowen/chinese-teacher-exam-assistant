@@ -770,8 +770,10 @@ model OpportunitySubscription {
   userId           String   @unique @map("user_id")
   /** 订阅地区：[{code, province, city?, district?}] */
   regions          Json
-  /** 订阅学科（当前监测范围仅 chinese） */
+  /** 兼容字段：订阅主学科（等于 subjects[0]；旧数据仅此字段） */
   subject          String   @default("chinese")
+  /** W1：订阅关注的全部学科代码（空/null 时回退 subject） */
+  subjects         Json?
   /** 用工偏好：public_only / official_open / undecided */
   naturePreference String   @default("undecided") @map("nature_preference")
   /** 必要资格条件快照（透明展示用，不参与判定） */
@@ -1037,4 +1039,200 @@ model ReconciliationRecord {
 
   @@index([date, status])
   @@map("reconciliation_records")
+}
+
+// ==================== W1：学科别名人工审核 ====================
+
+model SubjectAliasReview {
+  id           String    @id @default(uuid())
+  rawName      String    @map("raw_name")
+  stage        String?
+  regionCode   String?   @map("region_code")
+  source       String    @default("manual")
+  status       String    @default("pending")
+  resolvedCode String?   @map("resolved_code")
+  note         String?
+  createdBy    String?   @map("created_by")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  reviewedBy   String?   @map("reviewed_by")
+  reviewedAt   DateTime? @map("reviewed_at")
+
+  @@index([status, createdAt])
+  @@map("subject_alias_reviews")
+}
+
+// ==================== W2：官方材料知识与索引 ====================
+
+model KnowledgeDocument {
+  id                    String    @id @default(uuid())
+  title                 String
+  documentType          String    @map("document_type")
+  sourceKind            String    @map("source_kind")
+  status                String    @default("draft")
+  announcementId        String?   @map("announcement_id")
+  announcementVersionId String?   @map("announcement_version_id")
+  regionCode            String?   @map("region_code")
+  provinceCode          String?   @map("province_code")
+  year                  Int?
+  publisher             String?
+  officialUrl           String?   @map("official_url")
+  effectiveFrom         DateTime? @map("effective_from")
+  effectiveTo           DateTime? @map("effective_to")
+  currentVersionId      String?   @map("current_version_id")
+  activeIndexVersion    Int?      @map("active_index_version")
+  createdBy             String?   @map("created_by")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  versions KnowledgeDocumentVersion[]
+
+  @@index([announcementId])
+  @@index([documentType, regionCode, status])
+  @@map("knowledge_documents")
+}
+
+model KnowledgeDocumentVersion {
+  id                 String    @id @default(uuid())
+  documentId         String    @map("document_id")
+  versionNumber      Int       @map("version_number")
+  status             String    @default("draft")
+  contentHash        String    @map("content_hash")
+  parserVersion      String    @map("parser_version")
+  chunkerVersion     String    @map("chunker_version")
+  snapshotId         String?   @map("snapshot_id")
+  storageKey         String?   @map("storage_key")
+  mimeType           String?   @map("mime_type")
+  sourceUrl          String?   @map("source_url")
+  sourceCapturedAt   DateTime? @map("source_captured_at")
+  /** 岗位级材料关联（可选），索引时写入 chunk 便于按岗位隔离 */
+  unitIds            Json?     @map("unit_ids")
+  reviewNote         String?   @map("review_note")
+  reviewedBy         String?   @map("reviewed_by")
+  reviewedAt         DateTime? @map("reviewed_at")
+  publishedAt        DateTime? @map("published_at")
+  withdrawnAt        DateTime? @map("withdrawn_at")
+  withdrawReason     String?   @map("withdraw_reason")
+  activeIndexVersion Int?      @map("active_index_version")
+  createdAt          DateTime  @default(now()) @map("created_at")
+
+  document KnowledgeDocument      @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  chunks   KnowledgeChunk[]
+  jobs     KnowledgeIndexJob[]
+
+  @@unique([documentId, versionNumber])
+  @@index([contentHash])
+  @@index([status])
+  @@map("knowledge_document_versions")
+}
+
+model KnowledgeChunk {
+  id             String   @id @default(uuid())
+  documentId     String   @map("document_id")
+  versionId      String   @map("version_id")
+  indexVersion   Int      @map("index_version")
+  chunkIndex     Int      @map("chunk_index")
+  kind           String
+  content        String
+  headingPath    Json?    @map("heading_path")
+  locator        Json
+  spans          Json?
+  unitIds        Json?    @map("unit_ids")
+  charCount      Int      @map("char_count")
+  embeddingModel String?  @map("embedding_model")
+  embeddingDim   Int?     @map("embedding_dim")
+  /** Prisma 不支持可选标量列表：空数组表示尚未向量化（与 null 语义区分） */
+  embedding      Float[]  @default([])
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  version KnowledgeDocumentVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  @@unique([versionId, indexVersion, chunkIndex])
+  @@index([documentId, indexVersion])
+  @@map("knowledge_chunks")
+}
+
+model KnowledgeIndexJob {
+  id             String    @id @default(uuid())
+  documentId     String    @map("document_id")
+  versionId      String    @map("version_id")
+  idempotencyKey String    @unique @map("idempotency_key")
+  indexVersion   Int       @map("index_version")
+  status         String    @default("queued")
+  attempts       Int       @default(0)
+  errorClass     String?   @map("error_class")
+  errorMessage   String?   @map("error_message")
+  chunkCount     Int       @default(0) @map("chunk_count")
+  embeddedCount  Int       @default(0) @map("embedded_count")
+  embeddingModel String?   @map("embedding_model")
+  embeddingDim   Int?      @map("embedding_dim")
+  startedAt      DateTime? @map("started_at")
+  finishedAt     DateTime? @map("finished_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  version KnowledgeDocumentVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+  @@map("knowledge_index_jobs")
+}
+
+// ==================== W3：公告问答与反馈 ====================
+
+model QaAnswer {
+  id                    String   @id @default(uuid())
+  scopeType             String   @map("scope_type")
+  announcementId        String?  @map("announcement_id")
+  unitId                String?  @map("unit_id")
+  regionCode            String?  @map("region_code")
+  question              String
+  answer                String
+  status                String
+  citations             Json
+  needsOfficialConfirmation Boolean @default(false) @map("needs_official_confirmation")
+  model                 String?
+  mode                  String
+  promptVersion         String   @map("prompt_version")
+  indexVersions         Json?    @map("index_versions")
+  usage                 Json?
+  latencyMs             Int      @map("latency_ms")
+  userId                String?  @map("user_id")
+  ipHash                String?  @map("ip_hash")
+  createdAt             DateTime @default(now()) @map("created_at")
+
+  feedback QaFeedback[]
+
+  @@index([announcementId, createdAt])
+  @@index([userId, createdAt])
+  @@map("qa_answers")
+}
+
+model QaFeedback {
+  id        String   @id @default(uuid())
+  answerId  String   @map("answer_id")
+  userId    String?  @map("user_id")
+  type      String
+  comment   String?
+  status    String   @default("open")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  answer QaAnswer @relation(fields: [answerId], references: [id], onDelete: Cascade)
+
+  @@index([answerId])
+  @@index([status, createdAt])
+  @@map("qa_feedback")
+}
+
+// ==================== W4：AI 用量预算 ====================
+
+model AiUsageDaily {
+  id        String   @id @default(uuid())
+  scope     String
+  subject   String
+  day       String
+  requests  Int      @default(0)
+  tokens    Int      @default(0)
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([scope, subject, day])
+  @@map("ai_usage_daily")
 }

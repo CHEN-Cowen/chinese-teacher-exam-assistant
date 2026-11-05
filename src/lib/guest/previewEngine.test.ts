@@ -183,26 +183,35 @@ describe("buildGuestPreview：返回修改后重新计算（纯函数确定性�
   });
 });
 
-describe("buildGuestPreview：非语文学科不产生伪造结果", () => {
-  it("资格证学科为数学：直接 subject_not_open，不跑匹配", () => {
+describe("buildGuestPreview：全学科开放后不再因学科分流", () => {
+  it("资格证学科为数学：进入匹配流程，不再返回 subject_not_open", () => {
     const draft = completeDraft({
       teacherCert: { status: "obtained", subject: "math", stage: "middle" },
       intendedSubject: "math",
     });
     const result = buildGuestPreview(draft, V61_SEED_ANNOUNCEMENTS, V61_NOW);
-    expect(result.kind).toBe("subject_not_open");
-    if (result.kind === "subject_not_open") {
-      expect(result.subjectLabel).toBe("数学");
-    }
+    expect(result.kind).not.toBe("subject_not_open");
   });
 
-  it("没有教师资格证但意向报英语：同样只给未开放分流", () => {
+  it("没有教师资格证但意向报英语：同样进入匹配流程", () => {
     const draft = completeDraft({
       teacherCert: { status: "none" },
       intendedSubject: "english",
     });
     const result = buildGuestPreview(draft, V61_SEED_ANNOUNCEMENTS, V61_NOW);
+    expect(result.kind).not.toBe("subject_not_open");
+  });
+
+  it("无法识别的长尾学科：保留原文并明确提示，不猜成已知学科", () => {
+    const draft = completeDraft({
+      teacherCert: { status: "obtained", subject: "天文观测", stage: "middle" },
+      intendedSubject: "天文观测",
+    });
+    const result = buildGuestPreview(draft, V61_SEED_ANNOUNCEMENTS, V61_NOW);
     expect(result.kind).toBe("subject_not_open");
+    if (result.kind === "subject_not_open") {
+      expect(result.subjectLabel).toBe("天文观测");
+    }
   });
 });
 

@@ -3,6 +3,7 @@
  * demo 通道与页面共用；后端在 backend/src/opportunities/history.ts 有同口径实现。
  */
 import type { HistoryUnitDTO } from "@/lib/opportunities/api-types";
+import { unitSubjectCodes } from "@/lib/subjects/catalog";
 import {
   batchYearOf,
   completenessOf,
@@ -23,6 +24,7 @@ export function toHistoryUnitDTO(record: HistoricalUnitRecord): HistoryUnitDTO {
     unitName: unit.name,
     region: unit.region,
     subject: unit.subject,
+    subjects: unitSubjectCodes(unit),
     stage: unit.stage,
     headcount: unit.headcount,
     organizationType: unit.organizationType,

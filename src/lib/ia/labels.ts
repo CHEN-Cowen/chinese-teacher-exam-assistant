@@ -11,6 +11,7 @@ import type {
   SubjectCode,
 } from "@/lib/announcements/types";
 import type { MaterialStatus } from "@/lib/announcements/types";
+import { SUBJECT_OPTIONS, subjectOptionLabel } from "@/lib/subjects/catalog";
 import type { FollowStatus, StudyTargetRole } from "@/lib/opportunities/types";
 
 /** 学段（v6.1 StageCode 用户可见文案） */
@@ -24,25 +25,14 @@ export function stageLabel(stage: StageCode): string {
   return STAGE_LABELS[stage] ?? "其他学段";
 }
 
-/** 学科（SubjectCode 用户可见文案） */
-export const SUBJECT_LABELS: Record<string, string> = {
-  chinese: "语文",
-  mathematics: "数学",
-  english: "英语",
-  physics: "物理",
-  chemistry: "化学",
-  biology: "生物",
-  history: "历史",
-  geography: "地理",
-  politics: "政治",
-  music: "音乐",
-  pe: "体育",
-  art: "美术",
-  it: "信息技术",
-};
+/** 学科（SubjectCode 用户可见文案；W1 起统一取自全学科字典） */
+export const SUBJECT_LABELS: Record<string, string> = Object.fromEntries(
+  SUBJECT_OPTIONS.map((option) => [option.value, option.label]),
+);
 
 export function subjectLabel(subject: SubjectCode): string {
-  return SUBJECT_LABELS[subject] ?? "其他学科";
+  // 未知/长尾学科原文展示，避免把所有未识别学科都压成“其他学科”后无法审核。
+  return subjectOptionLabel(subject);
 }
 
 /**

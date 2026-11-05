@@ -13,6 +13,7 @@
  * 公告发布新版本视为新信息，允许再次提醒（仍每版本一次）。
  */
 import { currentVersion, isUserVisibleInCatalog } from '../matching/engine.js';
+import { canonicalSubjectCode, unitSubjectCodes } from '../subjects/subject-catalog.js';
 import type {
   AnnouncementVersion,
   ApplicationUnit,
@@ -30,7 +31,10 @@ export interface SubscriptionCriteria {
     city?: string;
     district?: string;
   }>;
+  /** 兼容旧字段：订阅的主学科（等于 subjects[0]，未设置时为 legacy 默认值） */
   subject: string;
+  /** W1：订阅可关注多个学科；缺省/空数组时回退 [subject] */
+  subjects?: string[];
   naturePreference: NaturePreferenceCode;
 }
 
@@ -95,6 +99,16 @@ export function deriveSubscriptionCriteria(
       }
       return 'official_open';
     })();
+  // W1：意向学科来自用户显式选择；教师资格证学科不自动当作意向学科。
+  // 旧画像无 intendedSubjects 时保留历史默认（chinese），不扩大提醒范围。
+  const subjects = [
+    ...new Set(
+      (profile.intendedSubjects ?? [])
+        .map((code) => canonicalSubjectCode(code))
+        .filter(Boolean),
+    ),
+  ];
+  const effectiveSubjects = subjects.length > 0 ? subjects : ['chinese'];
   return {
     // 画像地区无 district 维度；匹配只依赖 code 前缀
     regions: profile.regions.map((r) => ({
@@ -102,9 +116,16 @@ export function deriveSubscriptionCriteria(
       province: r.province,
       ...(r.city ? { city: r.city } : {}),
     })),
-    subject: 'chinese',
+    subject: effectiveSubjects[0] ?? 'chinese',
+    subjects: effectiveSubjects,
     naturePreference,
   };
+}
+
+/** 订阅学科集合：复数字段优先，缺省回退旧单值。 */
+export function subscriptionSubjects(criteria: SubscriptionCriteria): string[] {
+  const raw = criteria.subjects?.length ? criteria.subjects : [criteria.subject];
+  return [...new Set(raw.map((code) => canonicalSubjectCode(code)).filter(Boolean))];
 }
 
 /** 订阅地区是否覆盖单元地区：省级认同省前缀，市级认同市前缀，区县级只认精确匹配。 */
@@ -174,8 +195,11 @@ export function firstQualifyingUnit(
   if (!isUserVisibleInCatalog(announcement)) return null;
 
   // 4/5. 地区、学科、用工偏好与已知明确不符合项按单元判定
+  const targetSubjects = subscriptionSubjects(criteria);
   for (const unit of version.units) {
-    if (unit.subject !== criteria.subject) continue;
+    if (!unitSubjectCodes(unit).some((code) => targetSubjects.includes(code))) {
+      continue;
+    }
     if (ineligibleUnitIds.has(unit.id)) continue;
     if (!natureMatches(criteria.naturePreference, unit)) continue;
     const matched = criteria.regions.some((r) =>
@@ -242,7 +266,7 @@ export function planOpportunityNotices(
       publisher: announcement.publisher,
       regionLabel: regionParts,
       stage: unit.stage,
-      subject: unit.subject,
+      subject: unitSubjectCodes(unit)[0] ?? unit.subject,
       headcount: unit.headcount,
       registrationEnd,
       officialUrl: announcement.officialUrl,

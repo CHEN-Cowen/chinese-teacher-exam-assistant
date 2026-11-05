@@ -21,6 +21,7 @@ import {
 } from '../matching/engine.js';
 import { PublishedCatalogRepository } from '../catalog/published-catalog.repository.js';
 import { isDbCatalogEnabled } from '../catalog/feature-flag.js';
+import { canonicalSubjectCode, isOpenSubject } from '../subjects/subject-catalog.js';
 import type {
   CredentialLevel,
   DegreeCode,
@@ -352,15 +353,20 @@ export class OpportunitiesService {
   private toSubscriptionDTO(row: {
     regions: unknown;
     subject: string;
+    subjects: unknown;
     naturePreference: string;
     qualification: unknown;
     enabled: boolean;
     createdAt: Date;
     updatedAt: Date;
   }): SubscriptionDTO {
+    const subjects = Array.isArray(row.subjects)
+      ? row.subjects.filter((v): v is string => typeof v === 'string' && v.length > 0)
+      : [];
     return {
       regions: row.regions as SubscriptionDTO['regions'],
-      subject: row.subject,
+      subject: subjects[0] ?? row.subject,
+      subjects: subjects.length > 0 ? subjects : [row.subject],
       naturePreference: row.naturePreference as SubscriptionDTO['naturePreference'],
       qualification:
         (row.qualification as SubscriptionDTO['qualification']) ?? null,
@@ -387,6 +393,8 @@ export class OpportunitiesService {
     input: {
       regions?: unknown;
       subject?: unknown;
+      /** W1：多学科订阅；与 subject 同时出现时以 subjects 为准 */
+      subjects?: unknown;
       naturePreference?: unknown;
       enabled?: unknown;
     },
@@ -400,6 +408,7 @@ export class OpportunitiesService {
       : {
           regions: [],
           subject: 'chinese',
+          subjects: ['chinese'],
           naturePreference: 'undecided' as NaturePreferenceCode,
         };
     // 更新时未传字段保留现值（不能被默认值覆盖）；创建时用画像默认值补齐
@@ -416,11 +425,23 @@ export class OpportunitiesService {
         ? (existing.naturePreference as NaturePreferenceCode)
         : defaults.naturePreference,
     );
+    const existingSubjects = Array.isArray(existing?.subjects)
+      ? (existing.subjects as unknown[]).filter(
+          (v): v is string => typeof v === 'string' && v.length > 0,
+        )
+      : existing
+        ? [existing.subject]
+        : defaults.subjects ?? [defaults.subject];
+    const subjects = this.validatedSubscriptionSubjects(
+      input.subjects ?? input.subject,
+      existingSubjects,
+    );
     const snapshot = profile ? buildQualificationSnapshot(profile) : null;
     // 资格快照只在画像可用时刷新；画像缺失时保留现值（创建则留空列）
     const base = {
       regions: regions as unknown as Prisma.InputJsonValue,
-      subject: 'chinese',
+      subject: subjects[0] ?? 'chinese',
+      subjects: subjects as unknown as Prisma.InputJsonValue,
       naturePreference,
       enabled:
         typeof input.enabled === 'boolean'
@@ -464,6 +485,11 @@ export class OpportunitiesService {
     const criteria: SubscriptionCriteria = {
       regions: row.regions as SubscriptionCriteria['regions'],
       subject: row.subject,
+      subjects: Array.isArray(row.subjects)
+        ? (row.subjects as unknown[]).filter(
+            (v): v is string => typeof v === 'string' && v.length > 0,
+          )
+        : [row.subject],
       naturePreference: row.naturePreference as NaturePreferenceCode,
     };
     const catalog = await this.loadCatalog();
@@ -711,6 +737,29 @@ export class OpportunitiesService {
         ...(typeof r.city === 'string' ? { city: r.city } : {}),
         ...(typeof r.district === 'string' ? { district: r.district } : {}),
       });
+    }
+    return result.length > 0 ? result : fallback;
+  }
+
+  /**
+   * 订阅学科校验：只接受字典中已启用的学科代码（含旧代码归一）；
+   * 非法/未知值忽略并回退现值，不因单个脏值清空全部订阅学科。
+   */
+  private validatedSubscriptionSubjects(
+    input: unknown,
+    fallback: string[],
+  ): string[] {
+    const raws = Array.isArray(input)
+      ? input
+      : typeof input === 'string' && input.length > 0
+        ? [input]
+        : [];
+    const result: string[] = [];
+    for (const raw of raws) {
+      if (typeof raw !== 'string') continue;
+      const code = canonicalSubjectCode(raw);
+      if (!isOpenSubject(code)) continue;
+      if (!result.includes(code)) result.push(code);
     }
     return result.length > 0 ? result : fallback;
   }

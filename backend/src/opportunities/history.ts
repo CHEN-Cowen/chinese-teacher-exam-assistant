@@ -21,6 +21,7 @@ import {
   majorNameMatches,
   normalizeMajor,
 } from '../matching/engine.js';
+import { canonicalSubjectCode, unitSubjectCodes } from '../subjects/subject-catalog.js';
 import type {
   AnnouncementVersion,
   ApplicationUnit,
@@ -183,6 +184,8 @@ export interface HistoryFiltersInput {
   /** 6 位行政区划代码前缀匹配（省 2 位 / 市 4 位 / 区 6 位） */
   regionCode?: string;
   stage?: string;
+  /** W1：学科代码（任一匹配；旧记录按单值 subject 归一） */
+  subject?: string;
   /** 用工性质编码 */
   nature?: string;
   /** 单位名 / 公告标题 / 发布主体关键词 */
@@ -233,6 +236,10 @@ export function filterHistoricalUnits(
       return false;
     }
     if (filters.stage && record.unit.stage !== filters.stage) return false;
+    if (filters.subject) {
+      const target = canonicalSubjectCode(filters.subject);
+      if (!unitSubjectCodes(record.unit).includes(target)) return false;
+    }
     if (filters.nature && record.unit.employmentNature.code !== filters.nature) {
       return false;
     }
@@ -256,10 +263,18 @@ export function filterHistoricalUnits(
 /** 全部历史记录中出现的学历档与专业名（筛选下拉的真实可选值，不预置空项） */
 export function availableHistoryFilters(
   records: readonly HistoricalUnitRecord[],
-): { educationLevels: { code: CredentialLevel; label: string }[]; majors: string[] } {
+): {
+  educationLevels: { code: CredentialLevel; label: string }[];
+  majors: string[];
+  subjects: string[];
+} {
   const levels = new Set<CredentialLevel>();
   const majors = new Map<string, string>();
+  const subjects: string[] = [];
   for (const record of records) {
+    for (const code of unitSubjectCodes(record.unit)) {
+      if (!subjects.includes(code)) subjects.push(code);
+    }
     for (const requirement of record.unit.requirements) {
       if (requirement.criterion.kind === 'education') {
         levels.add(requirement.criterion.minLevel);
@@ -277,6 +292,7 @@ export function availableHistoryFilters(
       levels.has(level),
     ).map((code) => ({ code, label: HISTORY_EDUCATION_LABELS[code] })),
     majors: [...majors.values()].sort((a, b) => a.localeCompare(b, 'zh-CN')),
+    subjects: subjects.sort((a, b) => a.localeCompare(b, 'en')),
   };
 }
 
@@ -333,6 +349,7 @@ export interface HistoryQueryRaw {
   year?: string;
   regionCode?: string;
   stage?: string;
+  subject?: string;
   nature?: string;
   keyword?: string;
   educationLevel?: string;
@@ -365,6 +382,12 @@ export function parseHistoryQuery(query: HistoryQueryRaw): ParsedHistoryQuery {
   }
   if (typeof query.stage === 'string' && query.stage.trim()) {
     filters.stage = query.stage.trim();
+  }
+  if (typeof query.subject === 'string' && query.subject.trim()) {
+    if (query.subject.trim().length > 40) {
+      return { ok: false, message: 'subject 不能超过 40 字' };
+    }
+    filters.subject = canonicalSubjectCode(query.subject.trim());
   }
   if (typeof query.nature === 'string' && query.nature.trim()) {
     filters.nature = query.nature.trim();
@@ -413,6 +436,8 @@ export interface HistoryUnitDTO {
   unitName: string;
   region: ApplicationUnit['region'];
   subject: string;
+  /** W1：岗位全部学科（兼容旧前端仍读 subject） */
+  subjects: string[];
   stage: string;
   headcount: number;
   organizationType: string;
@@ -457,6 +482,8 @@ export interface HistoryListResponse {
   educationLevels: { code: CredentialLevel; label: string }[];
   /** 全部历史数据（未筛选）中出现过的专业名 */
   availableMajors: string[];
+  /** W1：全部历史数据中出现过的学科代码（前端按字典展示名称） */
+  availableSubjects: string[];
   total: number;
   page: number;
   pageSize: number;
@@ -509,6 +536,7 @@ export function toHistoryUnitDTO(record: HistoricalUnitRecord): HistoryUnitDTO {
     unitName: unit.name,
     region: unit.region,
     subject: unit.subject,
+    subjects: unitSubjectCodes(unit),
     stage: unit.stage,
     headcount: unit.headcount,
     organizationType: unit.organizationType,
@@ -587,6 +615,7 @@ export function buildHistoryList(
     availableRegions: availableHistoryRegions(all),
     educationLevels: options.educationLevels,
     availableMajors: options.majors,
+    availableSubjects: options.subjects,
     total: page.total,
     page: page.page,
     pageSize: page.pageSize,

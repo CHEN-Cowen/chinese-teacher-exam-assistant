@@ -17,6 +17,7 @@ import { MembershipModule } from './membership/membership.module.js';
 import { PaymentsModule } from './payments/payments.module.js';
 import { TrialModule } from './trial/trial.module.js';
 import { SourcingModule } from './sourcing/sourcing.module.js';
+import { SubjectsModule } from './subjects/subjects.module.js';
 import { bullRedisConnection } from './sourcing/redis.js';
 
 @Module({
@@ -34,6 +35,7 @@ import { bullRedisConnection } from './sourcing/redis.js';
     PaymentsModule,
     TrialModule,
     SourcingModule,
+    SubjectsModule,
   ],
   controllers: [AppController, HealthController],
   providers: [

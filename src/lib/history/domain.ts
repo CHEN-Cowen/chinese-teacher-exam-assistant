@@ -17,6 +17,7 @@ import type {
   EvidenceAnchor,
   RecruitmentAnnouncement,
 } from "@/lib/announcements/types";
+import { canonicalSubjectCode, unitSubjectCodes } from "@/lib/subjects/catalog";
 
 /** 岗位最低学历档（与公告 education.minLevel 同口径） */
 export type HistoryEducationLevel =
@@ -168,6 +169,8 @@ export interface HistoryFilterInput {
   /** 6 位行政区划代码前缀匹配（省 2 位 / 市 4 位 / 区 6 位） */
   regionCode?: string;
   stage?: string;
+  /** W1：学科代码（岗位任一学科命中；旧单值字段归一） */
+  subject?: string;
   /** 用工性质编码 */
   nature?: string;
   /** 单位名 / 公告标题 / 发布主体关键词 */
@@ -215,6 +218,12 @@ export function filterHistoricalUnits(
       return false;
     }
     if (filters.stage && record.unit.stage !== filters.stage) return false;
+    if (
+      filters.subject &&
+      !unitSubjectCodes(record.unit).includes(canonicalSubjectCode(filters.subject))
+    ) {
+      return false;
+    }
     if (filters.nature && record.unit.employmentNature.code !== filters.nature) {
       return false;
     }
@@ -241,10 +250,13 @@ export function availableHistoryFilters(
 ): {
   educationLevels: { code: HistoryEducationLevel; label: string }[];
   majors: string[];
+  subjects: string[];
 } {
   const levels = new Set<HistoryEducationLevel>();
   const majors = new Map<string, string>();
+  const subjects = new Set<string>();
   for (const record of records) {
+    for (const code of unitSubjectCodes(record.unit)) subjects.add(code);
     for (const requirement of record.unit.requirements) {
       if (requirement.criterion.kind === "education") {
         levels.add(requirement.criterion.minLevel);
@@ -262,6 +274,7 @@ export function availableHistoryFilters(
       (code) => ({ code, label: HISTORY_EDUCATION_LABELS[code] }),
     ),
     majors: [...majors.values()].sort((a, b) => a.localeCompare(b, "zh-CN")),
+    subjects: [...subjects].sort((a, b) => a.localeCompare(b, "en")),
   };
 }
 

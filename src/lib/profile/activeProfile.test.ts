@@ -60,14 +60,20 @@ describe("buildActiveProfile", () => {
     if (!result.ready) expect(result.reason).toBe("incomplete");
   });
 
-  it("非开放学科草稿不参与匹配（subject_not_open）", () => {
+  it("无法识别的学科不参与匹配（subject_not_open），全学科已知代码不受限", () => {
     localStorage.setItem(
       STORAGE_KEYS.GUEST_PROFILE_V61,
-      JSON.stringify(completeSession({ intendedSubject: "math" })),
+      JSON.stringify(completeSession({ intendedSubject: "天文观测" })),
     );
     const result = buildActiveProfile();
     expect(result.ready).toBe(false);
     if (!result.ready) expect(result.reason).toBe("subject_not_open");
+
+    localStorage.setItem(
+      STORAGE_KEYS.GUEST_PROFILE_V61,
+      JSON.stringify(completeSession({ intendedSubject: "math" })),
+    );
+    expect(buildActiveProfile().ready).toBe(true);
   });
 
   it("完整草稿：条件画像字段缺省为 undefined（缺信息绝不判不符合）", () => {

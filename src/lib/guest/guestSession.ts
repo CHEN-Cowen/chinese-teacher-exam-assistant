@@ -26,6 +26,11 @@ import {
   type StageCode,
   type SubjectCode,
 } from "@/lib/announcements/types";
+import {
+  canonicalSubjectCode,
+  isOpenSubject,
+  subjectOptionLabel,
+} from "@/lib/subjects/catalog";
 import type {
   EmploymentNaturePreference,
   EmploymentStatus,
@@ -59,8 +64,11 @@ export type { EmploymentNaturePreference };
  */
 export const TOTAL_PROFILE_STEPS = 2;
 
-/** 当前唯一开放学科；其他学科在访客流程中明确分流，不生成匹配结果 */
-export const OPEN_SUBJECT = "chinese" as const;
+/** W1：开放学科由全学科字典统一提供（不再手写单科）。 */
+export {
+  OPEN_SUBJECTS,
+  SUBJECT_OPTIONS,
+} from "@/lib/subjects/catalog";
 
 export interface GuestProfileDraft {
   /** 1. 可接受就业地区（至少 1 条才能进入下一组） */
@@ -90,9 +98,11 @@ export interface GuestProfileDraft {
    * 访客草稿与服务端画像共用同名字段，invited 模式保存时随画像同步到服务端。
    */
   employmentNaturePreference?: EmploymentNaturePreference;
-  /** 5. 意向报考学科；语文以外的学科记为“尚未开放”，不进入匹配 */
+  /** 5. 意向报考学科（兼容旧草稿的单值） */
   intendedSubject?: SubjectCode;
-  /** 非语文用户已在本机留下开注意向（仅本地标记，不发送任何通知） */
+  /** W1：意向报考学科可多选；与教师资格证学科分开保存 */
+  intendedSubjects?: SubjectCode[];
+  /** 旧版“非语文开注意向”本地标记；W1 全学科开放后仅保留兼容读取 */
   intentionLeft?: boolean;
   /**
    * 显式选择「暂不确定 / 暂不提供」的步骤号（1..5，模块 4）。
@@ -335,31 +345,10 @@ export const STAGE_OPTIONS: { value: StageCode; label: string }[] = [
   { value: "high", label: "高中" },
 ];
 
-/**
- * 学科选项。当前仅语文开放匹配；其他学科仅用于识别意向，
- * 选中后不会进入机会匹配（previewEngine 返回 subject_not_open）。
- */
-export const SUBJECT_OPTIONS: { value: SubjectCode; label: string }[] = [
-  { value: "chinese", label: "语文" },
-  { value: "math", label: "数学" },
-  { value: "english", label: "英语" },
-  { value: "physics", label: "物理" },
-  { value: "chemistry", label: "化学" },
-  { value: "biology", label: "生物" },
-  { value: "politics", label: "道德与法治 / 政治" },
-  { value: "history", label: "历史" },
-  { value: "geography", label: "地理" },
-  { value: "music", label: "音乐" },
-  { value: "pe", label: "体育" },
-  { value: "art", label: "美术" },
-  { value: "it", label: "信息技术" },
-  { value: "preschool", label: "幼教" },
-  { value: "other", label: "其他学科" },
-];
-
+/** 学科展示名：来自全学科字典；未知代码原样展示，便于审核。 */
 export function subjectLabel(code: SubjectCode | undefined): string {
-  if (!code) return "其他学科";
-  return SUBJECT_OPTIONS.find((s) => s.value === code)?.label ?? "其他学科";
+  if (!code) return "未填写";
+  return subjectOptionLabel(code);
 }
 
 // ==================== 分组完成度（页面“下一步”门禁唯一口径） ====================
@@ -462,9 +451,17 @@ export function isDraftComplete(draft: GuestProfileDraft): boolean {
   return true;
 }
 
-/** 意向学科是否在当前开放范围（非语文明确分流，不产生匹配） */
+/**
+ * 意向学科是否在开放范围（W1 全学科）。
+ * 未填写不拦截：由结果页按“未提供”处理，绝不默认成语文。
+ */
 export function isSubjectOpen(draft: GuestProfileDraft): boolean {
-  return draft.intendedSubject === OPEN_SUBJECT;
+  const codes = [
+    ...(draft.intendedSubject ? [draft.intendedSubject] : []),
+    ...(draft.intendedSubjects ?? []),
+  ];
+  if (codes.length === 0) return true;
+  return codes.some((code) => isOpenSubject(code));
 }
 
 /** 一条「结果限制」：因用户暂不提供某组最低必要信息，结论会收窄到什么程度 */
@@ -505,14 +502,25 @@ export function buildProfileLimitations(draft: GuestProfileDraft): ProfileLimita
 /**
  * 把完整草稿映射为匹配引擎使用的画像。
  * 条件画像字段（出生/户籍/社保/工作经历）刻意不设置 → 引擎只能判 UNKNOWN。
- * 草稿不完整或学科未开放时返回 null（调用方负责回引导/未开放页）。
+ * 草稿不完整或学科无法识别时返回 null（调用方负责回引导/未开放页）。
  */
 export function draftToProfile(draft: GuestProfileDraft): UserRecruitmentProfile | null {
   if (!isDraftComplete(draft)) return null;
-  // 非语文学科明确分流；第 5 步整体「暂不提供」时（未选学科）按当前唯一开放的语文处理
-  if (draft.intendedSubject !== undefined && !isSubjectOpen(draft)) return null;
+  // W1：未知/未开放学科不再默认分流成语文；不能识别时要求回填，而不是生成不相关结果。
+  if (!isSubjectOpen(draft)) return null;
+  const intendedSubjects = [
+    ...new Set(
+      [
+        ...(draft.intendedSubject ? [canonicalSubjectCode(draft.intendedSubject)] : []),
+        ...(draft.intendedSubjects ?? []).map((code) =>
+          canonicalSubjectCode(code),
+        ),
+      ].filter(Boolean),
+    ),
+  ];
   return {
     regions: draft.regions,
+    ...(intendedSubjects.length > 0 ? { intendedSubjects } : {}),
     // 被跳过的字段保持 undefined：引擎对缺事实一律判 UNKNOWN，不得伪造默认值
     educationLevel: draft.educationLevel,
     degree: draft.degree,

@@ -14,7 +14,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { LoadingPage } from "@/components/ui/Loading";
 import { Callout } from "@/components/ui/Callout";
-import { natureShortLabel, stageLabel } from "@/lib/ia/labels";
+import { natureShortLabel, stageLabel, subjectLabel } from "@/lib/ia/labels";
 import type { HistoryFilters, HistoryListResponse } from "@/lib/opportunities/api-types";
 import { opportunitiesApi } from "@/lib/opportunities/api";
 import { useOnlineStatus } from "@/lib/useOnlineStatus";
@@ -44,6 +44,7 @@ export default function HistoryPage() {
   const [year, setYear] = useState<string>("");
   const [regionCode, setRegionCode] = useState<string>("");
   const [stage, setStage] = useState<string>("");
+  const [subject, setSubject] = useState<string>("");
   const [nature, setNature] = useState<string>("");
   const [educationLevel, setEducationLevel] = useState<string>("");
   const [major, setMajor] = useState<string>("");
@@ -58,6 +59,7 @@ export default function HistoryPage() {
       year: parsedYear,
       regionCode: regionCode || undefined,
       stage: stage || undefined,
+      subject: subject || undefined,
       nature: nature || undefined,
       educationLevel:
         (educationLevel as HistoryFilters["educationLevel"]) || undefined,
@@ -66,7 +68,7 @@ export default function HistoryPage() {
       page,
       pageSize: 20,
     };
-  }, [year, regionCode, stage, nature, educationLevel, major, keyword, page]);
+  }, [year, regionCode, stage, subject, nature, educationLevel, major, keyword, page]);
 
   useEffect(() => {
     // 筛选/翻页变化时保留旧内容直到新数据就绪，避免整页 Loading 夺走输入焦点
@@ -167,6 +169,25 @@ export default function HistoryPage() {
                 {data.availableRegions.map((region) => (
                   <option key={region.code} value={region.code}>
                     {region.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block text-xs text-ink-muted">
+              学科
+              <select
+                value={subject}
+                onChange={(event) => {
+                  setSubject(event.target.value);
+                  setPage(1);
+                }}
+                className="mt-1 w-full rounded-lg border border-line bg-canvas px-2 py-2 text-sm text-ink"
+                data-testid="history-subject-filter"
+              >
+                <option value="">全部学科</option>
+                {(data.availableSubjects ?? []).map((code) => (
+                  <option key={code} value={code}>
+                    {subjectLabel(code)}
                   </option>
                 ))}
               </select>

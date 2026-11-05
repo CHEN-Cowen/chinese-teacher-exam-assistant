@@ -102,6 +102,8 @@ export interface UnitMatchDTO {
     | 'name'
     | 'region'
     | 'subject'
+    | 'subjects'
+    | 'subjectOriginal'
     | 'stage'
     | 'headcount'
     | 'organizationType'
@@ -274,6 +276,8 @@ export function toUnitMatchDTO(
       name: unit.name,
       region: unit.region,
       subject: unit.subject,
+      subjects: unit.subjects,
+      subjectOriginal: unit.subjectOriginal,
       stage: unit.stage,
       headcount: unit.headcount,
       organizationType: unit.organizationType,
@@ -532,7 +536,10 @@ export interface SubscriptionRegionDTO {
 /** 新机会订阅（每用户一条；enabled=false 关闭后停止新提醒，历史通知保留） */
 export interface SubscriptionDTO {
   regions: SubscriptionRegionDTO[];
+  /** 兼容字段：subjects[0]；旧前端仍可读取 */
   subject: string;
+  /** W1：订阅关注的全部学科 */
+  subjects: string[];
   naturePreference: 'public_only' | 'official_open' | 'undecided';
   /** 必要资格条件快照（透明展示用）：{ degree?, graduationDate?, cert? } */
   qualification: {

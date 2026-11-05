@@ -21,9 +21,9 @@ import {
   resolveEducationFacts,
   type DegreeFact,
 } from './education.js';
+import { unitHasOpenSubject } from '../subjects/subject-catalog.js';
 import {
   IN_SCOPE_EMPLOYMENT_NATURES,
-  OPEN_SUBJECTS,
   type AnnouncementVersion,
   type ApplicationUnit,
   type CredentialLevel,
@@ -777,15 +777,14 @@ export function evaluateGates(
 ): GateResult[] {
   const gates: GateResult[] = [];
 
-  const subjectOpen = OPEN_SUBJECTS.includes(
-    unit.subject as (typeof OPEN_SUBJECTS)[number],
-  );
+  // W1：岗位可含多个学科（subjects），任一学科开放即通过；旧单值字段兜底。
+  const subjectOpen = unitHasOpenSubject(unit);
   gates.push({
     code: 'subject_not_open',
     passed: subjectOpen,
     reason: subjectOpen
-      ? '学科在当前开放范围内'
-      : '该学科当前尚未开放匹配',
+      ? '岗位学科在已开放范围内'
+      : '该岗位学科尚未识别或未开放匹配',
   });
 
   // 报名时间闸门分两层：官方未给具体日期（预告/「另行通知」）→ unconfirmed；

@@ -115,6 +115,17 @@ function arrayAt(value: unknown, path: string): unknown[] {
   return value;
 }
 
+/** W1：可选字符串数组；缺省返回 undefined，出现非字符串立即失败（不静默丢弃）。 */
+function optionalStringArrayAt(
+  value: unknown,
+  path: string,
+): string[] | undefined {
+  if (value === undefined || value === null) return undefined;
+  return arrayAt(value, path).map((item, index) =>
+    stringAt(item, `${path}[${index}]`),
+  );
+}
+
 function regionAt(value: unknown, path: string) {
   const region = recordAt(value, path);
   return {
@@ -279,6 +290,13 @@ function unitAt(value: unknown, path: string) {
       ? { teachingScope: unit.teachingScope as string }
       : {}),
     subject: stringAt(unit.subject, `${path}.subject`),
+    ...(optionalStringArrayAt(unit.subjects, `${path}.subjects`) !== undefined
+      ? { subjects: unit.subjects as string[] }
+      : {}),
+    ...(optionalStringAt(unit.subjectOriginal, `${path}.subjectOriginal`) !==
+    undefined
+      ? { subjectOriginal: unit.subjectOriginal as string }
+      : {}),
     stage: stringAt(unit.stage, `${path}.stage`),
     headcount: intAt(unit.headcount, `${path}.headcount`),
     organizationType: enumAt(

@@ -43,6 +43,7 @@ import {
   stageLabel,
   subjectLabel,
 } from "./labels";
+import { subjectLabels } from "@/lib/subjects/catalog";
 
 /** 单条条件的行内展示（机会卡展开后的第二层） */
 export interface DimensionView {
@@ -159,7 +160,8 @@ function toRow(candidate: OpportunityCandidate, nowIso: string): OpportunityRow 
     regionText: regionLabel(unit.region),
     regionFullText: regionFullLabel(unit.region),
     unitName: unit.name,
-    subjectText: subjectLabel(unit.subject),
+    // W1：多学科岗位展示全部学科；旧单值自动包含在 subjects 合并结果中
+    subjectText: subjectLabels(unit).join("、") || subjectLabel(unit.subject),
     natureText: natureShortLabel(unit.employmentNature.code),
     natureCode: unit.employmentNature.code,
     stageText: stageLabel(unit.stage),

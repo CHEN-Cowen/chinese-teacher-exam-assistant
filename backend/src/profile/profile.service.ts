@@ -8,6 +8,7 @@ import {
   normalizeEducationExperiences,
   validateEducationExperiences,
 } from '../matching/education.js';
+import { canonicalSubjectCode } from '../subjects/subject-catalog.js';
 
 /**
  * 用户基础画像服务（模块 8 + v7.2 PATCH）。
@@ -51,7 +52,9 @@ export class ProfileService {
    * - 请求体显式给出 educationExperiences: [] 视为用户显式清空，仍然覆盖。
    */
   async saveProfile(userId: string, profile: unknown): Promise<void> {
-    const normalized = this.normalizeProfileEducation(profile);
+    const normalized = this.normalizeSubjectFields(
+      this.normalizeProfileEducation(profile),
+    );
     const existing = await this.prisma.userProfile.findUnique({ where: { userId } });
     const merged = this.mergeProfileForLegacySave(existing?.profile, normalized);
     await this.prisma.userProfile.upsert({
@@ -124,6 +127,41 @@ export class ProfileService {
   }
 
   /**
+   * W1：意向学科/学段只做结构校验与代码归一。
+   * - 未知学科代码原样保留（不丢弃、不猜测），由管理端审核；
+   * - 非数组/非字符串直接 400，避免把脏数据写进画像。
+   */
+  private normalizeSubjectFields(profile: unknown): unknown {
+    if (!this.isRecord(profile)) return profile;
+    const record = { ...profile };
+    for (const key of ['intendedSubjects', 'preferredStages'] as const) {
+      if (!(key in record)) continue;
+      const value = record[key];
+      if (value === undefined) continue;
+      if (!Array.isArray(value)) {
+        throw new BadRequestException({
+          error: 'INVALID_SUBJECT_FIELDS',
+          message: `${key} 必须是数组`,
+        });
+      }
+      const result: string[] = [];
+      for (const raw of value) {
+        if (typeof raw !== 'string' || raw.trim().length === 0) {
+          throw new BadRequestException({
+            error: 'INVALID_SUBJECT_FIELDS',
+            message: `${key} 必须是非空字符串数组`,
+          });
+        }
+        const code =
+          key === 'intendedSubjects' ? canonicalSubjectCode(raw.trim()) : raw.trim();
+        if (!result.includes(code)) result.push(code);
+      }
+      record[key] = result;
+    }
+    return record;
+  }
+
+  /**
    * v7.2 白名单字段（PRD 7.6.1）+ R01 扩展。
    *
    * - 条件画像字段：birthDate / 户籍 / 社保 / 工作经历 / 特有条件答案；
@@ -146,6 +184,8 @@ export class ProfileService {
     'employmentNaturePreference',
     'educationExperiences',
     'legacyEducation',
+    'intendedSubjects',
+    'preferredStages',
   ] as const;
 
   /**
@@ -207,6 +247,17 @@ export class ProfileService {
           error: 'INVALID_LEGACY_EDUCATION',
           message: '旧教育经历确认状态结构不合法',
         });
+      }
+    }
+    if ('intendedSubjects' in normalized || 'preferredStages' in normalized) {
+      const checked = this.normalizeSubjectFields(normalized);
+      if (this.isRecord(checked)) {
+        if (checked.intendedSubjects !== undefined) {
+          normalized.intendedSubjects = checked.intendedSubjects;
+        }
+        if (checked.preferredStages !== undefined) {
+          normalized.preferredStages = checked.preferredStages;
+        }
       }
     }
     if ('educationExperiences' in normalized) {

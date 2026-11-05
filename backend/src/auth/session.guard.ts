@@ -23,6 +23,9 @@ const PUBLIC_PATHS = new Set([
   // M01/F1：首页公开覆盖摘要（精确只读路径）。个人接口与写操作不在此列，
   // 访客与登录用户读取同一份统一覆盖投影（coverage-projection.ts）。
   '/opportunities/coverage',
+  // W1：全学科字典与原文解析（只读、不含用户数据）
+  '/subjects',
+  '/subjects/resolve',
 ]);
 
 /**

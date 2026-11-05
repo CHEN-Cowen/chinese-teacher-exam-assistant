@@ -11,17 +11,16 @@
  */
 
 /**
- * 学科编码。当前只开放语文（chinese），但类型不把语文写成长期唯一枚举：
- * `(string & {})` 让后续学科可以在不改既有代码的情况下进入模型，
- * 而 OPEN_SUBJECTS 才是“当前已开放”的运行时白名单（匹配闸门使用）。
+ * 学科编码。W1 起为全学科稳定代码（与 backend/subjects/subject-catalog 同源）：
+ * `(string & {})` 保留未知/长尾学科的存放空间，不把任何单一学科写死。
  */
 export type SubjectCode = "chinese" | (string & {});
 
 /** 学段编码（与 v5.2 EducationLevel 取值保持一致，便于后续兼容层映射） */
 export type StageCode = "primary" | "middle" | "high" | (string & {});
 
-/** 当前产品已开放的学科白名单；后续开放其他学科时在此追加 */
-export const OPEN_SUBJECTS = ["chinese"] as const;
+/** 当前开放匹配的学科白名单（由展示字典统一导出，禁止在此手写单值） */
+export { OPEN_SUBJECTS } from "@/lib/subjects/catalog";
 
 /** 用工性质编码（官方名称另存，展示时优先用 officialName） */
 export type EmploymentNatureCode =
@@ -219,7 +218,12 @@ export interface ApplicationUnit {
   region: RegionRef;
   /** 大致任教范围（录取后调配时用于说明，不等于最终学校） */
   teachingScope?: string;
+  /** 兼容旧单值；W1 读取时与 subjects 合并 */
   subject: SubjectCode;
+  /** W1：岗位可报/任教学科集合（复数优先） */
+  subjects?: SubjectCode[];
+  /** 官方岗位表原文的学科表述（保留原文，便于追溯） */
+  subjectOriginal?: string;
   stage: StageCode;
   headcount: number;
   organizationType: OrganizationType;

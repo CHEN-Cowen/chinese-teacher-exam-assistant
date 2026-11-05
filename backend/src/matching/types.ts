@@ -13,7 +13,12 @@
 export type SubjectCode = string;
 export type StageCode = 'primary' | 'middle' | 'high' | (string & {});
 
-export const OPEN_SUBJECTS = ['chinese'] as const;
+/**
+ * 当前开放匹配的学科（W1 起为全学科字典启用的全部代码）。
+ * 运行时闸门请使用 subjects/subject-catalog.ts 的 unitHasOpenSubject，
+ * 本常量仅保留为兼容既有调用方（与字典同源，不再手写单值）。
+ */
+export { OPEN_SUBJECT_CODES as OPEN_SUBJECTS } from '../subjects/subject-catalog.js';
 
 export type EmploymentNatureCode =
   | 'public_institution_staff'
@@ -180,7 +185,12 @@ export interface ApplicationUnit {
   versionId: string;
   region: RegionRef;
   teachingScope?: string;
+  /** 兼容旧数据的单值学科（W1 起读取时与 subjects 合并，不再作为唯一口径） */
   subject: SubjectCode;
+  /** W1：岗位可报/任教学科集合（复数优先；缺省回退 subject） */
+  subjects?: SubjectCode[];
+  /** 官方岗位表原文的学科表述（保留原名，便于追溯与歧义审核） */
+  subjectOriginal?: string;
   stage: StageCode;
   headcount: number;
   organizationType: OrganizationType;
@@ -390,6 +400,13 @@ export interface LegacyEducationConfirmation {
 /** 匹配接口入参：五组基础画像 + 按需补充的条件事实（未提供即 UNKNOWN） */
 export interface UserRecruitmentProfile {
   regions: RegionPreference[];
+  /**
+   * W1：意向报考学科（与教师资格证学科分开存储）。
+   * 空数组表示未填写；不得由教师资格证学科自动推断为意向。
+   */
+  intendedSubjects?: SubjectCode[];
+  /** W1：意向学段（与学科分开筛选；空数组表示不限） */
+  preferredStages?: StageCode[];
   educationLevel?: CredentialLevel;
   degree?: DegreeCode;
   majorFullName?: string;

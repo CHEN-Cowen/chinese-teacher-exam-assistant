@@ -225,6 +225,8 @@ function demoSubscriptionStorageKey(): string {
 
 interface DemoSubscriptionRow {
   regions: SubscriptionDTO["regions"];
+  /** W1：多学科关注；旧本地数据可能没有该字段 */
+  subjects?: string[];
   naturePreference: SubscriptionDTO["naturePreference"];
   enabled: boolean;
   createdAt: string;
@@ -254,6 +256,11 @@ function deriveDemoDefault(profile: UserRecruitmentProfile): DemoSubscriptionRow
       ...(r.city ? { city: r.city } : {}),
       ...(r.district ? { district: r.district } : {}),
     })),
+    // 意向学科来自用户显式选择；旧画像按历史默认 chinese，避免扩大学科范围。
+    subjects:
+      profile.intendedSubjects && profile.intendedSubjects.length > 0
+        ? [...new Set(profile.intendedSubjects)]
+        : ["chinese"],
     naturePreference,
     enabled: true,
     createdAt: now,
@@ -267,9 +274,11 @@ function loadDemoSubscription(profile: UserRecruitmentProfile): SubscriptionDTO 
     const row: DemoSubscriptionRow = raw
       ? (JSON.parse(raw) as DemoSubscriptionRow)
       : deriveDemoDefault(profile);
+    const subjects = row.subjects?.length ? row.subjects : ["chinese"];
     return {
       regions: row.regions,
-      subject: "chinese",
+      subject: subjects[0] ?? "chinese",
+      subjects,
       naturePreference: row.naturePreference,
       qualification: {
         degree: profile.degree,
@@ -286,7 +295,8 @@ function loadDemoSubscription(profile: UserRecruitmentProfile): SubscriptionDTO 
     const fallback = deriveDemoDefault(profile);
     return {
       regions: fallback.regions,
-      subject: "chinese",
+      subject: (fallback.subjects ?? ["chinese"])[0] ?? "chinese",
+      subjects: fallback.subjects ?? ["chinese"],
       naturePreference: fallback.naturePreference,
       qualification: null,
       enabled: fallback.enabled,
@@ -314,6 +324,10 @@ export const demoOpportunitiesApi = {
     const current = loadDemoSubscription(V61_SEED_PROFILE);
     const row: DemoSubscriptionRow = {
       regions: input.regions ?? current.regions,
+      subjects:
+        input.subjects && input.subjects.length > 0
+          ? input.subjects
+          : current.subjects,
       naturePreference: input.naturePreference ?? current.naturePreference,
       enabled: input.enabled ?? current.enabled,
       createdAt: current.createdAt,
@@ -714,6 +728,7 @@ export const demoOpportunitiesApi = {
       availableRegions: availableHistoryRegions(all),
       educationLevels: options.educationLevels,
       availableMajors: options.majors,
+      availableSubjects: options.subjects,
       total: page.total,
       page: page.page,
       pageSize: page.pageSize,

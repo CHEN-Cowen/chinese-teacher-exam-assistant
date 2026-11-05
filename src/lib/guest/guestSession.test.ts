@@ -180,7 +180,19 @@ describe("draftToProfile：跳过不伪造事实", () => {
     expect(profile!.educationLevel).toBeUndefined();
   });
 
-  it("主动选了非语文学科：画像完整时仍然分流为 null（不跑匹配）", () => {
+  it("无法识别的学科：画像完整也不生成匹配，避免把长尾学科猜成别科", () => {
+    const draft = partialDraft({
+      regions: [{ code: "330000", province: "浙江省", level: "required" }],
+      educationLevel: "bachelor",
+      majorFullName: "数学与应用数学",
+      graduationDate: "2026-06-15",
+      teacherCert: { status: "obtained", subject: "天文观测", stage: "middle" },
+      intendedSubject: "天文观测",
+    });
+    expect(draftToProfile(draft)).toBeNull();
+  });
+
+  it("W1 数学已开放：画像完整即可生成匹配画像，并保留意向学科", () => {
     const draft = partialDraft({
       regions: [{ code: "330000", province: "浙江省", level: "required" }],
       educationLevel: "bachelor",
@@ -189,7 +201,9 @@ describe("draftToProfile：跳过不伪造事实", () => {
       teacherCert: { status: "obtained", subject: "math", stage: "middle" },
       intendedSubject: "math",
     });
-    expect(draftToProfile(draft)).toBeNull();
+    const profile = draftToProfile(draft);
+    expect(profile).not.toBeNull();
+    expect(profile!.intendedSubjects).toEqual(["mathematics"]);
   });
 
   it("旧草稿含 employmentStatus/degree：draftToProfile 透传不丢", () => {

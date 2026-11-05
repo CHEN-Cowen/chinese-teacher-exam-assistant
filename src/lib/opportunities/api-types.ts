@@ -160,8 +160,12 @@ export interface UnitMatchDTO {
     code: string;
     name: string;
     region: RegionRefDTO;
-    /** 学科（v7.1 M4 卡片第一层：学段和学科） */
+    /** 学科（v7.1 M4 卡片第一层：学段和学科）；兼容旧单值 */
     subject: string;
+    /** W1：岗位全部学科（复数优先） */
+    subjects?: string[];
+    /** 官方岗位表学科原文 */
+    subjectOriginal?: string;
     stage: string;
     headcount: number;
     organizationType: string;
@@ -487,6 +491,8 @@ export interface HistoryUnitDTO {
   unitName: string;
   region: RegionRefDTO;
   subject: string;
+  /** W1：岗位全部学科（兼容旧 subject） */
+  subjects?: string[];
   stage: string;
   headcount: number;
   organizationType: string;
@@ -523,6 +529,8 @@ export interface HistoryFilters {
   year?: number;
   regionCode?: string;
   stage?: string;
+  /** W1：学科代码（岗位任一学科命中） */
+  subject?: string;
   nature?: string;
   keyword?: string;
   /** 岗位要求的最低学历（精确匹配该档，不是“可报”推断） */
@@ -548,6 +556,8 @@ export interface HistoryListResponse {
   }[];
   /** 全部历史数据（未筛选）中出现过的专业名 */
   availableMajors: string[];
+  /** W1：全部历史数据中出现过的学科代码 */
+  availableSubjects: string[];
   total: number;
   page: number;
   pageSize: number;
@@ -598,7 +608,10 @@ export interface SubscriptionRegionDTO {
 /** 新机会订阅（每用户一条；enabled=false 关闭后停止新提醒，历史通知保留） */
 export interface SubscriptionDTO {
   regions: SubscriptionRegionDTO[];
+  /** 兼容字段：subjects[0] */
   subject: string;
+  /** W1：订阅关注的全部学科 */
+  subjects: string[];
   naturePreference: "public_only" | "official_open" | "undecided";
   qualification: {
     degree?: string;
@@ -614,6 +627,9 @@ export interface SubscriptionDTO {
 /** PUT /opportunities/subscription 请求体：部分更新，未传字段保留现值 */
 export interface SubscriptionUpdateInput {
   regions?: SubscriptionRegionDTO[];
+  /** W1：多学科关注；与 subject 同时出现时以 subjects 为准 */
+  subjects?: string[];
+  subject?: string;
   naturePreference?: SubscriptionDTO["naturePreference"];
   enabled?: boolean;
 }
