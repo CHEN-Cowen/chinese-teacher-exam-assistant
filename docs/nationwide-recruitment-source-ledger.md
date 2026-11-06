@@ -193,7 +193,7 @@
 | 青岛市教育局 | https://edu.qingdao.gov.cn/ | 受限，未纳入 | HTTP 403（站点防护），不绕过；替代官方入口待核验 |
 | 厦门市教育局 | https://edu.xm.gov.cn/xxgk/jszk/ | 受限，未纳入 | 「教师招考」首屏 15 条静态可读，但 `?page=N` 翻页请求被 WAF 拦截；不绕过 WAF，记录原因待站点策略调整后重试 |
 | 潍坊市教育局 | https://jyj.weifang.gov.cn/ | 未纳入 | 列表为 `POST /els-service/article/{page}/{size}` JSON 接口，非公开 GET 接口族；需单独接口族适配与更充分的请求频控评估 |
-| 泰安市教育局 | https://jyj.taian.gov.cn/col/col45480/index.html | 候选，待核验 | 「公示公告」服务端静态列表可读（li>a[title]+span.bt-right），jpage 翻页请求与总页数尚未确认；确认后按静态分页族接入 |
+| 泰安市教育局 | https://jyj.taian.gov.cn/col/col45480/index.html | 候选，待扩展请求契约 | 「公示公告」服务端静态首屏可读（li>a[title]+span.bt-right），但翻页是 jpage dataproxy：必须 POST `startrecord/endrecord/perpage` 并带 unitid/webid/columnid 等参数（实测 GET 空响应，POST 返回 227 条 / 16 页）；现有抓取器仅支持 GET，待扩展请求契约后接入，不绕过限制 |
 | 广州、石家庄、郑州、泉州、东莞等 | — | 未纳入 | 首页无招聘栏目、入口不可达或栏目为混合公开事项；不以目录登记冒充覆盖 |
 
 ## 9. 当前结论与缺口
