@@ -36,7 +36,8 @@ describe('S5 来源目录', () => {
     // 潍坊（els-service JSON POST 列表 + 单来源分页窗口）；
     // N3 静态列表族首批：南昌（ul.item li + 同级 span 日期 + createPageHTML 分页）、
     // 太原（ul.List_list li + JS 跳转分页）、
-    // 郑州（河南首个，ul#pageCont a.new_link + 双域名 shtml/jhtml 详情）。
+    // 郑州（河南首个，ul#pageCont a.new_link + 双域名 shtml/jhtml 详情）、
+    // 福州（福建首个，fjdzapp/search 表单 POST 列表 + 单来源分页窗口）。
     expect(seedable.map((source) => source.adapterKey)).toEqual([
       'nanjing-education',
       'hangzhou-education',
@@ -56,6 +57,7 @@ describe('S5 来源目录', () => {
       'nanchang-education',
       'taiyuan-education',
       'zhengzhou-education',
+      'fuzhou-education',
       'changzhou-education',
       'lishui-education',
       'bengbu-education',
@@ -190,17 +192,21 @@ describe('S5 来源目录', () => {
     expect(verifiedAtOf('weifang-education')).toBe('2026-11-06');
     expect(verifiedAtOf('nanchang-education')).toBe('2026-11-06');
     expect(verifiedAtOf('taiyuan-education')).toBe('2026-11-06');
+    expect(verifiedAtOf('zhengzhou-education')).toBe('2026-11-06');
+    expect(verifiedAtOf('fuzhou-education')).toBe('2026-11-06');
   });
 });
 
 describe('S5 来源级检查记录与监测状态', () => {
   it('ready 来源完成两次真实检查后，才可声称正常监测', () => {
     const ready = SOURCE_CATALOG.filter((entry) => entry.status === 'ready');
-    // 郑州刚完成首次真实采样，checks 只有 1 次，仍处于 unverified 状态（未满 7 天观察窗）
+    // 郑州、福州刚完成首次真实采样，checks 只有 1 次，仍处于 unverified 状态（未满 7 天观察窗）
     const readyWith2Checks = ready.filter(
-      (e) => e.sourceKey !== 'zhengzhou-education',
+      (e) =>
+        e.sourceKey !== 'zhengzhou-education' &&
+        e.sourceKey !== 'fuzhou-education',
     );
-    expect(ready.length).toBe(23);
+    expect(ready.length).toBe(24);
     for (const entry of readyWith2Checks) {
       const record = getSourceMonitoringRecord(entry.sourceKey);
       expect(record.checks.length, entry.sourceKey).toBe(2);
@@ -216,11 +222,12 @@ describe('S5 来源级检查记录与监测状态', () => {
     expect(
       getSourceMonitoringRecord('nanjing-education').checks[1]?.outcome,
     ).toBe('succeeded');
-    // 郑州只有 1 次检查（首次采样，未满观察窗），不算入第二次 outcome 断言
+    // 郑州与福州只有 1 次检查（首次采样，未满观察窗），不算入第二次 outcome 断言
     const unchanged = SOURCE_MONITORING_RECORDS.filter(
       (record) =>
         record.sourceKey !== 'nanjing-education' &&
-        record.sourceKey !== 'zhengzhou-education',
+        record.sourceKey !== 'zhengzhou-education' &&
+        record.sourceKey !== 'fuzhou-education',
     );
     expect(unchanged).toHaveLength(21);
     for (const record of unchanged) {

@@ -369,6 +369,25 @@ export const SOURCE_CATALOG: readonly SourceCatalogEntry[] = [
       '「通知公告」混合栏目真实核验（2026-11-06，河南首个来源）：双域名并存——老站 http news.zzedu.net.cn/tz/ 静态列表（ul#pageCont a.new_link + M月D日 短日期），混合详情（.shtml 老站 SourceTitle + div#article / .jhtml 新政务 ArticleTitle + div.news_content_content）；JS 按钮"加载更多"分页（bfreeTools.js，首版只抓首屏 20 条）；含 10 条教师招聘/事业单位拟聘用公示（zzjy.zhengzhou.gov.cn/.jhtml），混合栏目按标题判定形态；持续监测见检查记录。',
   },
   {
+    sourceKey: 'fuzhou-education',
+    publisher: '福州市教育局',
+    regionCode: '350100',
+    authorityLevel: 'city',
+    officialUrl: 'https://jyj.fuzhou.gov.cn/',
+    // 列表数据接口 URL：query 承载全部 POST 请求体参数（channelid/chnlid/page），
+    // 请求体由 fjdzSearchRequest 确定性派生；页面 URL /zwgk/tzgg/ 为 JS 壳不登记。
+    listUrls: [
+      'https://jyj.fuzhou.gov.cn/fjdzapp/search?channelid=229105&chnlid=47610&page=1',
+    ],
+    allowedHosts: ['jyj.fuzhou.gov.cn'],
+    adapterKey: 'fuzhou-education',
+    status: 'ready',
+    verifiedAt: '2026-11-06',
+    sampleRef: 'tests/fixtures/golden-sources/fuzhou-education',
+    coverageNote:
+      '「通知公告」混合栏目真实核验（2026-11-06，福建首个来源）：列表页为 JS 壳，记录由 POST /fjdzapp/search 表单接口返回（官方 178 页 / 2658 条 / 每页 15 条），必须携带同源 Referer（缺 Referer 返回"获取站点配置失败"）；doctitle 检索参数不生效，按栏目全量翻页；按单来源分页窗口只监测最新 6 页（90 条），窗口已登记（FJ_PAGE_WINDOWS）；正文 meta ArticleTitle/PubDate + div.article_content、div.article_attachment 相对路径附件（P0…xlsx/pdf）回放通过；含招聘全周期公告（公告→补充→资格审核→面试→选岗→拟聘公示→递补），混合栏目按标题判定形态；持续监测见检查记录。',
+  },
+  {
     sourceKey: 'changzhou-education',
     publisher: '常州市教育局',
     regionCode: '320400',
@@ -1005,6 +1024,18 @@ export const SOURCE_MONITORING_RECORDS: readonly SourceMonitoringRecord[] = [
         discoveredCount: 20,
         contentHash: null,
         note: 'N3 首次真实采样（河南首个来源）：老站 http news.zzedu.net.cn/tz/ 通知公告混合栏目首屏 20 条（10 条老站 .shtml + 10 条新政务 .jhtml）；JS 按钮"加载更多"分页（pageTotal=7），首版只抓首屏；双域名详情回放通过——.shtml 老站 SourceTitle + div#article、.jhtml 新政务 ArticleTitle + div.news_content_content + xlsx 附件下载。7 天持续观察窗口尚未完成。',
+      },
+    ],
+  },
+  {
+    sourceKey: 'fuzhou-education',
+    checks: [
+      {
+        checkedAt: '2026-11-06T09:18:48.000Z',
+        outcome: 'succeeded',
+        discoveredCount: 15,
+        contentHash: null,
+        note: 'N3 首次真实采样（福建首个来源）：通知公告混合栏目 POST /fjdzapp/search 表单接口首屏 HTTP 200，解析 15 条（官方 178 页 / 2658 条 / 每页 15 条，必须携带同源 Referer）；按单来源窗口只监测最新 6 页（90 条），第 2 页 15 条与首屏无重叠且首条即拟聘公示；正文 meta ArticleTitle/PubDate + div.article_content 与 div.article_attachment 相对路径附件（P0…xlsx/pdf）离线回放通过。7 天持续观察窗口尚未完成。',
       },
     ],
   },

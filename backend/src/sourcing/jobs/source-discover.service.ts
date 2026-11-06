@@ -41,6 +41,11 @@ import {
   elsJsonRequest,
   isElsArticleUrl,
 } from '../els-list.js';
+import {
+  fjdzSearchPages,
+  fjdzSearchRequest,
+  isFjdzSearchUrl,
+} from '../fz-list.js';
 import { SafeFetchError } from '../fetch/safe-fetcher.js';
 import { SourcingMetrics } from '../observability.js';
 import {
@@ -189,11 +194,13 @@ export class SourceDiscoverService {
         // 仅已验证的公开栏目 API 使用 JSON/XML 通道，仍复用全部 DNS/重定向/大小/并发限制。
         const isJpage = isJpageDataUrl(listUrl);
         const isEls = isElsArticleUrl(listUrl);
+        const isFjdz = isFjdzSearchUrl(listUrl);
         const requestFetcher =
           new URL(listUrl).pathname ===
             '/api-gateway/jpaas-publish-server/front/page/build/unit' ||
           isJpage ||
-          isEls
+          isEls ||
+          isFjdz
             ? this.fetcherFactory.createForAttachment(source)
             : fetcher;
         result = await requestFetcher.fetch(
@@ -202,12 +209,16 @@ export class SourceDiscoverService {
             ifNoneMatch: cache?.etag ?? undefined,
             ifModifiedSince: cache?.lastModified ?? undefined,
           },
-          {},
+          // 福州 fjdzapp/search 必须携带同源 Referer（站点配置校验），
+          // 缺 Referer 返回 {"error":true,"info":"获取站点配置失败"}。
+          isFjdz ? { referer: source.officialUrl } : {},
           isJpage
             ? jpagePostRequest(listUrl)
             : isEls
               ? elsJsonRequest(listUrl)
-              : {},
+              : isFjdz
+                ? fjdzSearchRequest(listUrl)
+                : {},
         );
         if (result.status === 304) {
           if (!cache) throw new Error('not_modified_without_snapshot');
@@ -247,6 +258,8 @@ export class SourceDiscoverService {
           for (const page of jpageDataproxyPages(result.finalUrl, body))
             if (!listUrls.includes(page)) listUrls.push(page);
           for (const page of elsArticlePages(result.finalUrl, body))
+            if (!listUrls.includes(page)) listUrls.push(page);
+          for (const page of fjdzSearchPages(result.finalUrl, body))
             if (!listUrls.includes(page)) listUrls.push(page);
           const items = publicUrl
             ? []
@@ -288,6 +301,8 @@ export class SourceDiscoverService {
         for (const page of jpageDataproxyPages(result.finalUrl, result.body))
           if (!listUrls.includes(page)) listUrls.push(page);
         for (const page of elsArticlePages(result.finalUrl, result.body))
+          if (!listUrls.includes(page)) listUrls.push(page);
+        for (const page of fjdzSearchPages(result.finalUrl, result.body))
           if (!listUrls.includes(page)) listUrls.push(page);
         const items = publicUrl
           ? []
