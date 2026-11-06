@@ -564,6 +564,87 @@ export class FakePrisma {
     },
   };
 
+  /** ---------- sourcingAlert（M02/F3：运行告警持久化） ---------- */
+
+  alerts: Array<Record<string, unknown> & { id: string }> = [];
+
+  readonly sourcingAlert = {
+    findFirst: async ({
+      where,
+      select,
+    }: {
+      where: { type?: string; sourceId?: string | null };
+      select?: Record<string, boolean>;
+    }) => {
+      const row =
+        this.alerts.find(
+          (alert) =>
+            (where.type === undefined || alert.type === where.type) &&
+            (where.sourceId === undefined ||
+              alert.sourceId === where.sourceId),
+        ) ?? null;
+      return row ? pickSelect(row, select) : null;
+    },
+    create: async ({ data }: { data: Record<string, unknown> }) => {
+      const row = {
+        id: this.nextModelId('alert'),
+        // 与数据库 default(null) 对齐：活跃告警 resolvedAt 为空
+        resolvedAt: null,
+        ...data,
+      } as Record<string, unknown> & { id: string };
+      this.alerts.push(row);
+      return row;
+    },
+    update: async ({
+      where,
+      data,
+    }: {
+      where: { id: string };
+      data: Record<string, unknown>;
+    }) => {
+      const row = this.alerts.find((alert) => alert.id === where.id);
+      if (!row) throw new Error(`sourcingAlert not found: ${where.id}`);
+      applyUpdate(row, data);
+      return row;
+    },
+    updateMany: async ({
+      where,
+      data,
+    }: {
+      where: { type?: string; sourceId?: string; resolvedAt?: null };
+      data: Record<string, unknown>;
+    }) => {
+      const rows = this.alerts.filter(
+        (alert) =>
+          (where.resolvedAt === undefined ||
+            alert.resolvedAt === where.resolvedAt) &&
+          (where.type === undefined || alert.type === where.type) &&
+          (where.sourceId === undefined || alert.sourceId === where.sourceId),
+      );
+      for (const row of rows) applyUpdate(row, data);
+      return { count: rows.length };
+    },
+    findMany: async ({
+      where,
+      take,
+    }: {
+      where?: { resolvedAt?: null };
+      orderBy?: unknown;
+      take?: number;
+    } = {}) => {
+      let rows = [...this.alerts];
+      if (where?.resolvedAt === null) {
+        rows = rows.filter((alert) => alert.resolvedAt === null);
+      }
+      rows.sort(
+        (a, b) =>
+          ((b.lastSeenAt as Date)?.getTime() ?? 0) -
+          ((a.lastSeenAt as Date)?.getTime() ?? 0),
+      );
+      return take ? rows.slice(0, take) : rows;
+    },
+  };
+
   /** 供断言：把内部数组按 id 查找 */
   findRun(runId: string) {
     return this.runs.find((r) => r.id === runId) ?? null;

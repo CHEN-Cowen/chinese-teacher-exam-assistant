@@ -955,11 +955,16 @@ export function staticListPages(
       'DOM_MISMATCH',
       '静态列表分页超出预算，需调整检查范围',
     );
+  const current = Number(calls[2]);
+  // 当前页可能已是 nav_list_2.shtml：先剥掉 _<n> 再拼下一序号，
+  // 否则会生成 nav_list_2_2.shtml 这类不存在的地址（N3 南昌链路实测暴露）。
+  const from = Number.isSafeInteger(current) && current >= 1 ? current : 1;
   const url = new URL(baseUrl);
+  const basePath = url.pathname.replace(/_\d+(?=\.shtml$)/, '');
   const urls: string[] = [];
-  for (let next = 2; next <= total; next += 1) {
+  for (let next = from + 1; next <= total; next += 1) {
     const page = new URL(url.href);
-    page.pathname = url.pathname.replace(/(\.shtml)?$/, `_${next}.shtml`);
+    page.pathname = basePath.replace(/(\.shtml)?$/, `_${next}.shtml`);
     urls.push(page.href);
   }
   return urls;

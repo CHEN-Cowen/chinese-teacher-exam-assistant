@@ -166,6 +166,7 @@
 - 正文附件收集增加 `.m-filbox` / `.m-file-download` / `.m-dtdownload` 容器，避免岗位表在正文容器外被漏采；潍坊附件在同表 `td.art > div.appendix`，按文章表格定位收集。
 - 新增 `discoverStaticAnchorList`（`public-column.ts`）：覆盖 `ul.item li > a[title] + 同级 span` 静态锚点列表族（南昌教师科），分页复用 `staticListPages`（createPageHTML → `_<n>.shtml`），跨栏目详情按路径正则放行。
 - 新增 `jsPaginationPages`（`public-column.ts`）：覆盖 JS 跳转式静态分页（太原通知公告，`onclick=location.href='基名_<n>.html'`），只接受同源后续页，页码超出预算显式失败；适配器通过可选 `listSelector` 复用同一锚点列表解析（`ul.List_list li`）。
+- 修复 `staticListPages` 末页重复派生：原实现对 `nav_list_2.shtml` 再次拼接会生成不存在的 `nav_list_2_2.shtml`（N3 南昌运行链路联调暴露，导致整轮被记为 partial）；现按 `createPageHTML` 的当前页码只生成后续页，末页返回空。
 
 ### 8.2 逐来源验证状态
 
@@ -176,12 +177,31 @@
 | 岗位/附件抓取 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 真实附件链接（xlsx / xls / doc、et / xlsx / pdf、doc、docx / pdf、xls+docx / xlsx / xlsx+pdf+doc / xlsx；太原另验证零附件条目） |
 | 去重 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 第一页与第二页 URL 无交集断言；泰安首屏 45 条与 POST 第 4 页 46 条无重叠；潍坊首屏与第 3 页无重叠；南昌首屏 25 条与第 2 页 9 条无重叠；太原首屏 20 条与第 2 页 20 条无重叠 |
 | 补充通知关联 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 需审核发布链路真实运行后确认 |
-| 失败重试 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 需调度失败注入后确认 |
-| 告警 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 需结构漂移注入后确认 |
-| 审核发布 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 需生产/预发审核链路 |
-| 用户侧可见性 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 需发布后用户侧抽查 |
+| 失败重试 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 离线链路已注入 503 验证（见 8.2.1）；真实 PostgreSQL/Redis 调度待验证 |
+| 告警 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 离线链路已注入结构漂移/连续失败验证（见 8.2.1）；真实调度告警持久化待验证 |
+| 审核发布 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 通用链路已有离线集成证据；逐来源真实运行待验证 |
+| 用户侧可见性 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 通用链路已有离线集成证据；逐来源真实运行待验证 |
 
-说明：自动发现、正文、附件、去重已有真实样本证据；补充通知、重试、告警、审核发布与用户可见性属于**运行链路**验证，尚未执行，因此不标记通过。
+说明：自动发现、正文、附件、去重已有真实样本证据；补充通知、重试、告警、审核发布与用户可见性属于**运行链路**验证，尚未在真实 PostgreSQL/Redis 调度下执行，因此不标记通过。
+
+### 8.2.1 离线运行链路联调（2026-11-06）
+
+本机无可用 PostgreSQL/Redis/Docker（`docker` 不可用，本地无 postgres/redis 服务），因此本轮不伪造“真实调度已跑通”，改用真实组件 + 内存基础设施做链路联调，验证代码在故障注入下的行为：
+
+| 验证 | 方式 | 结果 |
+|---|---|---|
+| 调度投递 | 真实 `CrawlScheduler.tick` → `CrawlOrchestrator.checkSource` → 内存队列 | 到期来源投递 1 个 `source.discover`；同窗口重复检查返回 `already_running`，不重复投递 |
+| Worker 发现 | 真实 `CrawlProcessor` → `SourceDiscoverService` → 南昌适配器 + 真实夹具 | 25 + 9 = 34 条公告，投递 34 个 `document.fetch`；运行保持 `running`（下载未完成不提前记成功） |
+| 失败重试 | 注入 503（首次处理内 `SafeFetcher` 3 次重试仍失败） | 第 1 次尝试记 `retrying` 并抛错交重投，来源连续失败 1、退避 60 分钟；第 2 次尝试成功恢复 34 条 |
+| 连续失败告警 | 连续 3 轮 503（不再重投） | 来源降级 `degraded`，告警 `consecutive_failures`（occurrences=1）写入；退避 60 → 120 → 240 分钟；恢复成功后告警自动解除、来源回到 `healthy` |
+| 结构漂移告警 | 列表页替换为无 `ul.item li` 的改版页面 | 结果 `structure_changed`，来源 `structure_changed`，告警未解除；换回真实样本后下一轮成功且告警解除 |
+| 分页回归 | 南昌末页 `nav_list_2.shtml` 再次解析 | 修复前会派生 `nav_list_2_2.shtml`（404 使整轮 partial）；修复后末页返回空，整轮 `succeeded` |
+
+证据：`backend/src/sourcing/runtime-chain.spec.ts`（4 项）、`backend/src/sourcing/public-column-s5.spec.ts`（南昌末页分页断言）。
+
+审核发布与用户侧可见性的通用链路已有离线集成证据：`backend/src/announcements/publish-catalog.integration.spec.ts`（真实审核人、门禁、事务、撤回、`buildCandidates` 用户匹配）与 `backend/src/sourcing/wp3-html-closure.e2e.spec.ts`（已发布单元出现在匹配结果）。CI `smoke-runtime.mjs` 覆盖真实 PostgreSQL/Redis 下的 API/Worker 启动与健康冒烟，但不逐来源执行调度检查。
+
+仍未完成（保持待验证）：真实 PostgreSQL/Redis 下的定时调度、运行记录持久化、告警落库与通知处置、逐来源审核发布与用户侧抽查、7 天观察窗口。
 
 ### 8.3 7 天观察窗口
 
@@ -231,3 +251,4 @@
 | 2026-11-06 | N2 扩源接入山东潍坊「公告公示」；列表页为 JS 壳，新增 `els-list.ts` 解析 els-service JSON 列表（官方 49 页 / 每页 20 条，单来源窗口 6 页），`SafeFetcher` POST 边界扩展固定模板 JSON（对象校验、≤4KB、重定向降级 GET），详情 URL 前缀由 dwid 派生，正文 meta + `td#Content` 与 `/upload-service/` 附件回放通过；首日两次真实采样已记录 | `backend/src/sourcing/adapters/weifang-education.adapter.ts`；`backend/src/sourcing/els-list.ts`；`backend/src/sourcing/els-list.spec.ts`；`backend/src/sourcing/fetch/safe-fetcher.ts`；`tests/fixtures/golden-sources/weifang` |
 | 2026-11-06 | N3 扩源接入江西南昌「教师科发文」；服务端渲染静态锚点列表（`ul.item li > a[title]` + 同级 span），新增 `discoverStaticAnchorList`，分页复用 `staticListPages`（官方 `createPageHTML` 声明 2 页 / 34 条），跨栏目 `/ncjyj/jszgrd/` 详情按路径放行；正文官方 meta + `#zoom` 与相对路径 `<文章ID>/files/` 附件（xlsx/pdf/doc）回放通过；首日两次真实采样已记录；江西成为第 5 个有接入省份 | `backend/src/sourcing/adapters/nanchang-education.adapter.ts`；`backend/src/sourcing/public-column.ts`；`backend/src/sourcing/public-column-s5.spec.ts`；`tests/fixtures/golden-sources/nanchang` |
 | 2026-11-06 | N3 扩源接入山西太原「通知公告」；服务端渲染静态列表（`ul.List_list li > span.fr` + `a[title]`），新增 `jsPaginationPages` 解析 JS 跳转式分页（`onclick=location.href='tzgg_<n>.html'`，官方 93 条 / 5 页 / 每页 20 条），发现服务接入该分页通道；正文官方 meta + `#zoom` 与 `/u/cms/site28/` xlsx 附件、零附件条目回放通过；首日两次真实采样已记录；山西成为第 6 个有接入省份 | `backend/src/sourcing/adapters/taiyuan-education.adapter.ts`；`backend/src/sourcing/public-column.ts`；`backend/src/sourcing/jobs/source-discover.service.ts`；`backend/src/sourcing/public-column-s5.spec.ts`；`tests/fixtures/golden-sources/taiyuan` |
+| 2026-11-06 | 新增离线运行链路联调（调度→投递→Worker→发现→失败重试→告警→恢复），暴露并修复 `staticListPages` 末页重复派生 `nav_list_2_2.shtml` 的真实缺陷；真实 PostgreSQL/Redis 调度与逐来源发布可见性仍待验证 | `backend/src/sourcing/runtime-chain.spec.ts`；`backend/src/sourcing/public-column.ts`；`backend/src/sourcing/public-column-s5.spec.ts`；`backend/src/sourcing/testing/crawl-testing.ts` |

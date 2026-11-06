@@ -1472,6 +1472,8 @@ describe('N2 公开接口族来源真实样本回放', () => {
     expect(createHash('sha256').update(list2).digest('hex')).toBe(
       list2File.sha256,
     );
+    // 末页不应再生成 nav_list_2_2.shtml（N3 运行时链路回归）
+    expect(staticListPages(list2File.url, list2)).toEqual([]);
     const page2 = discoverStaticAnchorList(list2File.url, list2, detailPattern);
     expect(page2).toHaveLength(9);
     const firstUrls = new Set(items.map((item) => item.url));
