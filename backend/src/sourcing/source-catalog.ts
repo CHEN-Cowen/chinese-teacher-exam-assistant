@@ -422,6 +422,21 @@ export const SOURCE_CATALOG: readonly SourceCatalogEntry[] = [
       '「通知公告」混合栏目真实核验（2026-11-06，河北首个来源；PageFront 表单 POST 分页族）：服务端渲染列表 li.clearF > div.ul_zi > a（文章绝对地址 /a/YYYY/MM/DD/<id>.html）+ div.ul_ziriqi 日期，首屏 20 条；分页为 form[name=pageForm] POST /dynamic/PageFront.jsp（parseId/categoryId/keyword/pageNo），官方 6 页 / 120 条全量监测（窗口已登记 PAGEFRONT_PAGE_WINDOWS），POST 无 Referer 要求；混合栏目偶发微信公众号站外转载条目按详情路径过滤；正文 meta ArticleTitle（内嵌 <br> 清洗）/PubDate + div.content_fenye2，/resources/43/*.zip|docx 附件（nbsp 前缀剥离）与零附件条目回放通过；含公开招募银龄讲学教师公告，混合栏目按标题判定形态；持续监测见检查记录。',
   },
   {
+    sourceKey: 'wuhan-education',
+    publisher: '武汉市教育局',
+    regionCode: '420100',
+    authorityLevel: 'city',
+    officialUrl: 'https://jyj.wuhan.gov.cn/',
+    listUrls: ['https://jyj.wuhan.gov.cn/zwdt/tsgg/'],
+    allowedHosts: ['jyj.wuhan.gov.cn'],
+    adapterKey: 'wuhan-education',
+    status: 'ready',
+    verifiedAt: '2026-11-06',
+    sampleRef: 'tests/fixtures/golden-sources/wuhan-education',
+    coverageNote:
+      '「通知公告」混合栏目真实核验（2026-11-06，湖北首个来源；navbox 静态锚点分页族）：目录形态栏目 /zwdt/tsgg/ 服务端渲染列表 li.box-sizing > a.item-li-a[title]（./YYYYMM/tYYYYMMDD_<id>.shtml）+ div.other（时间：YYYY-MM-DD），首屏 10 条；分页为 div#navbox 静态锚点 index_N.shtml（pagenav_tail 尾页给出官方 50 页 / 约 500 条 / 每页 10 条），按单来源分页窗口只监测最新 6 页（60 条），窗口已登记 WHSNAV_PAGE_WINDOWS，GET 无 Referer 要求；正文 meta ArticleTitle/PubDate/ContentSource + div#article-box（TRS_UEDITOR），./P0<数字>.pdf 附件（1 个 / 4 个多附件）与零附件条目回放通过；含直属单位公开招聘拟聘用公示与公费师范生专项招聘成绩公告，混合栏目按标题判定形态；持续监测见检查记录。',
+  },
+  {
     sourceKey: 'changzhou-education',
     publisher: '常州市教育局',
     regionCode: '320400',
@@ -1109,6 +1124,18 @@ export const SOURCE_MONITORING_RECORDS: readonly SourceMonitoringRecord[] = [
         discoveredCount: 20,
         contentHash: null,
         note: 'N3 首次真实采样（河北首个来源；PageFront 表单 POST 分页族；官方整站仅 HTTP，HTTPS 实测超时已登记 HTTP_ONLY_HOSTS）：通知公告混合栏目首屏 HTTP 200，解析 20 条（li.clearF > div.ul_zi + div.ul_ziriqi 日期）；分页为 form[name=pageForm] POST /dynamic/PageFront.jsp（parseId/categoryId/keyword/pageNo，官方 6 页 / 120 条全量监测，无 Referer 要求），POST 第 2 页 20 行中 2 条微信公众号站外转载按详情路径过滤、18 条与首屏无重叠；正文 meta ArticleTitle（内嵌 <br> 清洗）/PubDate + div.content_fenye2，/resources/43/*.zip|docx 附件（3 zip / 2 docx 招聘相关）与零附件条目离线回放通过。7 天持续观察窗口尚未完成。',
+      },
+    ],
+  },
+  {
+    sourceKey: 'wuhan-education',
+    checks: [
+      {
+        checkedAt: '2026-11-06T12:05:00.000Z',
+        outcome: 'succeeded',
+        discoveredCount: 10,
+        contentHash: null,
+        note: 'N3 首次真实采样（湖北首个来源；navbox 静态锚点分页族）：通知公告混合栏目目录页 /zwdt/tsgg/ 首屏 HTTP 200，解析 10 条（li.box-sizing > a.item-li-a[title] + div.other 时间：YYYY-MM-DD）；分页为 div#navbox 静态锚点 index_N.shtml（pagenav_tail 尾页 index_49，官方 50 页 / 约 500 条 / 每页 10 条），按单来源窗口只监测最新 6 页（60 条），GET 无 Referer 要求；第 2 页（index_1.shtml）10 条与首屏无重叠且含直属单位招聘面试资格复审公告；正文 meta ArticleTitle/PubDate/ContentSource + div#article-box（TRS_UEDITOR），./P0<数字>.pdf 附件（拟聘用公示 1 个 / 资格认定 4 个多附件 / 公费师范生招聘成绩 1 个）与零附件条目离线回放通过。7 天持续观察窗口尚未完成。',
       },
     ],
   },

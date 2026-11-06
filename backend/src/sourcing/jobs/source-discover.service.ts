@@ -52,6 +52,7 @@ import {
   pagefrontPages,
   pagefrontRequest,
 } from '../pagefront-list.js';
+import { whsnavPages } from '../whsnav-list.js';
 import { SafeFetchError } from '../fetch/safe-fetcher.js';
 import { SourcingMetrics } from '../observability.js';
 import {
@@ -280,6 +281,10 @@ export class SourceDiscoverService {
           // 派生 /dynamic/PageFront.jsp?...pageNo=N 后续页，无 Referer 要求。
           for (const page of pagefrontPages(result.finalUrl, body))
             if (!listUrls.includes(page)) listUrls.push(page);
+          // 武汉 navbox 静态锚点分页：div#navbox 数字页码 + pagenav_tail 尾页
+          // 派生同目录 index_N.shtml 后续页（栏目目录为第 1 页）。
+          for (const page of whsnavPages(result.finalUrl, body))
+            if (!listUrls.includes(page)) listUrls.push(page);
           const items = publicUrl
             ? []
             : adapter.discover({
@@ -330,6 +335,10 @@ export class SourceDiscoverService {
         // PageFront 表单分页（石家庄）：从 pageForm 提取 parseId/categoryId
         // 派生 /dynamic/PageFront.jsp?...pageNo=N 后续页，无 Referer 要求。
         for (const page of pagefrontPages(result.finalUrl, result.body))
+          if (!listUrls.includes(page)) listUrls.push(page);
+        // 武汉 navbox 静态锚点分页：div#navbox 数字页码 + pagenav_tail 尾页
+        // 派生同目录 index_N.shtml 后续页（栏目目录为第 1 页）。
+        for (const page of whsnavPages(result.finalUrl, result.body))
           if (!listUrls.includes(page)) listUrls.push(page);
         const items = publicUrl
           ? []

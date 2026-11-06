@@ -1,0 +1,36 @@
+{
+  "source": "wuhan-education",
+  "capturedAt": "2026-11-06T00:00:00Z",
+  "scope": "public-detail",
+  "site": "https://jyj.wuhan.gov.cn/",
+  "files": [
+    {
+      "name": "detail-2874543.html",
+      "url": "https://jyj.wuhan.gov.cn/zwdt/tsgg/202611/t20261105_2874543.shtml",
+      "sha256": "650dbf1e10cdd1c9345a384d68d41a7f07b2a07ce2142ad834d86ce6d6667206",
+      "method": "GET",
+      "note": "直属单位事业单位公开招聘拟聘用人员公示（二）（教师招聘相关）：meta ArticleTitle/PubDate/ContentSource + div#article-box 正文（TRS_UEDITOR）+ 正文内 ./P0202...pdf 附件 1 个"
+    },
+    {
+      "name": "detail-2862600.html",
+      "url": "https://jyj.wuhan.gov.cn/zwdt/tsgg/202610/t20261016_2862600.shtml",
+      "sha256": "c313249e1d608b3be297d30a3b00807633eca2730574bb4a9f11de7ea20c7401",
+      "method": "GET",
+      "note": "秋季高中阶段教师资格认定公告：正文内 4 个 ./P0202...pdf 附件（多附件形态回放）"
+    },
+    {
+      "name": "detail-2815618.html",
+      "url": "https://jyj.wuhan.gov.cn/zwdt/tsgg/202607/t20260701_2815618.shtml",
+      "sha256": "9367742cde7b77eda3ba577ddc9fc417f63215373ad87f46b0f34c42e4443b91",
+      "method": "GET",
+      "note": "公费师范生专项招聘面试成绩公告（教师招聘相关，第 3 页旧条目）：1 个 ./P0202...pdf 附件"
+    },
+    {
+      "name": "detail-2860654.html",
+      "url": "https://jyj.wuhan.gov.cn/zwdt/tsgg/202610/t20261013_2860654.shtml",
+      "sha256": "9cef221fc57d68f7a5ed0fabdb751df137cf771a6dc5b60040059b8f6dc5dd31",
+      "method": "GET",
+      "note": "教师资格定期注册试点工作通知：零附件条目回放"
+    }
+  ]
+}

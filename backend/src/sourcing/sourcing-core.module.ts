@@ -48,6 +48,7 @@ import { ZhengzhouEducationAdapter } from './adapters/zhengzhou-education.adapte
 import { FuzhouEducationAdapter } from './adapters/fuzhou-education.adapter.js';
 import { GuangzhouEducationAdapter } from './adapters/guangzhou-education.adapter.js';
 import { ShijiazhuangEducationAdapter } from './adapters/shijiazhuang-education.adapter.js';
+import { WuhanEducationAdapter } from './adapters/wuhan-education.adapter.js';
 import { BullmqTaskQueue } from './jobs/bullmq-task-queue.js';
 
 @Module({
@@ -79,6 +80,7 @@ import { BullmqTaskQueue } from './jobs/bullmq-task-queue.js';
     FuzhouEducationAdapter,
     GuangzhouEducationAdapter,
     ShijiazhuangEducationAdapter,
+    WuhanEducationAdapter,
     AdapterRegistry,
     SafeFetcherFactory,
     CrawlRunStore,
