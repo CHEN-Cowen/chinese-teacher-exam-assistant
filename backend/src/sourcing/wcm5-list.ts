@@ -19,6 +19,14 @@
  *   该官方栏目在来源账本登记为后续候选，不在此来源内隐式扩域。
  *
  * 本模块只读快照：产出后续页 URL，不自行联网、不写库。
+ *
+ * 贵阳变体（2026-11-06 实测，jyj.guiyang.gov.cn「教师工作」栏目）：
+ * - 分页脚本为 WCM 4 参数裸调用 `createPage(19, 0, "index", "html")`
+ *   （无 wcmUtil. 前缀、数字不带引号），签名同构：total/cur/prefix/ext，
+ *   派生 index_1.html…index_18.html；同页 `function createPage(_nPageCount,…)`
+ *   定义为非数字首参，不会被调用正则误匹配；
+ * - 列表结构与长沙不同（ul.right-cont_list li > a[title] 内嵌 <p> 标题 +
+ *   <span> 日期），由贵阳适配器自行解析，本模块只共用分页派生。
  */
 import { load } from 'cheerio';
 import {
@@ -33,6 +41,8 @@ import {
 /** 单来源分页窗口：host → 监测的最大页数；未登记 host 用默认预算 */
 export const WCM5_PAGE_WINDOWS: Record<string, number> = {
   'jyj.changsha.gov.cn': 8,
+  // 贵阳「教师工作」官方声明 19 页 / 277 条，全量监测，无窗口截断
+  'jyj.guiyang.gov.cn': 19,
 };
 export const WCM5_DEFAULT_MAX_PAGES = 20;
 
@@ -123,10 +133,12 @@ export function discoverWcm5Records(
 }
 
 /**
- * 从栏目首页的 `wcmUtil.createPageHTML5(total, current, prefix, ext)` 派生
- * 后续页 URL。
+ * 从栏目首页的分页脚本派生后续页 URL。支持两种官方声明形态：
+ * - 长沙：`wcmUtil.createPageHTML5("8", "0", "index", "html")`；
+ * - 贵阳：`createPage(19, 0, "index", "html")`（裸调用，数字无引号；
+ *   同页函数定义 `createPage(_nPageCount,…)` 首参非数字，不会误匹配）。
  * - 已是 index_<n>.html 分页页时不重复派生（返回 []）；
- * - 页面无 createPageHTML5 声明时返回 []（非本族页面不误报）；
+ * - 页面无分页声明时返回 []（非本族页面不误报）；
  * - 总页数非法抛 DOM_MISMATCH；未登记 host 且超默认预算显式失败，
  *   已登记 host 按窗口封顶（与烟台/潍坊/福州/广州/武汉口径一致）。
  */
@@ -148,10 +160,14 @@ export function wcm5Pages(
   const call = $('script')
     .map((_i, e) => $(e).text())
     .get()
-    .map((text) =>
-      text.match(
-        /createPageHTML5\(\s*['"]?(\d+)['"]?\s*,\s*['"]?(\d+)['"]?\s*,\s*['"]([^'"]+)['"]\s*,\s*['"]([^'"]+)['"]/,
-      ),
+    .map(
+      (text) =>
+        text.match(
+          /createPageHTML5\(\s*['"]?(\d+)['"]?\s*,\s*['"]?(\d+)['"]?\s*,\s*['"]([^'"]+)['"]\s*,\s*['"]([^'"]+)['"]/,
+        ) ??
+        text.match(
+          /(?:^|[^\w.])createPage\(\s*(\d+)\s*,\s*(\d+)\s*,\s*['"]([^'"]+)['"]\s*,\s*['"]([^'"]+)['"]/,
+        ),
     )
     .find(Boolean);
   if (!call) return [];

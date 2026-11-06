@@ -1,0 +1,36 @@
+{
+  "source": "guiyang-education",
+  "capturedAt": "2026-11-06T00:00:00Z",
+  "scope": "public-detail",
+  "site": "https://jyj.guiyang.gov.cn/",
+  "files": [
+    {
+      "name": "detail-91036646.html",
+      "url": "https://jyj.guiyang.gov.cn/newsite/zwgk/zdlyxxgk/jsgz/202610/t20261027_91036646.html",
+      "sha256": "ea22f5070c2f3e9b5ee988d456237f8abfe7aa7cb7c78c2ee82a0aad735f7cf3",
+      "method": "GET",
+      "note": "直属学校公费教育师范生招聘试教成绩公告（招聘相关）：meta 标准名无空格（name='ArticleTitle' 单引号 / PubDate 值带时分 YYYY-MM-DD HH:mm / ContentSource）+ 正文 div.trs_editor_view.TRS_UEDITOR（多 class）+ 正文内 ./P0202...pdf 附件 1 个（锚点文本即附件名，附 title/download 属性）"
+    },
+    {
+      "name": "detail-90870572.html",
+      "url": "https://jyj.guiyang.gov.cn/newsite/zwgk/zdlyxxgk/jsgz/202609/t20260914_90870572.html",
+      "sha256": "40c60d5e7f4b5f4480bc06b7a0f7fa669fd3e2dc64718c3925a06ab844e5d072",
+      "method": "GET",
+      "note": "贵阳贵安教育系统公费教育师范生招聘公告（核心招聘公告）：4 个附件 ./P0202...（xlsx 岗位表 + xls + docx + xlsx，多附件上限回放）"
+    },
+    {
+      "name": "detail-91036645.html",
+      "url": "https://jyj.guiyang.gov.cn/newsite/zwgk/zdlyxxgk/jsgz/202610/t20261027_91036645.html",
+      "sha256": "aca9f78e2cbf053651208d98294058e9ebe3e87b777540f0870b0e6bfd4f3b19",
+      "method": "GET",
+      "note": "直属学校公费教育师范生招聘面试公告：2 个附件（xls 面试名单 + doc 面试须知）"
+    },
+    {
+      "name": "detail-90968730.html",
+      "url": "https://jyj.guiyang.gov.cn/newsite/zwgk/zdlyxxgk/jsgz/202610/t20261009_90968730.html",
+      "sha256": "597c0b308e4194e50b98a72a81f8c86b98a66b6d38ff17da715e03f8c46188da",
+      "method": "GET",
+      "note": "贵阳市第四十五中学教师公开招聘拟聘用人员公示：零附件条目回放（名单在正文表格内）"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "source": "guiyang-education",
+  "capturedAt": "2026-11-06T00:00:00Z",
+  "scope": "public-list",
+  "site": "https://jyj.guiyang.gov.cn/",
+  "column": "教师工作（/newsite/zwgk/zdlyxxgk/jsgz/，政务公开 > 重点领域信息公开；教师招聘密集栏目：公费师范生招聘/试教成绩、人才引进拟聘用、教师公开招聘拟聘用）",
+  "files": [
+    {
+      "name": "list-page1.html",
+      "url": "https://jyj.guiyang.gov.cn/newsite/zwgk/zdlyxxgk/jsgz/",
+      "sha256": "cc7c98e420be1b17cdbd8a3a85ddd598085aafc5631365396cc6974a12946c2c",
+      "method": "GET",
+      "note": "教师工作栏目首屏 15 条（ul.right-cont_list li > a[href][title][target=_blank]，锚点内 <p> 标题 + <span> 日期 YYYY-MM-DD）；官方脚本 createPage(19, 0, \"index\", \"html\") 声明 19 页 / 277 条（WCM 4 参数版，无 wcmUtil. 前缀、数字不带引号，与长沙 createPageHTML5 不同族签名但同构）；HTTPS 正常（200，311ms）"
+    },
+    {
+      "name": "list-page2.html",
+      "url": "https://jyj.guiyang.gov.cn/newsite/zwgk/zdlyxxgk/jsgz/index_1.html",
+      "sha256": "cc00ce33b38780f3acc8e79c6317c62ecd6d3909a4515a552809a9c9c2b02e13",
+      "method": "GET",
+      "note": "createPage 静态分页第 2 页 15 条（createPage(19, 1, \"index\", \"html\")）；与首屏 0 重叠（首屏止于 2026-08-18，第 2 页全为 2026-08 更早条目）；官方 19 页 / 277 条，全量监测窗口 19 页，无窗口截断需求"
+    }
+  ]
+}

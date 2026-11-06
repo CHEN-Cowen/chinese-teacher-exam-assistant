@@ -454,6 +454,21 @@ export const SOURCE_CATALOG: readonly SourceCatalogEntry[] = [
       '「教师招聘」栏目真实核验（2026-11-06，湖南首个来源；WCM createPageHTML5 静态分页族）：服务端渲染列表 div.xxgk-item li，锚点为嵌套 <a>（parse5 扁平化后外层锚点无标题，须取带 title 的内层锚点），日期在同级 span（YYYY-MM-DD），首屏 15 条；分页由官方脚本 createPageHTML5("8","0","index","html") 声明，族解析派生同目录 index_1..index_7.html（index.html 为第 1 页，官方 8 页 / 约 120 条全量监测，窗口已登记 WCM5_PAGE_WINDOWS），GET 无 Referer 要求；第 2 页 15 条中 1 条长沙市人社局（rsj.changsha.gov.cn）事业单位招考栏目跨站条目按同源过滤剔除，保留 14 条，与首屏重叠 1 条置顶公告（DETAIL_8787）；正文 meta ArticleTitle/Pubdate（官方 meta 名带前后空格，须 trim + 大小写不敏感匹配）+ div.content-main，./P0<数字>.pdf|xlsx|docx 附件（1 个 pdf / 3 个附件 xlsx+2 docx / 7 个附件 5 pdf+2 docx）与零附件条目离线回放通过；持续监测见检查记录。',
   },
   {
+    sourceKey: 'guiyang-education',
+    publisher: '贵阳市教育局',
+    regionCode: '520100',
+    authorityLevel: 'city',
+    officialUrl: 'https://jyj.guiyang.gov.cn/',
+    listUrls: ['https://jyj.guiyang.gov.cn/newsite/zwgk/zdlyxxgk/jsgz/'],
+    allowedHosts: ['jyj.guiyang.gov.cn'],
+    adapterKey: 'guiyang-education',
+    status: 'ready',
+    verifiedAt: '2026-11-06',
+    sampleRef: 'tests/fixtures/golden-sources/guiyang-education',
+    coverageNote:
+      '「教师工作」栏目真实核验（2026-11-06，贵州首个来源；WCM createPage 4 参静态分页族）：目录形态栏目 /newsite/zwgk/zdlyxxgk/jsgz/（政务公开 > 重点领域信息公开）服务端渲染 ul.right-cont_list li > a[href][title][target=_blank]，锚点内 <p> 标题 + <span> 日期 YYYY-MM-DD，首屏 15 条；分页由官方脚本 createPage(19,0,"index","html") 声明（WCM 4 参数裸调用，无 wcmUtil. 前缀），族解析派生同目录 index_1..index_18.html（官方 19 页 / 277 条全量监测，窗口已登记 WCM5_PAGE_WINDOWS），GET 无 Referer 要求；第 2 页 15 条与首屏 0 重叠；栏目为教师招聘密集栏目（公费师范生招聘/试教成绩、人才引进拟聘用、教师公开招聘拟聘用），按标题判定文档形态；正文 meta ArticleTitle/PubDate（标准名无空格，值带时分 YYYY-MM-DD HH:mm）/ContentSource + div.TRS_UEDITOR，./P0<数字>.pdf|xls|xlsx|doc|docx 附件（1 pdf / 4 附件 xlsx+xls+docx+xlsx / 2 附件 xls+doc）与零附件条目离线回放通过；持续监测见检查记录。',
+  },
+  {
     sourceKey: 'changzhou-education',
     publisher: '常州市教育局',
     regionCode: '320400',
@@ -1176,6 +1191,18 @@ export const SOURCE_MONITORING_RECORDS: readonly SourceMonitoringRecord[] = [
         discoveredCount: 15,
         contentHash: null,
         note: 'N3 首次真实采样（湖南首个来源；WCM createPageHTML5 静态分页族；官方整站仅 HTTP，HTTPS 实测握手失败 SSL alert 40 已登记 HTTP_ONLY_HOSTS）：教师招聘栏目 /zfxxgk/fdzdgk/jszp/index.html 首屏 HTTP 200，解析 15 条（div.xxgk-item li，嵌套 <a> 经 parse5 扁平化后须取带 title 的内层锚点 + span 日期 YYYY-MM-DD）；分页由官方脚本 createPageHTML5("8","0","index","html") 声明，族解析派生 index_1..index_7.html（官方 8 页 / 约 120 条全量监测，窗口登记 WCM5_PAGE_WINDOWS）；第 2 页 15 条中 1 条长沙市人社局 rsj.changsha.gov.cn 跨站招考条目按同源过滤剔除、保留 14 条，与首屏重叠 1 条置顶公告；正文 meta ArticleTitle/Pubdate（meta 名带空格须 trim、大小写不敏感）+ div.content-main，附件（1 pdf / 3 附件 xlsx+2 docx / 7 附件 5 pdf+2 docx）与零附件条目离线回放通过。7 天持续观察窗口尚未完成。',
+      },
+    ],
+  },
+  {
+    sourceKey: 'guiyang-education',
+    checks: [
+      {
+        checkedAt: '2026-11-06T14:40:00.000Z',
+        outcome: 'succeeded',
+        discoveredCount: 15,
+        contentHash: null,
+        note: 'N3 首次真实采样（贵州首个来源；WCM createPage 4 参静态分页族）：教师工作栏目 /newsite/zwgk/zdlyxxgk/jsgz/ 首屏 HTTPS 200（311ms），解析 15 条（ul.right-cont_list li > a[href][title]，锚点内 <p> 标题 + <span> 日期 YYYY-MM-DD）；分页由官方脚本 createPage(19,0,"index","html") 声明（官方 19 页 / 277 条全量监测，窗口登记 WCM5_PAGE_WINDOWS），第 2 页 index_1.html 15 条与首屏 0 重叠；正文 meta ArticleTitle/PubDate（标准名无空格，值带时分）/ContentSource + div.TRS_UEDITOR，附件（试教成绩 1 pdf / 公费师范生招聘公告 4 附件 xlsx+xls+docx+xlsx / 面试公告 2 附件 xls+doc）与零附件拟聘用公示离线回放通过。7 天持续观察窗口尚未完成。',
       },
     ],
   },

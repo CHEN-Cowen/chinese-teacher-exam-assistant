@@ -8,6 +8,7 @@ import {
   wcm5Pages,
 } from './wcm5-list.js';
 import { ChangshaEducationAdapter } from './adapters/changsha-education.adapter.js';
+import { GuiyangEducationAdapter } from './adapters/guiyang-education.adapter.js';
 import { AdapterParseError } from './official-site-adapter.js';
 
 const FIXTURE_ROOT = join(
@@ -225,6 +226,201 @@ describe('S5 N3 长沙 WCM createPageHTML5 静态分页族：列表/分页与正
 
   it('夹具目录不混入临时文件', () => {
     const files = readdirSync(FIXTURE_ROOT).filter((file) =>
+      /\.(tmp|log|jsonl)$/.test(file),
+    );
+    expect(files).toEqual([]);
+  });
+});
+
+const GY_FIXTURE_ROOT = join(
+  process.cwd(),
+  '..',
+  'tests',
+  'fixtures',
+  'golden-sources',
+  'guiyang-education',
+);
+
+function readGyFixture(name: string): string {
+  return readFileSync(join(GY_FIXTURE_ROOT, name), 'utf8');
+}
+
+const GY_LIST_URL = 'https://jyj.guiyang.gov.cn/newsite/zwgk/zdlyxxgk/jsgz/';
+const GY_PAGE2_URL =
+  'https://jyj.guiyang.gov.cn/newsite/zwgk/zdlyxxgk/jsgz/index_1.html';
+const GY_DETAIL_6646 =
+  'https://jyj.guiyang.gov.cn/newsite/zwgk/zdlyxxgk/jsgz/202610/t20261027_91036646.html';
+const GY_DETAIL_0572 =
+  'https://jyj.guiyang.gov.cn/newsite/zwgk/zdlyxxgk/jsgz/202609/t20260914_90870572.html';
+const GY_DETAIL_6645 =
+  'https://jyj.guiyang.gov.cn/newsite/zwgk/zdlyxxgk/jsgz/202610/t20261027_91036645.html';
+const GY_DETAIL_8730 =
+  'https://jyj.guiyang.gov.cn/newsite/zwgk/zdlyxxgk/jsgz/202610/t20261009_90968730.html';
+
+describe('S5 N3 贵阳 WCM createPage 4 参静态分页族：列表/分页与正文附件离线回放', () => {
+  it('列表首屏：15 条、a[title] 取标题、详情 URL 与日期规范、含招聘公告', () => {
+    const adapter = new GuiyangEducationAdapter();
+    const items = adapter.discover({
+      url: GY_LIST_URL,
+      mimeType: 'text/html',
+      content: readGyFixture('list-page1.html'),
+      fetchedAt: '2026-11-06T14:40:00.000Z',
+    });
+    expect(items).toHaveLength(15);
+    expect(
+      items.every((item) => /^\d{4}-\d{2}-\d{2}$/.test(item.publishedAt)),
+    ).toBe(true);
+    expect(
+      items.every((item) =>
+        /^https:\/\/jyj\.guiyang\.gov\.cn\/newsite\/zwgk\/zdlyxxgk\/jsgz\/\d{6}\/t\d{8}_\d+\.html$/.test(
+          item.url,
+        ),
+      ),
+    ).toBe(true);
+    expect(items.every((item) => item.title.length > 0)).toBe(true);
+    expect(items.every((item) => !/<[a-z]/i.test(item.title))).toBe(true);
+    expect(items.some((item) => /招聘/.test(item.title))).toBe(true);
+    expect(items[0]!.title).toContain('试教成绩');
+    expect(items[0]!.publishedAt).toBe('2026-10-17');
+  });
+
+  it('分页：createPage(19,0,"index","html") 声明 19 页，派生 index_1..index_18 全量窗口', () => {
+    expect(WCM5_PAGE_WINDOWS['jyj.guiyang.gov.cn']).toBe(19);
+    expect(wcm5PageWindow(GY_LIST_URL)).toBe(19);
+
+    const pages = wcm5Pages(GY_LIST_URL, readGyFixture('list-page1.html'));
+    expect(pages).toHaveLength(18);
+    expect(pages[0]).toBe(GY_PAGE2_URL);
+    expect(pages.at(-1)).toBe(
+      'https://jyj.guiyang.gov.cn/newsite/zwgk/zdlyxxgk/jsgz/index_18.html',
+    );
+
+    // 分页页（index_N.html）不重复派生
+    expect(wcm5Pages(GY_PAGE2_URL, readGyFixture('list-page2.html'))).toEqual(
+      [],
+    );
+  });
+
+  it('第 2 页与首屏 0 重叠，合并去重后 30 条', () => {
+    const adapter = new GuiyangEducationAdapter();
+    const first = adapter.discover({
+      url: GY_LIST_URL,
+      mimeType: 'text/html',
+      content: readGyFixture('list-page1.html'),
+      fetchedAt: '2026-11-06T14:40:00.000Z',
+    });
+    const second = adapter.discover({
+      url: GY_PAGE2_URL,
+      mimeType: 'text/html',
+      content: readGyFixture('list-page2.html'),
+      fetchedAt: '2026-11-06T14:40:00.000Z',
+    });
+    expect(second).toHaveLength(15);
+    const overlap = second.filter((item) =>
+      first.some((other) => other.url === item.url),
+    );
+    expect(overlap).toHaveLength(0);
+    const merged = new Set([...first, ...second].map((item) => item.url));
+    expect(merged.size).toBe(30);
+    // 第 2 页接续首屏末条（2026-08-18）向更早排列，含公费师范生拟聘用公示
+    expect(
+      second.every((item) => item.publishedAt <= '2026-08-18'),
+    ).toBe(true);
+    expect(second.some((item) => /拟聘用/.test(item.title))).toBe(true);
+  });
+
+  it('详情：meta 标准名无空格、PubDate 带时分取日期、div.TRS_UEDITOR 正文与 1 个 pdf 附件', () => {
+    const adapter = new GuiyangEducationAdapter();
+    const article = adapter.locateArticle({
+      url: GY_DETAIL_6646,
+      mimeType: 'text/html',
+      content: readGyFixture('detail-91036646.html'),
+      fetchedAt: '2026-11-06T14:40:00.000Z',
+    });
+    expect(article.title).toContain('试教成绩');
+    expect(article.publishedAt).toBe('2026-10-17');
+    expect(article.bodyText).toContain('试教成绩');
+    expect(article.attachments).toHaveLength(1);
+    expect(article.attachments[0]!.url).toBe(
+      'https://jyj.guiyang.gov.cn/newsite/zwgk/zdlyxxgk/jsgz/202610/P020261017776820758504.pdf',
+    );
+    expect(article.attachments[0]!.name).toContain('试教成绩一览表');
+  });
+
+  it('多附件详情：4 个附件（xlsx 岗位表 + xls + docx + xlsx，公费师范生招聘公告）', () => {
+    const adapter = new GuiyangEducationAdapter();
+    const article = adapter.locateArticle({
+      url: GY_DETAIL_0572,
+      mimeType: 'text/html',
+      content: readGyFixture('detail-90870572.html'),
+      fetchedAt: '2026-11-06T14:40:00.000Z',
+    });
+    expect(article.title).toContain('公费教育师范生招聘公告');
+    expect(article.publishedAt).toBe('2026-09-05');
+    expect(article.attachments).toHaveLength(4);
+    expect(article.attachments.filter((a) => a.url.endsWith('.xlsx'))).toHaveLength(2);
+    expect(article.attachments.some((a) => a.url.endsWith('.xls'))).toBe(true);
+    expect(article.attachments.some((a) => a.url.endsWith('.docx'))).toBe(true);
+    expect(
+      article.attachments.every((a) =>
+        /^https:\/\/jyj\.guiyang\.gov\.cn\/newsite\/zwgk\/zdlyxxgk\/jsgz\/202609\/P\d+\.(xlsx?|docx)$/.test(
+          a.url,
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  it('2 附件详情：xls 面试名单 + doc 面试须知（面试公告）', () => {
+    const adapter = new GuiyangEducationAdapter();
+    const article = adapter.locateArticle({
+      url: GY_DETAIL_6645,
+      mimeType: 'text/html',
+      content: readGyFixture('detail-91036645.html'),
+      fetchedAt: '2026-11-06T14:40:00.000Z',
+    });
+    expect(article.title).toContain('面试公告');
+    expect(article.publishedAt).toBe('2026-10-13');
+    expect(article.attachments).toHaveLength(2);
+    expect(article.attachments.some((a) => a.url.endsWith('.xls'))).toBe(true);
+    expect(article.attachments.some((a) => a.url.endsWith('.doc'))).toBe(true);
+  });
+
+  it('零附件详情回放通过（教师公开招聘拟聘用人员公示，名单在正文表格）', () => {
+    const adapter = new GuiyangEducationAdapter();
+    const article = adapter.locateArticle({
+      url: GY_DETAIL_8730,
+      mimeType: 'text/html',
+      content: readGyFixture('detail-90968730.html'),
+      fetchedAt: '2026-11-06T14:40:00.000Z',
+    });
+    expect(article.title).toContain('拟聘用人员公示');
+    expect(article.publishedAt).toBe('2026-09-22');
+    expect(article.attachments).toEqual([]);
+    expect(article.bodyText.length).toBeGreaterThan(50);
+  });
+
+  it('列表/正文容器缺失显式抛错（静默 0 条视为故障）', () => {
+    const adapter = new GuiyangEducationAdapter();
+    expect(() =>
+      adapter.discover({
+        url: GY_LIST_URL,
+        mimeType: 'text/html',
+        content: '<html><body><ul class="right-cont_list"></ul></body></html>',
+        fetchedAt: '2026-11-06T14:40:00.000Z',
+      }),
+    ).toThrow(AdapterParseError);
+    expect(() =>
+      adapter.locateArticle({
+        url: GY_DETAIL_6646,
+        mimeType: 'text/html',
+        content: '<html><body><p>无正文容器</p></body></html>',
+        fetchedAt: '2026-11-06T14:40:00.000Z',
+      }),
+    ).toThrow(AdapterParseError);
+  });
+
+  it('贵阳夹具目录不混入临时文件', () => {
+    const files = readdirSync(GY_FIXTURE_ROOT).filter((file) =>
       /\.(tmp|log|jsonl)$/.test(file),
     );
     expect(files).toEqual([]);

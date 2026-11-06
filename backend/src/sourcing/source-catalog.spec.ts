@@ -43,7 +43,8 @@ describe('S5 来源目录', () => {
     // 广州（广东首个，NFCMS 静态锚点分页）、
     // 石家庄（河北首个，PageFront 表单 POST 分页，官方整站仅 HTTP）、
     // 武汉（湖北首个，navbox 静态锚点 index_N.shtml 分页）、
-    // 长沙（湖南首个，WCM createPageHTML5 静态分页，官方整站仅 HTTP）。
+    // 长沙（湖南首个，WCM createPageHTML5 静态分页，官方整站仅 HTTP）、
+    // 贵阳（贵州首个，WCM createPage 4 参静态分页）。
     expect(seedable.map((source) => source.adapterKey)).toEqual([
       'nanjing-education',
       'hangzhou-education',
@@ -68,6 +69,7 @@ describe('S5 来源目录', () => {
       'shijiazhuang-education',
       'wuhan-education',
       'changsha-education',
+      'guiyang-education',
       'changzhou-education',
       'lishui-education',
       'bengbu-education',
@@ -214,7 +216,7 @@ describe('S5 来源目录', () => {
 describe('S5 来源级检查记录与监测状态', () => {
   it('ready 来源完成两次真实检查后，才可声称正常监测', () => {
     const ready = SOURCE_CATALOG.filter((entry) => entry.status === 'ready');
-    // 郑州、福州、广州、石家庄、武汉、长沙刚完成首次真实采样，checks 只有 1 次，仍处于 unverified 状态（未满 7 天观察窗）
+    // 郑州、福州、广州、石家庄、武汉、长沙、贵阳刚完成首次真实采样，checks 只有 1 次，仍处于 unverified 状态（未满 7 天观察窗）
     const readyWith2Checks = ready.filter(
       (e) =>
         e.sourceKey !== 'zhengzhou-education' &&
@@ -222,9 +224,10 @@ describe('S5 来源级检查记录与监测状态', () => {
         e.sourceKey !== 'guangzhou-education' &&
         e.sourceKey !== 'shijiazhuang-education' &&
         e.sourceKey !== 'wuhan-education' &&
-        e.sourceKey !== 'changsha-education',
+        e.sourceKey !== 'changsha-education' &&
+        e.sourceKey !== 'guiyang-education',
     );
-    expect(ready.length).toBe(28);
+    expect(ready.length).toBe(29);
     for (const entry of readyWith2Checks) {
       const record = getSourceMonitoringRecord(entry.sourceKey);
       expect(record.checks.length, entry.sourceKey).toBe(2);
@@ -240,7 +243,7 @@ describe('S5 来源级检查记录与监测状态', () => {
     expect(
       getSourceMonitoringRecord('nanjing-education').checks[1]?.outcome,
     ).toBe('succeeded');
-    // 郑州、福州、广州、石家庄与武汉只有 1 次检查（首次采样，未满观察窗），不算入第二次 outcome 断言
+    // 郑州、福州、广州、石家庄、武汉、长沙与贵阳只有 1 次检查（首次采样，未满观察窗），不算入第二次 outcome 断言
     const unchanged = SOURCE_MONITORING_RECORDS.filter(
       (record) =>
         record.sourceKey !== 'nanjing-education' &&
@@ -249,7 +252,8 @@ describe('S5 来源级检查记录与监测状态', () => {
         record.sourceKey !== 'guangzhou-education' &&
         record.sourceKey !== 'shijiazhuang-education' &&
         record.sourceKey !== 'wuhan-education' &&
-        record.sourceKey !== 'changsha-education',
+        record.sourceKey !== 'changsha-education' &&
+        record.sourceKey !== 'guiyang-education',
     );
     expect(unchanged).toHaveLength(21);
     for (const record of unchanged) {

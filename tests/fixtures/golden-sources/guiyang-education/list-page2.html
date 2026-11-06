@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="user-scalable=no,width=1200" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <meta name="apple-mobile-web-app-title" content="" />
+    <meta name="format-detection" content="telephone=no" />
+    <meta name="SiteName" content="贵阳市教育局" />
+<meta name="SiteDomain" content="https://jyj.guiyang.gov.cn/" />
+<meta name="SiteIDCode" content="5201000018" />
+
+	<!--栏目类-->
+    <meta name='ColumnName' content='教师工作'>
+    <meta name='ColumnDescription' content='教师工作'>
+    <meta name='ColumnKeywords' content='教师工作'>
+    <meta name='ColumnType' content='公开教师工作信息'>
+    <title>贵阳市教育局-教师工作</title>
+    <link rel="stylesheet" href="/material/common/css/public.css" />
+    <link rel="stylesheet" href="/material/common/css/list-2.css?=t20250723" />
+   <script src="/material/common/js/jquery.min.js"></script>
+    <script src="/material/common/js/public.js"></script>
+</head>
+<style>
+#pages span {
+    display: inline-block;
+    width: 36px;
+    height: 36px;
+    border: 1px #ddd solid;
+    border-radius: 3px;
+    line-height: 36px;
+    margin: 0 1px;
+    background: #3067E3;
+    color: #fff !important;
+}
+
+.pageBox{ text-align:center;padding:40px;}
+.pageBox a.previous,.pageBox a.next{width:66px;}
+.pageBox a{display:inline-block;width:36px;height:36px;border:1px #ddd solid;border-radius:3px;line-height:36px;margin:0 1px}
+.pageBox a.curr{ background:#3067E3;color:#fff !important;border:1px #2760B7 solid;}
+.pageBox a:hover{border:1px #3067E3 solid;color:#3067E3}
+</style>
+<body>
+<!-- 归档 -->
+<script type="text/javascript" src="/material/search/js/jquery.arctext.js"></script>
+
+<!-- 归档 -->
+    <!-- header -->
+    <header id="header" class="header-wrap">
+    <!-- header-link -->
+    <div class="header-link">
+        <div class="link-wrap">
+            <ul class="left-link">
+                <li class="left-link_item"><a href="http://www.gov.cn/">中国政府网</a></li>
+                <li class="left-link_item">
+                    <a href="http://www.guizhou.gov.cn/">贵州省人民政府网站</a>
+                </li>
+                <li class="left-link_item"><a href="http://zwfw.guizhou.gov.cn/?areacode=520000">贵州政务服务网</a></li>
+                <li class="left-link_item"><a href="http://www.guiyang.gov.cn/">贵阳市人民政府</a></li>
+                <li class="left-link_item"><a href="http://jyt.guizhou.gov.cn/">贵州省教育厅</a></li>
+            </ul>
+            <div class="right-personal">
+                <img src="/material/common/images/icon-grzx.png" />
+                <a href="javascript:void(0);" onclick="zwfwLogin()">个人中心-政务服务网</a>
+                <li style="	color: #fff;display: inline-block;">&nbsp;&nbsp;|&nbsp;&nbsp;</li>
+                 <a href="javascript:;" id="assist-open">无障碍浏览</a>
+            </div>
+        </div>
+    </div>
+    <!-- header-link -->
+    <!-- header-main -->
+    <div class="header-main">
+        <div class="header-main_wrap">
+            <a href="JavaScript:;" class="logo" style="margin-top: 133px;">
+                <img src="/material/common/images/jyj_logo.png" />
+            </a>
+            <div class="header-main_search" bf-region-type="2">
+                <div>
+                      <select id="siteId" name="siteId" lay-verify="required" style="border: 0; color: #999999;font-size: 16px;outline: none;">
+                            <option value="1" selected="selected">搜本站</option>
+                            <option value="2">搜全省</option>
+                    </select>
+                </div>
+                <input type="text" class="search-input" id="keyword" onkeydown="entersearch1()" value="请输入你要搜索的内容" onblur="if(this.value==''){this.value='请输入你要搜索的内容';}" onfocus="if(this.value=='请输入你要搜索的内容')this.value='';" v-model="keyWord" @keypress="search($event)" />
+                <button class="search-btn"onclick="searchval1()" @click="search()" type="submit">
+                        <img src="http://jyj.guiyang.gov.cn/material/common/images/icon-search.png" />
+                    </button>
+            </div>
+<script>
+//回车键响应方法
+function entersearch1(){
+	var event = window.event || arguments.callee.caller.arguments[0];
+	if (event.keyCode == 13)
+	{
+		var str = document.getElementById("keyword").value;
+		checks1(str);//搜索框点击提交的方法
+	}
+}
+//检索跳转
+function searchval1() {
+	var str = document.getElementById("keyword").value;
+	checks1(str);
+};
+function checks1(t) {
+	t = t.replace(/(^\s+)|(\s+$)/g, "");
+	if (t == "" || t == "请输入你要搜索的内容") {
+		layer.msg('请输入有效内容!');
+		//alert('请输入有效内容');
+		return false;
+	}
+	szMsg = "[#_%&'/",
+			";:=!^]";
+	alertStr = "";
+	for (i = 1; i < szMsg.length + 1; i++) {
+		if (t.indexOf(szMsg.substring(i - 1, i)) > -1) {
+			alertStr = "请勿包含非法字符如[#_%&'/",
+					";:=!^]";
+			layer.msg(alertStr);
+			//alert(alertStr);
+			// break;
+			return false;
+		}
+	}
+	var key = document.getElementById("keyword").value;
+	//location.href='/search.html?searchWord=' + encodeURI(key)+'&dataTypeId='+$("#dataTypeId").val();
+					if ($("#siteId").val() == "1") {
+						window.location.href = "/so/search.shtml?tenantId=54&tenantIds=&configTenantId=&dataTypeId=1980&searchWord=" +key;
+					} else {
+						window.location.href = "/so/search.shtml?tenantId=&tenantIds=&configTenantId=54&dataTypeId=1980&searchWord=" +key;
+					}
+	return true;
+}
+</script>
+        </div>
+    </div>
+    <!-- header-main end -->
+    <!-- header-nav -->
+    <div class="header-nav" bf-region-type="1">
+        <ul class="nav-wrap">
+            <li class="nav-wrap_item"><a href="http://jyj.guiyang.gov.cn">首页</a></li>
+            <li class="nav-wrap_item"><a href="https://jyj.guiyang.gov.cn/newsite/xwzx/">新闻资讯</a></li>
+            <li class="nav-wrap_item"><a href="https://jyj.guiyang.gov.cn/newsite/zwgk/">政务公开</a></li>
+            <li class="nav-wrap_item"><a href="https://jyj.guiyang.gov.cn/newsite/gzcy/">公众参与</a></li>
+            <li class="nav-wrap_item"><a href="https://jyj.guiyang.gov.cn/newsite/zwfw/">政务服务</a></li>
+            <li class="nav-wrap_item"><a href="https://jyj.guiyang.gov.cn/newsite/zfsj/">教育数据</a></li>
+        </ul>
+    </div>
+    <!-- header-nav end -->
+</header>
+    <!-- header end -->
+    <!-- main -->
+    <main id="main" class="main-wrap">
+        <div class="main-container">
+            <div class="breadcrumb">
+                当前位置：
+                <a href="../../../../" title="首页" class="CurrChnlCls">首页</a><span>&nbsp;&nbsp;-&nbsp;&nbsp;</span><a href="../../../" title="2021改版网站" class="CurrChnlCls">2021改版网站</a><span>&nbsp;&nbsp;-&nbsp;&nbsp;</span><a href="../../" title="政务公开" class="CurrChnlCls">政务公开</a><span>&nbsp;&nbsp;-&nbsp;&nbsp;</span><a href="../" title="重点领域信息公开" class="CurrChnlCls">重点领域信息公开</a><span>&nbsp;&nbsp;-&nbsp;&nbsp;</span><a href="./" title="教师工作" class="CurrChnlCls">教师工作</a>
+            </div>
+            <!-- 隐藏路径 -->
+            <script>
+                $(function() {
+                    $(".CurrChnlCls").eq(1).next().remove();
+                    $(".CurrChnlCls").eq(1).remove();
+                })
+            </script>
+            <div class="main-layout">
+                <!--公共左菜单start -->
+                <ul class="left-aside">
+					
+                    <li  id="5868635"><a href="../jcjy/">基础教育</a></li>
+					
+                    <li  id="5868637"><a href="../xqjy/">学前教育</a></li>
+					
+                    <li  id="5868638"><a href="../zyjyycrjy/">职业教育与成人教育</a></li>
+					
+                    <li  id="5868640"><a href="../gdjy/">高等教育</a></li>
+					
+                    <li  id="5868642"><a href="./">教师工作</a></li>
+					
+                    <li  id="5868644"><a href="../tyywsysjy/">体育与卫生艺术教育</a></li>
+					
+                    <li  id="5868646"><a href="../mbjy/">民办教育</a></li>
+					
+					<script type="text/javascript">
+                        $(function() {
+                            var curchannelid = "5868642";
+                            $("#" + curchannelid).addClass("active");
+                        });
+                    </script>
+                </ul>
+                <!--公共左菜单end -->
+
+                <div class="right-cont">
+                    <ul class="right-cont_list">
+                        
+                            <li>
+                                <a href="./202608/t20260820_90753120.html" title="贵阳市第二中学公费师范生拟聘用人员名单公示" target="_blank">
+                                    <p>贵阳市第二中学公费师范生拟聘用人员名单公示</p>
+                                    <span>2026-08-18</span>
+                                </a>
+                            </li>
+                        
+                            <li>
+                                <a href="./202608/t20260820_90753119.html" title="北京师范大学贵安新区附属学校公费师范生拟聘用人员名单公示" target="_blank">
+                                    <p>北京师范大学贵安新区附属学校公费师范生拟聘用人员名单公示</p>
+                                    <span>2026-08-17</span>
+                                </a>
+                            </li>
+                        
+                            <li>
+                                <a href="./202608/t20260820_90753118.html" title="贵阳市第五中学第十四届贵州人才博览会人才引进拟聘用人员名单公示" target="_blank">
+                                    <p>贵阳市第五中学第十四届贵州人才博览会人才引进拟聘用人员名单公示</p>
+                                    <span>2026-08-17</span>
+                                </a>
+                            </li>
+                        
+                            <li>
+                                <a href="./202608/t20260820_90753117.html" title="北京师范大学贵安新区附属学校第十四届人博会拟引进聘用人员名单公告" target="_blank">
+                                    <p>北京师范大学贵安新区附属学校第十四届人博会拟引进聘用人员名单公告</p>
+                                    <span>2026-08-17</span>
+                                </a>
+                            </li>
+                        
+                            <li>
+                                <a href="./202608/t20260820_90753116.html" title="贵阳市学生健康发展中心第十四届贵州人才博览会人才引进拟聘用人员名单公示" target="_blank">
+                                    <p>贵阳市学生健康发展中心第十四届贵州人才博览会人才引进拟聘用人员名单公示</p>
+                                    <span>2026-08-14</span>
+                                </a>
+                            </li>
+                        
+                            <li>
+                                <a href="./202608/t20260820_90753115.html" title="贵阳市第一中学第十四届贵州人才博览会人才引进拟聘用人员名单公示" target="_blank">
+                                    <p>贵阳市第一中学第十四届贵州人才博览会人才引进拟聘用人员名单公示</p>
+                                    <span>2026-08-10</span>
+                                </a>
+                            </li>
+                        
+                            <li>
+                                <a href="./202608/t20260820_90753114.html" title="贵阳市第一中学公费师范生拟聘用人员名单公示" target="_blank">
+                                    <p>贵阳市第一中学公费师范生拟聘用人员名单公示</p>
+                                    <span>2026-08-10</span>
+                                </a>
+                            </li>
+                        
+                            <li>
+                                <a href="./202608/t20260820_90753113.html" title="贵阳市特殊教育学校公费师范生拟聘用人员名单公示" target="_blank">
+                                    <p>贵阳市特殊教育学校公费师范生拟聘用人员名单公示</p>
+                                    <span>2026-08-06</span>
+                                </a>
+                            </li>
+                        
+                            <li>
+                                <a href="./202608/t20260820_90753112.html" title="贵阳市第六中学第十四届贵州人才博览会人才引进拟聘用人员名单公示" target="_blank">
+                                    <p>贵阳市第六中学第十四届贵州人才博览会人才引进拟聘用人员名单公示</p>
+                                    <span>2026-08-06</span>
+                                </a>
+                            </li>
+                        
+                            <li>
+                                <a href="./202608/t20260820_90753111.html" title="贵阳市第三实验中学（贵州希望实验学校）公费师范生拟聘用人员名单公示" target="_blank">
+                                    <p>贵阳市第三实验中学（贵州希望实验学校）公费师范生拟聘用人员名单公示</p>
+                                    <span>2026-08-04</span>
+                                </a>
+                            </li>
+                        
+                            <li>
+                                <a href="./202608/t20260820_90753110.html" title="贵阳市第三实验中学（贵州希望实验学校）第十四届贵州人才博览会人才引进拟聘用人员名单公示" target="_blank">
+                                    <p>贵阳市第三实验中学（贵州希望实验学校）第十四届贵州人才博览会人才引进拟聘用人员名单公示</p>
+                                    <span>2026-08-04</span>
+                                </a>
+                            </li>
+                        
+                            <li>
+                                <a href="./202608/t20260820_90753109.html" title="贵阳市第五中学公费师范生拟聘用人员名单公示" target="_blank">
+                                    <p>贵阳市第五中学公费师范生拟聘用人员名单公示</p>
+                                    <span>2026-08-03</span>
+                                </a>
+                            </li>
+                        
+                            <li>
+                                <a href="./202608/t20260820_90753108.html" title="中央民族大学附属中学贵阳学校第十四届人博会拟引进聘用人员名单公示" target="_blank">
+                                    <p>中央民族大学附属中学贵阳学校第十四届人博会拟引进聘用人员名单公示</p>
+                                    <span>2026-08-01</span>
+                                </a>
+                            </li>
+                        
+                            <li>
+                                <a href="./202608/t20260820_90753107.html" title="贵阳市第六中学公费师范生拟聘用人员名单公示" target="_blank">
+                                    <p>贵阳市第六中学公费师范生拟聘用人员名单公示</p>
+                                    <span>2026-07-31</span>
+                                </a>
+                            </li>
+                        
+                            <li>
+                                <a href="./202608/t20260820_90753106.html" title="贵阳雅礼高级中学（贵阳市第九中学）公费师范生拟聘用人员名单公示" target="_blank">
+                                    <p>贵阳雅礼高级中学（贵阳市第九中学）公费师范生拟聘用人员名单公示</p>
+                                    <span>2026-07-23</span>
+                                </a>
+                            </li>
+                        
+                    </ul>
+
+                    <!-- 分页 -->
+                    <div class="pagination pageBox" id="pages">
+                        <script>
+//wcm分页，总记录：277
+createPage(19, 1, "index", "html");
+function createPage(_nPageCount, _nCurrIndex, _sPageName, _sPageExt) {
+	
+	var page="";
+	<!-- 总页数小于一页不显示 -->
+	if (_nPageCount == null || _nPageCount <= 1) {
+		return false;
+	} 
+	
+	<!-- 上一页 -->
+	if (_nCurrIndex ==0){
+		page+='<a class="previous" href="javascript:void(0);" >上一页</a>';
+	}else if(_nCurrIndex > 0){
+		if (_nCurrIndex == 1){
+			var prePage = _sPageName + "." + _sPageExt;
+		} else {
+			var prePage = _sPageName + "_" + (_nCurrIndex - 1) + "." + _sPageExt;
+		}
+		page+='<a class="previous" href="' + prePage + '">上一页</a>';
+	}
+	
+	<!-- 列表 -->
+	for(var i = 0; i < _nPageCount; i++){
+		var sPageName;
+		<!-- 前两页 -->
+		if ((_nCurrIndex - 2) >= 0) { 
+			if (i == (_nCurrIndex - 2)){
+			 if (i == 0) {
+				 sPageName = _sPageName + "." + _sPageExt;
+			 } else {
+				 sPageName = _sPageName + "_" + (_nCurrIndex - 2) + "." + _sPageExt;
+			 }
+			 page+='<a class="" href="' + sPageName + '">' + ( i + 1 ) +'</a>';
+			} 
+		}
+		if ((_nCurrIndex - 1) >= 0) {
+			 if (i == (_nCurrIndex - 1)){
+				 if (i == 0) {
+					 sPageName = _sPageName + "." + _sPageExt;
+				 } else {
+					 sPageName = _sPageName + "_" + (_nCurrIndex - 1) + "." + _sPageExt;
+				 }
+				 page+='<a class="" href="' + sPageName + '">' + ( i + 1 ) +'</a>';
+			 } 
+		}
+		
+		<!-- 当前页 -->
+		if(i == _nCurrIndex){
+			page+='<span>' + (i + 1) + '</span>';
+		}
+		
+		<!-- 后两页 -->
+		if ((_nCurrIndex + 1) <= (_nPageCount - 1)) { 
+			 if (i == (_nCurrIndex + 1)){                               
+				 sPageName = _sPageName + "_" + (_nCurrIndex + 1) + "." + _sPageExt;
+				 page+='<a class="" href="' + sPageName + '">' + ( i + 1 ) +'</a>';
+			 } 
+		}
+		if ((_nCurrIndex + 2) <= (_nPageCount - 1)) {
+			 if (i == (_nCurrIndex + 2)){
+				 sPageName = _sPageName + "_" + (_nCurrIndex + 2) + "." + _sPageExt;
+				 page+='<a class="" href="' + sPageName + '">' + ( i + 1 ) +'</a>';
+			 } 
+		}
+	}
+	
+	<!-- 下一页 -->
+	if (_nCurrIndex ==(_nPageCount - 1)){
+		page+='<a class="next" href="javascript:void(0);" >下一页</a>';
+	}else if(_nCurrIndex < (_nPageCount - 1)){
+		var prePage = _sPageName + "_" + (_nCurrIndex + 1) + "." + _sPageExt;
+		page+='<a class="next" href="' + prePage + '">下一页</a>';
+	}
+	
+	<!-- 跳转 -->
+<!-- page+='<font class="">&nbsp;到第&nbsp;<input id="pages-num" />&nbsp;页&nbsp;<font><font class="">&nbsp;共'+_nPageCount+'页<font><a href="javascript:void(0);" onclick="javascript:toPage()">确定</a></font></font></font></font>';  -->
+
+	<!-- 打印页码 -->
+	$("#pages").html(page);
+}
+	
+function toPage(){
+	var sPageExt = "html";
+	var sPageName = "index";
+	var _num = $('#pages-num').val();
+	if(isNaN(_num)){
+		alert("请输入数字");
+		return false;
+	}
+	var str = sPageName+"_"+(_num-1)+"."+sPageExt;
+	var url = location.href.substring(0,location.href.lastIndexOf("/")+1);
+	if(_num<=1||_num==null){
+		location.href = url+sPageName+"."+sPageExt;
+	}else if(_num>19){
+		alert("本频道最多"+19+"页");
+		$('#pages-num').val(19);
+	}else{
+		location.href = url+str;
+	}
+}
+</script>
+                    </div>
+                    <!-- 分页 end -->
+                    
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- footer -->
+    <!-- 友情链接 -->
+        <div class="friendlink">
+            <div class="friendlink-wrap">
+                <p class="friendlink-tit">友情链接：</p>
+                <ul class="friendlink-list">
+                    
+                        <li class="friendlink-item">
+                            <a href="https://www.gov.cn/">
+                                中国政府网
+                            </a>
+                        </li>
+                    
+                        <li class="friendlink-item">
+                            <a href="http://www.moe.gov.cn/">
+                                中华人民共和国教育部
+                            </a>
+                        </li>
+                    
+                        <li class="friendlink-item">
+                            <a href="http://jyt.guizhou.gov.cn/">
+                                贵州省教育厅
+                            </a>
+                        </li>
+                    
+                        <li class="friendlink-item">
+                            <a href="http://zsksy.guizhou.gov.cn/">
+                                贵州省招生考试院
+                            </a>
+                        </li>
+                    
+                        <li class="friendlink-item">
+                            <a href="http://www.guiyang.gov.cn/">
+                                贵阳市人民政府
+                            </a>
+                        </li>
+                    
+
+                </ul>
+                <div class="friendlink-qt">
+                    <span>关联网站</span>
+                    <i></i>
+                    <div class="qt-box">
+                        <ul class="qt-box_list">
+                            
+                                <li class="qt-box_item">
+                                    <a href="http://www.gyzkzx.cn/" target="_blank">
+                                        贵阳市招考网
+                                    </a>
+                                </li>
+                            
+                                <li class="qt-box_item">
+                                    <a href="http://gy.wenming.cn/" target="_blank">
+                                        中国文明网
+                                    </a>
+                                </li>
+                            
+                                <li class="qt-box_item">
+                                    <a href="https://www.ncet.edu.cn/zhuzhan/index.html" target="_blank">
+                                        中央电化教育馆
+                                    </a>
+                                </li>
+                            
+                                <li class="qt-box_item">
+                                    <a href="http://www.gzlib.org/" target="_blank">
+                                        贵州数字图书馆
+                                    </a>
+                                </li>
+                            
+                                <li class="qt-box_item">
+                                    <a href="http://www.gywb.cn/" target="_blank">
+                                        贵阳网
+                                    </a>
+                                </li>
+                            
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- 友情链接 end -->
+<footer id="footer" class="footer-wrap">
+    <div class="footer-btom">
+        <div class="footer-btom_wrap">
+            <div class="btom_wrap-left">
+                <ul class="wrap-left-link" bf-region-type="1">
+                    <li><a href="https://jyj.guiyang.gov.cn/newsite/fzlm/lxwm/">联系我们</a></li>
+                    <li><a href="https://jyj.guiyang.gov.cn/newsite/fzlm/bqsm/">版权声明</a></li>
+                    <li><a href="https://jyj.guiyang.gov.cn/newsite/fzlm/yssm/">隐私声明</a></li>
+                    <li><a href="https://jyj.guiyang.gov.cn/newsite/fzlm/wzdt/">网站地图</a></li>
+                    <li><a href="https://jyj.guiyang.gov.cn/zfxxgk_5617343/fdzdgknr/wznb/">网站年报</a></li>
+                </ul>
+                <ul class="copyright">
+                    <li>贵阳市教育局主办</li>
+                    <li>贵阳市教育局版权所有</li>
+                    <li>政府网站标识码：5201000018</li>
+       <!--             <li>投诉电话：87989411</li>   -->
+                    <li>咨询电话：87989409</li>
+                    <li>
+                        <a href="http://www.beian.gov.cn/portal/registerSystemInfo?recordcode=52011502009036"><img src="http://jyj.guiyang.gov.cn/material/common/images/gabatb.png" alt="" /> 贵公网安备 52011502009036号
+                        </a>
+                    </li>
+                    <li><a href="https://beian.miit.gov.cn/#/Integrated/index">黔ICP备10200511号-3</a></li>
+                    <li><a href="https://www.zzdsj.com.cn/">技术支持：智政科技</a></li>
+                </ul>
+            </div>
+            <div class="btom_wrap-right">
+                <div>
+<a href="https://bszs.conac.cn/sitename?method=show&id=06B2DC47B7E171ECE053012819AC4D95">
+                    <img src="http://jyj.guiyang.gov.cn/material/common/images/dzjg.png" alt="" />
+</a>
+                </div>
+                <div class="zfwzzc">
+<a href="https://zfwzgl.www.gov.cn/exposure/jiucuo.html?site_code=5201000018">
+                    <img src="http://jyj.guiyang.gov.cn/material/common/images/jiucuo.png" alt="" />
+</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</footer>
+<script src="/material/resource/js/barrier-free-entry.js" type="text/javascript" charset="utf-8"></script>
+<script id="_trs_ta_js" src="//ta.trs.cn/c/js/ta.js?mpid=3236" async="async" defer="defer"></script>
+<script type="text/javascript">
+$(function(){
+//外链跳转提示
+	for (var i = 0; i < document.links.length; i++) {
+		var url = document.links[i].href.toLowerCase();
+		if (url.indexOf("http://localhost") == -1 && url.indexOf("http://jyj.guiyang.gov.cn/newsite/index.html") == -1&& url.indexOf("jyj.guiyang.gov.cn") == -1 && url.indexOf("javascript:") == -1 && url != "#" && !document.links[i].onclick) {
+			document.links[i].onclick = function () {
+				return confirm("您访问的链接即将离开“贵阳市教育局”门户网站，是否继续？")
+			};
+		}
+	}
+});
+</script>
+<!--获取登录用户信息和用户足迹-->
+<script src="//www.guiyang.gov.cn/material/web_2021/js/sm2.js"></script>
+<script>
+        var useName;
+        function getCookie(name) {
+            var arr, reg = new RegExp("(^| )" + name + "=([^;]*)(;|$)");
+            if (arr = document.cookie.match(reg)) return unescape(arr[2]);
+            else return null;
+        }
+        function setCookie(objName, objValue) {
+            var str = objName + "=" + escape(objValue);
+            str += "; path=/;";
+            document.cookie = str;
+        }
+        var $href = window.location.href.replace(/\&/g,"?");
+        var SSOSign,isLogin=false;
+        var SSOKye = $.grep(document.location.href.split('?'), function( a ) {
+            return a!='undefined'&&a.indexOf("=") == -1;
+        });
+        if(SSOKye[1]&&SSOKye[1]!=''){
+            setCookie('SSOSign', SSOKye[1]);
+        }
+        SSOSign = getCookie('SSOSign');
+        var ta_user = getCookie('_trs_user');
+
+        function httpRequest(method, url, params, callback) {
+            $.ajax({
+                type: method,
+                url: url,
+                data: params || {},
+                dataType: "json",
+                traditional: true,
+                xhrFields: {
+                    withCredentials: true
+                },
+                headers: {'SSOSign': SSOSign},
+                success: function (data) {
+                    if (data.code === '200') {
+                        callback(data);
+                    } else {
+                    }
+                },
+                error: function (err) {
+                    console.info(err);
+                    if (err.responseJSON) {
+                        console.info(err.responseJSON.message);
+                    } else {
+                        //alert('请求错误');
+                    }
+                }
+            });
+        }
+        var userInfo = false;
+        httpRequest('get','/fsp-web/fsp/login/getUserSecret.do?',{SSOSign:SSOSign},function(data){
+            if(SSOSign!="undefined") {
+                userInfo = data.datas;
+            secretKey=data.summary_info.secretKey 
+            keys=getKey(secretKey)   
+            data=sm2.doDecrypt(userInfo,keys) 
+            //  将获解密后用户信息进行填充
+            userInfo = JSON.parse(data);
+                useName = userInfo.LOGIN_NAME;
+                if(ta_user==""||ta_user==null||ta_user=="undefined"){
+                    setTaCookie(useName);
+                } //如果cookie没有该值，则设置该属性
+            $('.right-personal').html('<img src="/material/common/images/icon-grzx.png" /><a href="//www.guizhou.gov.cn/personalhomepage/#/homePageGR" style="float:left;text-decoration: underline;font-weight: bold;">欢迎&nbsp;' + userInfo.USER_NAME+'</a>');
+            }
+        })
+        if(SSOSign =="undefined"|| SSOSign == null){
+            setTaCookie("");
+        }
+        function setTaCookie(objValue) {
+            var str = "_trs_user" + "=" + encodeURIComponent(objValue);
+            str += "; path=/;";
+            document.cookie = str;
+        }
+// 获取解密私钥
+    function getKey(key){
+        var result = ""
+        $.ajax({
+            type: "POST",
+            url: "/fsp-web/fsp/login/getSecretKey",
+            headers: {'SSOSign': SSOSign},
+            //dataType: "json",
+            async: false,
+            traditional: true,
+            xhrFields: {
+                withCredentials: true
+            },
+            data:{
+                'SSOSign':SSOSign,
+                'secretKey':key
+            },
+            success: function (m) {
+                m=JSON.parse(m)
+                result = m.datas.secretvalue
+            },
+            error: function (e){
+                console(e)
+            }
+        })
+        return result
+}
+    function zwfwLogin() {
+        SSOSign = getCookie('SSOSign');
+        if (SSOSign == "" || SSOSign == null || SSOSign == "undefined"||!SSOSign.isUserLogin) {
+            window.location.href="//smrz.zwfw.guizhou.gov.cn/sso/login?utype=0&redirect=istrue&client_id=MBFSQUBNF&goto=" +$href;
+        }
+    }
+</script>
+    <!-- footer end -->
+ 
+    <!--<script>
+        $(function() {
+            $(".left-aside li").hover(function() {
+                $(this).addClass("active").siblings().removeClass("active");
+            });
+        });
+    </script> -->
+</body>
+
+</html>

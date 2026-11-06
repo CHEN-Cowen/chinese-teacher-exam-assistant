@@ -19,15 +19,15 @@
 | 指标 | 当前值 | 说明 |
 |---|---|---|
 | 省级行政区目录登记 | 31 / 31 | 已建立省级目录行；多数入口仍待逐站核验 |
-| 有招聘来源实际接入的省级行政区 | 12 / 31 | 浙江、江苏、安徽、山东、江西、山西、河南、福建、广东、河北、湖北、**湖南**；其余 19 个省级行政区无已接入招聘来源 |
-| 已登记来源总数 | 31 | 27 个教师招聘 ready + 1 个政策 ready + 2 个省级候选 + 1 个受阻 |
-| 已接入招聘来源 | 27 | 浙江 8、江苏 4、安徽 3、山东 4、江西 1、山西 1、河南 1、福建 1、广东 1、河北 1、湖北 1、**湖南 1** |
-| 样本通过来源 | 3 | 宁波（B 级真实材料闭环）、南京与丽水（A 级独立清单发现对账）；其余 24 个为 fixture 级（含 N1/N2/N3 真实样本回放） |
+| 有招聘来源实际接入的省级行政区 | 13 / 31 | 浙江、江苏、安徽、山东、江西、山西、河南、福建、广东、河北、湖北、**湖南**、**贵州**；其余 18 个省级行政区无已接入招聘来源 |
+| 已登记来源总数 | 32 | 28 个教师招聘 ready + 1 个政策 ready + 2 个省级候选 + 1 个受阻 |
+| 已接入招聘来源 | 28 | 浙江 8、江苏 4、安徽 3、山东 4、江西 1、山西 1、河南 1、福建 1、广东 1、河北 1、湖北 1、**湖南 1**、**贵州 1** |
+| 样本通过来源 | 3 | 宁波（B 级真实材料闭环）、南京与丽水（A 级独立清单发现对账）；其余 25 个为 fixture 级（含 N1/N2/N3 真实样本回放） |
 | 持续运行通过来源 | 0 | 连续 7 天观察 0/7，不能声称持续运行通过 |
-| 市级/区县级目录分母 | 待建立 | 现有账本覆盖 25 个地市/区县地区（27 个招聘来源），不能据此计算全国缺口 |
+| 市级/区县级目录分母 | 待建立 | 现有账本覆盖 26 个地市/区县地区（28 个招聘来源），不能据此计算全国缺口 |
 | 全国完整召回 | 未验证 | 无全国独立清单，不能声称完整召回 |
 
-口径说明：`docs/m08-source-acceptance-report.md` 中的 A/B/C 是**证据档位**，D 是**持续运行档位**。当前 27 个招聘来源按持续运行口径全部为 D（待持续验收），因此本账本不把任何来源标记为“持续运行通过”；“样本通过 3”仅表示宁波（B）、南京与丽水（A）具备真实官方样本与材料/对账证据。N1 新增的湖州、泰州、亳州、阜阳，N2 新增的济南、烟台、泰安、潍坊与 N3 新增的南昌、太原、郑州、福州、广州、石家庄、武汉、长沙已完成真实样本采集与离线回放，但尚未做独立清单对账，故记为 fixture 级。
+口径说明：`docs/m08-source-acceptance-report.md` 中的 A/B/C 是**证据档位**，D 是**持续运行档位**。当前 28 个招聘来源按持续运行口径全部为 D（待持续验收），因此本账本不把任何来源标记为“持续运行通过”；“样本通过 3”仅表示宁波（B）、南京与丽水（A）具备真实官方样本与材料/对账证据。N1 新增的湖州、泰州、亳州、阜阳，N2 新增的济南、烟台、泰安、潍坊与 N3 新增的南昌、太原、郑州、福州、广州、石家庄、武汉、长沙、贵阳已完成真实样本采集与离线回放，但尚未做独立清单对账，故记为 fixture 级。
 
 ## 3. 省级行政区目录账本（31 行）
 
@@ -63,7 +63,7 @@
 | 21 | 海南省 | 460000 | 海南省教育厅 | http://edu.hainan.gov.cn | 教育厅门户；招聘栏目待核验 | 0 | 未覆盖 | 同上 |
 | 22 | 重庆市 | 500000 | 重庆市教育委员会 | https://www.cque.edu.cn/tdc/ | 教师发展中心入口；教委门户待补 | 0 | 未覆盖 | 省级/区县招聘入口待接入 |
 | 23 | 四川省 | 510000 | 四川省教育厅 | http://edu.sc.gov.cn/ | 教育厅门户；招聘栏目待核验 | 0 | 未覆盖 | 同上 |
-| 24 | 贵州省 | 520000 | 贵州省教育厅 | http://jyt.guizhou.gov.cn/ | 教育厅门户；招聘栏目待核验 | 0 | 未覆盖 | 同上 |
+| 24 | 贵州省 | 520000 | 贵州省教育厅 | http://jyt.guizhou.gov.cn/ | 教育厅门户；招聘栏目待核验 | 1 | 部分接入 | 贵阳已接入；其余地市与区县待补齐 |
 | 25 | 云南省 | 530000 | 云南省教育厅 | https://jyt.yn.gov.cn | 教育厅门户；招聘栏目待核验 | 0 | 未覆盖 | 同上 |
 | 26 | 西藏自治区 | 540000 | 西藏自治区教育厅 | http://www.xzedu.com.cn | 教育门户；招聘栏目待核验 | 0 | 未覆盖 | 同上 |
 | 27 | 陕西省 | 610000 | 陕西省教育厅 | http://jyt.shaanxi.gov.cn/ | 教育厅门户；招聘栏目待核验 | 0 | 未覆盖 | 同上 |
@@ -105,6 +105,7 @@
 | shijiazhuang-education | 石家庄市教育局 | 130100 | 市 | 招聘 | ready | 2026-11-06 | fixture 级（真实样本） | 未通过 | 「通知公告」混合栏目（**河北首个来源**，官方整站仅 HTTP，已登记 HTTP_ONLY_HOSTS）；服务端渲染列表 li.clearF > div.ul_zi > a（文章绝对地址 /a/YYYY/MM/DD/<id>.html）+ div.ul_ziriqi 日期，首屏 20 条；PageFront 表单 POST 分页（form[name=pageForm] → /dynamic/PageFront.jsp，parseId/categoryId/keyword/pageNo），官方 6 页 / 120 条全量监测（窗口已登记），POST 无 Referer 要求；微信公众号站外转载条目按详情路径过滤；正文 meta ArticleTitle（内嵌 <br> 清洗）/PubDate + div.content_fenye2、/resources/43/*.zip|docx 附件（nbsp 前缀剥离）与零附件条目回放通过；含公开招募银龄讲学教师公告；7 天观察未完成 |
 | changsha-education | 长沙市教育局 | 430100 | 市 | 招聘 | ready | 2026-11-06 | fixture 级（真实样本） | 未通过 | 「教师招聘」栏目（**湖南首个来源**，官方整站仅 HTTP，已登记 HTTP_ONLY_HOSTS）；服务端渲染列表 div.xxgk-item li，嵌套 `<a>` 经 parse5 扁平化后须取带 title 的内层锚点 + span 日期 YYYY-MM-DD，首屏 15 条；官方脚本 `createPageHTML5("8","0","index","html")` 派生 index_1..index_7.html（官方 8 页 / 约 120 条全量监测，窗口已登记 WCM5_PAGE_WINDOWS）；第 2 页 1 条长沙市人社局 rsj.changsha.gov.cn 跨站招考条目按同源过滤剔除、保留 14 条，与首屏重叠 1 条置顶公告；正文 meta ArticleTitle/Pubdate（meta 名带空格须 trim）+ div.content-main，附件（1 pdf / 3 附件 xlsx+2 docx / 7 附件 5 pdf+2 docx）与零附件条目回放通过；7 天观察未完成 |
 | wuhan-education | 武汉市教育局 | 420100 | 市 | 招聘 | ready | 2026-11-06 | fixture 级（真实样本） | 未通过 | 「通知公告」混合栏目（**湖北首个来源**）；目录形态栏目 /zwdt/tsgg/ 服务端渲染列表（li.box-sizing > a.item-li-a[title] + div.other 时间：YYYY-MM-DD，首屏 10 条）+ div#navbox 静态锚点 index_N.shtml 分页（pagenav_tail 尾页给出官方 50 页 / 约 500 条 / 每页 10 条），按单来源窗口只监测最新 6 页（60 条），GET 无 Referer 要求；正文 meta ArticleTitle/PubDate/ContentSource + div#article-box（TRS_UEDITOR）、./P0…pdf 附件（1 个 / 4 个多附件）与零附件条目回放通过；含直属单位公开招聘拟聘用公示与公费师范生专项招聘成绩公告；7 天观察未完成 |
+| guiyang-education | 贵阳市教育局 | 520100 | 市 | 招聘 | ready | 2026-11-06 | fixture 级（真实样本） | 未通过 | 「教师工作」栏目（**贵州首个来源**）；目录形态栏目 /newsite/zwgk/zdlyxxgk/jsgz/ 服务端渲染列表（ul.right-cont_list li > a[href][title]，锚点内 p 标题 + span 日期 YYYY-MM-DD，首屏 15 条）；官方脚本 createPage(19,0,"index","html")（WCM 4 参裸调用）派生 index_1..index_18.html（官方 19 页 / 277 条全量监测，窗口已登记 WCM5_PAGE_WINDOWS），GET 无 Referer 要求；第 2 页 15 条与首屏 0 重叠；正文 meta ArticleTitle/PubDate（标准名无空格，值带时分）/ContentSource + div.TRS_UEDITOR，./P0…pdf|xls|xlsx|doc|docx 附件（1 pdf / 4 附件 / 2 附件）与零附件条目回放通过；7 天观察未完成 |
 | anhui-education-policy | 安徽省教育厅 | 340000 | 省 | 政策 | ready | 2026-11-05 | fixture 级 | 未通过 | 只服务政策检索，不计招聘覆盖 |
 | jiangsu-education-candidate | 江苏省教育厅 | 320000 | 省 | 招聘候选 | candidate | 未核验 | 无 | 未接入 | 省级不发布市县招聘，不能替代市县覆盖 |
 | zhejiang-education-candidate | 浙江省教育厅 | 330000 | 省 | 招聘候选 | candidate | 未核验 | 无 | 未接入 | 公告公示为聚合页，无独立教师招聘栏目 |
@@ -165,6 +166,7 @@
 | shijiazhuang-education | 河北石家庄 | 服务端渲染列表（官方整站仅 HTTP） | `li.clearF > div.ul_zi > a[栏目] + a[文章绝对地址]` + 同级 `div.ul_ziriqi`（YYYY-MM-DD），首屏 20 条；微信公众号站外转载条目按详情路径过滤 | `form[name=pageForm]` POST `/dynamic/PageFront.jsp`（parseId/categoryId/keyword/pageNo，无 Referer 要求），官方 6 页 / 120 条全量监测（窗口已登记 `PAGEFRONT_PAGE_WINDOWS`） | 官方 meta（ArticleTitle 内嵌 `<br>` 清洗 / PubDate）+ `div.content_fenye2` | `/resources/<siteId>/<id>.zip|docx` 相对路径（锚点文本即附件名，nbsp 前缀剥离）；另有零附件条目 | `tests/fixtures/golden-sources/shijiazhuang-education` |
 | wuhan-education | 湖北武汉 | 服务端渲染列表（目录形态栏目 /zwdt/tsgg/） | `li.box-sizing > a.item-li-a[title]`（`./YYYYMM/tYYYYMMDD_<id>.shtml`）+ `h2.text-ellipsis` + `div.other`（时间：YYYY-MM-DD），首屏 10 条 | `div#navbox` 静态锚点 `index_N.shtml`（数字页码 + `pagenav_tail` 尾页直接给出官方总页数 50 页 / 约 500 条 / 每页 10 条；目录为第 1 页，`index_1.shtml` 为第 2 页），GET 无 Referer 要求；单来源窗口只取最新 6 页（60 条，窗口已登记 `WHSNAV_PAGE_WINDOWS`） | 官方 meta（ArticleTitle / PubDate YYYY-MM-DD HH:mm:ss / ContentSource）+ `div#article-box`（TRS_UEDITOR） | 正文内 `./P0<数字>.pdf` 相对路径（TRS WCM 命名，锚点文本即附件名；1 个 / 4 个多附件）；另有零附件条目 | `tests/fixtures/golden-sources/wuhan-education` |
 | changsha-education | 湖南长沙 | 服务端渲染列表（WCM 栏目页，官方整站仅 HTTP） | `div.xxgk-item li`，锚点为嵌套 `<a>`（parse5 扁平化后外层锚点无标题，须取带 title 的内层锚点）+ 同级 `span`（YYYY-MM-DD），首屏 15 条；跨站条目按同源过滤（第 2 页剔除 1 条 rsj.changsha.gov.cn 人社招考链接） | 官方脚本 `createPageHTML5("8","0","index","html")` → 同目录 `index_<n>.html`（`index.html` 为第 1 页，派生 `index_1..index_7`，官方 8 页 / 约 120 条全量监测，窗口已登记 `WCM5_PAGE_WINDOWS`），GET 无 Referer 要求 | 官方 meta（` ArticleTitle `/` Pubdate `，meta 名带前后空格须 trim + 大小写不敏感）+ `div.content-main` | 正文内 `./P0<数字>.pdf\|xlsx\|docx` 相对路径（锚点文本即附件名；1 pdf / 3 附件 xlsx+2 docx / 7 附件 5 pdf+2 docx）；另有零附件条目 | `tests/fixtures/golden-sources/changsha-education` |
+| guiyang-education | 贵州贵阳 | 服务端渲染列表（WCM 栏目页，目录形态 /newsite/zwgk/zdlyxxgk/jsgz/） | `ul.right-cont_list li > a[href][title][target=_blank]`，锚点内 `<p>` 标题 + `<span>` 日期（YYYY-MM-DD），首屏 15 条 | 官方脚本 `createPage(19,0,"index","html")`（WCM 4 参裸调用，无 wcmUtil. 前缀、数字无引号）→ 同目录 `index_<n>.html`（目录为第 1 页，派生 `index_1..index_18`，官方 19 页 / 277 条全量监测，窗口已登记 `WCM5_PAGE_WINDOWS`），GET 无 Referer 要求 | 官方 meta（ArticleTitle / PubDate 值带时分 YYYY-MM-DD HH:mm / ContentSource，标准名无空格）+ `div.TRS_UEDITOR` | 正文内 `./P0<数字>.pdf\|xls\|xlsx\|doc\|docx` 相对路径（锚点文本即附件名；1 pdf / 4 附件 xlsx+xls+docx+xlsx / 2 附件 xls+doc）；另有零附件条目（名单在正文表格内） | `tests/fixtures/golden-sources/guiyang-education` |
 
 新增能力（复用而非单点硬编码）：
 
@@ -184,20 +186,21 @@
 - 新增 `pagefront-list.ts`：解析石家庄 PageFront 表单 POST 分页族——`form[name=pageForm]` POST `/dynamic/PageFront.jsp`（parseId/categoryId/keyword/pageNo），响应为完整 HTML 列表（`li > div.ul_zi` + `div.ul_ziriqi`），无 Referer 要求；由分页 URL query 确定性派生表单请求体，并按 host 登记分页窗口（`PAGEFRONT_PAGE_WINDOWS`，石家庄 6 页 = 官方全量）；混合栏目微信公众号站外转载条目按详情路径过滤；`validateSourceCatalog` 新增 `HTTP_ONLY_HOSTS` 显式登记集合，仅对已实测无 HTTPS 服务的宿主放行 http 入口（石家庄整站 HTTP，HTTPS 实测超时）。
 - 新增 `whsnav-list.ts`：解析武汉 navbox 静态锚点分页族——栏目为目录形态 URL（`/zwdt/tsgg/`），服务端渲染 `li.box-sizing > a.item-li-a[title]` 列表（标题取 title 属性、日期取 `div.other`「时间：YYYY-MM-DD」），分页控件 `div#navbox` 为静态锚点 `index_N.shtml`（数字页码文本校验 + `pagenav_tail` 尾页直接给出官方总页数），目录为第 1 页、`index_1.shtml` 为第 2 页；分页页/详情页不重复派生，非本族页面返回空，超预算未登记 host 显式失败，按 host 登记分页窗口（`WHSNAV_PAGE_WINDOWS`，武汉 6 页）。
 - 新增 `wcm5-list.ts`：解析 WCM `createPageHTML5("总页数","当前页","前缀","后缀")` 静态分页族——官方脚本声明总页数/前缀/后缀，派生同目录 `index_<n>.<ext>` 后续页（`index.html` 为第 1 页），前缀必须 `index`、后缀必须 `html|shtml`，分页页/详情页返回空；按 host 登记分页窗口（`WCM5_PAGE_WINDOWS`，长沙 8 页 = 官方全量），未登记 host 超预算显式失败；列表解析要求取带 title 的内层锚点（嵌套 `<a>` 被 parse5 扁平化）并按同源过滤跨站条目。
+- `wcm5-list.ts` 扩展贵阳变体：分页脚本另支持 WCM 4 参裸调用 `createPage(19,0,"index","html")`（无 `wcmUtil.` 前缀、数字不带引号；同页 `function createPage(_nPageCount,…)` 定义首参非数字不误匹配），`WCM5_PAGE_WINDOWS` 登记贵阳 19 页 = 官方全量（277 条）；贵阳列表结构（`ul.right-cont_list li > a[title]` 内嵌 `<p>` 标题 + `<span>` 日期）与详情（meta 标准名无空格、PubDate 带时分、`div.TRS_UEDITOR`、`./P0…` 附件）由 `guiyang-education.adapter.ts` 自解析，族模块只共用分页派生。
 
 ### 8.2 逐来源验证状态
 
-| 验证项 | 湖州 | 泰州 | 亳州 | 阜阳 | 济南 | 烟台 | 泰安 | 潍坊 | 南昌 | 太原 | 郑州 | 福州 | 广州 | 石家庄 | 武汉 | 长沙 | 证据 |
+| 验证项 | 湖州 | 泰州 | 亳州 | 阜阳 | 济南 | 烟台 | 泰安 | 潍坊 | 南昌 | 太原 | 郑州 | 福州 | 广州 | 石家庄 | 武汉 | 长沙 | 贵阳 | 证据 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 自动发现公告 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 真实列表首屏 15/15/15/10/15/12/45/20/25/20/20/15/20/20/10/15 条，`public-column-s5.spec.ts`、`jpage-list.spec.ts`、`els-list.spec.ts`、`fz-list.spec.ts`、`nfcms-list.spec.ts`、`pagefront-list.spec.ts`、`whsnav-list.spec.ts` 与 `wcm5-list.spec.ts` 回放 |
-| 正文抓取 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 真实正文快照，标题/日期/正文非空 |
-| 岗位/附件抓取 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 真实附件链接（xlsx / xls / doc、et / xlsx / pdf、doc、docx / pdf、xls+docx / xlsx / xlsx+pdf+doc / xlsx / xlsx（新政务）/ P0…xlsx+4×pdf+2×pdf / /attachment/…xlsx / /resources/…3×zip+2×docx / ./P0…pdf 1 个+4 个多附件 / ./P0…1 pdf+3 附件+7 附件；太原、石家庄、武汉、长沙另验证零附件条目） |
-| 去重 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 第一页与第二页 URL 无交集断言；泰安首屏 45 条与 POST 第 4 页 46 条无重叠；潍坊首屏与第 3 页无重叠；南昌首屏 25 条与第 2 页 9 条无重叠；太原首屏 20 条与第 2 页 20 条无重叠；福州首屏 15 条与第 2 页 15 条无重叠；广州首屏 20 条与第 2 页 20 条无重叠；石家庄首屏 20 条与 POST 第 2 页 18 条（2 条微信站外转载按详情路径过滤）无重叠；武汉首屏 10 条与第 2 页 10 条无重叠；长沙首屏 15 条与第 2 页 14 条（1 条人社跨站过滤）重叠 1 条置顶公告 |
-| 补充通知关联 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 需审核发布链路真实运行后确认 |
-| 失败重试 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 离线链路已注入 503 验证（见 8.2.1）；真实 PostgreSQL/Redis 调度待验证 |
-| 告警 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 离线链路已注入结构漂移/连续失败验证（见 8.2.1）；真实调度告警持久化待验证 |
-| 审核发布 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 通用链路已有离线集成证据；逐来源真实运行待验证 |
-| 用户侧可见性 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 通用链路已有离线集成证据；逐来源真实运行待验证 |
+| 自动发现公告 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 真实列表首屏 15/15/15/10/15/12/45/20/25/20/20/15/20/20/10/15/15 条，`public-column-s5.spec.ts`、`jpage-list.spec.ts`、`els-list.spec.ts`、`fz-list.spec.ts`、`nfcms-list.spec.ts`、`pagefront-list.spec.ts`、`whsnav-list.spec.ts` 与 `wcm5-list.spec.ts` 回放 |
+| 正文抓取 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 真实正文快照，标题/日期/正文非空 |
+| 岗位/附件抓取 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 真实附件链接（xlsx / xls / doc、et / xlsx / pdf、doc、docx / pdf、xls+docx / xlsx / xlsx+pdf+doc / xlsx / xlsx（新政务）/ P0…xlsx+4×pdf+2×pdf / /attachment/…xlsx / /resources/…3×zip+2×docx / ./P0…pdf 1 个+4 个多附件 / ./P0…1 pdf+3 附件+7 附件 / ./P0…1 pdf+4 附件+2 附件；太原、石家庄、武汉、长沙、贵阳另验证零附件条目） |
+| 去重 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 第一页与第二页 URL 无交集断言；泰安首屏 45 条与 POST 第 4 页 46 条无重叠；潍坊首屏与第 3 页无重叠；南昌首屏 25 条与第 2 页 9 条无重叠；太原首屏 20 条与第 2 页 20 条无重叠；福州首屏 15 条与第 2 页 15 条无重叠；广州首屏 20 条与第 2 页 20 条无重叠；石家庄首屏 20 条与 POST 第 2 页 18 条（2 条微信站外转载按详情路径过滤）无重叠；武汉首屏 10 条与第 2 页 10 条无重叠；长沙首屏 15 条与第 2 页 14 条（1 条人社跨站过滤）重叠 1 条置顶公告；贵阳首屏 15 条与第 2 页 15 条无重叠 |
+| 补充通知关联 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 需审核发布链路真实运行后确认 |
+| 失败重试 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 离线链路已注入 503 验证（见 8.2.1）；真实 PostgreSQL/Redis 调度待验证 |
+| 告警 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 离线链路已注入结构漂移/连续失败验证（见 8.2.1）；真实调度告警持久化待验证 |
+| 审核发布 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 通用链路已有离线集成证据；逐来源真实运行待验证 |
+| 用户侧可见性 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 通用链路已有离线集成证据；逐来源真实运行待验证 |
 
 说明：自动发现、正文、附件、去重已有真实样本证据；补充通知、重试、告警、审核发布与用户可见性属于**运行链路**验证，尚未在真实 PostgreSQL/Redis 调度下执行，因此不标记通过。
 
@@ -223,7 +226,7 @@
 ### 8.3 7 天观察窗口
 
 - 窗口开始：2026-11-05（首日）。
-- 当前进度：**0 / 7 天**。首日两次真实采样（约间隔 9.5 分钟）均为 HTTP 200 且条目与首采一致，已记入 `SOURCE_MONITORING_RECORDS`；N2 济南另完成首日两次真实采样（16:17 与 16:20），烟台完成首日两次真实采样（2026-11-06 01:08 与 01:09 UTC，两次指纹一致，第 2 页与首屏无重叠），泰安完成首日两次真实采样（2026-11-06T01:53:26.910Z 与 01:54:34.111Z UTC，两次均 45 条，第 2 次指纹 `09cdc350…`），潍坊完成首日两次真实采样（2026-11-06T02:57:47.297Z 与 02:58:18.037Z UTC，两次均 20 条，第 2 次指纹 `1ea4bb4e…`），南昌完成首日两次真实采样（2026-11-06T03:59:14.704Z 与 04:07:36.596Z UTC，两次均 25 条，第 2 次指纹 `6a661c54…`），太原完成首日两次真实采样（2026-11-06T05:55:17.588Z 与 05:56:40.153Z UTC，两次均 20 条，第 2 次指纹 `be53f87e…`），郑州完成首次真实采样（2026-11-06T06:30Z，首屏 20 条），福州完成首次真实采样（2026-11-06T09:18Z，首屏 15 条），广州完成首次真实采样（2026-11-06T10:26Z，首屏 20 条、第 2 页 20 条无重叠），石家庄完成首次真实采样（2026-11-06T11:20Z，首屏 20 条；POST 第 2 页 20 行中 2 条微信公众号站外转载过滤后 18 条、与首屏无重叠），武汉完成首次真实采样（2026-11-06T12:05Z，首屏 10 条；第 2 页 index_1.shtml 10 条与首屏无重叠），长沙完成首次真实采样（2026-11-06T13:10Z，首屏 15 条；官方 8 页 createPageHTML5 全量窗口，第 2 页过滤 1 条人社跨站条目后 14 条、与首屏重叠 1 条置顶公告），同样条目一致；按连续 2 次成功阈值，机器状态为 `monitoring`（只代表“到最近一次检查为止正常”），不代表 7 天窗口完成。
+- 当前进度：**0 / 7 天**。首日两次真实采样（约间隔 9.5 分钟）均为 HTTP 200 且条目与首采一致，已记入 `SOURCE_MONITORING_RECORDS`；N2 济南另完成首日两次真实采样（16:17 与 16:20），烟台完成首日两次真实采样（2026-11-06 01:08 与 01:09 UTC，两次指纹一致，第 2 页与首屏无重叠），泰安完成首日两次真实采样（2026-11-06T01:53:26.910Z 与 01:54:34.111Z UTC，两次均 45 条，第 2 次指纹 `09cdc350…`），潍坊完成首日两次真实采样（2026-11-06T02:57:47.297Z 与 02:58:18.037Z UTC，两次均 20 条，第 2 次指纹 `1ea4bb4e…`），南昌完成首日两次真实采样（2026-11-06T03:59:14.704Z 与 04:07:36.596Z UTC，两次均 25 条，第 2 次指纹 `6a661c54…`），太原完成首日两次真实采样（2026-11-06T05:55:17.588Z 与 05:56:40.153Z UTC，两次均 20 条，第 2 次指纹 `be53f87e…`），郑州完成首次真实采样（2026-11-06T06:30Z，首屏 20 条），福州完成首次真实采样（2026-11-06T09:18Z，首屏 15 条），广州完成首次真实采样（2026-11-06T10:26Z，首屏 20 条、第 2 页 20 条无重叠），石家庄完成首次真实采样（2026-11-06T11:20Z，首屏 20 条；POST 第 2 页 20 行中 2 条微信公众号站外转载过滤后 18 条、与首屏无重叠），武汉完成首次真实采样（2026-11-06T12:05Z，首屏 10 条；第 2 页 index_1.shtml 10 条与首屏无重叠），长沙完成首次真实采样（2026-11-06T13:10Z，首屏 15 条；官方 8 页 createPageHTML5 全量窗口，第 2 页过滤 1 条人社跨站条目后 14 条、与首屏重叠 1 条置顶公告），贵阳完成首次真实采样（2026-11-06T14:40Z，首屏 15 条；官方 19 页 createPage 4 参全量窗口，第 2 页 15 条与首屏无重叠），同样条目一致；按连续 2 次成功阈值，机器状态为 `monitoring`（只代表“到最近一次检查为止正常”），不代表 7 天窗口完成。
 - 规则：每日至少一次真实调度记录；连续 2 次成功才从 `verifying` 进入监测状态；窗口未满不得宣称“持续运行通过”。
 - 未完成前，用户侧与验收报告一律按“样本通过、持续运行未验证”表述。
 
@@ -248,13 +251,19 @@
 | 石家庄市教育局 | http://sjzjyj.sjz.gov.cn/ | 已接入（2026-11-06） | 「通知公告」混合栏目：PageFront 表单 POST 分页族（`/dynamic/PageFront.jsp`，官方 6 页 / 120 条全量监测，无 Referer 要求），官方整站仅 HTTP（HTTPS 实测超时，已登记 `HTTP_ONLY_HOSTS`），含公开招募银龄讲学教师公告；早前"首页无招聘栏目"结论作废（通知公告栏目承载招募类公告），见 8.1 |
 | 武汉市教育局 | https://jyj.wuhan.gov.cn/ | 已接入（2026-11-06） | 「通知公告」混合栏目：navbox 静态锚点分页族（目录形态栏目 /zwdt/tsgg/ + `div#navbox` 锚点 `index_N.shtml`，pagenav_tail 尾页给出官方 50 页 / 约 500 条，按窗口监测最新 6 页 / 60 条，GET 无 Referer 要求），正文 `div#article-box`（TRS_UEDITOR）+ `./P0…pdf` 附件，含直属单位公开招聘拟聘用公示与公费师范生专项招聘成绩公告，见 8.1 |
 | 长沙市教育局 | http://jyj.changsha.gov.cn/ | 已接入（2026-11-06） | 「教师招聘」栏目：WCM `createPageHTML5` 静态分页族（官方 8 页 / 约 120 条全量监测），嵌套 `<a>` 须取带 title 的内层锚点；官方整站仅 HTTP（HTTPS 实测握手失败 SSL alert 40，已登记 `HTTP_ONLY_HOSTS`）；第 2 页含 1 条长沙市人社局 rsj.changsha.gov.cn 跨站招考链接，已按同源过滤（该人社栏目本身可作为后续独立候选），见 8.1 |
+| 成都市教育局 | https://edu.chengdu.gov.cn/ | 受限，未纳入 | HTTP 412（站点防护/WAF），不绕过；待站点策略调整后重试 |
+| 南宁市教育局 | https://jyj.nanning.gov.cn/ | 受限，未纳入 | 入口连接失败（fetch failed），不绕过；待网络或站点恢复后重试 |
+| 西安市教育局 | https://edu.xa.gov.cn/ | 未发现招聘栏目 | 首页导航仅「教师资格认定」类栏目，/xxgk/jszp/ 等教师招聘路径 404；不以资格认定冒充招聘覆盖 |
+| 昆明市教育体育局 | https://jtj.km.gov.cn/ | 未发现招聘栏目 | 首页「教师」命中均为教师资格考试/职称评审类通知，无独立教师招聘栏目 |
+| 沈阳市教育局 | https://jyj.shenyang.gov.cn/ | 不作为招聘来源 | 仅见教师资格类栏目，无教师招聘公告栏目 |
+| 贵阳市教育局 | https://jyj.guiyang.gov.cn/ | 已接入（2026-11-06） | 「教师工作」栏目（**贵州首个来源**）：WCM `createPage` 4 参裸调用静态分页族（官方 19 页 / 277 条全量监测），列表 `ul.right-cont_list li > a[title]` 内嵌 `<p>` 标题 + `<span>` 日期；正文 meta 标准名（PubDate 带时分）+ `div.TRS_UEDITOR` + `./P0…` 附件（1 pdf / 4 附件 / 2 附件 / 零附件回放通过），见 8.1 |
 
 ## 9. 当前结论与缺口
 
-1. 省级目录登记 31/31，但仅 12 个省级行政区有招聘来源实际接入；19 个省级行政区未覆盖。
-2. 已接入 27 个招聘来源，其中样本级证据 3 个，持续运行通过 0 个。
-3. N1 新增湖州、泰州、亳州、阜阳 4 个跨省市级来源；N2 新增山东济南、烟台、泰安、潍坊 4 个公开接口族来源；N3 新增江西南昌（静态锚点列表族）、山西太原（JS 跳转分页族）、河南郑州（老站静态列表 + 双域名详情）、福建福州（fjdzapp 表单 POST 列表族）、广东广州（NFCMS 静态锚点分页族）、河北石家庄（PageFront 表单 POST 分页族，官方整站仅 HTTP 已显式登记）、湖北武汉（navbox 静态锚点 index_N.shtml 分页族）与湖南长沙（WCM createPageHTML5 静态分页族，官方整站仅 HTTP 已显式登记）8 个来源；均完成真实样本回放；烟台/潍坊/福州/广州/武汉按单来源分页窗口分别只监测最新 6 页（官方 91 页 / 49 页 / 178 页 / 20 页 / 50 页），石家庄官方仅 6 页、长沙官方仅 8 页全量监测，窗口均已登记；运行链路验证与 7 天观察尚未完成。
-4. 市级、区县级全国分母尚未建立，现有 25 个地市/区县地区（27 个招聘来源）不能代表全国。
+1. 省级目录登记 31/31，但仅 13 个省级行政区有招聘来源实际接入；18 个省级行政区未覆盖。
+2. 已接入 28 个招聘来源，其中样本级证据 3 个，持续运行通过 0 个。
+3. N1 新增湖州、泰州、亳州、阜阳 4 个跨省市级来源；N2 新增山东济南、烟台、泰安、潍坊 4 个公开接口族来源；N3 新增江西南昌（静态锚点列表族）、山西太原（JS 跳转分页族）、河南郑州（老站静态列表 + 双域名详情）、福建福州（fjdzapp 表单 POST 列表族）、广东广州（NFCMS 静态锚点分页族）、河北石家庄（PageFront 表单 POST 分页族，官方整站仅 HTTP 已显式登记）、湖北武汉（navbox 静态锚点 index_N.shtml 分页族）、湖南长沙（WCM createPageHTML5 静态分页族，官方整站仅 HTTP 已显式登记）与贵州贵阳（WCM createPage 4 参静态分页族）9 个来源；均完成真实样本回放；烟台/潍坊/福州/广州/武汉按单来源分页窗口分别只监测最新 6 页（官方 91 页 / 49 页 / 178 页 / 20 页 / 50 页），石家庄官方仅 6 页、长沙官方仅 8 页、贵阳官方仅 19 页全量监测，窗口均已登记；运行链路验证与 7 天观察尚未完成。
+4. 市级、区县级全国分母尚未建立，现有 26 个地市/区县地区（28 个招聘来源）不能代表全国。
 5. 全国完整召回未验证；本文件不宣称全部覆盖或完整召回。
 6. 下一步：继续 N1 补齐浙江、江苏、安徽其余市级/区县缺口，同时推进 N2 公开接口族扩省与 7 天真实观察；随后按网站类型推进 N3—N5。
 
@@ -278,3 +287,4 @@
 | 2026-11-06 | 新增离线运行链路联调（调度→投递→Worker→发现→失败重试→告警→恢复），暴露并修复 `staticListPages` 末页重复派生 `nav_list_2_2.shtml` 的真实缺陷；真实 PostgreSQL/Redis 调度与逐来源发布可见性仍待验证 | `backend/src/sourcing/runtime-chain.spec.ts`；`backend/src/sourcing/public-column.ts`；`backend/src/sourcing/public-column-s5.spec.ts`；`backend/src/sourcing/testing/crawl-testing.ts` |
 | 2026-11-06 | N3 扩源接入湖北武汉「通知公告」（**湖北首个来源**，湖北成为第 11 个有接入省份）；目录形态栏目 `/zwdt/tsgg/` 服务端渲染列表（`li.box-sizing > a.item-li-a[title]` + `div.other` 时间：YYYY-MM-DD，首屏 10 条），新增 `whsnav-list.ts` 解析 `div#navbox` 静态锚点分页 `index_N.shtml`（数字页码文本校验 + `pagenav_tail` 尾页给出官方 50 页 / 约 500 条 / 每页 10 条，目录为第 1 页），按 `WHSNAV_PAGE_WINDOWS` 只监测最新 6 页（60 条），GET 无 Referer 要求；正文 meta ArticleTitle/PubDate/ContentSource + `div#article-box`（TRS_UEDITOR）与 `./P0…pdf` 附件（1 个 / 4 个多附件）、零附件条目回放通过；首日首次真实采样已记录（第 2 页 10 条与首屏无重叠，含直属单位公开招聘拟聘用公示与公费师范生专项招聘成绩公告） | `backend/src/sourcing/adapters/wuhan-education.adapter.ts`；`backend/src/sourcing/whsnav-list.ts`；`backend/src/sourcing/whsnav-list.spec.ts`；`backend/src/sourcing/source-catalog.ts`；`backend/src/sourcing/jobs/source-discover.service.ts`；`tests/fixtures/golden-sources/wuhan-education` |
 | 2026-11-06 | N3 扩源接入湖南长沙「教师招聘」（**湖南首个来源**，湖南成为第 12 个有接入省份）；服务端渲染列表（`div.xxgk-item li`，嵌套 `<a>` 经 parse5 扁平化后须取带 title 的内层锚点 + 同级 span 日期），新增 `wcm5-list.ts` 解析官方脚本 `createPageHTML5("8","0","index","html")` 并派生同目录 `index_1..index_7.html`（官方 8 页 / 约 120 条全量监测，`WCM5_PAGE_WINDOWS` 已登记）；跨站条目按同源过滤（第 2 页剔除 1 条长沙市人社局 rsj 招考链接，保留 14 条，与首屏重叠 1 条置顶公告）；官方整站仅 HTTP（HTTPS 实测握手失败 SSL alert 40），`HTTP_ONLY_HOSTS` 追加 `jyj.changsha.gov.cn`；正文 meta ArticleTitle/Pubdate（meta 名带前后空格须 trim + 大小写不敏感）+ `div.content-main` 与 `./P0…pdf|xlsx|docx` 附件（1 pdf / 3 附件 / 7 附件）、零附件条目回放通过；首日首次真实采样已记录；来源目录上限 60 已留出扩源余量 | `backend/src/sourcing/adapters/changsha-education.adapter.ts`；`backend/src/sourcing/wcm5-list.ts`；`backend/src/sourcing/wcm5-list.spec.ts`；`backend/src/sourcing/source-catalog.ts`；`backend/src/sourcing/adapter-registry.ts`；`backend/src/sourcing/sourcing-core.module.ts`；`backend/src/sourcing/jobs/source-discover.service.ts`；`tests/fixtures/golden-sources/changsha-education` |
+| 2026-11-06 | N3 扩源接入贵州贵阳「教师工作」（**贵州首个来源**，贵州成为第 13 个有接入省份）；目录形态栏目 `/newsite/zwgk/zdlyxxgk/jsgz/` 服务端渲染列表（`ul.right-cont_list li > a[href][title]`，锚点内 `<p>` 标题 + `<span>` 日期 YYYY-MM-DD，首屏 15 条），`wcm5-list.ts` 扩展支持 WCM `createPage(19,0,"index","html")` 4 参裸调用分页声明（无 `wcmUtil.` 前缀、数字无引号），派生同目录 `index_1..index_18.html`（官方 19 页 / 277 条全量监测，`WCM5_PAGE_WINDOWS` 已登记），GET 无 Referer 要求；第 2 页 15 条与首屏 0 重叠；正文 meta ArticleTitle/PubDate（标准名无空格，值带时分）/ContentSource + `div.TRS_UEDITOR` 与 `./P0…pdf\|xls\|xlsx\|doc\|docx` 附件（1 pdf / 4 附件 / 2 附件 / 零附件回放通过）；首日首次真实采样已记录；候选排除登记：成都 412 防护、南宁连接失败、西安/昆明/沈阳无独立教师招聘栏目 | `backend/src/sourcing/adapters/guiyang-education.adapter.ts`；`backend/src/sourcing/wcm5-list.ts`；`backend/src/sourcing/wcm5-list.spec.ts`；`backend/src/sourcing/source-catalog.ts`；`backend/src/sourcing/adapter-registry.ts`；`backend/src/sourcing/sourcing-core.module.ts`；`tests/fixtures/golden-sources/guiyang-education` |
