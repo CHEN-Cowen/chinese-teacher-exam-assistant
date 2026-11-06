@@ -1,0 +1,23 @@
+{
+  "source": "shijiazhuang-education",
+  "capturedAt": "2026-11-06T00:00:00Z",
+  "scope": "public-list",
+  "site": "http://sjzjyj.sjz.gov.cn/",
+  "column": "通知公告（/a/zwgk/tzgg/，混合栏目，含教师招聘/招募、公示、招生入学等）",
+  "files": [
+    {
+      "name": "tzgg-index.html",
+      "url": "http://sjzjyj.sjz.gov.cn/a/zwgk/tzgg/index.html",
+      "sha256": "15a940836bc9bb7feb617cb1edd5b3c88bafff833b8dc33e8e5b1c28a55fe91a",
+      "method": "GET",
+      "note": "通知公告首屏 20 条（li.clearF > div.ul_zi > a 文章绝对地址 + div.ul_ziriqi YYYY-MM-DD）；pageForm POST /dynamic/PageFront.jsp 分页（parseId/categoryId/keyword/pageNo），官方 6 页"
+    },
+    {
+      "name": "pagefront-page2.html",
+      "url": "http://sjzjyj.sjz.gov.cn/dynamic/PageFront.jsp?parseId=745b8ad5a0b647b8859292efe60a4378&categoryId=a67a560e4cc8455999902184be54edb5&keyword=&pageNo=2",
+      "sha256": "3a33d7289252e076e6a6795fea8600e482ed56f59c87c494eb969db4211c1465",
+      "method": "POST",
+      "note": "POST 表单分页第 2 页（无 Referer 要求）；与首屏无重叠"
+    }
+  ]
+}

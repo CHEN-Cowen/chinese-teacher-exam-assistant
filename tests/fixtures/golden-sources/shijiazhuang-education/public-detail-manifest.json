@@ -1,0 +1,29 @@
+{
+  "source": "shijiazhuang-education",
+  "capturedAt": "2026-11-06T00:00:00Z",
+  "scope": "public-detail",
+  "site": "http://sjzjyj.sjz.gov.cn/",
+  "files": [
+    {
+      "name": "detail-1792137061472.html",
+      "url": "http://sjzjyj.sjz.gov.cn/a/2026/10/16/1792137061472.html",
+      "sha256": "4737370defb3530da2d9767130c1d136f3b71dea7e2dd5209a6a33b30c3bbee8",
+      "method": "GET",
+      "note": "校徽样式公告：meta ArticleTitle/PubDate + div.content_fenye2 正文 + 3 个 /resources/43/*.zip 附件（锚点文本即附件名）"
+    },
+    {
+      "name": "detail-1791533151163.html",
+      "url": "http://sjzjyj.sjz.gov.cn/a/2026/10/09/1791533151163.html",
+      "sha256": "0c67b5aea554a73831276574ce48f7109e39964be0dc92df551a80ebdec408a1",
+      "method": "GET",
+      "note": "银龄讲学计划招募讲学教师公告（教师招聘相关，ContentSource=人事科）：ArticleTitle 含 <br> 换行需清洗；2 个 /resources/43/*.docx 附件（需求表/报名表）"
+    },
+    {
+      "name": "detail-1786673899011.html",
+      "url": "http://sjzjyj.sjz.gov.cn/a/2026/08/14/1786673899011.html",
+      "sha256": "1e6ce0ed514b0db47a41eaaa24cbf24c4d93f367f9606798c2f2bc02dafcec7b",
+      "method": "GET",
+      "note": "励耕计划拟资助名单公示：混合栏目普通条目回放"
+    }
+  ]
+}

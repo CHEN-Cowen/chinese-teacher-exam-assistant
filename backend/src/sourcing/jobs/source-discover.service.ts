@@ -47,6 +47,11 @@ import {
   isFjdzSearchUrl,
 } from '../fz-list.js';
 import { nfcmsIndexPages } from '../nfcms-list.js';
+import {
+  isPagefrontUrl,
+  pagefrontPages,
+  pagefrontRequest,
+} from '../pagefront-list.js';
 import { SafeFetchError } from '../fetch/safe-fetcher.js';
 import { SourcingMetrics } from '../observability.js';
 import {
@@ -196,12 +201,14 @@ export class SourceDiscoverService {
         const isJpage = isJpageDataUrl(listUrl);
         const isEls = isElsArticleUrl(listUrl);
         const isFjdz = isFjdzSearchUrl(listUrl);
+        const isPagefront = isPagefrontUrl(listUrl);
         const requestFetcher =
           new URL(listUrl).pathname ===
             '/api-gateway/jpaas-publish-server/front/page/build/unit' ||
           isJpage ||
           isEls ||
-          isFjdz
+          isFjdz ||
+          isPagefront
             ? this.fetcherFactory.createForAttachment(source)
             : fetcher;
         result = await requestFetcher.fetch(
@@ -211,7 +218,8 @@ export class SourceDiscoverService {
             ifModifiedSince: cache?.lastModified ?? undefined,
           },
           // 福州 fjdzapp/search 必须携带同源 Referer（站点配置校验），
-          // 缺 Referer 返回 {"error":true,"info":"获取站点配置失败"}。
+          // 缺 Referer 返回 {"error":true,"info":"获取站点配置失败"}；
+          // 石家庄 PageFront 无 Referer 要求（实测带与不带均 200）。
           isFjdz ? { referer: source.officialUrl } : {},
           isJpage
             ? jpagePostRequest(listUrl)
@@ -219,7 +227,9 @@ export class SourceDiscoverService {
               ? elsJsonRequest(listUrl)
               : isFjdz
                 ? fjdzSearchRequest(listUrl)
-                : {},
+                : isPagefront
+                  ? pagefrontRequest(listUrl)
+                  : {},
         );
         if (result.status === 304) {
           if (!cache) throw new Error('not_modified_without_snapshot');
@@ -265,6 +275,10 @@ export class SourceDiscoverService {
           for (const page of elsArticlePages(result.finalUrl, body))
             if (!listUrls.includes(page)) listUrls.push(page);
           for (const page of fjdzSearchPages(result.finalUrl, body))
+            if (!listUrls.includes(page)) listUrls.push(page);
+          // PageFront 表单分页（石家庄）：从 pageForm 提取 parseId/categoryId
+          // 派生 /dynamic/PageFront.jsp?...pageNo=N 后续页，无 Referer 要求。
+          for (const page of pagefrontPages(result.finalUrl, body))
             if (!listUrls.includes(page)) listUrls.push(page);
           const items = publicUrl
             ? []
@@ -312,6 +326,10 @@ export class SourceDiscoverService {
         for (const page of elsArticlePages(result.finalUrl, result.body))
           if (!listUrls.includes(page)) listUrls.push(page);
         for (const page of fjdzSearchPages(result.finalUrl, result.body))
+          if (!listUrls.includes(page)) listUrls.push(page);
+        // PageFront 表单分页（石家庄）：从 pageForm 提取 parseId/categoryId
+        // 派生 /dynamic/PageFront.jsp?...pageNo=N 后续页，无 Referer 要求。
+        for (const page of pagefrontPages(result.finalUrl, result.body))
           if (!listUrls.includes(page)) listUrls.push(page);
         const items = publicUrl
           ? []

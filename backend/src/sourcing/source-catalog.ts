@@ -405,6 +405,23 @@ export const SOURCE_CATALOG: readonly SourceCatalogEntry[] = [
       '「网上公示」栏目真实核验（2026-11-06，广东首个来源；NFCMS 集约化平台族）：服务端渲染列表 div.news_list li（a[title] + 方括号日期 [YYYY-MM-DD]），首屏 20 条、招聘密度高（首屏 4 条公开招聘教师/拟聘用公示，第 2 页 14/20）；分页为静态锚点 index_N.html（官方 20 页 / 400 条），页内 createPageHTML 声明已被注释失效（staticListPages 返回空，不能依赖），按单来源分页窗口只监测最新 6 页（120 条），窗口已登记（NFCMS_PAGE_WINDOWS）；正文 meta ArticleTitle/PubDate + div#zoomcon、/attachment/…xlsx 附件回放通过；持续监测见检查记录。',
   },
   {
+    sourceKey: 'shijiazhuang-education',
+    publisher: '石家庄市教育局',
+    regionCode: '130100',
+    authorityLevel: 'city',
+    // 官方整站仅 HTTP（2026-11-06 实测 HTTPS 超时/socket hang up），
+    // 已登记 HTTP_ONLY_HOSTS；不绕过，仅如实记录协议现实。
+    officialUrl: 'http://sjzjyj.sjz.gov.cn/',
+    listUrls: ['http://sjzjyj.sjz.gov.cn/a/zwgk/tzgg/index.html'],
+    allowedHosts: ['sjzjyj.sjz.gov.cn'],
+    adapterKey: 'shijiazhuang-education',
+    status: 'ready',
+    verifiedAt: '2026-11-06',
+    sampleRef: 'tests/fixtures/golden-sources/shijiazhuang-education',
+    coverageNote:
+      '「通知公告」混合栏目真实核验（2026-11-06，河北首个来源；PageFront 表单 POST 分页族）：服务端渲染列表 li.clearF > div.ul_zi > a（文章绝对地址 /a/YYYY/MM/DD/<id>.html）+ div.ul_ziriqi 日期，首屏 20 条；分页为 form[name=pageForm] POST /dynamic/PageFront.jsp（parseId/categoryId/keyword/pageNo），官方 6 页 / 120 条全量监测（窗口已登记 PAGEFRONT_PAGE_WINDOWS），POST 无 Referer 要求；混合栏目偶发微信公众号站外转载条目按详情路径过滤；正文 meta ArticleTitle（内嵌 <br> 清洗）/PubDate + div.content_fenye2，/resources/43/*.zip|docx 附件（nbsp 前缀剥离）与零附件条目回放通过；含公开招募银龄讲学教师公告，混合栏目按标题判定形态；持续监测见检查记录。',
+  },
+  {
     sourceKey: 'changzhou-education',
     publisher: '常州市教育局',
     regionCode: '320400',
@@ -512,6 +529,16 @@ export function getSeedableSources(
     }));
 }
 
+/**
+ * 官方整站仅 HTTP 的已登记宿主（无 HTTPS 服务，实测连接超时/拒绝）。
+ * 只对这些宿主放行 http:// 入口；登记必须附实测证据（见各条目 coverageNote）。
+ * 这不是绕过安全策略：SafeFetcher 仍执行 DNS/重定向/大小/并发全部限制，
+ * 仅如实记录国内部分老政务站点尚未提供 HTTPS 的现实。
+ */
+export const HTTP_ONLY_HOSTS: ReadonlySet<string> = new Set([
+  'sjzjyj.sjz.gov.cn',
+]);
+
 export function validateSourceCatalog(
   catalog: readonly SourceCatalogEntry[] = SOURCE_CATALOG,
 ): string[] {
@@ -549,8 +576,13 @@ export function validateSourceCatalog(
     for (const url of [entry.officialUrl, ...entry.listUrls]) {
       try {
         const parsed = new URL(url);
+        // 官方仅 HTTP 的已登记宿主放行 http 入口（见 HTTP_ONLY_HOSTS）；
+        // 其余来源仍强制 HTTPS。
+        const protocolOk =
+          parsed.protocol === 'https:' ||
+          (parsed.protocol === 'http:' && HTTP_ONLY_HOSTS.has(parsed.hostname));
         if (
-          parsed.protocol !== 'https:' ||
+          !protocolOk ||
           parsed.username ||
           parsed.password ||
           !entry.allowedHosts.includes(parsed.hostname)
@@ -1065,6 +1097,18 @@ export const SOURCE_MONITORING_RECORDS: readonly SourceMonitoringRecord[] = [
         discoveredCount: 20,
         contentHash: null,
         note: 'N3 首次真实采样（广东首个来源；NFCMS 集约化平台族）：网上公示栏目服务端渲染列表首屏 HTTP 200，解析 20 条（方括号日期 [YYYY-MM-DD]）；分页为静态锚点 index_2..index_20.html（官方 20 页 / 400 条），页内 createPageHTML 声明已被注释失效，改由 nfcmsIndexPages 派生并按窗口只监测最新 6 页（120 条）；第 2 页 20 条与首屏无重叠、招聘密度 14/20；正文 meta ArticleTitle/PubDate + div#zoomcon 与 /attachment/…xlsx 附件离线回放通过。7 天持续观察窗口尚未完成。',
+      },
+    ],
+  },
+  {
+    sourceKey: 'shijiazhuang-education',
+    checks: [
+      {
+        checkedAt: '2026-11-06T11:20:00.000Z',
+        outcome: 'succeeded',
+        discoveredCount: 20,
+        contentHash: null,
+        note: 'N3 首次真实采样（河北首个来源；PageFront 表单 POST 分页族；官方整站仅 HTTP，HTTPS 实测超时已登记 HTTP_ONLY_HOSTS）：通知公告混合栏目首屏 HTTP 200，解析 20 条（li.clearF > div.ul_zi + div.ul_ziriqi 日期）；分页为 form[name=pageForm] POST /dynamic/PageFront.jsp（parseId/categoryId/keyword/pageNo，官方 6 页 / 120 条全量监测，无 Referer 要求），POST 第 2 页 20 行中 2 条微信公众号站外转载按详情路径过滤、18 条与首屏无重叠；正文 meta ArticleTitle（内嵌 <br> 清洗）/PubDate + div.content_fenye2，/resources/43/*.zip|docx 附件（3 zip / 2 docx 招聘相关）与零附件条目离线回放通过。7 天持续观察窗口尚未完成。',
       },
     ],
   },
