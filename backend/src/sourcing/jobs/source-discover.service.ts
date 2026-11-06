@@ -53,6 +53,7 @@ import {
   pagefrontRequest,
 } from '../pagefront-list.js';
 import { whsnavPages } from '../whsnav-list.js';
+import { wcm5Pages } from '../wcm5-list.js';
 import { SafeFetchError } from '../fetch/safe-fetcher.js';
 import { SourcingMetrics } from '../observability.js';
 import {
@@ -285,6 +286,10 @@ export class SourceDiscoverService {
           // 派生同目录 index_N.shtml 后续页（栏目目录为第 1 页）。
           for (const page of whsnavPages(result.finalUrl, body))
             if (!listUrls.includes(page)) listUrls.push(page);
+          // 长沙 WCM createPageHTML5 静态分页：官方脚本声明总页数/前缀/后缀，
+          // 派生同目录 index_N.html 后续页（index.html 为第 1 页）。
+          for (const page of wcm5Pages(result.finalUrl, body))
+            if (!listUrls.includes(page)) listUrls.push(page);
           const items = publicUrl
             ? []
             : adapter.discover({
@@ -339,6 +344,10 @@ export class SourceDiscoverService {
         // 武汉 navbox 静态锚点分页：div#navbox 数字页码 + pagenav_tail 尾页
         // 派生同目录 index_N.shtml 后续页（栏目目录为第 1 页）。
         for (const page of whsnavPages(result.finalUrl, result.body))
+          if (!listUrls.includes(page)) listUrls.push(page);
+        // 长沙 WCM createPageHTML5 静态分页：官方脚本声明总页数/前缀/后缀，
+        // 派生同目录 index_N.html 后续页（index.html 为第 1 页）。
+        for (const page of wcm5Pages(result.finalUrl, result.body))
           if (!listUrls.includes(page)) listUrls.push(page);
         const items = publicUrl
           ? []

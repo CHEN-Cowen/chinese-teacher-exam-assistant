@@ -1,0 +1,23 @@
+{
+  "source": "changsha-education",
+  "capturedAt": "2026-11-06T00:00:00Z",
+  "scope": "public-list",
+  "site": "http://jyj.changsha.gov.cn/",
+  "column": "教师招聘（/zfxxgk/fdzdgk/jszp/，政务公开 > 法定主动公开内容；纯教师招聘栏目）",
+  "files": [
+    {
+      "name": "list-page1.html",
+      "url": "http://jyj.changsha.gov.cn/zfxxgk/fdzdgk/jszp/index.html",
+      "sha256": "ae436364585cab60e7e0e5df95a9fa3520f087bc8b20538255c408dd090e0258",
+      "method": "GET",
+      "note": "教师招聘栏目首屏 15 条（div.xxgk-item ul li > a[href] > a[title] + span 日期 YYYY-MM-DD）；条目为嵌套 <a>，HTML 解析器扁平化后外层锚点无标题，解析需优先取带 title 的锚点；官方整站仅 HTTP（HTTPS 握手失败 SSL alert 40）；脚本声明 wcmUtil.createPageHTML5(\"8\", \"0\", \"index\", \"html\")，官方 8 页 / 每页 15 条；首屏含置顶条目（第 5 条为 2025-03-30 公告），第 2 条招聘公告同时出现在第 2 页首条"
+    },
+    {
+      "name": "list-page2.html",
+      "url": "http://jyj.changsha.gov.cn/zfxxgk/fdzdgk/jszp/index_1.html",
+      "sha256": "4b7abc42216ffd31236d7b6176ad60321828f32fe5c67a06c8de151197bc1ae9",
+      "method": "GET",
+      "note": "createPageHTML5 静态分页第 2 页 14 条条目；与首屏重叠 1 条（2026-06-15 第三轮公开招聘公告为置顶条目，发现服务按 URL 去重）"
+    }
+  ]
+}

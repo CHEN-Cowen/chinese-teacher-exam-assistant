@@ -437,6 +437,23 @@ export const SOURCE_CATALOG: readonly SourceCatalogEntry[] = [
       '「通知公告」混合栏目真实核验（2026-11-06，湖北首个来源；navbox 静态锚点分页族）：目录形态栏目 /zwdt/tsgg/ 服务端渲染列表 li.box-sizing > a.item-li-a[title]（./YYYYMM/tYYYYMMDD_<id>.shtml）+ div.other（时间：YYYY-MM-DD），首屏 10 条；分页为 div#navbox 静态锚点 index_N.shtml（pagenav_tail 尾页给出官方 50 页 / 约 500 条 / 每页 10 条），按单来源分页窗口只监测最新 6 页（60 条），窗口已登记 WHSNAV_PAGE_WINDOWS，GET 无 Referer 要求；正文 meta ArticleTitle/PubDate/ContentSource + div#article-box（TRS_UEDITOR），./P0<数字>.pdf 附件（1 个 / 4 个多附件）与零附件条目回放通过；含直属单位公开招聘拟聘用公示与公费师范生专项招聘成绩公告，混合栏目按标题判定形态；持续监测见检查记录。',
   },
   {
+    sourceKey: 'changsha-education',
+    publisher: '长沙市教育局',
+    regionCode: '430100',
+    authorityLevel: 'city',
+    // 官方整站仅 HTTP（2026-11-06 实测 HTTPS 握手失败 SSL alert 40），
+    // 已登记 HTTP_ONLY_HOSTS；不绕过，仅如实记录协议现实。
+    officialUrl: 'http://jyj.changsha.gov.cn/',
+    listUrls: ['http://jyj.changsha.gov.cn/zfxxgk/fdzdgk/jszp/index.html'],
+    allowedHosts: ['jyj.changsha.gov.cn'],
+    adapterKey: 'changsha-education',
+    status: 'ready',
+    verifiedAt: '2026-11-06',
+    sampleRef: 'tests/fixtures/golden-sources/changsha-education',
+    coverageNote:
+      '「教师招聘」栏目真实核验（2026-11-06，湖南首个来源；WCM createPageHTML5 静态分页族）：服务端渲染列表 div.xxgk-item li，锚点为嵌套 <a>（parse5 扁平化后外层锚点无标题，须取带 title 的内层锚点），日期在同级 span（YYYY-MM-DD），首屏 15 条；分页由官方脚本 createPageHTML5("8","0","index","html") 声明，族解析派生同目录 index_1..index_7.html（index.html 为第 1 页，官方 8 页 / 约 120 条全量监测，窗口已登记 WCM5_PAGE_WINDOWS），GET 无 Referer 要求；第 2 页 15 条中 1 条长沙市人社局（rsj.changsha.gov.cn）事业单位招考栏目跨站条目按同源过滤剔除，保留 14 条，与首屏重叠 1 条置顶公告（DETAIL_8787）；正文 meta ArticleTitle/Pubdate（官方 meta 名带前后空格，须 trim + 大小写不敏感匹配）+ div.content-main，./P0<数字>.pdf|xlsx|docx 附件（1 个 pdf / 3 个附件 xlsx+2 docx / 7 个附件 5 pdf+2 docx）与零附件条目离线回放通过；持续监测见检查记录。',
+  },
+  {
     sourceKey: 'changzhou-education',
     publisher: '常州市教育局',
     regionCode: '320400',
@@ -552,6 +569,7 @@ export function getSeedableSources(
  */
 export const HTTP_ONLY_HOSTS: ReadonlySet<string> = new Set([
   'sjzjyj.sjz.gov.cn',
+  'jyj.changsha.gov.cn',
 ]);
 
 /**
@@ -1146,6 +1164,18 @@ export const SOURCE_MONITORING_RECORDS: readonly SourceMonitoringRecord[] = [
         discoveredCount: 10,
         contentHash: null,
         note: 'N3 首次真实采样（湖北首个来源；navbox 静态锚点分页族）：通知公告混合栏目目录页 /zwdt/tsgg/ 首屏 HTTP 200，解析 10 条（li.box-sizing > a.item-li-a[title] + div.other 时间：YYYY-MM-DD）；分页为 div#navbox 静态锚点 index_N.shtml（pagenav_tail 尾页 index_49，官方 50 页 / 约 500 条 / 每页 10 条），按单来源窗口只监测最新 6 页（60 条），GET 无 Referer 要求；第 2 页（index_1.shtml）10 条与首屏无重叠且含直属单位招聘面试资格复审公告；正文 meta ArticleTitle/PubDate/ContentSource + div#article-box（TRS_UEDITOR），./P0<数字>.pdf 附件（拟聘用公示 1 个 / 资格认定 4 个多附件 / 公费师范生招聘成绩 1 个）与零附件条目离线回放通过。7 天持续观察窗口尚未完成。',
+      },
+    ],
+  },
+  {
+    sourceKey: 'changsha-education',
+    checks: [
+      {
+        checkedAt: '2026-11-06T13:10:00.000Z',
+        outcome: 'succeeded',
+        discoveredCount: 15,
+        contentHash: null,
+        note: 'N3 首次真实采样（湖南首个来源；WCM createPageHTML5 静态分页族；官方整站仅 HTTP，HTTPS 实测握手失败 SSL alert 40 已登记 HTTP_ONLY_HOSTS）：教师招聘栏目 /zfxxgk/fdzdgk/jszp/index.html 首屏 HTTP 200，解析 15 条（div.xxgk-item li，嵌套 <a> 经 parse5 扁平化后须取带 title 的内层锚点 + span 日期 YYYY-MM-DD）；分页由官方脚本 createPageHTML5("8","0","index","html") 声明，族解析派生 index_1..index_7.html（官方 8 页 / 约 120 条全量监测，窗口登记 WCM5_PAGE_WINDOWS）；第 2 页 15 条中 1 条长沙市人社局 rsj.changsha.gov.cn 跨站招考条目按同源过滤剔除、保留 14 条，与首屏重叠 1 条置顶公告；正文 meta ArticleTitle/Pubdate（meta 名带空格须 trim、大小写不敏感）+ div.content-main，附件（1 pdf / 3 附件 xlsx+2 docx / 7 附件 5 pdf+2 docx）与零附件条目离线回放通过。7 天持续观察窗口尚未完成。',
       },
     ],
   },
