@@ -832,6 +832,61 @@ export function govInfoListPages(
   return urls;
 }
 
+/**
+ * 南昌市教育局「教师科」栏目（/ncjyj/jskfw/nav_list.shtml）静态列表：
+ * ul.item li > a[href][title] + 同级 <span>YYYY-MM-DD</span>（span 无 class）。
+ * 详情路径由调用方传入的 detailPathPattern 限制；
+ * 列表偶尔跨栏目链接（如 /ncjyj/jszgrd/ 教师资格专栏），只要命中详情路径即收录。
+ */
+export function discoverStaticAnchorList(
+  baseUrl: string,
+  content: string,
+  detailPathPattern: RegExp,
+): DiscoveredDocument[] {
+  const $ = load(content);
+  const rows = $('ul.item li').has('a[href]');
+  if (!rows.length)
+    throw new AdapterParseError(
+      'DOM_MISMATCH',
+      '静态锚点列表未找到 ul.item li > a[href] 结构',
+    );
+  const items: DiscoveredDocument[] = [];
+  const seen = new Set<string>();
+  rows.each((_i, e) => {
+    const link = $(e).find('a[href]').first();
+    const href = link.attr('href');
+    const title = (link.attr('title') ?? link.text()).trim();
+    if (!href || !title)
+      throw new AdapterParseError(
+        'DOM_MISMATCH',
+        '静态锚点列表条目缺少链接或标题',
+      );
+    const url = resolveUrl(baseUrl, href);
+    if (!detailPathPattern.test(url)) return;
+    if (seen.has(url)) return;
+    const date = $(e).find('span').first().text().trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      throw new AdapterParseError(
+        'DOM_MISMATCH',
+        `静态锚点列表条目缺少发布日期（YYYY-MM-DD）: ${title}`,
+      );
+    }
+    seen.add(url);
+    items.push({
+      title,
+      publishedAt: extractDate(date, '静态锚点列表日期'),
+      url: normalizeUrl(url),
+      kind: classifyDocumentKind(title),
+    });
+  });
+  if (!items.length)
+    throw new AdapterParseError(
+      'DOM_MISMATCH',
+      '静态锚点列表无任何条目（静默 0 条视为故障）',
+    );
+  return items;
+}
+
 /** 静态列表分页 URL：保持域与路径，替换 _<n> 序号；其余不变。 */
 export function staticListPages(
   baseUrl: string,

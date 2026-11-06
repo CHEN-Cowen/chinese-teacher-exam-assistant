@@ -1,0 +1,23 @@
+{
+  "source": "nanchang-education",
+  "capturedAt": "2026-11-06T04:00:09Z",
+  "scope": "public-list",
+  "site": "https://edu.nc.gov.cn/",
+  "column": "教师科发文（/ncjyj/jskfw/，混合栏目，含教师招聘、资格认定、职称）",
+  "files": [
+    {
+      "name": "public-list-1.html",
+      "url": "https://edu.nc.gov.cn/ncjyj/jskfw/nav_list.shtml",
+      "sha256": "f6a6299b3f2e949cd5f5e29090b6b7332f4b16e3b20c5378fb339ae532cf7ffe",
+      "method": "GET",
+      "note": "首屏 25 条；createPageHTML 声明 2 页 / 34 条"
+    },
+    {
+      "name": "public-list-2.html",
+      "url": "https://edu.nc.gov.cn/ncjyj/jskfw/nav_list_2.shtml",
+      "sha256": "d9f78cd29f3f8e9f261fbf84d1c150b4a8adc8690c89cb8e1a056bbc96924189",
+      "method": "GET",
+      "note": "第二页 9 条；createPageHTML 声明第 2 页"
+    }
+  ]
+}

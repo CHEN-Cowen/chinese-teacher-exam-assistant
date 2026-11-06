@@ -9,6 +9,7 @@ import {
   discoverGovInfoList,
   discoverPublicColumn,
   discoverServerRenderedList,
+  discoverStaticAnchorList,
   discoverStaticList,
   govInfoListPages,
   locateOfficialArticle,
@@ -31,6 +32,7 @@ import { BozhouEducationAdapter } from './adapters/bozhou-education.adapter.js';
 import { FuyangEducationAdapter } from './adapters/fuyang-education.adapter.js';
 import { JinanEducationAdapter } from './adapters/jinan-education.adapter.js';
 import { YantaiEducationAdapter } from './adapters/yantai-education.adapter.js';
+import { NanchangEducationAdapter } from './adapters/nanchang-education.adapter.js';
 
 function fixtureDir(key: string): string {
   return path.resolve(process.cwd(), '../tests/fixtures/golden-sources', key);
@@ -1427,5 +1429,137 @@ describe('N2 公开接口族来源真实样本回放', () => {
         fetchedAt: '2026-11-06T00:00:00.000Z',
       }),
     ).toThrow(AdapterParseError);
+  });
+
+  it('南昌教师科：静态锚点列表、createPageHTML 分页与正文附件一致', () => {
+    const manifest = readManifest('nanchang', 'public-manifest.json');
+    const list1File = manifest.files.find(
+      (file) => file.name === 'public-list-1.html',
+    )!;
+    const list1 = readFixture('nanchang', 'public-list-1.html');
+    expect(createHash('sha256').update(list1).digest('hex')).toBe(
+      list1File.sha256,
+    );
+    const detailPattern = /\/ncjyj\/[a-z]+\/\d{6}\/[a-f0-9]{32}\.shtml(?:[?#]|$)/;
+    const items = discoverStaticAnchorList(list1File.url, list1, detailPattern);
+    // 官方声明首屏 25 条（含 1 条跨栏目 /ncjyj/jszgrd/ 链接）
+    expect(items).toHaveLength(25);
+    expect(
+      items.every((item) => /^\d{4}-\d{2}-\d{2}$/.test(item.publishedAt)),
+    ).toBe(true);
+    expect(
+      items.every((item) => item.url.startsWith('https://edu.nc.gov.cn/ncjyj/')),
+    ).toBe(true);
+    // 教师招聘相关条目（混合栏目按标题判定）
+    expect(
+      items.some((item) => item.title.includes('中小学教师招聘面试公告')),
+    ).toBe(true);
+    expect(
+      items.some((item) => item.title.includes('引进急需紧缺人才')),
+    ).toBe(true);
+
+    // 官方 createPageHTML 分页：2 页 → 后续页 nav_list_2.shtml
+    const pages = staticListPages(list1File.url, list1);
+    expect(pages).toEqual([
+      'https://edu.nc.gov.cn/ncjyj/jskfw/nav_list_2.shtml',
+    ]);
+    const list2File = manifest.files.find(
+      (file) => file.name === 'public-list-2.html',
+    )!;
+    const list2 = readFixture('nanchang', 'public-list-2.html');
+    expect(createHash('sha256').update(list2).digest('hex')).toBe(
+      list2File.sha256,
+    );
+    const page2 = discoverStaticAnchorList(list2File.url, list2, detailPattern);
+    expect(page2).toHaveLength(9);
+    const firstUrls = new Set(items.map((item) => item.url));
+    expect(page2.every((item) => !firstUrls.has(item.url))).toBe(true);
+
+    // 正文：官方 meta + #zoom；附件为相对路径 <文章ID>/files/ 下 xlsx/pdf
+    const detail = readManifest('nanchang', 'public-detail-manifest.json');
+    const detailFile = detail.files.find(
+      (file) => file.name === 'public-detail.html',
+    )!;
+    const detailBytes = readFileSync(
+      path.join(fixtureDir('nanchang'), detailFile.name),
+    );
+    expect(createHash('sha256').update(detailBytes).digest('hex')).toBe(
+      detailFile.sha256,
+    );
+    const article = locateOfficialArticle(
+      detailFile.url,
+      detailBytes.toString('utf8'),
+    );
+    expect(article.title).toContain('中小学教师招聘面试公告');
+    expect(article.publishedAt).toBe('2026-07-21');
+    expect(article.bodyText.length).toBeGreaterThan(100);
+    expect(article.attachments).toHaveLength(3);
+    expect(
+      article.attachments.every((attachment) =>
+        attachment.url.startsWith(
+          'https://edu.nc.gov.cn/ncjyj/jskfw/202607/433e3b358909465ea328d1e7d1827895/files/',
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      article.attachments.filter((attachment) =>
+        /\.xlsx$/i.test(attachment.url),
+      ),
+    ).toHaveLength(2);
+
+    // 跨栏目详情（/ncjyj/jszgrd/ 教师资格专栏）：同样按官方 meta + #zoom 解析
+    const crossFile = detail.files.find(
+      (file) => file.name === 'public-detail-cross.html',
+    )!;
+    const crossBytes = readFileSync(
+      path.join(fixtureDir('nanchang'), crossFile.name),
+    );
+    expect(createHash('sha256').update(crossBytes).digest('hex')).toBe(
+      crossFile.sha256,
+    );
+    const cross = locateOfficialArticle(
+      crossFile.url,
+      crossBytes.toString('utf8'),
+    );
+    expect(cross.title).toContain('引进急需紧缺人才');
+    expect(cross.publishedAt).toBe('2026-05-25');
+    expect(cross.attachments).toHaveLength(1);
+    expect(cross.attachments[0].url).toContain('/ncjyj/jszgrd/202605/');
+    expect(cross.attachments[0].url).toMatch(/\.doc$/i);
+  });
+
+  it('南昌适配器在真实样本上不抛 DOM 失配，JSON 输入显式拒绝', () => {
+    const adapter = new NanchangEducationAdapter();
+    const list1File = readManifest('nanchang', 'public-manifest.json').files.find(
+      (file) => file.name === 'public-list-1.html',
+    )!;
+    expect(
+      adapter.discover({
+        url: list1File.url,
+        mimeType: 'text/html',
+        content: readFixture('nanchang', 'public-list-1.html'),
+        fetchedAt: '2026-11-06T00:00:00.000Z',
+      }),
+    ).toHaveLength(25);
+    expect(() =>
+      adapter.discover({
+        url: list1File.url,
+        mimeType: 'application/json',
+        content: '{"success":true,"data":{"html":"<ul></ul>"}}',
+        fetchedAt: '2026-11-06T00:00:00.000Z',
+      }),
+    ).toThrow(/静态列表/);
+    const detailFile = readManifest(
+      'nanchang',
+      'public-detail-manifest.json',
+    ).files.find((file) => file.name === 'public-detail.html')!;
+    const article = adapter.locateArticle({
+      url: detailFile.url,
+      mimeType: 'text/html',
+      content: readFixture('nanchang', 'public-detail.html'),
+      fetchedAt: '2026-11-06T00:00:00.000Z',
+    });
+    expect(article.title).toContain('中小学教师招聘面试公告');
+    expect(article.attachments).toHaveLength(3);
   });
 });

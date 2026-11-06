@@ -323,6 +323,21 @@ export const SOURCE_CATALOG: readonly SourceCatalogEntry[] = [
       '「公告公示」混合栏目（trs1308521）真实核验（2026-11-06）：列表页为 JS 壳，记录由 POST /els-service/article/{page}/{size} JSON 接口返回（官方 49 页 / 每页 20 条）；按单来源窗口只监测最新 6 页（约 120 条），窗口已登记（ELS_PAGE_WINDOWS）；列表/分页均为受限 JSON POST（≤4KB、固定模板、重定向降级 GET）；正文 meta ArticleTitle/PubDate + td#Content、附件 /upload-service/ 回放通过；无专属教师招聘栏目，混合栏目按标题判定形态；持续监测见检查记录。',
   },
   {
+    sourceKey: 'nanchang-education',
+    publisher: '南昌市教育局',
+    regionCode: '360100',
+    authorityLevel: 'city',
+    officialUrl: 'https://edu.nc.gov.cn/',
+    listUrls: ['https://edu.nc.gov.cn/ncjyj/jskfw/nav_list.shtml'],
+    allowedHosts: ['edu.nc.gov.cn'],
+    adapterKey: 'nanchang-education',
+    status: 'ready',
+    verifiedAt: '2026-11-06',
+    sampleRef: 'tests/fixtures/golden-sources/nanchang',
+    coverageNote:
+      '「教师科发文」混合栏目真实核验（2026-11-06）：服务端渲染静态列表（ul.item li > a[title] + 同级 span 日期）、官方 createPageHTML 分页（2 页 / 34 条，nav_list_<n>.shtml）、正文官方 meta（ArticleTitle/PubDate）+ #zoom 与相对路径 <文章ID>/files/ 附件（xlsx/pdf/doc）离线回放通过；列表含跨栏目链接（/ncjyj/jszgrd/ 教师资格专栏），按详情路径放行；混合栏目，教师招聘相关条目按标题判定；持续监测见检查记录。',
+  },
+  {
     sourceKey: 'changzhou-education',
     publisher: '常州市教育局',
     regionCode: '320400',
@@ -907,6 +922,26 @@ export const SOURCE_MONITORING_RECORDS: readonly SourceMonitoringRecord[] = [
         contentHash:
           '1ea4bb4e9e35b51ce435512b014dde3f4896136e469208a21b342317e87fccc4',
         note: 'N2 第二次真实采样（距首次约 31 秒）：第 1 页 20 条标题/日期/链接与首次一致，指纹（日期|标题|URL 行 sha256）相同；7 天持续观察窗口尚未完成。',
+      },
+    ],
+  },
+  {
+    sourceKey: 'nanchang-education',
+    checks: [
+      {
+        checkedAt: '2026-11-06T03:59:14.704Z',
+        outcome: 'succeeded',
+        discoveredCount: 25,
+        contentHash: null,
+        note: 'N3 首次真实采样：教师科栏目首屏 25 条（含 1 条跨栏目 /ncjyj/jszgrd/ 链接）；createPageHTML 声明 2 页 / 34 条，第 2 页 9 条与首屏无重叠；正文官方 meta + #zoom 与相对路径附件（xlsx/pdf/doc）离线回放通过。7 天持续观察窗口尚未完成。',
+      },
+      {
+        checkedAt: '2026-11-06T04:07:36.596Z',
+        outcome: 'no_new',
+        discoveredCount: 25,
+        contentHash:
+          '6a661c54ccea5c4323fa0e4fb6d07a57e9a91955746575a819ff507ecded3b9b',
+        note: 'N3 第二次真实采样（距首次约 8 分钟）：首屏 25 条标题/日期/链接与首次一致，指纹（日期|标题|URL 行 sha256）相同；7 天持续观察窗口尚未完成。',
       },
     ],
   },

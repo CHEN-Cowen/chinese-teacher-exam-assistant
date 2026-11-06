@@ -26,6 +26,7 @@ import { JinanEducationAdapter } from './adapters/jinan-education.adapter.js';
 import { YantaiEducationAdapter } from './adapters/yantai-education.adapter.js';
 import { TaianEducationAdapter } from './adapters/taian-education.adapter.js';
 import { WeifangEducationAdapter } from './adapters/weifang-education.adapter.js';
+import { NanchangEducationAdapter } from './adapters/nanchang-education.adapter.js';
 
 /** 过滤掉未注入的可选适配器（保持类型收窄） */
 function defined<T>(value: T | undefined): value is T {
@@ -59,6 +60,7 @@ export class AdapterRegistry {
     yantai?: YantaiEducationAdapter,
     taian?: TaianEducationAdapter,
     weifang?: WeifangEducationAdapter,
+    nanchang?: NanchangEducationAdapter,
   ) {
     const adapters: OfficialSiteAdapter[] = [
       hangzhou,
@@ -81,6 +83,7 @@ export class AdapterRegistry {
       yantai,
       taian,
       weifang,
+      nanchang,
     ].filter(defined);
     this.byKey = new Map(adapters.map((adapter) => [adapter.key, adapter]));
   }

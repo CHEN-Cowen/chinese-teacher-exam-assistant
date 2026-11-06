@@ -19,15 +19,15 @@
 | 指标 | 当前值 | 说明 |
 |---|---|---|
 | 省级行政区目录登记 | 31 / 31 | 已建立省级目录行；多数入口仍待逐站核验 |
-| 有招聘来源实际接入的省级行政区 | 4 / 31 | 浙江、江苏、安徽、山东；其余 27 个省级行政区无已接入招聘来源 |
-| 已登记来源总数 | 23 | 19 个教师招聘 ready + 1 个政策 ready + 2 个省级候选 + 1 个受阻 |
-| 已接入招聘来源 | 19 | 浙江 8、江苏 4、安徽 3、山东 4 |
-| 样本通过来源 | 3 | 宁波（B 级真实材料闭环）、南京与丽水（A 级独立清单发现对账）；其余 16 个为 fixture 级（含 N1/N2 真实样本回放） |
+| 有招聘来源实际接入的省级行政区 | 5 / 31 | 浙江、江苏、安徽、山东、江西；其余 26 个省级行政区无已接入招聘来源 |
+| 已登记来源总数 | 24 | 20 个教师招聘 ready + 1 个政策 ready + 2 个省级候选 + 1 个受阻 |
+| 已接入招聘来源 | 20 | 浙江 8、江苏 4、安徽 3、山东 4、江西 1 |
+| 样本通过来源 | 3 | 宁波（B 级真实材料闭环）、南京与丽水（A 级独立清单发现对账）；其余 17 个为 fixture 级（含 N1/N2/N3 真实样本回放） |
 | 持续运行通过来源 | 0 | 连续 7 天观察 0/7，不能声称持续运行通过 |
-| 市级/区县级目录分母 | 待建立 | 现有账本覆盖 17 个地市/区县地区（19 个招聘来源），不能据此计算全国缺口 |
+| 市级/区县级目录分母 | 待建立 | 现有账本覆盖 18 个地市/区县地区（20 个招聘来源），不能据此计算全国缺口 |
 | 全国完整召回 | 未验证 | 无全国独立清单，不能声称完整召回 |
 
-口径说明：`docs/m08-source-acceptance-report.md` 中的 A/B/C 是**证据档位**，D 是**持续运行档位**。当前 19 个招聘来源按持续运行口径全部为 D（待持续验收），因此本账本不把任何来源标记为“持续运行通过”；“样本通过 3”仅表示宁波（B）、南京与丽水（A）具备真实官方样本与材料/对账证据。N1 新增的湖州、泰州、亳州、阜阳与 N2 新增的济南、烟台、泰安、潍坊已完成真实样本采集与离线回放，但尚未做独立清单对账，故记为 fixture 级。
+口径说明：`docs/m08-source-acceptance-report.md` 中的 A/B/C 是**证据档位**，D 是**持续运行档位**。当前 20 个招聘来源按持续运行口径全部为 D（待持续验收），因此本账本不把任何来源标记为“持续运行通过”；“样本通过 3”仅表示宁波（B）、南京与丽水（A）具备真实官方样本与材料/对账证据。N1 新增的湖州、泰州、亳州、阜阳，N2 新增的济南、烟台、泰安、潍坊与 N3 新增的南昌已完成真实样本采集与离线回放，但尚未做独立清单对账，故记为 fixture 级。
 
 ## 3. 省级行政区目录账本（31 行）
 
@@ -53,7 +53,7 @@
 | 11 | 浙江省 | 330000 | 浙江省教育厅 | https://jyt.zj.gov.cn/（教育厅）；http://www.zjzs.net（教育考试网） | 省级候选；“公告公示”为聚合页，无独立教师招聘栏目 | 8 | 部分接入 | 杭州、宁波、鄞州、丽水、绍兴、嘉兴、萧山、湖州已接入；其余地市与区县待补齐 |
 | 12 | 安徽省 | 340000 | 安徽省教育厅 | http://jyt.ah.gov.cn/ | 教育厅门户；省级政策源已接入，招聘栏目待核验 | 3 | 部分接入 | 蚌埠、亳州、阜阳已接入；其余地市与区县待补齐；省级政策不计招聘覆盖 |
 | 13 | 福建省 | 350000 | 福建省教育厅 | http://www.fjjszg.com | 教师资格入口；教育厅门户待补 | 0 | 未覆盖 | 省级统一招聘与市县入口待接入 |
-| 14 | 江西省 | 360000 | 江西省教育厅 | http://jyt.jiangxi.gov.cn | 教育厅门户；招聘栏目待核验 | 0 | 未覆盖 | 同上 |
+| 14 | 江西省 | 360000 | 江西省教育厅 | http://jyt.jiangxi.gov.cn | 教育厅门户；招聘栏目待核验 | 1 | 部分接入 | 南昌已接入；其余地市与区县待补齐 |
 | 15 | 山东省 | 370000 | 山东省教育厅 | http://edu.shandong.gov.cn | 教育厅门户；招聘栏目待核验 | 4 | 部分接入 | 济南、烟台、泰安、潍坊已接入；其余地市与区县待补齐 |
 | 16 | 河南省 | 380000 | 河南省教育厅 | http://jyt.henan.gov.cn/ | 教育厅门户；招聘栏目待核验 | 0 | 未覆盖 | 同上 |
 | 17 | 湖北省 | 420000 | 湖北省教育厅 | http://www.hbies.cn/ | 教师资格业务入口；教育厅门户待补 | 0 | 未覆盖 | 同上 |
@@ -97,6 +97,7 @@
 | yantai-education | 烟台市教育局 | 370600 | 市 | 招聘 | ready | 2026-11-06 | fixture 级（真实样本） | 未通过 | 「通知公告」混合栏目；jpaas li.cf + span.fr；官方 1365 条 / 91 页，按单来源窗口只监测最新 6 页（90 条）；列表直链 PDF 不按正文抓取；正文与 xls 附件回放通过；7 天观察未完成 |
 | taian-education | 泰安市教育局 | 370900 | 市 | 招聘 | ready | 2026-11-06 | fixture 级（真实样本） | 未通过 | 「公示公告」混合栏目；首屏内嵌 datastore 45 条，后续 POST jpage dataproxy（227 条 / 16 页 / 每页 15 条）补齐；正文 ContentStart/ContentEnd、附件 downfile.jsp 回放通过；7 天观察未完成 |
 | weifang-education | 潍坊市教育局 | 370700 | 市 | 招聘 | ready | 2026-11-06 | fixture 级（真实样本） | 未通过 | 「公告公示」混合栏目（trs1308521）；列表页 JS 壳，POST els-service JSON 接口（官方 49 页 / 每页 20 条），按单来源窗口只监测最新 6 页（约 120 条）；正文 meta + td#Content、附件 /upload-service/ 回放通过；7 天观察未完成 |
+| nanchang-education | 南昌市教育局 | 360100 | 市 | 招聘 | ready | 2026-11-06 | fixture 级（真实样本） | 未通过 | 「教师科发文」混合栏目；服务端渲染静态列表（ul.item li > a[title] + 同级 span）+ createPageHTML 分页（2 页 / 34 条）；含跨栏目 /ncjyj/jszgrd/ 链接按详情路径放行；正文 meta + #zoom、相对路径 <文章ID>/files/ 附件（xlsx/pdf/doc）回放通过；7 天观察未完成 |
 | anhui-education-policy | 安徽省教育厅 | 340000 | 省 | 政策 | ready | 2026-11-05 | fixture 级 | 未通过 | 只服务政策检索，不计招聘覆盖 |
 | jiangsu-education-candidate | 江苏省教育厅 | 320000 | 省 | 招聘候选 | candidate | 未核验 | 无 | 未接入 | 省级不发布市县招聘，不能替代市县覆盖 |
 | zhejiang-education-candidate | 浙江省教育厅 | 330000 | 省 | 招聘候选 | candidate | 未核验 | 无 | 未接入 | 公告公示为聚合页，无独立教师招聘栏目 |
@@ -149,6 +150,7 @@
 | yantai-education | 山东烟台 | jpaas 公开接口 + li | `.page-content li.cf`，`a[title]` + `span.fr`；列表直链 PDF 按文章路径过滤 | DOM 属性 rows=15/count=1365 → 官方 91 页；单来源窗口只取最新 6 页 | `#zoom` + meta | jpaas `front/document/download`（xls） | `tests/fixtures/golden-sources/yantai` |
 | taian-education | 山东泰安 | 首屏内嵌 datastore + jpage POST | `<record><![CDATA[<li>a[title] + span.bt-right]]>`，首屏 45 条 | jpage `perPage:15` / totalRecord:227 → 13 个后续 POST dataproxy 页 | meta（ArticleTitle/pubdate）+ ContentStart/ContentEnd | `/module/download/downfile.jsp`（pdf） | `tests/fixtures/golden-sources/taian` |
 | weifang-education | 山东潍坊 | 列表页 JS 壳 + els-service JSON POST | `{"success":true,"data":{"totalPages":49,"contents":[…]}}`，subject 剥离内嵌 HTML，首屏 20 条 | POST `/els-service/article/{page}/{size}`（body 固定模板 dq/dwid/catas），官方 49 页；单来源窗口只取最新 6 页 | meta（ArticleTitle/PubDate）+ `td#Content` | `/upload-service/…`（xls/docx/xlsx，td.art > div.appendix） | `tests/fixtures/golden-sources/weifang` |
+| nanchang-education | 江西南昌 | 服务端渲染静态列表 | `ul.item li`，`a[title]` + 同级 `span`（YYYY-MM-DD）；含跨栏目 `/ncjyj/jszgrd/` 链接按详情路径放行，首屏 25 条 | 官方 `createPageHTML('page_div',2,1,'nav_list','shtml',34)` → `nav_list_2.shtml`，共 2 页 / 34 条 | 官方 meta（ArticleTitle/PubDate）+ `#zoom` | 相对路径 `<文章ID>/files/`（xlsx/pdf/doc） | `tests/fixtures/golden-sources/nanchang` |
 
 新增能力（复用而非单点硬编码）：
 
@@ -160,27 +162,28 @@
 - 新增 `els-list.ts`：解析 els-service JSON 列表（totalPages/contents），由分页 URL query 确定性派生 JSON 请求体，生成后续页 URL 与按 host 登记的分页窗口（`ELS_PAGE_WINDOWS`，潍坊 6 页）；
 - `SafeFetcher` 新增 POST 边界（仅 form-urlencoded 或固定模板 JSON 对象、≤4KB、重定向降级 GET、仍走完整 allowlist/DNS 校验；JSON 通道拒绝数组/标量/非法 JSON）；
 - 正文附件收集增加 `.m-filbox` / `.m-file-download` / `.m-dtdownload` 容器，避免岗位表在正文容器外被漏采；潍坊附件在同表 `td.art > div.appendix`，按文章表格定位收集。
+- 新增 `discoverStaticAnchorList`（`public-column.ts`）：覆盖 `ul.item li > a[title] + 同级 span` 静态锚点列表族（南昌教师科），分页复用 `staticListPages`（createPageHTML → `_<n>.shtml`），跨栏目详情按路径正则放行。
 
 ### 8.2 逐来源验证状态
 
-| 验证项 | 湖州 | 泰州 | 亳州 | 阜阳 | 济南 | 烟台 | 泰安 | 潍坊 | 证据 |
-|---|---|---|---|---|---|---|---|---|---|
-| 自动发现公告 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 真实列表首屏 15/15/15/10/15/12/45/20 条，`public-column-s5.spec.ts`、`jpage-list.spec.ts` 与 `els-list.spec.ts` 回放 |
-| 正文抓取 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 真实正文快照，标题/日期/正文非空 |
-| 岗位/附件抓取 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 真实附件链接（xlsx / xls / doc、et / xlsx / pdf、doc、docx / pdf、xls+docx / xlsx） |
-| 去重 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 第一页与第二页 URL 无交集断言；泰安首屏 45 条与 POST 第 4 页 46 条无重叠；潍坊首屏与第 3 页无重叠 |
-| 补充通知关联 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 需审核发布链路真实运行后确认 |
-| 失败重试 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 需调度失败注入后确认 |
-| 告警 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 需结构漂移注入后确认 |
-| 审核发布 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 需生产/预发审核链路 |
-| 用户侧可见性 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 需发布后用户侧抽查 |
+| 验证项 | 湖州 | 泰州 | 亳州 | 阜阳 | 济南 | 烟台 | 泰安 | 潍坊 | 南昌 | 证据 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 自动发现公告 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 真实列表首屏 15/15/15/10/15/12/45/20/25 条，`public-column-s5.spec.ts`、`jpage-list.spec.ts` 与 `els-list.spec.ts` 回放 |
+| 正文抓取 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 真实正文快照，标题/日期/正文非空 |
+| 岗位/附件抓取 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 真实附件链接（xlsx / xls / doc、et / xlsx / pdf、doc、docx / pdf、xls+docx / xlsx / xlsx+pdf+doc） |
+| 去重 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 第一页与第二页 URL 无交集断言；泰安首屏 45 条与 POST 第 4 页 46 条无重叠；潍坊首屏与第 3 页无重叠；南昌首屏 25 条与第 2 页 9 条无重叠 |
+| 补充通知关联 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 需审核发布链路真实运行后确认 |
+| 失败重试 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 需调度失败注入后确认 |
+| 告警 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 需结构漂移注入后确认 |
+| 审核发布 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 需生产/预发审核链路 |
+| 用户侧可见性 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 需发布后用户侧抽查 |
 
 说明：自动发现、正文、附件、去重已有真实样本证据；补充通知、重试、告警、审核发布与用户可见性属于**运行链路**验证，尚未执行，因此不标记通过。
 
 ### 8.3 7 天观察窗口
 
 - 窗口开始：2026-11-05（首日）。
-- 当前进度：**0 / 7 天**。首日两次真实采样（约间隔 9.5 分钟）均为 HTTP 200 且条目与首采一致，已记入 `SOURCE_MONITORING_RECORDS`；N2 济南另完成首日两次真实采样（16:17 与 16:20），烟台完成首日两次真实采样（2026-11-06 01:08 与 01:09 UTC，两次指纹一致，第 2 页与首屏无重叠），泰安完成首日两次真实采样（2026-11-06T01:53:26.910Z 与 01:54:34.111Z UTC，两次均 45 条，第 2 次指纹 `09cdc350…`），潍坊完成首日两次真实采样（2026-11-06T02:57:47.297Z 与 02:58:18.037Z UTC，两次均 20 条，第 2 次指纹 `1ea4bb4e…`），同样条目一致；按连续 2 次成功阈值，机器状态为 `monitoring`（只代表“到最近一次检查为止正常”），不代表 7 天窗口完成。
+- 当前进度：**0 / 7 天**。首日两次真实采样（约间隔 9.5 分钟）均为 HTTP 200 且条目与首采一致，已记入 `SOURCE_MONITORING_RECORDS`；N2 济南另完成首日两次真实采样（16:17 与 16:20），烟台完成首日两次真实采样（2026-11-06 01:08 与 01:09 UTC，两次指纹一致，第 2 页与首屏无重叠），泰安完成首日两次真实采样（2026-11-06T01:53:26.910Z 与 01:54:34.111Z UTC，两次均 45 条，第 2 次指纹 `09cdc350…`），潍坊完成首日两次真实采样（2026-11-06T02:57:47.297Z 与 02:58:18.037Z UTC，两次均 20 条，第 2 次指纹 `1ea4bb4e…`），南昌完成首日两次真实采样（2026-11-06T03:59:14.704Z 与 04:07:36.596Z UTC，两次均 25 条，第 2 次指纹 `6a661c54…`），同样条目一致；按连续 2 次成功阈值，机器状态为 `monitoring`（只代表“到最近一次检查为止正常”），不代表 7 天窗口完成。
 - 规则：每日至少一次真实调度记录；连续 2 次成功才从 `verifying` 进入监测状态；窗口未满不得宣称“持续运行通过”。
 - 未完成前，用户侧与验收报告一律按“样本通过、持续运行未验证”表述。
 
@@ -201,13 +204,14 @@
 | 厦门市教育局 | https://edu.xm.gov.cn/xxgk/jszk/ | 受限，未纳入 | 「教师招考」首屏 15 条静态可读，但 `?page=N` 翻页请求被 WAF 拦截；不绕过 WAF，记录原因待站点策略调整后重试 |
 | 潍坊市教育局 | https://jyj.weifang.gov.cn/ | 已接入（2026-11-06） | 「公告公示」为 JS 壳 + `POST /els-service/article/{page}/{size}` JSON 接口；已完成 els-service JSON 通道适配（固定模板 body、≤4KB、重定向降级 GET）并登记单来源 6 页窗口，见 8.1 |
 | 广州、石家庄、郑州、泉州、东莞等 | — | 未纳入 | 首页无招聘栏目、入口不可达或栏目为混合公开事项；不以目录登记冒充覆盖 |
+| 郑州、福州、广州、太原 | 各市教育局官网 | 候选，列入后续批次 | 2026-11-06 探查：首页与招聘相关栏目均可达（郑州「通知公告」`/tzgg/index.jhtml`；福州「通知公告」`/zwgk/tzgg/`，TRS `.htm` 详情；广州「通知公告」`/yw/tzgg/` 与「网上公示」`/yw/wsgs/`；太原「通知公告」`/tzgg.html` 单页 20 条）；本批只接入南昌，其余列入后续批次候选 |
 
 ## 9. 当前结论与缺口
 
-1. 省级目录登记 31/31，但仅 4 个省级行政区有招聘来源实际接入；27 个省级行政区未覆盖。
-2. 已接入 19 个招聘来源，其中样本级证据 3 个，持续运行通过 0 个。
-3. N1 新增湖州、泰州、亳州、阜阳 4 个跨省市级来源；N2 新增山东济南、烟台、泰安、潍坊 4 个公开接口族来源；均完成真实样本回放；烟台/潍坊按单来源分页窗口分别只监测最新 6 页（官方 91 页 / 49 页），窗口已登记；运行链路验证与 7 天观察尚未完成。
-4. 市级、区县级全国分母尚未建立，现有 17 个地市/区县地区（19 个招聘来源）不能代表全国。
+1. 省级目录登记 31/31，但仅 5 个省级行政区有招聘来源实际接入；26 个省级行政区未覆盖。
+2. 已接入 20 个招聘来源，其中样本级证据 3 个，持续运行通过 0 个。
+3. N1 新增湖州、泰州、亳州、阜阳 4 个跨省市级来源；N2 新增山东济南、烟台、泰安、潍坊 4 个公开接口族来源；N3 新增江西南昌 1 个静态锚点列表族来源；均完成真实样本回放；烟台/潍坊按单来源分页窗口分别只监测最新 6 页（官方 91 页 / 49 页），窗口已登记；运行链路验证与 7 天观察尚未完成。
+4. 市级、区县级全国分母尚未建立，现有 18 个地市/区县地区（20 个招聘来源）不能代表全国。
 5. 全国完整召回未验证；本文件不宣称全部覆盖或完整召回。
 6. 下一步：继续 N1 补齐浙江、江苏、安徽其余市级/区县缺口，同时推进 N2 公开接口族扩省与 7 天真实观察；随后按网站类型推进 N3—N5。
 
@@ -222,3 +226,4 @@
 | 2026-11-06 | N2 扩源接入山东烟台「通知公告」；jpaas `li.cf` + `span.fr`，官方 1365 条 / 91 页，按 `PUBLIC_COLUMN_PAGE_WINDOWS` 只监测最新 6 页（90 条），列表直链 PDF 按文章路径过滤，正文与 xls 附件回放通过；登记青岛/厦门受限原因与泰安候选 | `backend/src/sourcing/adapters/yantai-education.adapter.ts`；`tests/fixtures/golden-sources/yantai`；`backend/src/sourcing/public-column.ts`；`backend/src/sourcing/public-column-s5.spec.ts` |
 | 2026-11-06 | N2 扩源接入山东泰安「公示公告」；首屏内嵌 datastore 45 条 + 13 个后续 jpage dataproxy POST 页（227 条 / 16 页），新增 `SafeFetcher` 受限 POST form 能力（≤4KB、仅 form-urlencoded、重定向降级 GET），正文 ContentStart/ContentEnd 与 `downfile.jsp` pdf 附件回放通过；首日两次真实采样已记录 | `backend/src/sourcing/adapters/taian-education.adapter.ts`；`backend/src/sourcing/jpage-list.ts`；`backend/src/sourcing/jpage-list.spec.ts`；`backend/src/sourcing/fetch/safe-fetcher.ts`；`tests/fixtures/golden-sources/taian` |
 | 2026-11-06 | N2 扩源接入山东潍坊「公告公示」；列表页为 JS 壳，新增 `els-list.ts` 解析 els-service JSON 列表（官方 49 页 / 每页 20 条，单来源窗口 6 页），`SafeFetcher` POST 边界扩展固定模板 JSON（对象校验、≤4KB、重定向降级 GET），详情 URL 前缀由 dwid 派生，正文 meta + `td#Content` 与 `/upload-service/` 附件回放通过；首日两次真实采样已记录 | `backend/src/sourcing/adapters/weifang-education.adapter.ts`；`backend/src/sourcing/els-list.ts`；`backend/src/sourcing/els-list.spec.ts`；`backend/src/sourcing/fetch/safe-fetcher.ts`；`tests/fixtures/golden-sources/weifang` |
+| 2026-11-06 | N3 扩源接入江西南昌「教师科发文」；服务端渲染静态锚点列表（`ul.item li > a[title]` + 同级 span），新增 `discoverStaticAnchorList`，分页复用 `staticListPages`（官方 `createPageHTML` 声明 2 页 / 34 条），跨栏目 `/ncjyj/jszgrd/` 详情按路径放行；正文官方 meta + `#zoom` 与相对路径 `<文章ID>/files/` 附件（xlsx/pdf/doc）回放通过；首日两次真实采样已记录；江西成为第 5 个有接入省份 | `backend/src/sourcing/adapters/nanchang-education.adapter.ts`；`backend/src/sourcing/public-column.ts`；`backend/src/sourcing/public-column-s5.spec.ts`；`tests/fixtures/golden-sources/nanchang` |
