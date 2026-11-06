@@ -353,6 +353,22 @@ export const SOURCE_CATALOG: readonly SourceCatalogEntry[] = [
       '「通知公告」混合栏目真实核验（2026-11-06）：服务端渲染静态列表（ul.List_list li > span.fr 日期 + a[title]）、JS 跳转式分页（页码锚点 href="#" + onclick location.href，官方 93 条 / 5 页 / 每页 20 条，由 jsPaginationPages 解析）、正文官方 meta（ArticleTitle/PubDate）+ #zoom 与 /u/cms/site28/ 下 xlsx 附件离线回放通过；混合栏目，教师招聘相关条目按标题判定；持续监测见检查记录。',
   },
   {
+    sourceKey: 'zhengzhou-education',
+    publisher: '郑州市教育局',
+    regionCode: '410100',
+    authorityLevel: 'city',
+    officialUrl: 'https://zzjy.zhengzhou.gov.cn/',
+    // 老站 http 列表入口 + 新政务 https 详情域名（混合栏目双域名并存）
+    listUrls: ['https://zzjy.zhengzhou.gov.cn/tzgg/index.jhtml'],
+    allowedHosts: ['zzjy.zhengzhou.gov.cn', 'news.zzedu.net.cn'],
+    adapterKey: 'zhengzhou-education',
+    status: 'ready',
+    verifiedAt: '2026-11-06',
+    sampleRef: 'tests/fixtures/golden-sources/zhengzhou-education',
+    coverageNote:
+      '「通知公告」混合栏目真实核验（2026-11-06，河南首个来源）：双域名并存——老站 http news.zzedu.net.cn/tz/ 静态列表（ul#pageCont a.new_link + M月D日 短日期），混合详情（.shtml 老站 SourceTitle + div#article / .jhtml 新政务 ArticleTitle + div.news_content_content）；JS 按钮"加载更多"分页（bfreeTools.js，首版只抓首屏 20 条）；含 10 条教师招聘/事业单位拟聘用公示（zzjy.zhengzhou.gov.cn/.jhtml），混合栏目按标题判定形态；持续监测见检查记录。',
+  },
+  {
     sourceKey: 'changzhou-education',
     publisher: '常州市教育局',
     regionCode: '320400',
@@ -977,6 +993,18 @@ export const SOURCE_MONITORING_RECORDS: readonly SourceMonitoringRecord[] = [
         contentHash:
           'be53f87ef2978a423bf4a204f9ce73332c556ae03d1c70058dac0537b22ad495',
         note: 'N3 第二次真实采样（距首次约 83 秒）：首屏 20 条标题/日期/链接与首次一致，指纹（日期|标题|URL 行 sha256）相同；7 天持续观察窗口尚未完成。',
+      },
+    ],
+  },
+  {
+    sourceKey: 'zhengzhou-education',
+    checks: [
+      {
+        checkedAt: '2026-11-06T06:30:00.000Z',
+        outcome: 'succeeded',
+        discoveredCount: 20,
+        contentHash: null,
+        note: 'N3 首次真实采样（河南首个来源）：老站 http news.zzedu.net.cn/tz/ 通知公告混合栏目首屏 20 条（10 条老站 .shtml + 10 条新政务 .jhtml）；JS 按钮"加载更多"分页（pageTotal=7），首版只抓首屏；双域名详情回放通过——.shtml 老站 SourceTitle + div#article、.jhtml 新政务 ArticleTitle + div.news_content_content + xlsx 附件下载。7 天持续观察窗口尚未完成。',
       },
     ],
   },
