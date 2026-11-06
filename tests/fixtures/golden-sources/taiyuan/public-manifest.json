@@ -1,0 +1,23 @@
+{
+  "source": "taiyuan-education",
+  "capturedAt": "2026-11-06T05:55:17.588Z",
+  "scope": "public-list",
+  "site": "https://jyj.taiyuan.gov.cn/",
+  "column": "通知公告（/tzgg.html，混合栏目，含公开招聘、职称评审、教师资格）",
+  "files": [
+    {
+      "name": "public-list-1.html",
+      "url": "https://jyj.taiyuan.gov.cn/tzgg.html",
+      "sha256": "81589e28917224b4a08bfc0d226a2f447b4698c75241ef561138d3bf81a55647",
+      "method": "GET",
+      "note": "首屏 20 条；分页为 JS 跳转式 onclick=location.href，官方声明共 93 条 / 5 页"
+    },
+    {
+      "name": "public-list-2.html",
+      "url": "https://jyj.taiyuan.gov.cn/tzgg_2.html",
+      "sha256": "bf9127fa97573f3ab175ce37ddfdadc1ab976a6c9dc0dc48e83835618640026e",
+      "method": "GET",
+      "note": "第二页 20 条；页码锚点 href=# + onclick=location.href='tzgg_<n>.html'"
+    }
+  ]
+}

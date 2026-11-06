@@ -1,0 +1,374 @@
+<!DOCTYPE html
+  PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+
+<head>
+  <!--网站标签-->
+  <!--网站名称、网站域名、政府网站标识码、描述、关键字 -->
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<meta name="SiteName" content="太原市教育局网站" />
+<meta name="SiteDomain" content="jyj.taiyuan.gov.cn" />
+<meta name="SiteIDCode" content="CA061130000413013300002" />
+<meta name="description" content="太原市教育局">
+<meta name="keywords" content="">  <!--栏目标签-->
+<!--栏目名称、栏目描述、栏目关键字、栏目类别 -->
+<meta name="ColumnName" content="通知公告" />
+<meta name="ColumnDescription" content="通知公告" />
+<meta name="ColumnKeyWords" content="通知公告" />
+<meta name="ColumnType" content="通知公告" />
+  <title>通知公告-太原市教育局网站</title>
+  <link rel="stylesheet" type="text/css" href="/r/cms/site28/default/tysjyj/static/css/channelpage_ty.css" />
+  <link rel="stylesheet" type="text/css" href="/r/cms/site28/default/tysjyj/static/css/info.css" />
+<script src="/r/cms/site28/default/tysjyj/static/js/jquery-1.7.1.min.js"></script>
+<script src="/r/cms/site28/default/tysjyj/static/js/common.js"></script>
+  <script language="javascript" type="text/javascript" src="/r/cms/site28/default/tysjyj/static/js/jquery.tab.js"></script>
+  <script language="javascript" type="text/javascript" src="/r/cms/site28/default/tysjyj/static/js/jquery.roll.js"></script>
+  <script language="javascript" type="text/javascript" src="/r/cms/site28/default/tysjyj/static/js/jquery.SuperSlide.js"></script>
+  <script src="/r/cms/site28/default/tysjyj/static/js/jquery.tree.js"></script>
+</head>
+
+<body>
+<script type="text/javascript">
+/*accessible-read start*/
+	var close = localStorage.getItem("close");
+	var protocol = window.location.protocol
+	if(close=='true'){
+		show()
+	}
+
+	function show(){
+		let xml = window.XMLHttpRequest?new XMLHttpRequest():new ActiveXObject('Microsoft.XMLHttp');
+		xml.open('GET','https://api.jeecms.com/MODULE-ACCESSIBLE-READING/front/readings/checkAvailability?callingCode=4cU3e84wRBad3qyPeq4wU7if3aTD-m3bAkdd33zAtc39AQ1e3oEQBb3qQnxv4rPjd74rP8ym4lTz-j4mUz-b4nEPRv4oS7ek3qyPeq39y49e34A4t93qzkdg4aQjdh4pP7mk4cQl2932ETmS4zU49v39CRW=3fSEyu4XU4ar39TQio4WSBOC3qBjev4eQTig4VT7am3qT7mk4vQPd73eA7mu3fzQ593cy4lc3qzQB93YMh62');
+		xml.send();
+		xml.onreadystatechange=function(){
+			if($('#ABTInterface').length!=0){
+				return
+			}
+			if (xml.readyState==4 && xml.status==200){
+				let res = JSON.parse(xml.responseText);
+				if (res.code == 200) {
+					localStorage.setItem("close", true);
+					let script = document.createElement('script');
+					// script.src = res.data.abtJsUrl;
+					let host = window.location.protocol+"//"+window.location.host;
+					script.src = host+"/r/cms/site28/default/reading/abt.js";
+					//重写为本地js
+					res.data.abtJsUrl=host+"/r/cms/site28/default/reading/abt.js";
+					res.data.gbkJsUrl=host+"/r/cms/site28/default/reading/gbk.js";
+					res.data.helpHtmlUrl=host+"/r/cms/site28/default/reading/help.html";
+					res.data.pinyinJsUrl=host+"/r/cms/site28/default/reading/pinyin.js";
+					res.data.skinCssUrl=host+"/r/cms/site28/default/reading/skin.css";
+					document.body.appendChild(script);
+					console.log(window.location.host)
+					console.log(res.data)
+					script.onload = function(){ABTshow(res.data);}
+				} else if (res.code == 500){
+					alert(res.message);
+				}
+			}
+		}
+	}
+
+</script>
+<script type="text/javascript" language="javascript">
+function collect(){
+//加入收藏
+      var ctrl = (navigator.userAgent.toLowerCase()).indexOf('mac') != -1 ? 'Command/Cmd': 'CTRL';
+      try{
+        if (document.all) { //IE类浏览器
+            try {
+                window.external.toString(); //360浏览器不支持window.external，无法收藏
+                window.alert("国内开发的360浏览器等不支持主动加入收藏。\n您可以尝试通过浏览器菜单栏 或快捷键 ctrl+D 试试。");
+            }
+            catch (e){   
+                try{
+window.external.addFavorite(window.location, document.title);
+                }
+                catch (e){
+window.external.addToFavoritesBar(window.location, document.title);  //IE8
+                }
+            }
+        }
+        else if (window.sidebar) { //firfox等浏览器
+            window.sidebar.addPanel(document.title, window.location, "");
+        }
+        else {
+            alert('您可以尝试通过快捷键' + ctrl + ' + D 加入到收藏夹~');
+        }
+    }
+    catch (e){
+       alert('您可以尝试通过快捷键' + ctrl + ' + D 加入到收藏夹~');
+    }
+}
+ 
+    //设为首页
+ 
+    function setHome(){
+ url= window.location.href;
+        if (document.all) {
+ 
+            document.body.style.behavior='url(#default#homepage)';
+ 
+               document.body.setHomePage(url);
+ 
+        }else{ 
+            alert("您好,您的浏览器不支持自动设置页面为首页功能,请您手动在浏览器里设置该页面为首页!");
+        }
+    }
+</script>
+<!--
+<script type="text/javascript">
+$(function(){
+  $('#sub').click(function(){
+    window.location.href='http://221.204.12.144:8090/fzlm/js/index.shtml?query='+$("#keyword").val();
+  });
+});
+</script>!-->
+<div class="head_top">
+	<div class="head_top_con">
+    	<ul class="fr clearfix">
+        <li><a href="javascript:void(0);" onclick="collect();">加入收藏</a></li>
+        <li><a href="javascript:void(0);" onclick="setHome();">设为首页</a></li>
+        <li><a href="javascript:void(0);" onclick="show();">无障碍通道</a></li>
+        </ul>
+    </div>       
+</div>  
+<div class="navbox">
+	<div class="navbox_con">
+        <ul class="nav_ul fl" style="margin-left:-18px;">
+        <li><a href="http://jyj.taiyuan.gov.cn/index.html">首&nbsp;&nbsp;页</a></li>
+        <li><a href="/dwgk.html" target="_blank">单位概况</a></li>
+        <li><a href="/zcfg.html" target="_blank">政策法规</a></li>
+        <li><a href="/zfxxgkzn.html" target="_blank">政务信息公开</a></li>
+        <li><a href="http://ty.sxzwfw.gov.cn/icity/icity/departmental_matters?deptid=1401010303" target="_blank">政务服务</a></li>
+        <li><a href="/mbjy.html" target="_blank">民办教育</a></li>
+        <li><a href="/zyjy.html" target="_blank">职业教育</a></li>        
+        <li><a href="/zkzs.html" target="_blank">中考招生</a></li>
+        </ul>
+        <ul class="ser_ul fr clearfix" style="margin-right: -50px;">
+        <li class="srk"><input type="text" name="" id="keyword" placeholder="请输入关键字" /></li>
+        <li class="btn"><input type="button" name=""  onclick="window.open('/search.htm?q='+$('#keyword').val())" /></li>
+        </ul>
+    </div>
+</div>
+<div class="banner clearfix">
+	<h1 class="logo fl"><a href="http://jyj.taiyuan.gov.cn/index.html" class="fix_bg">太原市教育局</a></h1>
+</div>
+  <div class="container">
+    <div class="bigboxTy01">
+      <div class="Fixbg02 clearfix">
+        <div class="LeftSide fl">
+          <h2 class="white">
+            政务信息公开
+          </h2>
+          <div class="LeftSide_con">
+            <dl>
+              <dt>
+                <a href="/tzgg.html" title="通知公告">通知公告</a>
+              </dt>
+
+              <dd class="launch_con">
+                <div id="tree"></div>
+
+              </dd>
+
+            </dl>
+          </div>
+        </div>
+        <div class="RightSide fr" style="border-top:none; padding-bottom:0;">
+          <p class="Pos clearfix"><span class="tit fl">当前位置：<a href="http://jyj.taiyuan.gov.cn/index.html" title="首页">首页</a> >>
+            <a href="https://jyj.taiyuan.gov.cn/zfxxgkzn.html">政务信息公开</a>
+             >> 
+            <a href="/tzgg.html">通知公告</a>
+            </span></p>
+          <div class="RightSide_con">
+            <ul class="List_list">
+              <li><span class="fr">
+                  2026-09-16
+                </span><a href="/tzgg/20260916/30320146.html" title="太原国科实验学校2026年公开招聘博士研究生拟聘用人员公示" target="_blank">
+                  太原国科实验学校2026年公开招聘博士研究生拟聘用人员公示</a>
+              </li>
+              <li><span class="fr">
+                  2026-09-11
+                </span><a href="/tzgg/20260911/30319565.html" title="太原市教育局  太原市人力资源和社会保障局关于开展2026年度全市中小学高级教师和市直属中小学一级教师职称评审工作的通知" target="_blank">
+                  太原市教育局  太原市人力资源和社会保障局关于开展2026年度全市中小学高级教师和市...</a>
+              </li>
+              <li><span class="fr">
+                  2026-08-28
+                </span><a href="/tzgg/20260828/30316992.html" title="太原市“银龄讲学”拟招募教师公示" target="_blank">
+                  太原市“银龄讲学”拟招募教师公示</a>
+              </li>
+              <li><span class="fr">
+                  2026-07-24
+                </span><a href="/tzgg/20260724/30311084.html" title="关于举办太原市直属学校2027届教育部直属师范大学公费师范毕业生双选会的通知" target="_blank">
+                  关于举办太原市直属学校2027届教育部直属师范大学公费师范毕业生双选会的通知</a>
+              </li>
+              <li><span class="fr">
+                  2026-07-22
+                </span><a href="/tzgg/20260722/30310526.html" title="关于开展2026-2027学年“银龄讲学”教师招募工作的通知" target="_blank">
+                  关于开展2026-2027学年“银龄讲学”教师招募工作的通知</a>
+              </li>
+              <li><span class="fr">
+                  2026-07-13
+                </span><a href="/tzgg/20260713/30308955.html" title="太原市2026年度“双师型”教师认定拟通过人员名单公示" target="_blank">
+                  太原市2026年度“双师型”教师认定拟通过人员名单公示</a>
+              </li>
+              <li><span class="fr">
+                  2026-06-15
+                </span><a href="/tzgg/20260615/30304222.html" title="2026年市级层面中小学社会事务进校园事项白名单" target="_blank">
+                  2026年市级层面中小学社会事务进校园事项白名单</a>
+              </li>
+              <li><span class="fr">
+                  2026-05-22
+                </span><a href="/tzgg/20260522/30299888.html" title="山西大学附属中学校2026年普通高中学校招收体育、艺术特长生招生简章" target="_blank">
+                  山西大学附属中学校2026年普通高中学校招收体育、艺术特长生招生简章</a>
+              </li>
+              <li><span class="fr">
+                  2026-05-22
+                </span><a href="/tzgg/20260522/30299864.html" title="太原市第三实验中学校2026年普通高中学校招收体育、艺术特长生招生简章" target="_blank">
+                  太原市第三实验中学校2026年普通高中学校招收体育、艺术特长生招生简章</a>
+              </li>
+              <li><span class="fr">
+                  2026-05-22
+                </span><a href="/tzgg/20260522/30299819.html" title="太原市第二十七中学校2026年普通高中学校招收体育、艺术特长生招生简章" target="_blank">
+                  太原市第二十七中学校2026年普通高中学校招收体育、艺术特长生招生简章</a>
+              </li>
+              <li><span class="fr">
+                  2026-05-22
+                </span><a href="/tzgg/20260522/30299810.html" title="太原市金河中学校2026年普通高中学校招收体育、艺术特长生招生简章" target="_blank">
+                  太原市金河中学校2026年普通高中学校招收体育、艺术特长生招生简章</a>
+              </li>
+              <li><span class="fr">
+                  2026-05-22
+                </span><a href="/tzgg/20260522/30299803.html" title="古交市第三中学校2026年普通高中学校招收体育、艺术特长生招生简章" target="_blank">
+                  古交市第三中学校2026年普通高中学校招收体育、艺术特长生招生简章</a>
+              </li>
+              <li><span class="fr">
+                  2026-05-22
+                </span><a href="/tzgg/20260522/30299802.html" title="太原市第五十二中学校2026年普通高中学校招收体育、艺术特长生招生简章" target="_blank">
+                  太原市第五十二中学校2026年普通高中学校招收体育、艺术特长生招生简章</a>
+              </li>
+              <li><span class="fr">
+                  2026-05-22
+                </span><a href="/tzgg/20260522/30299796.html" title="尖草坪区第一中学校2026年普通高中学校招收体育、艺术特长生招生简章" target="_blank">
+                  尖草坪区第一中学校2026年普通高中学校招收体育、艺术特长生招生简章</a>
+              </li>
+              <li><span class="fr">
+                  2026-05-22
+                </span><a href="/tzgg/20260522/30299791.html" title="太原市第四十八中学校2026年普通高中学校招收体育、艺术特长生招生简章" target="_blank">
+                  太原市第四十八中学校2026年普通高中学校招收体育、艺术特长生招生简章</a>
+              </li>
+              <li><span class="fr">
+                  2026-05-22
+                </span><a href="/tzgg/20260522/30299868.html" title="太原市小店区第一中学校2026年普通高中学校招收体育特长生招生简章" target="_blank">
+                  太原市小店区第一中学校2026年普通高中学校招收体育特长生招生简章</a>
+              </li>
+              <li><span class="fr">
+                  2026-05-22
+                </span><a href="/tzgg/20260522/30299777.html" title="太原市晋源区实验中学校2026年普通高中学校招收体育、艺术特长生招生简章" target="_blank">
+                  太原市晋源区实验中学校2026年普通高中学校招收体育、艺术特长生招生简章</a>
+              </li>
+              <li><span class="fr">
+                  2026-05-22
+                </span><a href="/tzgg/20260522/30299765.html" title="太原市成成中学校2026年普通高中学校招收体育、艺术特长生招生简章" target="_blank">
+                  太原市成成中学校2026年普通高中学校招收体育、艺术特长生招生简章</a>
+              </li>
+              <li><span class="fr">
+                  2026-05-22
+                </span><a href="/tzgg/20260522/30299858.html" title="太原市第十五中学校2026年普通高中学校招收体育、艺术特长生招生简章" target="_blank">
+                  太原市第十五中学校2026年普通高中学校招收体育、艺术特长生招生简章</a>
+              </li>
+              <li><span class="fr">
+                  2026-05-22
+                </span><a href="/tzgg/20260522/30299744.html" title="太原市第十二中学校2026年普通高中招收体育、艺术特长生招生简章" target="_blank">
+                  太原市第十二中学校2026年普通高中招收体育、艺术特长生招生简章</a>
+              </li>
+            </ul>
+<style>
+.pagebg{
+    margin-left: 11px;
+    display: inline-block;
+    width: 30px;
+    height: 30px;
+    background: url(/r/cms/site28/default/images/list_page_bg.jpg) no-repeat left top;
+    color: #7f7f7f;
+    font-size: 14px;
+    font-weight: bold;
+    line-height: 30px;
+    text-align: center;
+    vertical-align: middle;
+    cursor: pointer;
+    overflow: hidden;
+}
+.pageactive{
+    background: url(/r/cms/site28/default/images/list_page_bg_selected.jpg) no-repeat left top;
+    color: #fff;
+}
+.pageprev{
+    background: url(/r/cms/site28/default/images/list_page_prev.jpg) no-repeat left top;
+}
+.pagenext{
+    background: url(/r/cms/site28/default/images/list_page_next.jpg) no-repeat left top;
+}
+.pagenum{
+    margin-left: 15px;
+    display: inline-block;
+    height: 30px;
+    color: #7f7f7f;
+    font-size: 14px;
+    font-weight: bold;
+    line-height: 30px;
+    text-align: center;
+    vertical-align: middle;
+    cursor: pointer;
+    overflow: hidden;
+}
+.page-large a:visited  {
+    text-decoration: none;
+    color: #fff;
+}
+.page-large a:link  {
+    text-decoration: none;
+    color: #fff;
+}
+</style>
+<div class="page-large" style="text-align: center;">
+      <div style="display:inline-block;">
+          <a rel="noopener noreferrer" class="pagebg Num on pageactive" href="#" onclick="location.href='tzgg.html'">1</a>
+     <a rel="noopener noreferrer"   style="color: #7f7f7f;" class="pagebg Num" href="#" onclick="location.href='tzgg_2.html'">2</a>
+     <a rel="noopener noreferrer"   style="color: #7f7f7f;" class="pagebg Num" href="#" onclick="location.href='tzgg_3.html'">3</a>
+     <a rel="noopener noreferrer"   style="color: #7f7f7f;" class="pagebg Num" href="#" onclick="location.href='tzgg_4.html'">4</a>
+     <a rel="noopener noreferrer"   style="color: #7f7f7f;" class="pagebg Num" href="#" onclick="location.href='tzgg_5.html'">5</a>
+     <a rel="noopener noreferrer" style="color: #7f7f7f;" class="pagebg next-page pagenext" href="#" onclick="location.href='tzgg_2.html'"><!--&gt;--></a>
+<div class="pagenum">
+<span class="page-info"  style="color: #7f7f7f;font-size: 14px;">共<strong>93</strong>条<!--，当前<strong>1</strong>/5页-->
+</div>
+     </div>
+     <!-- <span class="page-info"  style="color: #7f7f7f;font-size: 14px;">共<strong>93</strong>条--><!--，当前<strong>1</strong>/5页-->
+</div>
+            
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<div id="foot" class="white">
+  <p>太原市教育局&nbsp;&nbsp;版权所有&emsp;&emsp;<a href="/wzdt.html">网站地图</a></p>
+  <p>地址：山西省太原市杏花岭区新建路69号&nbsp;&nbsp;邮编：030082&nbsp;&nbsp;电话：0351-4227535</p>
+  <p><a href="https://beian.miit.gov.cn">晋ICP备05003854号</a>&emsp;&emsp;网站总访问量：<em id="pvTotal"></em>
+    <script src="/r/cms/site28/default/js/front.js" type="text/javascript" charset="utf-8"></script>
+<script type="text/javascript">$(function () {Cms.siteFlow(""); });</script>
+  </p>
+  <p><span class="fix_bg"><img src="/r/cms/site28/default/tysjyj/static/images/jinghui.png" /></span><a target="_blank"
+      href="http://www.beian.gov.cn/portal/registerSystemInfo?recordcode=14010002001529"
+      style="padding-left:10px;">&nbsp;&nbsp;晋公网安备 14010002001529号</a>&emsp;&emsp;网站标识码：1401000001</p>
+  <p><a href="http://bszs.conac.cn/sitename?method=show&id=31839CD491E2763FE053012819ACEBCA" class="fix_bg"><img
+        src="/r/cms/site28/default/tysjyj/static/images/red.png" /></a>
+    <span>
+      <script id="_jiucuo_" sitecode='1401000001' src="/r/cms/site28/default/tysjyj/static/js/jiucuo.js"></script>
+    </span>
+  </p>
+</div></body>
+
+</html>

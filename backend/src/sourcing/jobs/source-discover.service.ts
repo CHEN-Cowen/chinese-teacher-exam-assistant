@@ -21,6 +21,7 @@ import {
   publicColumnRequest,
   publicColumnPages,
   staticListPages,
+  jsPaginationPages,
   govInfoListPages,
 } from '../public-column.js';
 import {
@@ -239,6 +240,8 @@ export class SourceDiscoverService {
             if (!listUrls.includes(page)) listUrls.push(page);
           for (const page of staticListPages(result.finalUrl, body))
             if (!listUrls.includes(page)) listUrls.push(page);
+          for (const page of jsPaginationPages(result.finalUrl, body))
+            if (!listUrls.includes(page)) listUrls.push(page);
           for (const page of govInfoListPages(result.finalUrl, body))
             if (!listUrls.includes(page)) listUrls.push(page);
           for (const page of jpageDataproxyPages(result.finalUrl, body))
@@ -277,6 +280,8 @@ export class SourceDiscoverService {
         for (const page of publicColumnPages(result.finalUrl, result.body))
           if (!listUrls.includes(page)) listUrls.push(page);
         for (const page of staticListPages(result.finalUrl, result.body))
+          if (!listUrls.includes(page)) listUrls.push(page);
+        for (const page of jsPaginationPages(result.finalUrl, result.body))
           if (!listUrls.includes(page)) listUrls.push(page);
         for (const page of govInfoListPages(result.finalUrl, result.body))
           if (!listUrls.includes(page)) listUrls.push(page);

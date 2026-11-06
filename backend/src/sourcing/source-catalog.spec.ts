@@ -52,6 +52,7 @@ describe('S5 来源目录', () => {
       'taian-education',
       'weifang-education',
       'nanchang-education',
+      'taiyuan-education',
       'changzhou-education',
       'lishui-education',
       'bengbu-education',
@@ -185,13 +186,14 @@ describe('S5 来源目录', () => {
     expect(verifiedAtOf('taian-education')).toBe('2026-11-06');
     expect(verifiedAtOf('weifang-education')).toBe('2026-11-06');
     expect(verifiedAtOf('nanchang-education')).toBe('2026-11-06');
+    expect(verifiedAtOf('taiyuan-education')).toBe('2026-11-06');
   });
 });
 
 describe('S5 来源级检查记录与监测状态', () => {
   it('ready 来源完成两次真实检查后，才可声称正常监测', () => {
     const ready = SOURCE_CATALOG.filter((entry) => entry.status === 'ready');
-    expect(ready.length).toBe(21);
+    expect(ready.length).toBe(22);
     for (const entry of ready) {
       const record = getSourceMonitoringRecord(entry.sourceKey);
       expect(record.checks.length, entry.sourceKey).toBe(2);
@@ -210,7 +212,7 @@ describe('S5 来源级检查记录与监测状态', () => {
     const unchanged = SOURCE_MONITORING_RECORDS.filter(
       (record) => record.sourceKey !== 'nanjing-education',
     );
-    expect(unchanged).toHaveLength(20);
+    expect(unchanged).toHaveLength(21);
     for (const record of unchanged) {
       expect(record.checks[1]?.outcome, record.sourceKey).toBe('no_new');
     }
@@ -254,6 +256,7 @@ describe('S5 来源级检查记录与监测状态', () => {
     expect(checkedAtOf('taian-education')).toBe('2026-11-06T01:53:26.910Z');
     expect(checkedAtOf('weifang-education')).toBe('2026-11-06T02:57:47.297Z');
     expect(checkedAtOf('nanchang-education')).toBe('2026-11-06T03:59:14.704Z');
+    expect(checkedAtOf('taiyuan-education')).toBe('2026-11-06T05:55:17.588Z');
   });
 
   it('补录检查是纯函数，追加后连续成功次数加一且不改原记录', () => {

@@ -338,6 +338,21 @@ export const SOURCE_CATALOG: readonly SourceCatalogEntry[] = [
       '「教师科发文」混合栏目真实核验（2026-11-06）：服务端渲染静态列表（ul.item li > a[title] + 同级 span 日期）、官方 createPageHTML 分页（2 页 / 34 条，nav_list_<n>.shtml）、正文官方 meta（ArticleTitle/PubDate）+ #zoom 与相对路径 <文章ID>/files/ 附件（xlsx/pdf/doc）离线回放通过；列表含跨栏目链接（/ncjyj/jszgrd/ 教师资格专栏），按详情路径放行；混合栏目，教师招聘相关条目按标题判定；持续监测见检查记录。',
   },
   {
+    sourceKey: 'taiyuan-education',
+    publisher: '太原市教育局',
+    regionCode: '140100',
+    authorityLevel: 'city',
+    officialUrl: 'https://jyj.taiyuan.gov.cn/',
+    listUrls: ['https://jyj.taiyuan.gov.cn/tzgg.html'],
+    allowedHosts: ['jyj.taiyuan.gov.cn'],
+    adapterKey: 'taiyuan-education',
+    status: 'ready',
+    verifiedAt: '2026-11-06',
+    sampleRef: 'tests/fixtures/golden-sources/taiyuan',
+    coverageNote:
+      '「通知公告」混合栏目真实核验（2026-11-06）：服务端渲染静态列表（ul.List_list li > span.fr 日期 + a[title]）、JS 跳转式分页（页码锚点 href="#" + onclick location.href，官方 93 条 / 5 页 / 每页 20 条，由 jsPaginationPages 解析）、正文官方 meta（ArticleTitle/PubDate）+ #zoom 与 /u/cms/site28/ 下 xlsx 附件离线回放通过；混合栏目，教师招聘相关条目按标题判定；持续监测见检查记录。',
+  },
+  {
     sourceKey: 'changzhou-education',
     publisher: '常州市教育局',
     regionCode: '320400',
@@ -942,6 +957,26 @@ export const SOURCE_MONITORING_RECORDS: readonly SourceMonitoringRecord[] = [
         contentHash:
           '6a661c54ccea5c4323fa0e4fb6d07a57e9a91955746575a819ff507ecded3b9b',
         note: 'N3 第二次真实采样（距首次约 8 分钟）：首屏 25 条标题/日期/链接与首次一致，指纹（日期|标题|URL 行 sha256）相同；7 天持续观察窗口尚未完成。',
+      },
+    ],
+  },
+  {
+    sourceKey: 'taiyuan-education',
+    checks: [
+      {
+        checkedAt: '2026-11-06T05:55:17.588Z',
+        outcome: 'succeeded',
+        discoveredCount: 20,
+        contentHash: null,
+        note: 'N3 首次真实采样：通知公告栏目首屏 20 条；JS 跳转分页声明共 93 条 / 5 页，第 2 页 20 条与首屏无重叠；正文官方 meta + #zoom 与 /u/cms/site28/ 下 xlsx 附件离线回放通过。7 天持续观察窗口尚未完成。',
+      },
+      {
+        checkedAt: '2026-11-06T05:56:40.153Z',
+        outcome: 'no_new',
+        discoveredCount: 20,
+        contentHash:
+          'be53f87ef2978a423bf4a204f9ce73332c556ae03d1c70058dac0537b22ad495',
+        note: 'N3 第二次真实采样（距首次约 83 秒）：首屏 20 条标题/日期/链接与首次一致，指纹（日期|标题|URL 行 sha256）相同；7 天持续观察窗口尚未完成。',
       },
     ],
   },

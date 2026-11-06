@@ -842,13 +842,14 @@ export function discoverStaticAnchorList(
   baseUrl: string,
   content: string,
   detailPathPattern: RegExp,
+  listSelector = 'ul.item li',
 ): DiscoveredDocument[] {
   const $ = load(content);
-  const rows = $('ul.item li').has('a[href]');
+  const rows = $(listSelector).has('a[href]');
   if (!rows.length)
     throw new AdapterParseError(
       'DOM_MISMATCH',
-      '静态锚点列表未找到 ul.item li > a[href] 结构',
+      `静态锚点列表未找到 ${listSelector} > a[href] 结构`,
     );
   const items: DiscoveredDocument[] = [];
   const seen = new Set<string>();
@@ -885,6 +886,50 @@ export function discoverStaticAnchorList(
       '静态锚点列表无任何条目（静默 0 条视为故障）',
     );
   return items;
+}
+
+/**
+ * JS 跳转式静态分页（太原通知公告）：页码锚点为 `href="#"` +
+ * `onclick="location.href='tzgg_2.html'"`，无 createPageHTML 声明。
+ * 只接受同源、路径为「基名 + _<n>.html」且 n ≥ 2 的后续页；
+ * 页码超出预算时显式失败，不静默截断。
+ */
+export function jsPaginationPages(
+  baseUrl: string,
+  content: string,
+  maxPages = 20,
+): string[] {
+  const $ = load(content);
+  const url = new URL(baseUrl);
+  const stem = url.pathname.replace(/\.html?$/i, '');
+  const prefix = `${stem}_`;
+  const pages = new Map<number, string>();
+  $('a[onclick]').each((_i, e) => {
+    const onclick = $(e).attr('onclick') ?? '';
+    const match = onclick.match(/location\.href\s*=\s*['"]([^'"]+)['"]/i);
+    if (!match) return;
+    let target: URL;
+    try {
+      target = new URL(match[1], url);
+    } catch {
+      return;
+    }
+    if (target.origin !== url.origin) return;
+    if (!target.pathname.startsWith(prefix)) return;
+    const suffix = target.pathname.slice(prefix.length).match(/^(\d+)\.html?$/i);
+    if (!suffix) return;
+    const index = Number(suffix[1]);
+    if (!Number.isSafeInteger(index) || index < 2) return;
+    if (!pages.has(index)) pages.set(index, target.href);
+  });
+  if (!pages.size) return [];
+  const indexes = [...pages.keys()].sort((a, b) => a - b);
+  if (indexes[indexes.length - 1] > maxPages)
+    throw new AdapterParseError(
+      'DOM_MISMATCH',
+      'JS 分页超出预算，需调整检查范围',
+    );
+  return indexes.map((index) => pages.get(index)!);
 }
 
 /** 静态列表分页 URL：保持域与路径，替换 _<n> 序号；其余不变。 */
