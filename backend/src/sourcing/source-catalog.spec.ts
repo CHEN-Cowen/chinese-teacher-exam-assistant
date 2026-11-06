@@ -31,7 +31,9 @@ describe('S5 来源目录', () => {
     // N1 跨省首批：湖州（jpaas 表格行 + initJpage）、泰州（jpaas li + span）、
     // 亳州（服务端渲染 section.m-tglist + pagination）、
     // N2 公开接口族首批：济南（jpaas 表格行 + td.bt_time + DOM 属性分页）、
-    // 烟台（jpaas li.cf + span.fr + 单来源分页窗口）。
+    // 烟台（jpaas li.cf + span.fr + 单来源分页窗口）、
+    // 泰安（jpage datastore 首屏 + dataproxy form POST 分页）、
+    // 潍坊（els-service JSON POST 列表 + 单来源分页窗口）。
     expect(seedable.map((source) => source.adapterKey)).toEqual([
       'nanjing-education',
       'hangzhou-education',
@@ -47,6 +49,7 @@ describe('S5 来源目录', () => {
       'jinan-education',
       'yantai-education',
       'taian-education',
+      'weifang-education',
       'changzhou-education',
       'lishui-education',
       'bengbu-education',
@@ -178,13 +181,14 @@ describe('S5 来源目录', () => {
     expect(verifiedAtOf('jinan-education')).toBe('2026-11-05');
     expect(verifiedAtOf('yantai-education')).toBe('2026-11-06');
     expect(verifiedAtOf('taian-education')).toBe('2026-11-06');
+    expect(verifiedAtOf('weifang-education')).toBe('2026-11-06');
   });
 });
 
 describe('S5 来源级检查记录与监测状态', () => {
   it('ready 来源完成两次真实检查后，才可声称正常监测', () => {
     const ready = SOURCE_CATALOG.filter((entry) => entry.status === 'ready');
-    expect(ready.length).toBe(19);
+    expect(ready.length).toBe(20);
     for (const entry of ready) {
       const record = getSourceMonitoringRecord(entry.sourceKey);
       expect(record.checks.length, entry.sourceKey).toBe(2);
@@ -196,14 +200,14 @@ describe('S5 来源级检查记录与监测状态', () => {
         /^[0-9a-f]{64}$/,
       );
     }
-    // 只有南京第二次发现了新公告；其余 17 个列表条目未变，记 no_new 仍算成功。
+    // 只有南京第二次发现了新公告；其余 18 个列表条目未变，记 no_new 仍算成功。
     expect(
       getSourceMonitoringRecord('nanjing-education').checks[1]?.outcome,
     ).toBe('succeeded');
     const unchanged = SOURCE_MONITORING_RECORDS.filter(
       (record) => record.sourceKey !== 'nanjing-education',
     );
-    expect(unchanged).toHaveLength(18);
+    expect(unchanged).toHaveLength(19);
     for (const record of unchanged) {
       expect(record.checks[1]?.outcome, record.sourceKey).toBe('no_new');
     }
@@ -245,6 +249,7 @@ describe('S5 来源级检查记录与监测状态', () => {
     expect(checkedAtOf('jinan-education')).toBe('2026-11-05T16:17:30.985Z');
     expect(checkedAtOf('yantai-education')).toBe('2026-11-06T01:08:05.494Z');
     expect(checkedAtOf('taian-education')).toBe('2026-11-06T01:53:26.910Z');
+    expect(checkedAtOf('weifang-education')).toBe('2026-11-06T02:57:47.297Z');
   });
 
   it('补录检查是纯函数，追加后连续成功次数加一且不改原记录', () => {

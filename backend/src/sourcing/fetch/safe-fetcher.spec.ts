@@ -614,3 +614,45 @@ describe('POST 表单请求边界（jpage dataproxy）', () => {
     ).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
   });
 });
+
+describe('POST JSON 请求边界（潍坊 els-service）', () => {
+  it('允许固定模板 JSON 对象请求体，并透传 method/body/content-type', async () => {
+    let seen: RequestInit = {};
+    const { impl } = makeFetch((_url, init) => {
+      seen = init;
+      return htmlResponse('<html>ok</html>');
+    });
+    const result = await makeFetcher({ fetchImpl: impl }).fetch(
+      'https://allow.host/els-service/article/1/20?catas=x&dwid=1&dq=1',
+      {},
+      {},
+      {
+        method: 'POST',
+        body: '{"dq":"162","dwid":"55332","catas":["trs1308521"]}',
+        contentType: 'application/json',
+      },
+    );
+    expect(result.status).toBe(200);
+    expect(seen.method).toBe('POST');
+    expect(seen.body).toBe('{"dq":"162","dwid":"55332","catas":["trs1308521"]}');
+    expect((seen.headers as Record<string, string>)['content-type']).toBe(
+      'application/json',
+    );
+  });
+
+  it.each([
+    ['非合法 JSON', '{"dq":'],
+    ['顶层数组', '[1,2,3]'],
+    ['顶层标量', '"hello"'],
+  ])('JSON 请求体 %s → INVALID_REQUEST', async (_label, body) => {
+    const { impl } = makeFetch(() => htmlResponse('<html>ok</html>'));
+    await expect(
+      makeFetcher({ fetchImpl: impl }).fetch(
+        'https://allow.host/els-service/article/1/20',
+        {},
+        {},
+        { method: 'POST', body, contentType: 'application/json' },
+      ),
+    ).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+  });
+});

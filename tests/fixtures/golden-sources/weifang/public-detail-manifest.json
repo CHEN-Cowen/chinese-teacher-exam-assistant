@@ -1,0 +1,20 @@
+{
+  "source": "weifang-education",
+  "capturedAt": "2026-11-06T02:55:00Z",
+  "scope": "public-detail",
+  "site": "https://jyj.weifang.gov.cn/",
+  "files": [
+    {
+      "name": "public-detail.html",
+      "url": "https://jyj.weifang.gov.cn/55332/2088183452393410560.html",
+      "sha256": "3cbf16a720d126ff67e3c8eccf1921faf78026b397f1da721a08f217df9ed783",
+      "note": "2026年潍坊市教育局所属学校第二批次公开招聘工作人员公告；附件岗位汇总表 xls 与报名表 docx（/upload-service/162/55332/）"
+    },
+    {
+      "name": "public-detail-attachment.html",
+      "url": "https://jyj.weifang.gov.cn/55332/2115353584232173568.html",
+      "sha256": "77df6a87b0a57a0dcae4d0265c973ca1318259a20edb8ab14c9f3f79396cb38d",
+      "note": "实验教学能力大赛公示；附件获奖名单 xlsx"
+    }
+  ]
+}

@@ -306,6 +306,23 @@ export const SOURCE_CATALOG: readonly SourceCatalogEntry[] = [
       '「公示公告」混合栏目真实核验（2026-11-06）：首屏内嵌 datastore 45 条（官方总量 227 条 / 每页 15 条 / 共 16 页），后续页必须 POST application/x-www-form-urlencoded 到 /module/web/jpage/dataproxy.jsp（GET 返回空响应），按 13 个后续 POST 页补齐；正文标题/日期取官方 meta（ArticleTitle/pubdate），正文在 ContentStart/ContentEnd 标记之间，附件走 /module/download/downfile.jsp。站点为混合公告，教师招聘相关条目按标题判定；POST 请求体上限 4KB 且重定向后降级 GET；持续监测见检查记录。',
   },
   {
+    sourceKey: 'weifang-education',
+    publisher: '潍坊市教育局',
+    regionCode: '370700',
+    authorityLevel: 'city',
+    officialUrl: 'https://jyj.weifang.gov.cn/',
+    listUrls: [
+      'https://jyj.weifang.gov.cn/els-service/article/1/20?catas=trs1308521&dwid=55332&dq=162',
+    ],
+    allowedHosts: ['jyj.weifang.gov.cn'],
+    adapterKey: 'weifang-education',
+    status: 'ready',
+    verifiedAt: '2026-11-06',
+    sampleRef: 'tests/fixtures/golden-sources/weifang',
+    coverageNote:
+      '「公告公示」混合栏目（trs1308521）真实核验（2026-11-06）：列表页为 JS 壳，记录由 POST /els-service/article/{page}/{size} JSON 接口返回（官方 49 页 / 每页 20 条）；按单来源窗口只监测最新 6 页（约 120 条），窗口已登记（ELS_PAGE_WINDOWS）；列表/分页均为受限 JSON POST（≤4KB、固定模板、重定向降级 GET）；正文 meta ArticleTitle/PubDate + td#Content、附件 /upload-service/ 回放通过；无专属教师招聘栏目，混合栏目按标题判定形态；持续监测见检查记录。',
+  },
+  {
     sourceKey: 'changzhou-education',
     publisher: '常州市教育局',
     regionCode: '320400',
@@ -870,6 +887,26 @@ export const SOURCE_MONITORING_RECORDS: readonly SourceMonitoringRecord[] = [
         contentHash:
           '09cdc350c74f1a1dca2f511317d1161905ceab603b5945c7ecec690ce5148e7d',
         note: 'N2 第二次真实采样（距首次约 1 分钟）：首屏 45 条标题/日期/链接与首次一致；POST 第 46 条起仍为 46 条且与首屏无重叠；指纹为条目字段 sha256。7 天持续观察窗口尚未完成。',
+      },
+    ],
+  },
+  {
+    sourceKey: 'weifang-education',
+    checks: [
+      {
+        checkedAt: '2026-11-06T02:57:47.297Z',
+        outcome: 'succeeded',
+        discoveredCount: 20,
+        contentHash: null,
+        note: 'N2 首次真实采样：POST /els-service/article/1/20 返回公告公示第 1 页 20 条（官方 49 页 / 每页 20 条）；第 2 页与首屏无重叠；正文 meta + td#Content 与 /upload-service/ 附件离线回放通过。7 天持续观察窗口尚未完成。',
+      },
+      {
+        checkedAt: '2026-11-06T02:58:18.037Z',
+        outcome: 'no_new',
+        discoveredCount: 20,
+        contentHash:
+          '1ea4bb4e9e35b51ce435512b014dde3f4896136e469208a21b342317e87fccc4',
+        note: 'N2 第二次真实采样（距首次约 31 秒）：第 1 页 20 条标题/日期/链接与首次一致，指纹（日期|标题|URL 行 sha256）相同；7 天持续观察窗口尚未完成。',
       },
     ],
   },

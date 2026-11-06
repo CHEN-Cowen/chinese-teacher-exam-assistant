@@ -87,14 +87,20 @@ export interface ExtraRequestHeaders {
 }
 
 /**
- * 非 GET 列表请求（仅用于官网明确要求 POST 的栏目分页，如泰安 jpage dataproxy）。
- * 安全边界：只允许 form-urlencoded、请求体 ≤ 4KB；URL 仍走完整 allowlist/SSRF/DNS 校验，
- * 重定向后的后续跳一律降级为 GET，不把请求体带到新地址。
+ * 非 GET 列表请求（仅用于官网明确要求 POST 的栏目分页，如泰安 jpage dataproxy、
+ * 潍坊 els-service JSON 接口）。
+ * 安全边界：只允许 form-urlencoded / 固定模板 JSON、请求体 ≤ 4KB；
+ * URL 仍走完整 allowlist/SSRF/DNS 校验，重定向后的后续跳一律降级为 GET，
+ * 不把请求体带到新地址。
  */
+export type SafePostContentType =
+  | 'application/x-www-form-urlencoded'
+  | 'application/json';
+
 export interface RequestOptions {
   method?: 'GET' | 'POST';
   body?: string;
-  contentType?: 'application/x-www-form-urlencoded';
+  contentType?: SafePostContentType;
 }
 
 /** POST 请求体上限（字节）：栏目分页参数远小于此值 */
@@ -453,18 +459,21 @@ export class SafeFetcher {
   }
 
   /**
-   * POST 请求边界：只允许官网栏目分页使用的 form-urlencoded 小请求体。
-   * 其他方法/自定义 Content-Type/超长请求体一律拒绝，避免把抓取器变成通用外发通道。
+   * POST 请求边界：只允许官网栏目分页使用的 form-urlencoded / 固定模板 JSON 小请求体。
+   * 其他方法/自定义 Content-Type/超长或非法请求体一律拒绝，避免把抓取器变成通用外发通道。
    */
   private assertRequestOptions(request: RequestOptions): void {
     if (request.method !== 'POST') return;
     if (!request.body) {
       throw new SafeFetchError('INVALID_REQUEST', 'POST 请求必须提供表单请求体');
     }
-    if (request.contentType !== 'application/x-www-form-urlencoded') {
+    if (
+      request.contentType !== 'application/x-www-form-urlencoded' &&
+      request.contentType !== 'application/json'
+    ) {
       throw new SafeFetchError(
         'INVALID_REQUEST',
-        'POST 仅允许 application/x-www-form-urlencoded',
+        'POST 仅允许 application/x-www-form-urlencoded 或 application/json',
       );
     }
     if (Buffer.byteLength(request.body) > MAX_POST_BODY_BYTES) {
@@ -472,6 +481,25 @@ export class SafeFetcher {
         'INVALID_REQUEST',
         `POST 请求体超过上限 ${MAX_POST_BODY_BYTES} 字节`,
       );
+    }
+    if (request.contentType === 'application/json') {
+      // JSON 通道只发固定模板的栏目查询对象，不发送任意 JSON（数组/标量/嵌套自由结构）。
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(request.body);
+      } catch {
+        throw new SafeFetchError('INVALID_REQUEST', 'JSON 请求体必须是合法 JSON');
+      }
+      if (
+        typeof parsed !== 'object' ||
+        parsed === null ||
+        Array.isArray(parsed)
+      ) {
+        throw new SafeFetchError(
+          'INVALID_REQUEST',
+          'JSON 请求体必须是对象（固定栏目查询模板）',
+        );
+      }
     }
   }
 
