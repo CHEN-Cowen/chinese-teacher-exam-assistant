@@ -388,6 +388,23 @@ export const SOURCE_CATALOG: readonly SourceCatalogEntry[] = [
       '「通知公告」混合栏目真实核验（2026-11-06，福建首个来源）：列表页为 JS 壳，记录由 POST /fjdzapp/search 表单接口返回（官方 178 页 / 2658 条 / 每页 15 条），必须携带同源 Referer（缺 Referer 返回"获取站点配置失败"）；doctitle 检索参数不生效，按栏目全量翻页；按单来源分页窗口只监测最新 6 页（90 条），窗口已登记（FJ_PAGE_WINDOWS）；正文 meta ArticleTitle/PubDate + div.article_content、div.article_attachment 相对路径附件（P0…xlsx/pdf）回放通过；含招聘全周期公告（公告→补充→资格审核→面试→选岗→拟聘公示→递补），混合栏目按标题判定形态；持续监测见检查记录。',
   },
   {
+    sourceKey: 'guangzhou-education',
+    publisher: '广州市教育局',
+    regionCode: '440100',
+    authorityLevel: 'city',
+    officialUrl: 'https://jyj.gz.gov.cn/',
+    // 「网上公示」服务端渲染列表 + 静态锚点分页（index_N.html）；公告类通知另在
+    // /yw/tzgg/，招聘密度低，首版只登记高价值的网上公示栏目。
+    listUrls: ['https://jyj.gz.gov.cn/yw/wsgs/index.html'],
+    allowedHosts: ['jyj.gz.gov.cn'],
+    adapterKey: 'guangzhou-education',
+    status: 'ready',
+    verifiedAt: '2026-11-06',
+    sampleRef: 'tests/fixtures/golden-sources/guangzhou-education',
+    coverageNote:
+      '「网上公示」栏目真实核验（2026-11-06，广东首个来源；NFCMS 集约化平台族）：服务端渲染列表 div.news_list li（a[title] + 方括号日期 [YYYY-MM-DD]），首屏 20 条、招聘密度高（首屏 4 条公开招聘教师/拟聘用公示，第 2 页 14/20）；分页为静态锚点 index_N.html（官方 20 页 / 400 条），页内 createPageHTML 声明已被注释失效（staticListPages 返回空，不能依赖），按单来源分页窗口只监测最新 6 页（120 条），窗口已登记（NFCMS_PAGE_WINDOWS）；正文 meta ArticleTitle/PubDate + div#zoomcon、/attachment/…xlsx 附件回放通过；持续监测见检查记录。',
+  },
+  {
     sourceKey: 'changzhou-education',
     publisher: '常州市教育局',
     regionCode: '320400',
@@ -1036,6 +1053,18 @@ export const SOURCE_MONITORING_RECORDS: readonly SourceMonitoringRecord[] = [
         discoveredCount: 15,
         contentHash: null,
         note: 'N3 首次真实采样（福建首个来源）：通知公告混合栏目 POST /fjdzapp/search 表单接口首屏 HTTP 200，解析 15 条（官方 178 页 / 2658 条 / 每页 15 条，必须携带同源 Referer）；按单来源窗口只监测最新 6 页（90 条），第 2 页 15 条与首屏无重叠且首条即拟聘公示；正文 meta ArticleTitle/PubDate + div.article_content 与 div.article_attachment 相对路径附件（P0…xlsx/pdf）离线回放通过。7 天持续观察窗口尚未完成。',
+      },
+    ],
+  },
+  {
+    sourceKey: 'guangzhou-education',
+    checks: [
+      {
+        checkedAt: '2026-11-06T10:26:00.000Z',
+        outcome: 'succeeded',
+        discoveredCount: 20,
+        contentHash: null,
+        note: 'N3 首次真实采样（广东首个来源；NFCMS 集约化平台族）：网上公示栏目服务端渲染列表首屏 HTTP 200，解析 20 条（方括号日期 [YYYY-MM-DD]）；分页为静态锚点 index_2..index_20.html（官方 20 页 / 400 条），页内 createPageHTML 声明已被注释失效，改由 nfcmsIndexPages 派生并按窗口只监测最新 6 页（120 条）；第 2 页 20 条与首屏无重叠、招聘密度 14/20；正文 meta ArticleTitle/PubDate + div#zoomcon 与 /attachment/…xlsx 附件离线回放通过。7 天持续观察窗口尚未完成。',
       },
     ],
   },

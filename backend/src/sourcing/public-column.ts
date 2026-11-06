@@ -865,7 +865,14 @@ export function discoverStaticAnchorList(
     const url = resolveUrl(baseUrl, href);
     if (!detailPathPattern.test(url)) return;
     if (seen.has(url)) return;
-    const date = $(e).find('span').first().text().trim();
+    // NFCMS 政务站点日期带方括号（`[2026-11-06]`），剥掉首尾括号后统一校验；
+    // 南昌等既有来源的裸 `YYYY-MM-DD` 不受影响。
+    const date = $(e)
+      .find('span')
+      .first()
+      .text()
+      .trim()
+      .replace(/^\[\s*|\s*\]$/g, '');
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       throw new AdapterParseError(
         'DOM_MISMATCH',

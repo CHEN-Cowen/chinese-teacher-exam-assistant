@@ -58,6 +58,7 @@ describe('S5 来源目录', () => {
       'taiyuan-education',
       'zhengzhou-education',
       'fuzhou-education',
+      'guangzhou-education',
       'changzhou-education',
       'lishui-education',
       'bengbu-education',
@@ -194,19 +195,21 @@ describe('S5 来源目录', () => {
     expect(verifiedAtOf('taiyuan-education')).toBe('2026-11-06');
     expect(verifiedAtOf('zhengzhou-education')).toBe('2026-11-06');
     expect(verifiedAtOf('fuzhou-education')).toBe('2026-11-06');
+    expect(verifiedAtOf('guangzhou-education')).toBe('2026-11-06');
   });
 });
 
 describe('S5 来源级检查记录与监测状态', () => {
   it('ready 来源完成两次真实检查后，才可声称正常监测', () => {
     const ready = SOURCE_CATALOG.filter((entry) => entry.status === 'ready');
-    // 郑州、福州刚完成首次真实采样，checks 只有 1 次，仍处于 unverified 状态（未满 7 天观察窗）
+    // 郑州、福州、广州刚完成首次真实采样，checks 只有 1 次，仍处于 unverified 状态（未满 7 天观察窗）
     const readyWith2Checks = ready.filter(
       (e) =>
         e.sourceKey !== 'zhengzhou-education' &&
-        e.sourceKey !== 'fuzhou-education',
+        e.sourceKey !== 'fuzhou-education' &&
+        e.sourceKey !== 'guangzhou-education',
     );
-    expect(ready.length).toBe(24);
+    expect(ready.length).toBe(25);
     for (const entry of readyWith2Checks) {
       const record = getSourceMonitoringRecord(entry.sourceKey);
       expect(record.checks.length, entry.sourceKey).toBe(2);
@@ -222,12 +225,13 @@ describe('S5 来源级检查记录与监测状态', () => {
     expect(
       getSourceMonitoringRecord('nanjing-education').checks[1]?.outcome,
     ).toBe('succeeded');
-    // 郑州与福州只有 1 次检查（首次采样，未满观察窗），不算入第二次 outcome 断言
+    // 郑州、福州与广州只有 1 次检查（首次采样，未满观察窗），不算入第二次 outcome 断言
     const unchanged = SOURCE_MONITORING_RECORDS.filter(
       (record) =>
         record.sourceKey !== 'nanjing-education' &&
         record.sourceKey !== 'zhengzhou-education' &&
-        record.sourceKey !== 'fuzhou-education',
+        record.sourceKey !== 'fuzhou-education' &&
+        record.sourceKey !== 'guangzhou-education',
     );
     expect(unchanged).toHaveLength(21);
     for (const record of unchanged) {

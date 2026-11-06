@@ -1,0 +1,38 @@
+{
+  "source": "guangzhou-education",
+  "capturedAt": "2026-11-06T10:26:00Z",
+  "scope": "public-detail",
+  "site": "https://jyj.gz.gov.cn/",
+  "files": [
+    {
+      "name": "detail-post_11019946.html",
+      "url": "https://jyj.gz.gov.cn/yw/wsgs/content/post_11019946.html",
+      "sha256": "81ed7f3650c0e8d4c879cbc827e8f54dab5130c7d952759db70792eba4442585",
+      "note": "广州市教育局直属事业单位广州市第六中学2026年第一次公开招聘教师第三批拟聘用人员公示；meta ArticleTitle/PubDate + div#zoomcon；1 个 xlsx 附件（拟聘用人员名单）"
+    },
+    {
+      "name": "detail-post_11080595.html",
+      "url": "https://jyj.gz.gov.cn/yw/wsgs/content/post_11080595.html",
+      "sha256": "2487dd6803dd20f76e05a426c64f4080a050b2c0ca521265628cd9db5205f5f5",
+      "note": "事业单位引进急需人才相关公示；meta + div#zoomcon；1 个 xlsx 附件"
+    },
+    {
+      "name": "detail-post_11088519.html",
+      "url": "https://jyj.gz.gov.cn/yw/wsgs/content/post_11088519.html",
+      "sha256": "e223b204d5d35d11013165f37632aef71508d8a77d9ce8de9974e88bf0ab36f9",
+      "note": "采样补充（未纳入断言换行校验）；同族详情结构"
+    },
+    {
+      "name": "detail-post_11088535.html",
+      "url": "https://jyj.gz.gov.cn/yw/wsgs/content/post_11088535.html",
+      "sha256": "b7bf2606834df8b8362183f7e3e9f0ef93a440c3a9b0dd5395b7df0831189395",
+      "note": "采样补充（未纳入断言校验）；同族详情结构"
+    },
+    {
+      "name": "detail-post_11090956.html",
+      "url": "https://jyj.gz.gov.cn/yw/wsgs/content/post_11090956.html",
+      "sha256": "3cf646b4fe8029b0201fe96e87c3a946e4812970afcfd59304e2e1652e7b1d84",
+      "note": "基础教育精品课名单公示；同族详情结构"
+    }
+  ]
+}

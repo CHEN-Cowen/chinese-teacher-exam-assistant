@@ -46,6 +46,7 @@ import {
   fjdzSearchRequest,
   isFjdzSearchUrl,
 } from '../fz-list.js';
+import { nfcmsIndexPages } from '../nfcms-list.js';
 import { SafeFetchError } from '../fetch/safe-fetcher.js';
 import { SourcingMetrics } from '../observability.js';
 import {
@@ -249,6 +250,10 @@ export class SourceDiscoverService {
             listUrls.push(publicUrl);
           for (const page of publicColumnPages(result.finalUrl, body))
             if (!listUrls.includes(page)) listUrls.push(page);
+          // NFCMS 集约化平台（广州）分页为静态锚点 index_N.html（官方声明
+          // createPageHTML 已被注释失效），staticListPages 对这类页面返回空，需单独派生。
+          for (const page of nfcmsIndexPages(result.finalUrl, body))
+            if (!listUrls.includes(page)) listUrls.push(page);
           for (const page of staticListPages(result.finalUrl, body))
             if (!listUrls.includes(page)) listUrls.push(page);
           for (const page of jsPaginationPages(result.finalUrl, body))
@@ -291,6 +296,10 @@ export class SourceDiscoverService {
         if (publicUrl && !listUrls.includes(publicUrl))
           listUrls.push(publicUrl);
         for (const page of publicColumnPages(result.finalUrl, result.body))
+          if (!listUrls.includes(page)) listUrls.push(page);
+        // NFCMS 集约化平台（广州）分页为静态锚点 index_N.html（官方声明
+        // createPageHTML 已被注释失效），staticListPages 对这类页面返回空，需单独派生。
+        for (const page of nfcmsIndexPages(result.finalUrl, result.body))
           if (!listUrls.includes(page)) listUrls.push(page);
         for (const page of staticListPages(result.finalUrl, result.body))
           if (!listUrls.includes(page)) listUrls.push(page);
