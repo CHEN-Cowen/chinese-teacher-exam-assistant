@@ -430,14 +430,19 @@ describe('真实台账集成', () => {
     expect(projection.caliber.recentlyHealthySources).toBe(
       projection.sources.filter((source) => source.state === 'recently_healthy').length,
     );
-    // 2026-10-26 的第二次采样在 48 小时窗口内：11 个 ready 来源应为近期正常
-    const readyKeys = SOURCE_CATALOG.filter((entry) => entry.status === 'ready').map(
-      (entry) => entry.sourceKey,
-    );
+    // readyKeys 里只有 22 个已完成两次检查（monitoring）的来源应为 recently_healthy；
+    // 郑州为 N3 新增，只有 1 次首次采样（verifying），不在 healthyKeys 中
+    const readyWith2ChecksKeys = SOURCE_CATALOG.filter((entry) => {
+      if (entry.status !== 'ready') return false;
+      const record = SOURCE_MONITORING_RECORDS.find(
+        (r) => r.sourceKey === entry.sourceKey,
+      );
+      return record && record.checks.length >= 2;
+    }).map((entry) => entry.sourceKey);
     const healthyKeys = projection.sources
       .filter((source) => source.state === 'recently_healthy')
       .map((source) => source.id);
-    expect(healthyKeys).toEqual(expect.arrayContaining(readyKeys));
+    expect(healthyKeys).toEqual(expect.arrayContaining(readyWith2ChecksKeys));
     // 每个来源都有判定依据
     for (const source of projection.sources) {
       expect(source.note.length).toBeGreaterThan(0);
