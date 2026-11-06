@@ -20,14 +20,14 @@
 |---|---|---|
 | 省级行政区目录登记 | 31 / 31 | 已建立省级目录行；多数入口仍待逐站核验 |
 | 有招聘来源实际接入的省级行政区 | 4 / 31 | 浙江、江苏、安徽、山东；其余 27 个省级行政区无已接入招聘来源 |
-| 已登记来源总数 | 21 | 17 个教师招聘 ready + 1 个政策 ready + 2 个省级候选 + 1 个受阻 |
-| 已接入招聘来源 | 17 | 浙江 8、江苏 4、安徽 3、山东 2 |
-| 样本通过来源 | 3 | 宁波（B 级真实材料闭环）、南京与丽水（A 级独立清单发现对账）；其余 14 个为 fixture 级（含 N1/N2 真实样本回放） |
+| 已登记来源总数 | 22 | 18 个教师招聘 ready + 1 个政策 ready + 2 个省级候选 + 1 个受阻 |
+| 已接入招聘来源 | 18 | 浙江 8、江苏 4、安徽 3、山东 3 |
+| 样本通过来源 | 3 | 宁波（B 级真实材料闭环）、南京与丽水（A 级独立清单发现对账）；其余 15 个为 fixture 级（含 N1/N2 真实样本回放） |
 | 持续运行通过来源 | 0 | 连续 7 天观察 0/7，不能声称持续运行通过 |
-| 市级/区县级目录分母 | 待建立 | 现有账本覆盖 15 个地市/区县地区（17 个招聘来源），不能据此计算全国缺口 |
+| 市级/区县级目录分母 | 待建立 | 现有账本覆盖 16 个地市/区县地区（18 个招聘来源），不能据此计算全国缺口 |
 | 全国完整召回 | 未验证 | 无全国独立清单，不能声称完整召回 |
 
-口径说明：`docs/m08-source-acceptance-report.md` 中的 A/B/C 是**证据档位**，D 是**持续运行档位**。当前 17 个招聘来源按持续运行口径全部为 D（待持续验收），因此本账本不把任何来源标记为“持续运行通过”；“样本通过 3”仅表示宁波（B）、南京与丽水（A）具备真实官方样本与材料/对账证据。N1 新增的湖州、泰州、亳州、阜阳与 N2 新增的济南、烟台已完成真实样本采集与离线回放，但尚未做独立清单对账，故记为 fixture 级。
+口径说明：`docs/m08-source-acceptance-report.md` 中的 A/B/C 是**证据档位**，D 是**持续运行档位**。当前 18 个招聘来源按持续运行口径全部为 D（待持续验收），因此本账本不把任何来源标记为“持续运行通过”；“样本通过 3”仅表示宁波（B）、南京与丽水（A）具备真实官方样本与材料/对账证据。N1 新增的湖州、泰州、亳州、阜阳与 N2 新增的济南、烟台、泰安已完成真实样本采集与离线回放，但尚未做独立清单对账，故记为 fixture 级。
 
 ## 3. 省级行政区目录账本（31 行）
 
@@ -54,7 +54,7 @@
 | 12 | 安徽省 | 340000 | 安徽省教育厅 | http://jyt.ah.gov.cn/ | 教育厅门户；省级政策源已接入，招聘栏目待核验 | 3 | 部分接入 | 蚌埠、亳州、阜阳已接入；其余地市与区县待补齐；省级政策不计招聘覆盖 |
 | 13 | 福建省 | 350000 | 福建省教育厅 | http://www.fjjszg.com | 教师资格入口；教育厅门户待补 | 0 | 未覆盖 | 省级统一招聘与市县入口待接入 |
 | 14 | 江西省 | 360000 | 江西省教育厅 | http://jyt.jiangxi.gov.cn | 教育厅门户；招聘栏目待核验 | 0 | 未覆盖 | 同上 |
-| 15 | 山东省 | 370000 | 山东省教育厅 | http://edu.shandong.gov.cn | 教育厅门户；招聘栏目待核验 | 2 | 部分接入 | 济南、烟台已接入；其余地市与区县待补齐 |
+| 15 | 山东省 | 370000 | 山东省教育厅 | http://edu.shandong.gov.cn | 教育厅门户；招聘栏目待核验 | 3 | 部分接入 | 济南、烟台、泰安已接入；其余地市与区县待补齐 |
 | 16 | 河南省 | 380000 | 河南省教育厅 | http://jyt.henan.gov.cn/ | 教育厅门户；招聘栏目待核验 | 0 | 未覆盖 | 同上 |
 | 17 | 湖北省 | 420000 | 湖北省教育厅 | http://www.hbies.cn/ | 教师资格业务入口；教育厅门户待补 | 0 | 未覆盖 | 同上 |
 | 18 | 湖南省 | 430000 | 湖南省教育厅 | http://jsc.gov.hnedu.cn | 教师工作入口；教育厅门户待补 | 0 | 未覆盖 | 同上 |
@@ -95,6 +95,7 @@
 | fuyang-education | 阜阳市教育局 | 341200 | 市 | 招聘 | ready | 2026-11-05 | fixture 级（真实样本） | 未通过 | 「师资建设」栏目；静态列表 + pagination 12 页 / 175 条；正文与 /download?siteId= 附件回放通过；跨站转载按路径过滤；7 天观察未完成 |
 | jinan-education | 济南市教育局 | 370100 | 市 | 招聘 | ready | 2026-11-05 | fixture 级（真实样本） | 未通过 | 「教师招聘专栏」；jpaas 表格行 + DOM 属性分页 6 页 / 79 条；正文与 4 个 jpaas 附件回放通过；7 天观察未完成 |
 | yantai-education | 烟台市教育局 | 370600 | 市 | 招聘 | ready | 2026-11-06 | fixture 级（真实样本） | 未通过 | 「通知公告」混合栏目；jpaas li.cf + span.fr；官方 1365 条 / 91 页，按单来源窗口只监测最新 6 页（90 条）；列表直链 PDF 不按正文抓取；正文与 xls 附件回放通过；7 天观察未完成 |
+| taian-education | 泰安市教育局 | 370900 | 市 | 招聘 | ready | 2026-11-06 | fixture 级（真实样本） | 未通过 | 「公示公告」混合栏目；首屏内嵌 datastore 45 条，后续 POST jpage dataproxy（227 条 / 16 页 / 每页 15 条）补齐；正文 ContentStart/ContentEnd、附件 downfile.jsp 回放通过；7 天观察未完成 |
 | anhui-education-policy | 安徽省教育厅 | 340000 | 省 | 政策 | ready | 2026-11-05 | fixture 级 | 未通过 | 只服务政策检索，不计招聘覆盖 |
 | jiangsu-education-candidate | 江苏省教育厅 | 320000 | 省 | 招聘候选 | candidate | 未核验 | 无 | 未接入 | 省级不发布市县招聘，不能替代市县覆盖 |
 | zhejiang-education-candidate | 浙江省教育厅 | 330000 | 省 | 招聘候选 | candidate | 未核验 | 无 | 未接入 | 公告公示为聚合页，无独立教师招聘栏目 |
@@ -145,6 +146,7 @@
 | fuyang-education | 安徽阜阳 | 服务端渲染静态列表 | `div.m-cglist.m-liststyle1 li`，`span` + `a[title]`（跨站按详情路径过滤） | `<pagination>` pagecount=12 → 12 页 / 175 条 | `#zoom` + meta | `/download?siteId=28&id=`（xlsx/docx） | `tests/fixtures/golden-sources/fuyang` |
 | jinan-education | 山东济南 | jpaas 公开接口 + 表格行 | `.page-content tr`，`a[title]` + `td.bt_time span`（部分历史条目为 http 链接） | DOM 属性 rows=15/count=79 → 6 页 | `#zoom` + meta | jpaas `front/document/download`（pdf/doc/docx） | `tests/fixtures/golden-sources/jinan` |
 | yantai-education | 山东烟台 | jpaas 公开接口 + li | `.page-content li.cf`，`a[title]` + `span.fr`；列表直链 PDF 按文章路径过滤 | DOM 属性 rows=15/count=1365 → 官方 91 页；单来源窗口只取最新 6 页 | `#zoom` + meta | jpaas `front/document/download`（xls） | `tests/fixtures/golden-sources/yantai` |
+| taian-education | 山东泰安 | 首屏内嵌 datastore + jpage POST | `<record><![CDATA[<li>a[title] + span.bt-right]]>`，首屏 45 条 | jpage `perPage:15` / totalRecord:227 → 13 个后续 POST dataproxy 页 | meta（ArticleTitle/pubdate）+ ContentStart/ContentEnd | `/module/download/downfile.jsp`（pdf） | `tests/fixtures/golden-sources/taian` |
 
 新增能力（复用而非单点硬编码）：
 
@@ -152,28 +154,29 @@
 - 新增 `PUBLIC_COLUMN_PAGE_WINDOWS` 单来源分页窗口（烟台 6 页），窗口值、官方总量与原因同步登记在本账本与来源目录 `coverageNote`，未登记来源超预算仍显式失败；
 - `ARTICLE_BODY_SELECTORS` 增加 `.content`（泰州），附件正则增加 `/download?`（亳州）；
 - 新增 `discoverGovInfoList` / `govInfoListPages`，覆盖 `section.m-tglist` + `<pagination>` 静态分页族；
+- 新增 `jpage-list.ts`：解析首屏 `<datastore>` 与 jpage 配置（totalRecord/perPage），生成 dataproxy POST 页 URL 与 form 请求体；`SafeFetcher` 新增 POST 边界（仅 form-urlencoded、≤4KB、重定向降级 GET、仍走完整 allowlist/DNS 校验）；
 - 正文附件收集增加 `.m-filbox` / `.m-file-download` / `.m-dtdownload` 容器，避免岗位表在正文容器外被漏采。
 
 ### 8.2 逐来源验证状态
 
-| 验证项 | 湖州 | 泰州 | 亳州 | 阜阳 | 济南 | 烟台 | 证据 |
-|---|---|---|---|---|---|---|---|
-| 自动发现公告 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 真实列表首屏 15/15/15/10/15/12 条，`public-column-s5.spec.ts` 回放 |
-| 正文抓取 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 真实正文快照，标题/日期/正文非空 |
-| 岗位/附件抓取 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 真实附件链接（xlsx / xls / doc、et / xlsx / pdf、doc、docx） |
-| 去重 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 第一页与第二页 URL 无交集断言 |
-| 补充通知关联 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 需审核发布链路真实运行后确认 |
-| 失败重试 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 需调度失败注入后确认 |
-| 告警 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 需结构漂移注入后确认 |
-| 审核发布 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 需生产/预发审核链路 |
-| 用户侧可见性 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 需发布后用户侧抽查 |
+| 验证项 | 湖州 | 泰州 | 亳州 | 阜阳 | 济南 | 烟台 | 泰安 | 证据 |
+|---|---|---|---|---|---|---|---|---|
+| 自动发现公告 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 真实列表首屏 15/15/15/10/15/12/45 条，`public-column-s5.spec.ts` 与 `jpage-list.spec.ts` 回放 |
+| 正文抓取 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 真实正文快照，标题/日期/正文非空 |
+| 岗位/附件抓取 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 真实附件链接（xlsx / xls / doc、et / xlsx / pdf、doc、docx / pdf） |
+| 去重 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 | 第一页与第二页 URL 无交集断言；泰安首屏 45 条与 POST 第 4 页 46 条无重叠 |
+| 补充通知关联 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 需审核发布链路真实运行后确认 |
+| 失败重试 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 需调度失败注入后确认 |
+| 告警 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 需结构漂移注入后确认 |
+| 审核发布 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 需生产/预发审核链路 |
+| 用户侧可见性 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 待验证 | 需发布后用户侧抽查 |
 
 说明：自动发现、正文、附件、去重已有真实样本证据；补充通知、重试、告警、审核发布与用户可见性属于**运行链路**验证，尚未执行，因此不标记通过。
 
 ### 8.3 7 天观察窗口
 
 - 窗口开始：2026-11-05（首日）。
-- 当前进度：**0 / 7 天**。首日两次真实采样（约间隔 9.5 分钟）均为 HTTP 200 且条目与首采一致，已记入 `SOURCE_MONITORING_RECORDS`；N2 济南另完成首日两次真实采样（16:17 与 16:20），烟台完成首日两次真实采样（2026-11-06 01:08 与 01:09 UTC，两次指纹一致，第 2 页与首屏无重叠），同样条目一致；按连续 2 次成功阈值，机器状态为 `monitoring`（只代表“到最近一次检查为止正常”），不代表 7 天窗口完成。
+- 当前进度：**0 / 7 天**。首日两次真实采样（约间隔 9.5 分钟）均为 HTTP 200 且条目与首采一致，已记入 `SOURCE_MONITORING_RECORDS`；N2 济南另完成首日两次真实采样（16:17 与 16:20），烟台完成首日两次真实采样（2026-11-06 01:08 与 01:09 UTC，两次指纹一致，第 2 页与首屏无重叠），泰安完成首日两次真实采样（2026-11-06T01:53:26.910Z 与 01:54:34.111Z UTC，两次均 45 条，第 2 次指纹 `09cdc350…`），同样条目一致；按连续 2 次成功阈值，机器状态为 `monitoring`（只代表“到最近一次检查为止正常”），不代表 7 天窗口完成。
 - 规则：每日至少一次真实调度记录；连续 2 次成功才从 `verifying` 进入监测状态；窗口未满不得宣称“持续运行通过”。
 - 未完成前，用户侧与验收报告一律按“样本通过、持续运行未验证”表述。
 
@@ -193,15 +196,14 @@
 | 青岛市教育局 | https://edu.qingdao.gov.cn/ | 受限，未纳入 | HTTP 403（站点防护），不绕过；替代官方入口待核验 |
 | 厦门市教育局 | https://edu.xm.gov.cn/xxgk/jszk/ | 受限，未纳入 | 「教师招考」首屏 15 条静态可读，但 `?page=N` 翻页请求被 WAF 拦截；不绕过 WAF，记录原因待站点策略调整后重试 |
 | 潍坊市教育局 | https://jyj.weifang.gov.cn/ | 未纳入 | 列表为 `POST /els-service/article/{page}/{size}` JSON 接口，非公开 GET 接口族；需单独接口族适配与更充分的请求频控评估 |
-| 泰安市教育局 | https://jyj.taian.gov.cn/col/col45480/index.html | 候选，待扩展请求契约 | 「公示公告」服务端静态首屏可读（li>a[title]+span.bt-right），但翻页是 jpage dataproxy：必须 POST `startrecord/endrecord/perpage` 并带 unitid/webid/columnid 等参数（实测 GET 空响应，POST 返回 227 条 / 16 页）；现有抓取器仅支持 GET，待扩展请求契约后接入，不绕过限制 |
 | 广州、石家庄、郑州、泉州、东莞等 | — | 未纳入 | 首页无招聘栏目、入口不可达或栏目为混合公开事项；不以目录登记冒充覆盖 |
 
 ## 9. 当前结论与缺口
 
 1. 省级目录登记 31/31，但仅 4 个省级行政区有招聘来源实际接入；27 个省级行政区未覆盖。
-2. 已接入 17 个招聘来源，其中样本级证据 3 个，持续运行通过 0 个。
-3. N1 新增湖州、泰州、亳州、阜阳 4 个跨省市级来源；N2 新增山东济南、烟台 2 个公开接口族来源；均完成真实样本回放；烟台按单来源分页窗口只监测最新 6 页（官方 91 页），窗口已登记；运行链路验证与 7 天观察尚未完成。
-4. 市级、区县级全国分母尚未建立，现有 15 个地市/区县地区（17 个招聘来源）不能代表全国。
+2. 已接入 18 个招聘来源，其中样本级证据 3 个，持续运行通过 0 个。
+3. N1 新增湖州、泰州、亳州、阜阳 4 个跨省市级来源；N2 新增山东济南、烟台、泰安 3 个公开接口族来源；均完成真实样本回放；烟台按单来源分页窗口只监测最新 6 页（官方 91 页），窗口已登记；运行链路验证与 7 天观察尚未完成。
+4. 市级、区县级全国分母尚未建立，现有 16 个地市/区县地区（18 个招聘来源）不能代表全国。
 5. 全国完整召回未验证；本文件不宣称全部覆盖或完整召回。
 6. 下一步：继续 N1 补齐浙江、江苏、安徽其余市级/区县缺口，同时推进 N2 公开接口族扩省与 7 天真实观察；随后按网站类型推进 N3—N5。
 
@@ -214,3 +216,4 @@
 | 2026-11-05 | N1 第二批接入阜阳「师资建设」来源；静态列表解析扩展 `div.m-cglist.m-liststyle1` 与正文外附件容器 `.m-dtdownload`，跨站转载按详情路径过滤 | `backend/src/sourcing/adapters/fuyang-education.adapter.ts`；`tests/fixtures/golden-sources/fuyang`；`backend/src/sourcing/public-column-s5.spec.ts` |
 | 2026-11-05 | N2 首批接入山东济南「教师招聘专栏」；jpaas 表格行 + `td.bt_time` 日期 + DOM 属性分页 6 页 / 79 条，正文 4 个 jpaas 附件回放通过 | `backend/src/sourcing/adapters/jinan-education.adapter.ts`；`tests/fixtures/golden-sources/jinan`；`backend/src/sourcing/public-column-s5.spec.ts` |
 | 2026-11-06 | N2 扩源接入山东烟台「通知公告」；jpaas `li.cf` + `span.fr`，官方 1365 条 / 91 页，按 `PUBLIC_COLUMN_PAGE_WINDOWS` 只监测最新 6 页（90 条），列表直链 PDF 按文章路径过滤，正文与 xls 附件回放通过；登记青岛/厦门受限原因与泰安候选 | `backend/src/sourcing/adapters/yantai-education.adapter.ts`；`tests/fixtures/golden-sources/yantai`；`backend/src/sourcing/public-column.ts`；`backend/src/sourcing/public-column-s5.spec.ts` |
+| 2026-11-06 | N2 扩源接入山东泰安「公示公告」；首屏内嵌 datastore 45 条 + 13 个后续 jpage dataproxy POST 页（227 条 / 16 页），新增 `SafeFetcher` 受限 POST form 能力（≤4KB、仅 form-urlencoded、重定向降级 GET），正文 ContentStart/ContentEnd 与 `downfile.jsp` pdf 附件回放通过；首日两次真实采样已记录 | `backend/src/sourcing/adapters/taian-education.adapter.ts`；`backend/src/sourcing/jpage-list.ts`；`backend/src/sourcing/jpage-list.spec.ts`；`backend/src/sourcing/fetch/safe-fetcher.ts`；`tests/fixtures/golden-sources/taian` |

@@ -29,7 +29,8 @@ export type SafeFetchErrorCode =
   | 'BAD_CONTENT_TYPE'
   | 'MAGIC_BYTES_MISMATCH'
   | 'NETWORK_ERROR'
-  | 'HTTP_ERROR';
+  | 'HTTP_ERROR'
+  | 'INVALID_REQUEST';
 
 export class SafeFetchError extends Error {
   readonly code: SafeFetchErrorCode;
@@ -84,6 +85,20 @@ export interface ExtraRequestHeaders {
   /** 同源 Referer（页面地址），用于通过官网的附件防盗链 */
   referer?: string;
 }
+
+/**
+ * 非 GET 列表请求（仅用于官网明确要求 POST 的栏目分页，如泰安 jpage dataproxy）。
+ * 安全边界：只允许 form-urlencoded、请求体 ≤ 4KB；URL 仍走完整 allowlist/SSRF/DNS 校验，
+ * 重定向后的后续跳一律降级为 GET，不把请求体带到新地址。
+ */
+export interface RequestOptions {
+  method?: 'GET' | 'POST';
+  body?: string;
+  contentType?: 'application/x-www-form-urlencoded';
+}
+
+/** POST 请求体上限（字节）：栏目分页参数远小于此值 */
+export const MAX_POST_BODY_BYTES = 4096;
 
 export interface SafeFetcherOptions {
   /** 来源 host allowlist；host 等于或为其子域时放行 */
@@ -205,6 +220,7 @@ export class SafeFetcher {
     input: string,
     conditional: ConditionalHeaders = {},
     extraHeaders: ExtraRequestHeaders = {},
+    request: RequestOptions = {},
   ): Promise<FetchResult> {
     const startedAt = Date.now();
     const deadline = startedAt + this.totalTimeoutMs;
@@ -220,6 +236,7 @@ export class SafeFetcher {
             startedAt,
             conditional,
             extraHeaders,
+            request,
           ),
           deadline,
         );
@@ -260,6 +277,7 @@ export class SafeFetcher {
     startedAt: number,
     conditional: ConditionalHeaders,
     extraHeaders: ExtraRequestHeaders = {},
+    request: RequestOptions = {},
   ): Promise<FetchResult> {
     let currentUrl = startUrl;
     let redirects = 0;
@@ -282,6 +300,7 @@ export class SafeFetcher {
           deadline,
           currentUrl === startUrl ? conditional : {},
           extraHeaders,
+          currentUrl === startUrl ? request : {},
         );
         const status = response.status;
 
@@ -433,22 +452,48 @@ export class SafeFetcher {
     }
   }
 
+  /**
+   * POST 请求边界：只允许官网栏目分页使用的 form-urlencoded 小请求体。
+   * 其他方法/自定义 Content-Type/超长请求体一律拒绝，避免把抓取器变成通用外发通道。
+   */
+  private assertRequestOptions(request: RequestOptions): void {
+    if (request.method !== 'POST') return;
+    if (!request.body) {
+      throw new SafeFetchError('INVALID_REQUEST', 'POST 请求必须提供表单请求体');
+    }
+    if (request.contentType !== 'application/x-www-form-urlencoded') {
+      throw new SafeFetchError(
+        'INVALID_REQUEST',
+        'POST 仅允许 application/x-www-form-urlencoded',
+      );
+    }
+    if (Buffer.byteLength(request.body) > MAX_POST_BODY_BYTES) {
+      throw new SafeFetchError(
+        'INVALID_REQUEST',
+        `POST 请求体超过上限 ${MAX_POST_BODY_BYTES} 字节`,
+      );
+    }
+  }
+
   private async doFetch(
     url: string,
     deadline: number,
     conditional: ConditionalHeaders = {},
     extraHeaders: ExtraRequestHeaders = {},
+    request: RequestOptions = {},
   ): Promise<Response> {
     const remaining = deadline - Date.now();
     if (remaining <= 0) {
       throw new SafeFetchError('TIMEOUT', '整体请求超时');
     }
+    this.assertRequestOptions(request);
+    const method = request.method ?? 'GET';
     const controller = new AbortController();
     const timeout = Math.min(this.connectTimeoutMs, remaining);
     const timer = setTimeout(() => controller.abort(), timeout);
     try {
       return await this.fetchImpl(url, {
-        method: 'GET',
+        method,
         redirect: 'manual',
         signal: controller.signal,
         headers: {
@@ -460,8 +505,12 @@ export class SafeFetcher {
           ...(conditional.ifModifiedSince
             ? { 'if-modified-since': conditional.ifModifiedSince }
             : {}),
+          ...(method === 'POST'
+            ? { 'content-type': request.contentType }
+            : {}),
           ...this.refererHeader(url, extraHeaders),
         },
+        ...(method === 'POST' ? { body: request.body } : {}),
       });
     } catch (error) {
       if (controller.signal.aborted) {

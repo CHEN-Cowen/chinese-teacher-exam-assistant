@@ -291,6 +291,21 @@ export const SOURCE_CATALOG: readonly SourceCatalogEntry[] = [
       '「通知公告」混合栏目真实核验（2026-11-06）：jpaas 公开接口列表（li.cf + span.fr 日期）、DOM 属性分页（rows=15，官方总量 1365 条 / 91 页）；按单来源分页窗口只监测最新 6 页（90 条），窗口与原因见来源账本；列表内直链 PDF（年度报表、教辅目录等）不按公告正文抓取；正文 #zoom 与官方 xls 附件下载链接离线回放通过。该栏目为混合栏目，教师招聘相关条目需按标题判定；持续监测见检查记录。',
   },
   {
+    sourceKey: 'taian-education',
+    publisher: '泰安市教育局',
+    regionCode: '370900',
+    authorityLevel: 'city',
+    officialUrl: 'https://jyj.taian.gov.cn/',
+    listUrls: ['https://jyj.taian.gov.cn/col/col45480/index.html'],
+    allowedHosts: ['jyj.taian.gov.cn'],
+    adapterKey: 'taian-education',
+    status: 'ready',
+    verifiedAt: '2026-11-06',
+    sampleRef: 'tests/fixtures/golden-sources/taian',
+    coverageNote:
+      '「公示公告」混合栏目真实核验（2026-11-06）：首屏内嵌 datastore 45 条（官方总量 227 条 / 每页 15 条 / 共 16 页），后续页必须 POST application/x-www-form-urlencoded 到 /module/web/jpage/dataproxy.jsp（GET 返回空响应），按 13 个后续 POST 页补齐；正文标题/日期取官方 meta（ArticleTitle/pubdate），正文在 ContentStart/ContentEnd 标记之间，附件走 /module/download/downfile.jsp。站点为混合公告，教师招聘相关条目按标题判定；POST 请求体上限 4KB 且重定向后降级 GET；持续监测见检查记录。',
+  },
+  {
     sourceKey: 'changzhou-education',
     publisher: '常州市教育局',
     regionCode: '320400',
@@ -835,6 +850,26 @@ export const SOURCE_MONITORING_RECORDS: readonly SourceMonitoringRecord[] = [
         contentHash:
           '7a4b2c2dcb6f95f0b7725c542755c9370f9b056bb7eae01f65c806bfba15ba91',
         note: 'N2 第二次真实采样（距首次约 1 分钟）：列表 HTTP 200，12 条标题/日期/链接与首次样本完全一致，第 2 页 15 条与首屏无重叠；指纹为条目字段 sha256。7 天持续观察窗口尚未完成。',
+      },
+    ],
+  },
+  {
+    sourceKey: 'taian-education',
+    checks: [
+      {
+        checkedAt: '2026-11-06T01:53:26.910Z',
+        outcome: 'succeeded',
+        discoveredCount: 45,
+        contentHash: null,
+        note: 'N2 首次真实采样：公示公告首屏 HTTP 200，datastore 解析 45 条（官方总量 227 / 每页 15 / 16 页）；POST dataproxy startrecord=46 返回 46 条且与首屏无重叠；正文 ContentStart/ContentEnd 与附件下载离线回放通过。7 天持续观察窗口尚未完成。',
+      },
+      {
+        checkedAt: '2026-11-06T01:54:34.111Z',
+        outcome: 'no_new',
+        discoveredCount: 45,
+        contentHash:
+          '09cdc350c74f1a1dca2f511317d1161905ceab603b5945c7ecec690ce5148e7d',
+        note: 'N2 第二次真实采样（距首次约 1 分钟）：首屏 45 条标题/日期/链接与首次一致；POST 第 46 条起仍为 46 条且与首屏无重叠；指纹为条目字段 sha256。7 天持续观察窗口尚未完成。',
       },
     ],
   },

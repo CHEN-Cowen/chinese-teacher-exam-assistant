@@ -541,3 +541,76 @@ describe('Referer 头（附件防盗链）', () => {
     expect(seen.referer).toBeUndefined();
   });
 });
+
+describe('POST 表单请求边界（jpage dataproxy）', () => {
+  it('允许 form-urlencoded 小请求体，并透传 method/body/content-type', async () => {
+    let seen: RequestInit = {};
+    const { impl } = makeFetch((_url, init) => {
+      seen = init;
+      return htmlResponse('<html>ok</html>');
+    });
+    const result = await makeFetcher({ fetchImpl: impl }).fetch(
+      'https://allow.host/module/web/jpage/dataproxy.jsp?startrecord=46',
+      {},
+      {},
+      {
+        method: 'POST',
+        body: 'col=1&columnid=45480',
+        contentType: 'application/x-www-form-urlencoded',
+      },
+    );
+    expect(result.status).toBe(200);
+    expect(seen.method).toBe('POST');
+    expect(seen.body).toBe('col=1&columnid=45480');
+    expect((seen.headers as Record<string, string>)['content-type']).toBe(
+      'application/x-www-form-urlencoded',
+    );
+  });
+
+  it('重定向后的后续跳降级为 GET，不携带请求体', async () => {
+    const seen: { method?: string; body?: unknown }[] = [];
+    const { impl } = makeFetch((url, init) => {
+      seen.push({ method: init.method, body: init.body });
+      return url.endsWith('/start')
+        ? redirectResponse('https://allow.host/final')
+        : htmlResponse('<html>ok</html>');
+    });
+    await makeFetcher({ fetchImpl: impl }).fetch(
+      'https://allow.host/start',
+      {},
+      {},
+      {
+        method: 'POST',
+        body: 'a=1',
+        contentType: 'application/x-www-form-urlencoded',
+      },
+    );
+    expect(seen[0]).toEqual({ method: 'POST', body: 'a=1' });
+    expect(seen[1]).toEqual({ method: 'GET', body: undefined });
+  });
+
+  it('缺少请求体、Content-Type 不符或请求体超限时显式拒绝', async () => {
+    const { impl } = makeFetch(() => htmlResponse('<html>ok</html>'));
+    const fetcher = makeFetcher({ fetchImpl: impl });
+    await expect(
+      fetcher.fetch('https://allow.host/list', {}, {}, {
+        method: 'POST',
+        contentType: 'application/x-www-form-urlencoded',
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+    await expect(
+      fetcher.fetch('https://allow.host/list', {}, {}, {
+        method: 'POST',
+        body: 'a=1',
+        contentType: 'text/plain' as never,
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+    await expect(
+      fetcher.fetch('https://allow.host/list', {}, {}, {
+        method: 'POST',
+        body: 'a='.repeat(3000),
+        contentType: 'application/x-www-form-urlencoded',
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+  });
+});

@@ -1,0 +1,18 @@
+{
+  "capturedAt": "2026-11-06T01:50:05.470Z",
+  "sourceKind": "official-live-snapshot",
+  "scope": "article-and-attachment-links-only",
+  "stableMonitoringVerified": false,
+  "files": [
+    {
+      "name": "public-detail.html",
+      "url": "https://jyj.taian.gov.cn/art/2026/6/10/art_45480_10311007.html",
+      "sha256": "77e67f671f508f7e2009d472813c7bd8d6c6e0681ca21d8ad744a1d9b065d989"
+    },
+    {
+      "name": "public-detail-attachment.html",
+      "url": "https://jyj.taian.gov.cn/art/2026/8/31/art_45480_10311927.html",
+      "sha256": "c05170e1d7f92a6b77bcd0d91dd116a99ce4768c8156978f20275088ea1e3edc"
+    }
+  ]
+}

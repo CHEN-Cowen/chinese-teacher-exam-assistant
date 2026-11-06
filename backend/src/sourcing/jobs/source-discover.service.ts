@@ -30,6 +30,11 @@ import {
 } from '../crawl-run-store.js';
 import { SourceDocumentStore } from '../source-document-store.js';
 import { SafeFetcherFactory } from '../fetch/safe-fetcher-factory.js';
+import {
+  isJpageDataUrl,
+  jpageDataproxyPages,
+  jpagePostRequest,
+} from '../jpage-list.js';
 import { SafeFetchError } from '../fetch/safe-fetcher.js';
 import { SourcingMetrics } from '../observability.js';
 import {
@@ -175,16 +180,23 @@ export class SourceDiscoverService {
       let cache;
       try {
         cache = await this.documentStore.getUrlCache(source.id, listUrl);
-        // 仅已验证的公开栏目 API 使用 JSON 通道，仍复用全部 DNS/重定向/大小/并发限制。
+        // 仅已验证的公开栏目 API 使用 JSON/XML 通道，仍复用全部 DNS/重定向/大小/并发限制。
+        const isJpage = isJpageDataUrl(listUrl);
         const requestFetcher =
           new URL(listUrl).pathname ===
-          '/api-gateway/jpaas-publish-server/front/page/build/unit'
+            '/api-gateway/jpaas-publish-server/front/page/build/unit' ||
+          isJpage
             ? this.fetcherFactory.createForAttachment(source)
             : fetcher;
-        result = await requestFetcher.fetch(listUrl, {
-          ifNoneMatch: cache?.etag ?? undefined,
-          ifModifiedSince: cache?.lastModified ?? undefined,
-        });
+        result = await requestFetcher.fetch(
+          listUrl,
+          {
+            ifNoneMatch: cache?.etag ?? undefined,
+            ifModifiedSince: cache?.lastModified ?? undefined,
+          },
+          {},
+          isJpage ? jpagePostRequest(listUrl) : {},
+        );
         if (result.status === 304) {
           if (!cache) throw new Error('not_modified_without_snapshot');
         }
@@ -217,6 +229,8 @@ export class SourceDiscoverService {
           for (const page of staticListPages(result.finalUrl, body))
             if (!listUrls.includes(page)) listUrls.push(page);
           for (const page of govInfoListPages(result.finalUrl, body))
+            if (!listUrls.includes(page)) listUrls.push(page);
+          for (const page of jpageDataproxyPages(result.finalUrl, body))
             if (!listUrls.includes(page)) listUrls.push(page);
           const items = publicUrl
             ? []
@@ -252,6 +266,8 @@ export class SourceDiscoverService {
         for (const page of staticListPages(result.finalUrl, result.body))
           if (!listUrls.includes(page)) listUrls.push(page);
         for (const page of govInfoListPages(result.finalUrl, result.body))
+          if (!listUrls.includes(page)) listUrls.push(page);
+        for (const page of jpageDataproxyPages(result.finalUrl, result.body))
           if (!listUrls.includes(page)) listUrls.push(page);
         const items = publicUrl
           ? []
