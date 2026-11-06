@@ -22,7 +22,7 @@
  *
  * 关联真实样本：tests/fixtures/golden-sources/zhengzhou-education/
  */
-import { load, type Element as CheerioElement } from 'cheerio';
+import { load } from 'cheerio';
 import {
   classifyDocumentKind,
   extractDate,
@@ -116,7 +116,7 @@ function locateJhtmlArticle(input: ArticlePageSnapshot): LocatedArticle {
     throw mismatch(`郑州 jhtml 正文缺少 ArticleTitle 或 PubDate meta: url=${input.url}`);
   // 附件：正文容器内 a + 外部 .news_content_attachments a
   const attachments = new Map<string, { name: string; url: string }>();
-  const anchors: CheerioElement[] = body.find('a[href]').toArray();
+  const anchors: any[] = body.find('a[href]').toArray();
   $('.news_content_attachments a[href]').each((_i, e) => {
     anchors.push(e as never);
   });
