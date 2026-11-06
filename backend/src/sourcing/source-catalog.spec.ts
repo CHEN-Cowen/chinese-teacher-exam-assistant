@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  MAX_CATALOG_SIZE,
+  MIN_CATALOG_SIZE,
   SOURCE_CATALOG,
   SOURCE_MONITORING_RECORDS,
   appendSourceCheck,
@@ -14,9 +16,9 @@ import {
 } from './source-monitoring.js';
 
 describe('S5 来源目录', () => {
-  it('保留 10-30 个候选来源，并区分省级、市级和区县级', () => {
-    expect(SOURCE_CATALOG.length).toBeGreaterThanOrEqual(10);
-    expect(SOURCE_CATALOG.length).toBeLessThanOrEqual(30);
+  it('保留 10-60 个候选来源，并区分省级、市级和区县级', () => {
+    expect(SOURCE_CATALOG.length).toBeGreaterThanOrEqual(MIN_CATALOG_SIZE);
+    expect(SOURCE_CATALOG.length).toBeLessThanOrEqual(MAX_CATALOG_SIZE);
     expect(
       new Set(SOURCE_CATALOG.map((entry) => entry.authorityLevel)),
     ).toEqual(new Set(['province', 'city', 'district']));

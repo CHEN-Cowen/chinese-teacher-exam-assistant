@@ -554,6 +554,14 @@ export const HTTP_ONLY_HOSTS: ReadonlySet<string> = new Set([
   'sjzjyj.sjz.gov.cn',
 ]);
 
+/**
+ * 来源目录规模护栏。N3 跨省扩源按批次持续新增（2026-11-06 已达 30 个），
+ * 上限从 S5 阶段的 30 放开到 60 以留出扩源余量；下限与上限仍用于防止
+ * 目录被误删或异常膨胀，不是业务目标值。
+ */
+export const MIN_CATALOG_SIZE = 10;
+export const MAX_CATALOG_SIZE = 60;
+
 export function validateSourceCatalog(
   catalog: readonly SourceCatalogEntry[] = SOURCE_CATALOG,
 ): string[] {
@@ -609,8 +617,10 @@ export function validateSourceCatalog(
       }
     }
   }
-  if (catalog.length < 10 || catalog.length > 30) {
-    errors.push(`S5 来源数量应为 10-30，当前为 ${catalog.length}`);
+  if (catalog.length < MIN_CATALOG_SIZE || catalog.length > MAX_CATALOG_SIZE) {
+    errors.push(
+      `S5 来源数量应为 ${MIN_CATALOG_SIZE}-${MAX_CATALOG_SIZE}，当前为 ${catalog.length}`,
+    );
   }
   if (hosts.size < 4) errors.push('来源允许域名覆盖不足');
   return errors;
