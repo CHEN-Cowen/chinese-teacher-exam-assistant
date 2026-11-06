@@ -53,7 +53,8 @@ export function extractArticlePathDate(text: string, url: string): string {
  * - xiaoshan：li，日期在同级 span.info-time（YYYY-MM-DD）；
  * - huzhou：表格行（.page-content tr），日期在 td.yd_no，形如 [YYYY-MM-DD]；
  * - taizhou：li，标题在链接文本（title 属性为模板占位符），日期在同级 span（YYYY-MM-DD）；
- * - jinan：table 行（.page-content tr），日期在 td.bt_time 内 span（YYYY-MM-DD）。
+ * - jinan：table 行（.page-content tr），日期在 td.bt_time 内 span（YYYY-MM-DD）；
+ * - yantai：li.cf，a[title] + 同级 span.fr（YYYY-MM-DD），列表混有直接指向 PDF 的条目。
  */
 export type PublicColumnKind =
   | 'ningbo'
@@ -65,7 +66,8 @@ export type PublicColumnKind =
   | 'xiaoshan'
   | 'huzhou'
   | 'taizhou'
-  | 'jinan';
+  | 'jinan'
+  | 'yantai';
 
 /** 只读取官网声明的同源公开列表接口，不执行脚本，不接受任意跨域地址。 */
 export function publicColumnRequest(
@@ -185,6 +187,21 @@ function readPublicColumnPaging(
   return { count, size, page };
 }
 
+/**
+ * 单来源分页窗口：官方栏目总页数远超通用预算（20 页）时，按来源显式登记
+ * 「只监测最新 N 页」，而不是让整个来源在首轮就因超预算失败。
+ *
+ * 这不是静默截断：窗口值、官方总量与原因同时登记在来源目录 coverageNote
+ * 与 `docs/nationwide-recruitment-source-ledger.md`，测试也会锁定页数。
+ * 未登记的来源超过通用预算仍然显式失败。
+ */
+export const PUBLIC_COLUMN_PAGE_WINDOWS: Readonly<Record<string, number>> = {
+  // 烟台市教育局「通知公告」为混合栏目：官方分量 1365 条 / 91 页（每页 15 条）。
+  // 全量抓取会让单来源每轮入队上千条历史文档，因此只监测最新 6 页（90 条），
+  // 覆盖最近约数月的新公告。
+  'jyj.yantai.gov.cn': 6,
+};
+
 /** 按官网 pageNew.js 的 paramJson 协议安排后续页，超过预算显式失败。 */
 export function publicColumnPages(
   baseUrl: string,
@@ -197,11 +214,13 @@ export function publicColumnPages(
   if (!paging) return [];
   const { count, size, page } = paging;
   const total = Math.ceil(count / size);
-  if (total > maxPages)
+  const sourceWindow = PUBLIC_COLUMN_PAGE_WINDOWS[new URL(baseUrl).hostname];
+  if (total > maxPages && sourceWindow === undefined)
     throw new AdapterParseError(
       'DOM_MISMATCH',
       '公开栏目分页超出预算，需调整检查范围',
     );
+  const lastPage = Math.min(total, sourceWindow ?? maxPages);
   const requested = new URL(baseUrl).searchParams.get('paramJson');
   if (requested) {
     let requestedPage: unknown;
@@ -220,7 +239,7 @@ export function publicColumnPages(
   if (page !== 1)
     throw new AdapterParseError('DOM_MISMATCH', '公开栏目初始页码不是第一页');
   const urls: string[] = [];
-  for (let next = 2; next <= total; next += 1) {
+  for (let next = 2; next <= lastPage; next += 1) {
     const url = new URL(baseUrl);
     url.searchParams.set(
       'paramJson',
@@ -434,6 +453,9 @@ export function discoverPublicColumn(
     const href = link.attr('href');
     if (!href) throw new AdapterParseError('DOM_MISMATCH', '公开栏目缺少链接');
     const url = resolveUrl(baseUrl, href);
+    // 烟台「通知公告」列表混有直接指向 PDF/附件的条目（年度报表、教辅目录等），
+    // 这些不是可解析的公告正文页；只保留官方文章路径，避免把 PDF 当正文抓取。
+    if (kind === 'yantai' && !/\/art\/\d{4}\/\S+\.html$/i.test(url)) return;
     let publishedAt: string;
     if (kind === 'hangzhou') {
       // 杭州条目日期是 li 的同级 <span>YYYY-MM-DD</span>；
@@ -469,6 +491,12 @@ export function discoverPublicColumn(
       publishedAt = extractDate(
         $(e).find('td.bt_time').text() || $(e).find('span').first().text(),
         '济南公开栏目日期',
+      );
+    } else if (kind === 'yantai') {
+      // 烟台 li.cf 条目日期在同级 span.fr（YYYY-MM-DD）。
+      publishedAt = extractDate(
+        $(e).find('span.fr').first().text(),
+        '烟台公开栏目日期',
       );
     } else {
       const date =

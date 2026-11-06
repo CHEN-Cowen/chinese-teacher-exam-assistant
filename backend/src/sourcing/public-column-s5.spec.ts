@@ -30,6 +30,7 @@ import { TaizhouEducationAdapter } from './adapters/taizhou-education.adapter.js
 import { BozhouEducationAdapter } from './adapters/bozhou-education.adapter.js';
 import { FuyangEducationAdapter } from './adapters/fuyang-education.adapter.js';
 import { JinanEducationAdapter } from './adapters/jinan-education.adapter.js';
+import { YantaiEducationAdapter } from './adapters/yantai-education.adapter.js';
 
 function fixtureDir(key: string): string {
   return path.resolve(process.cwd(), '../tests/fixtures/golden-sources', key);
@@ -751,6 +752,7 @@ const MANIFEST_SOURCES = [
   'bozhou',
   'fuyang',
   'jinan',
+  'yantai',
 ] as const;
 
 describe('S5 真实快照 manifest schema 统一', () => {
@@ -1318,5 +1320,112 @@ describe('N2 公开接口族来源真实样本回放', () => {
         fetchedAt: '2026-11-05T00:00:00.000Z',
       }),
     ).toThrow(/空列表|结构变化/);
+  });
+
+  it('烟台通知公告：外壳接口、列表、分页窗口与正文附件一致', () => {
+    const manifest = readManifest('yantai', 'public-manifest.json');
+    const shellFile = manifest.files.find(
+      (file) => file.name === 'public-shell.html',
+    )!;
+    const shell = readFixture('yantai', 'public-shell.html');
+    expect(createHash('sha256').update(shell).digest('hex')).toBe(
+      shellFile.sha256,
+    );
+    const listUrl = publicColumnRequest(shellFile.url, shell);
+    const listFile = manifest.files.find(
+      (file) => file.name === 'public-list.json',
+    )!;
+    expect(listUrl).toBe(listFile.url);
+    expect(listUrl).toContain('pageId=17078');
+
+    const list = readFixture('yantai', 'public-list.json');
+    expect(createHash('sha256').update(list).digest('hex')).toBe(
+      listFile.sha256,
+    );
+    const items = discoverPublicColumn(listFile.url, list, 'yantai');
+    // 首屏 15 行中有 3 条直接指向 PDF（年度报表、职称通知、教辅目录），
+    // 只保留 12 条官方文章页；历史条目 /art/YYYY/ 与新版 /col/.../art/YYYY/ 都可识别。
+    expect(items).toHaveLength(12);
+    expect(
+      items.every((item) => /^\d{4}-\d{2}-\d{2}$/.test(item.publishedAt)),
+    ).toBe(true);
+    expect(items.some((item) => item.title.includes('公开招聘'))).toBe(true);
+    expect(
+      items.every((item) =>
+        /^https:\/\/jyj\.yantai\.gov\.cn\/(?:col\/col17078\/)?art\/\d{4}\/\S+\.html$/.test(
+          item.url,
+        ),
+      ),
+    ).toBe(true);
+
+    // 官方分量 1365 条 / 91 页，远超通用预算；按来源窗口只安排最新 6 页中的后续 5 页。
+    const pages = publicColumnPages(listFile.url, list);
+    expect(pages).toHaveLength(5);
+    expect(
+      JSON.parse(new URL(pages[0]).searchParams.get('paramJson')!),
+    ).toEqual({ pageNo: 2, pageSize: '15' });
+    expect(
+      JSON.parse(new URL(pages[4]).searchParams.get('paramJson')!),
+    ).toEqual({ pageNo: 6, pageSize: '15' });
+    const page2 = discoverPublicColumn(
+      pages[0],
+      readFixture('yantai', 'public-page2.json'),
+      'yantai',
+    );
+    expect(page2).toHaveLength(15);
+    const firstUrls = new Set(items.map((item) => item.url));
+    expect(page2.every((item) => !firstUrls.has(item.url))).toBe(true);
+
+    const detail = readManifest('yantai', 'public-detail-manifest.json');
+    const detailFile = detail.files[0];
+    const detailBytes = readFileSync(
+      path.join(fixtureDir('yantai'), detailFile.name),
+    );
+    expect(createHash('sha256').update(detailBytes).digest('hex')).toBe(
+      detailFile.sha256,
+    );
+    const article = locateOfficialArticle(
+      detailFile.url,
+      detailBytes.toString('utf8'),
+    );
+    expect(article.title).toContain('公开招聘');
+    expect(article.publishedAt).toBe('2026-10-30');
+    expect(article.bodyText).toContain('拟聘用人员');
+    expect(article.attachments).toHaveLength(1);
+    expect(article.attachments[0].url).toContain(
+      '/api-gateway/jpaas-web-server/front/document/download?',
+    );
+    expect(article.attachments[0].name).toContain('.xls');
+  });
+
+  it('烟台适配器在真实样本上不抛 DOM 失配，外壳页显式失败', () => {
+    const adapter = new YantaiEducationAdapter();
+    const listFile = readManifest('yantai', 'public-manifest.json').files.find(
+      (file) => file.name === 'public-list.json',
+    )!;
+    expect(
+      adapter.discover({
+        url: listFile.url,
+        mimeType: 'application/json',
+        content: readFixture('yantai', 'public-list.json'),
+        fetchedAt: '2026-11-06T00:00:00.000Z',
+      }),
+    ).toHaveLength(12);
+    expect(
+      adapter.pages({
+        url: listFile.url,
+        mimeType: 'application/json',
+        content: readFixture('yantai', 'public-list.json'),
+        fetchedAt: '2026-11-06T00:00:00.000Z',
+      }),
+    ).toHaveLength(5);
+    expect(() =>
+      adapter.discover({
+        url: 'https://jyj.yantai.gov.cn/col/col17078/index.html',
+        mimeType: 'text/html',
+        content: readFixture('yantai', 'public-shell.html'),
+        fetchedAt: '2026-11-06T00:00:00.000Z',
+      }),
+    ).toThrow(AdapterParseError);
   });
 });

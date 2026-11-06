@@ -276,6 +276,21 @@ export const SOURCE_CATALOG: readonly SourceCatalogEntry[] = [
       '「教师招聘专栏」真实核验（2026-11-05）：jpaas 公开接口列表（表格行 + td.bt_time 日期）、DOM 属性分页（6 页 / 79 条）、正文 #zoom 与官方 4 个岗位/材料附件下载链接离线回放通过；含 2027 届部属公费师范生招聘公告；持续监测见检查记录。',
   },
   {
+    sourceKey: 'yantai-education',
+    publisher: '烟台市教育局',
+    regionCode: '370600',
+    authorityLevel: 'city',
+    officialUrl: 'https://jyj.yantai.gov.cn/',
+    listUrls: ['https://jyj.yantai.gov.cn/col/col17078/index.html'],
+    allowedHosts: ['jyj.yantai.gov.cn'],
+    adapterKey: 'yantai-education',
+    status: 'ready',
+    verifiedAt: '2026-11-06',
+    sampleRef: 'tests/fixtures/golden-sources/yantai',
+    coverageNote:
+      '「通知公告」混合栏目真实核验（2026-11-06）：jpaas 公开接口列表（li.cf + span.fr 日期）、DOM 属性分页（rows=15，官方总量 1365 条 / 91 页）；按单来源分页窗口只监测最新 6 页（90 条），窗口与原因见来源账本；列表内直链 PDF（年度报表、教辅目录等）不按公告正文抓取；正文 #zoom 与官方 xls 附件下载链接离线回放通过。该栏目为混合栏目，教师招聘相关条目需按标题判定；持续监测见检查记录。',
+  },
+  {
     sourceKey: 'changzhou-education',
     publisher: '常州市教育局',
     regionCode: '320400',
@@ -433,8 +448,8 @@ export function validateSourceCatalog(
       }
     }
   }
-  if (catalog.length < 10 || catalog.length > 20) {
-    errors.push(`S5 来源数量应为 10-20，当前为 ${catalog.length}`);
+  if (catalog.length < 10 || catalog.length > 30) {
+    errors.push(`S5 来源数量应为 10-30，当前为 ${catalog.length}`);
   }
   if (hosts.size < 4) errors.push('来源允许域名覆盖不足');
   return errors;
@@ -800,6 +815,26 @@ export const SOURCE_MONITORING_RECORDS: readonly SourceMonitoringRecord[] = [
         contentHash:
           '7942b9435f8cf4494346473d2f0db94abd2075e3f6b3442b62d33b5400bb2081',
         note: 'N2 第二次真实采样（距首次约 2.5 分钟）：公开列表 15 条标题/日期/链接与首次样本完全一致；指纹为条目字段 sha256。7 天持续观察窗口尚未完成。',
+      },
+    ],
+  },
+  {
+    sourceKey: 'yantai-education',
+    checks: [
+      {
+        checkedAt: '2026-11-06T01:08:05.494Z',
+        outcome: 'succeeded',
+        discoveredCount: 12,
+        contentHash: null,
+        note: 'N2 首次真实采样：通知公告外壳 + 同源 jpaas 公开接口列表首屏 HTTP 200，解析 12 条官方文章页（首屏 15 行中 3 条为 PDF 附件，未按正文抓取）；DOM 属性 rows=15/count=1365（共 91 页），按单来源窗口只监测最新 6 页（90 条）；正文 #zoom、官方 meta 与 xls 附件下载链接离线回放通过。7 天持续观察窗口尚未完成。',
+      },
+      {
+        checkedAt: '2026-11-06T01:09:11.400Z',
+        outcome: 'no_new',
+        discoveredCount: 12,
+        contentHash:
+          '7a4b2c2dcb6f95f0b7725c542755c9370f9b056bb7eae01f65c806bfba15ba91',
+        note: 'N2 第二次真实采样（距首次约 1 分钟）：列表 HTTP 200，12 条标题/日期/链接与首次样本完全一致，第 2 页 15 条与首屏无重叠；指纹为条目字段 sha256。7 天持续观察窗口尚未完成。',
       },
     ],
   },

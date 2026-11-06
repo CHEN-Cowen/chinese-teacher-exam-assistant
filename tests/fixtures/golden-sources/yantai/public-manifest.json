@@ -1,0 +1,23 @@
+{
+  "capturedAt": "2026-11-05T16:46:23.000Z",
+  "sourceKind": "official-live-snapshot",
+  "scope": "list-and-article-and-attachment-links",
+  "stableMonitoringVerified": false,
+  "files": [
+    {
+      "name": "public-shell.html",
+      "url": "https://jyj.yantai.gov.cn/col/col17078/index.html",
+      "sha256": "c241670bb638faf36e072b4a1da7f31fd2d0736ec90e39157df9951304056b85"
+    },
+    {
+      "name": "public-list.json",
+      "url": "https://jyj.yantai.gov.cn/api-gateway/jpaas-publish-server/front/page/build/unit?parseType=bulidstatic&webId=176&tplSetId=Kk39KUhjvqBDCVvixGO5O&pageType=column&tagId=%E5%BD%93%E5%89%8D%E6%A0%8F%E7%9B%AE%E5%88%97%E8%A1%A8&editType=null&pageId=17078",
+      "sha256": "eec5ad8b74833fbf351451e4501afb860532b4cca386fcb5ca29e1279a79529c"
+    },
+    {
+      "name": "public-page2.json",
+      "url": "https://jyj.yantai.gov.cn/api-gateway/jpaas-publish-server/front/page/build/unit?parseType=bulidstatic&webId=176&tplSetId=Kk39KUhjvqBDCVvixGO5O&pageType=column&tagId=%E5%BD%93%E5%89%8D%E6%A0%8F%E7%9B%AE%E5%88%97%E8%A1%A8&editType=null&pageId=17078&paramJson=%7B%22pageNo%22%3A2%2C%22pageSize%22%3A%2215%22%7D",
+      "sha256": "090e693b6a37a86ade5b966709a3f5e196984b8f4c68ecddfdd4a79afb5848eb"
+    }
+  ]
+}
