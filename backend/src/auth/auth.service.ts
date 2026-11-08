@@ -55,6 +55,10 @@ export class AuthService {
       await bcrypt.compare(password, '$2a$10$invalidhashinvalidhashinvalidhashinval').catch(() => undefined);
       return null;
     }
+    if (!user.isActive) {
+      await bcrypt.compare(password, '$2a$10$invalidhashinvalidhashinvalidhashinval').catch(() => undefined);
+      return null;
+    }
     const ok = await bcrypt.compare(password, user.credential.passwordHash);
     if (!ok) return null;
     return {
@@ -91,7 +95,12 @@ export class AuthService {
       where: { tokenHash: sha256(token) },
       include: { user: true },
     });
-    if (!session || session.revokedAt || session.expiresAt.getTime() < Date.now()) {
+    if (
+      !session ||
+      session.revokedAt ||
+      session.expiresAt.getTime() < Date.now() ||
+      !session.user.isActive
+    ) {
       return null;
     }
     return {

@@ -9,6 +9,7 @@ import type { UserRecruitmentProfile } from "@/lib/profile/types";
 import { demoOpportunitiesApi } from "./demoApi";
 import type {
   AnnouncementSubmissionDTO,
+  AnnouncementSubmissionDetailDTO,
   FollowDTO,
   FollowStatus,
   GoalsResponse,
@@ -18,6 +19,7 @@ import type {
   MatchResponse,
   MaterialStatus,
   OpportunityCorrectionDTO,
+  OpportunityCorrectionDetailDTO,
   OrganizationFollowDTO,
   StaffAnnouncementSubmissionDTO,
   StaffOpportunityCorrectionDTO,
@@ -25,6 +27,7 @@ import type {
   SubscriptionDTO,
   SubscriptionSyncDTO,
   SubscriptionUpdateInput,
+  TicketPageResult,
   UnitDetailResponse,
 } from "./api-types";
 
@@ -260,10 +263,37 @@ export const opportunitiesApi = {
     );
   },
 
-  /** 我提交过的纠错与员工处理状态（我的页） */
-  listMyCorrections(): Promise<OpportunityCorrectionDTO[]> {
-    if (AUTH_MODE === "demo") return demoOpportunitiesApi.listMyCorrections();
-    return request<OpportunityCorrectionDTO[]>("/corrections/mine");
+  /** 我提交过的纠错与员工处理状态（我的页；分页，全部记录可访问） */
+  listMyCorrections(
+    page = 1,
+    pageSize = 10,
+  ): Promise<TicketPageResult<OpportunityCorrectionDTO>> {
+    if (AUTH_MODE === "demo")
+      return demoOpportunitiesApi.listMyCorrections(page, pageSize);
+    return request<TicketPageResult<OpportunityCorrectionDTO>>(
+      `/corrections/mine?page=${page}&pageSize=${pageSize}`,
+    );
+  },
+
+  /** 我的纠错详情（公开时间线 + 历次补充；服务端校验本人） */
+  getMyCorrection(id: string): Promise<OpportunityCorrectionDetailDTO> {
+    if (AUTH_MODE === "demo") return demoOpportunitiesApi.getMyCorrection(id);
+    return request<OpportunityCorrectionDetailDTO>(
+      `/corrections/${encodeURIComponent(id)}`,
+    );
+  },
+
+  /** 在原纠错工单追加补充（编号与原文不变，状态进入待复核） */
+  supplementCorrection(
+    id: string,
+    input: { body: string; links?: string[]; dedupeKey?: string },
+  ): Promise<{ id: string; taskId: string; ticketNo: string; status: string; statusLabel: string; createdAt: string }> {
+    if (AUTH_MODE === "demo")
+      return demoOpportunitiesApi.supplementCorrection(id, input);
+    return request(
+      `/corrections/${encodeURIComponent(id)}/supplements`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
   },
 
   // ==================== 公告补录（D08 / PRD 11.9 U08） ====================
@@ -283,12 +313,39 @@ export const opportunitiesApi = {
     );
   },
 
-  /** 我提交过的补录与处理状态（我的页） */
-  listMyAnnouncementSubmissions(): Promise<AnnouncementSubmissionDTO[]> {
+  /** 我提交过的补录与处理状态（我的页；分页，全部记录可访问） */
+  listMyAnnouncementSubmissions(
+    page = 1,
+    pageSize = 10,
+  ): Promise<TicketPageResult<AnnouncementSubmissionDTO>> {
     if (AUTH_MODE === "demo")
-      return demoOpportunitiesApi.listMyAnnouncementSubmissions();
-    return request<AnnouncementSubmissionDTO[]>(
-      "/announcement-submissions/mine",
+      return demoOpportunitiesApi.listMyAnnouncementSubmissions(page, pageSize);
+    return request<TicketPageResult<AnnouncementSubmissionDTO>>(
+      `/announcement-submissions/mine?page=${page}&pageSize=${pageSize}`,
+    );
+  },
+
+  /** 我的补录详情（公开时间线 + 历次补充；服务端校验本人） */
+  getMyAnnouncementSubmission(
+    id: string,
+  ): Promise<AnnouncementSubmissionDetailDTO> {
+    if (AUTH_MODE === "demo")
+      return demoOpportunitiesApi.getMyAnnouncementSubmission(id);
+    return request<AnnouncementSubmissionDetailDTO>(
+      `/announcement-submissions/${encodeURIComponent(id)}`,
+    );
+  },
+
+  /** 在原补录工单追加补充（编号与原文不变，状态进入待复核） */
+  supplementAnnouncementSubmission(
+    id: string,
+    input: { body: string; links?: string[]; dedupeKey?: string },
+  ): Promise<{ id: string; taskId: string; ticketNo: string; status: string; statusLabel: string; createdAt: string }> {
+    if (AUTH_MODE === "demo")
+      return demoOpportunitiesApi.supplementAnnouncementSubmission(id, input);
+    return request(
+      `/announcement-submissions/${encodeURIComponent(id)}/supplements`,
+      { method: "POST", body: JSON.stringify(input) },
     );
   },
 

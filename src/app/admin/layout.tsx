@@ -16,6 +16,7 @@ const ADMIN_NAV = [
   { href: "/admin/sources", label: "来源管理", exact: false },
   { href: "/admin/exams", label: "考情管理", exact: false },
   { href: "/admin/reviews", label: "审核队列", exact: false },
+  { href: "/admin/workbench", label: "人工工作台", exact: false },
   { href: "/admin/corrections", label: "机会纠错", exact: false },
   { href: "/admin/feedback", label: "纠错与治理", exact: false },
   { href: "/admin/resources", label: "资源管理", exact: false },

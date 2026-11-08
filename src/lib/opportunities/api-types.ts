@@ -409,12 +409,46 @@ export type OpportunityCorrectionStatus =
   | "submitted"
   | "reviewing"
   | "need_supplement"
+  | "pending_review"
   | "resolved"
   | "rejected";
+
+/** 通用分页结果（我的纠错 / 我的补录） */
+export interface TicketPageResult<T> {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+/** 工单公开时间线（内部备注、转交、优先级等不返回给用户） */
+export interface TicketTimelineEventDTO {
+  action: string;
+  label: string;
+  message: string | null;
+  actorRole: string | null;
+  createdAt: string;
+}
+
+/** 用户在原工单追加的补充记录 */
+export interface TicketSupplementDTO {
+  id: string;
+  body: string;
+  links: string[];
+  createdAt: string;
+}
 
 /** 用户视角的纠错记录（GET /opportunities/corrections/mine） */
 export interface OpportunityCorrectionDTO {
   id: string;
+  /** 稳定受理编号，仅用于定位；权限仍由服务端校验 */
+  ticketNo?: string;
+  statusLabel?: string;
+  /** 历史结案但缺少发布关联：只展示历史摘要，不伪造查看入口 */
+  historyPendingVerification?: boolean;
+  relatedTicketNo?: string | null;
+  /** need_supplement 时的具体补充问题 */
+  supplementRequest?: string | null;
   unitId: string;
   unitName: string | null;
   announcementId: string;
@@ -449,6 +483,13 @@ export interface StaffOpportunityCorrectionDTO
  */
 export interface AnnouncementSubmissionDTO {
   id: string;
+  ticketNo?: string;
+  statusLabel?: string;
+  resolvedAnnouncementId?: string | null;
+  resolvedVersionId?: string | null;
+  resolutionBasis?: string | null;
+  historyPendingVerification?: boolean;
+  relatedTicketNo?: string | null;
   officialUrl: string;
   publisherName: string;
   regionCode: string;
@@ -458,6 +499,22 @@ export interface AnnouncementSubmissionDTO {
   reviewerId: string | null;
   reviewedAt: string | null;
   createdAt: string;
+}
+
+/** 我的纠错详情：列表字段 + 公开时间线 + 历次补充 */
+export interface OpportunityCorrectionDetailDTO
+  extends OpportunityCorrectionDTO {
+  timeline: TicketTimelineEventDTO[];
+  supplements: TicketSupplementDTO[];
+}
+
+/** 我的补录详情：列表字段 + 公开时间线 + 历次补充 */
+export interface AnnouncementSubmissionDetailDTO
+  extends AnnouncementSubmissionDTO {
+  /** 结案关联的正式公告单元（仅有效发布版本才有；历史缺关联为 null） */
+  resolvedUnitId?: string | null;
+  timeline: TicketTimelineEventDTO[];
+  supplements: TicketSupplementDTO[];
 }
 
 /** 员工补录队列项（GET /opportunities/admin/announcement-submissions） */

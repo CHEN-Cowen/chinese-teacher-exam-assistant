@@ -185,14 +185,24 @@ export interface ExistingSubmissionLite {
 /** 补录提交对外 DTO（本人视角；不含审核人内部账号之外的用户信息） */
 export interface AnnouncementSubmissionDTO {
   id: string;
+  /** 稳定受理编号（仅定位，不替代权限校验） */
+  ticketNo: string | null;
   officialUrl: string;
   publisherName: string;
   regionCode: string;
   note: string | null;
   status: string;
+  statusLabel?: string;
   reviewNote: string | null;
   reviewerId: string | null;
   reviewedAt: string | null;
+  /** 结案关联的正式公告与已发布版本（用户可打开真实公告） */
+  resolvedAnnouncementId?: string | null;
+  resolvedVersionId?: string | null;
+  resolutionBasis?: string | null;
+  /** 历史已收录但缺少发布关联：待核验，不展示虚假查看按钮 */
+  historyPendingVerification?: boolean;
+  relatedTicketNo?: string | null;
   createdAt: string;
 }
 

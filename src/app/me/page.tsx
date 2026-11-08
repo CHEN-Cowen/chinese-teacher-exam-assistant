@@ -22,12 +22,14 @@ import {
 } from "@/lib/guest/guestSession";
 import { stageLabel } from "@/lib/ia/labels";
 import { opportunitiesApi } from "@/lib/opportunities/api";
+import { MyTicketSection } from "@/components/opportunities/MyTicketSection";
 import { correctionTicketCode } from "@/lib/opportunities/correction-code";
-import { submissionStatusMeta } from "@/lib/opportunities/announcement-submission";
 import type {
   AnnouncementSubmissionDTO,
+  AnnouncementSubmissionDetailDTO,
   GoalsResponse,
   OpportunityCorrectionDTO,
+  OpportunityCorrectionDetailDTO,
   OpportunityCorrectionStatus,
 } from "@/lib/opportunities/api-types";
 import type { UserRecruitmentProfile } from "@/lib/profile/types";
@@ -50,8 +52,18 @@ const CORRECTION_STATUS_META: Record<
   submitted: { label: "待核对", variant: "warning" },
   reviewing: { label: "核对中", variant: "info" },
   need_supplement: { label: "需补充", variant: "warning" },
+  pending_review: { label: "待复核", variant: "info" },
   resolved: { label: "已修正", variant: "success" },
   rejected: { label: "不采纳", variant: "muted" },
+};
+
+const STATUS_FALLBACK: Record<string, string> = {
+  submitted: "已提交",
+  reviewing: "核对中",
+  need_supplement: "待你补充",
+  pending_review: "待复核",
+  resolved: "已办结",
+  rejected: "未采纳",
 };
 
 /**
@@ -538,135 +550,119 @@ function educationMajorSummary(profile: UserRecruitmentProfile): string {
 }
 
 function MyCorrectionsCard() {
-  const [items, setItems] = useState<OpportunityCorrectionDTO[] | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    opportunitiesApi
-      .listMyCorrections()
-      .then((data) => {
-        if (!cancelled) setItems(data);
-      })
-      .catch(() => {
-        // 无后端环境（如公开演示）不展示该卡片
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  if (items === null || items.length === 0) return null;
-
   return (
-    <details className="group rounded-2xl border border-line bg-surface">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-4 [&::-webkit-details-marker]:hidden">
-        <span>
-          <span className="block text-sm font-semibold text-ink">我的纠错</span>
-          <span className="mt-0.5 block text-xs text-ink-muted">{items.length} 条提交记录</span>
-        </span>
-        <span className="text-ink-muted transition-transform group-open:rotate-180">⌄</span>
-      </summary>
-      <div className="border-t border-line p-4">
-        <ul className="space-y-3">
-          {items.slice(0, 10).map((c) => (
-            <li key={c.id} className="rounded-lg border border-line p-3">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-medium text-ink truncate">
-                  <span className="mr-1.5 font-mono text-xs text-ink-muted">
-                    {correctionTicketCode(c.id)}
-                  </span>
-                  {c.unitName ?? "岗位已随旧版本移除"} · {c.fieldLabel}
-                </p>
-                <Badge variant={CORRECTION_STATUS_META[c.status].variant}>
-                  {CORRECTION_STATUS_META[c.status].label}
-                </Badge>
-              </div>
-              <p className="mt-1 text-xs text-ink-muted line-clamp-2">{c.content}</p>
-              {c.reviewNote && (
-                <p className="mt-1.5 rounded bg-canvas px-2 py-1 text-xs text-ink-muted whitespace-pre-line">
-                  处理说明：{c.reviewNote}
-                </p>
-              )}
-              {c.status === "resolved" && c.resolvedVersionId && (
-                <p className="mt-1.5 rounded bg-canvas px-2 py-1 text-xs text-ink-muted">
-                  已在新版本中更正（版本 {c.resolvedVersionId}），可回到该机会详情核对。
-                </p>
-              )}
-              <p className="mt-1 text-[11px] text-ink-muted">
-                提交于 {formatDateTime(c.createdAt)}
-                {c.reviewedAt ? ` · 处理于 ${formatDateTime(c.reviewedAt)}` : ""}
-              </p>
-            </li>
-          ))}
-        </ul>
-      </div>
-    </details>
+    <MyTicketSection<OpportunityCorrectionDTO, OpportunityCorrectionDetailDTO>
+      title="我的纠错"
+      countUnit="条提交记录"
+      emptyHint="暂无提交记录。在机会详情页发现数据有误时，可在对应条件旁提交纠错。"
+      list={(page, pageSize) => opportunitiesApi.listMyCorrections(page, pageSize)}
+      detail={(id) => opportunitiesApi.getMyCorrection(id)}
+      supplement={(id, input) =>
+        opportunitiesApi.supplementCorrection(id, input)
+      }
+      itemId={(item) => item.id}
+      itemStatus={(item) => item.status}
+      renderSummary={(item) => (
+        <p className="truncate text-sm font-medium text-ink">
+          <span className="mr-1.5 font-mono text-xs text-ink-muted">
+            {item.ticketNo ?? correctionTicketCode(item.id)}
+          </span>
+          {item.unitName ?? "岗位已随旧版本移除"} · {item.fieldLabel}
+        </p>
+      )}
+      renderDetailHeader={(detail) => (
+        <div className="space-y-1 text-xs text-ink-muted">
+          <p>
+            受理编号{" "}
+            <span className="font-mono text-ink">
+              {detail.ticketNo ?? correctionTicketCode(detail.id)}
+            </span>
+            ｜当前状态：{detail.statusLabel ?? CORRECTION_STATUS_META[detail.status].label}
+          </p>
+          <p className="whitespace-pre-line break-words text-ink">
+            原始反馈：{detail.content}
+          </p>
+          {detail.reviewNote && (
+            <p>处理说明：{detail.reviewNote}</p>
+          )}
+        </div>
+      )}
+      renderResolved={(detail) =>
+        detail.resolvedVersionId ? (
+          <p className="mt-2 rounded bg-surface px-2 py-1.5 text-xs text-ink-muted">
+            已在新版本中更正（版本 {detail.resolvedVersionId}），可回到该机会详情核对。
+          </p>
+        ) : null
+      }
+    />
   );
 }
 
 /** D08：我提交的公告补录与处理状态（受理编号可对账；仅本人可见） */
 function MySubmissionsCard() {
-  const [items, setItems] = useState<AnnouncementSubmissionDTO[] | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    opportunitiesApi
-      .listMyAnnouncementSubmissions()
-      .then((data) => {
-        if (!cancelled) setItems(data);
-      })
-      .catch(() => {
-        // 无后端环境（如公开演示）不展示该卡片
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  if (items === null || items.length === 0) return null;
-
   return (
-    <details className="group rounded-2xl border border-line bg-surface">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-4 [&::-webkit-details-marker]:hidden">
-        <span>
-          <span className="block text-sm font-semibold text-ink">我的公告补录</span>
-          <span className="mt-0.5 block text-xs text-ink-muted">{items.length} 条补录记录</span>
-        </span>
-        <span className="text-ink-muted transition-transform group-open:rotate-180">⌄</span>
-      </summary>
-      <div className="border-t border-line p-4">
-        <p className="mb-3 text-xs text-ink-muted">
-          补录经人工核对后才会纳入监测；处理结果会以站内通知告知，这里可随时查看进度。
+    <MyTicketSection<AnnouncementSubmissionDTO, AnnouncementSubmissionDetailDTO>
+      title="我的公告补录"
+      countUnit="条补录记录"
+      emptyHint="暂无补录记录。发现官方公告已发布但站内未收录时，可在机会页提交补录。"
+      list={(page, pageSize) =>
+        opportunitiesApi.listMyAnnouncementSubmissions(page, pageSize)
+      }
+      detail={(id) => opportunitiesApi.getMyAnnouncementSubmission(id)}
+      supplement={(id, input) =>
+        opportunitiesApi.supplementAnnouncementSubmission(id, input)
+      }
+      itemId={(item) => item.id}
+      itemStatus={(item) => item.status}
+      renderSummary={(item) => (
+        <p className="truncate text-sm font-medium text-ink">
+          <span className="mr-1.5 font-mono text-xs text-ink-muted">
+            {item.ticketNo ?? correctionTicketCode(item.id)}
+          </span>
+          {item.publisherName}
         </p>
-        <ul className="space-y-3">
-          {items.slice(0, 10).map((s) => {
-            const meta = submissionStatusMeta(s.status);
-            return (
-              <li key={s.id} className="rounded-lg border border-line p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-medium text-ink truncate">
-                    <span className="mr-1.5 font-mono text-xs text-ink-muted">
-                      {correctionTicketCode(s.id)}
-                    </span>
-                    {s.publisherName}
-                  </p>
-                  <Badge variant={meta.tone}>{meta.label}</Badge>
-                </div>
-                <p className="mt-1 truncate text-xs text-ink-muted">{s.officialUrl}</p>
-                {s.reviewNote && (
-                  <p className="mt-1.5 rounded bg-canvas px-2 py-1 text-xs text-ink-muted whitespace-pre-line">
-                    处理说明：{s.reviewNote}
-                  </p>
-                )}
-                <p className="mt-1 text-[11px] text-ink-muted">
-                  提交于 {formatDateTime(s.createdAt)}
-                  {s.reviewedAt ? ` · 处理于 ${formatDateTime(s.reviewedAt)}` : ""}
-                </p>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
-    </details>
+      )}
+      renderDetailHeader={(detail) => (
+        <div className="space-y-1 text-xs text-ink-muted">
+          <p>
+            受理编号{" "}
+            <span className="font-mono text-ink">
+              {detail.ticketNo ?? correctionTicketCode(detail.id)}
+            </span>
+            ｜当前状态：{detail.statusLabel ?? STATUS_FALLBACK[detail.status]}
+          </p>
+          <a
+            className="block truncate text-brand underline"
+            href={detail.officialUrl}
+            target="_blank"
+            rel="noopener noreferrer nofollow"
+          >
+            {detail.officialUrl}
+          </a>
+          {detail.note && <p>补充说明：{detail.note}</p>}
+          {detail.reviewNote && <p>处理说明：{detail.reviewNote}</p>}
+          {detail.historyPendingVerification && (
+            <p className="rounded bg-surface px-2 py-1.5">
+              历史结案记录：发布关联待核验，暂不提供公告入口。
+            </p>
+          )}
+        </div>
+      )}
+      renderResolved={(detail) =>
+        detail.resolvedVersionId && !detail.historyPendingVerification ? (
+          <p className="mt-2 rounded bg-surface px-2 py-1.5 text-xs text-ink-muted">
+            已关联正式发布的公告。
+            {detail.resolvedUnitId && (
+              <Link
+                className="ml-1 font-medium text-brand underline"
+                href={`/opportunities/${encodeURIComponent(detail.resolvedUnitId)}`}
+              >
+                查看公告
+              </Link>
+            )}
+          </p>
+        ) : null
+      }
+    />
   );
 }

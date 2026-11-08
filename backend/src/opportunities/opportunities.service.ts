@@ -6,6 +6,7 @@ import {
   Injectable,
   NotFoundException,
   Optional,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service.js';
@@ -21,6 +22,13 @@ import {
 } from '../matching/engine.js';
 import { PublishedCatalogRepository } from '../catalog/published-catalog.repository.js';
 import { isDbCatalogEnabled } from '../catalog/feature-flag.js';
+import { ServiceDeskService } from '../service-desk/service-desk.service.js';
+import {
+  isPriority,
+  makeTicketNo,
+  TICKET_STATUS_LABELS,
+  validatePublishedResolution,
+} from '../service-desk/service-desk.domain.js';
 import { canonicalSubjectCode, isOpenSubject } from '../subjects/subject-catalog.js';
 import type {
   CredentialLevel,
@@ -49,6 +57,7 @@ import {
   CORRECTION_STATUSES,
   fieldPathLabel,
   isTerminalStatus,
+  isVersionCorrectableField,
   validateResolution,
   validateReview,
   type CorrectionDTO,
@@ -120,6 +129,9 @@ export class OpportunitiesService {
     @Optional()
     @Inject(PublishedCatalogRepository)
     catalogRepository?: PublishedCatalogRepository,
+    @Optional()
+    @Inject(ServiceDeskService)
+    private readonly serviceDesk?: ServiceDeskService,
   ) {
     this.catalogRepository =
       catalogRepository ?? new PublishedCatalogRepository(prisma);
@@ -1141,7 +1153,7 @@ export class OpportunitiesService {
     userId: string,
     unitId: string,
     body: { fieldPath?: unknown; content?: unknown; contact?: unknown },
-  ): Promise<{ id: string; status: string }> {
+  ): Promise<{ id: string; ticketNo: string; status: string }> {
     const catalog = await this.loadCatalog();
     const target = this.findCatalogUnit(unitId, catalog);
     const fieldPath = typeof body.fieldPath === 'string' ? body.fieldPath.trim() : '';
@@ -1180,34 +1192,114 @@ export class OpportunitiesService {
         `提交太频繁：24 小时内最多提交 ${OpportunitiesService.CORRECTION_MAX_PER_DAY} 条纠错，请稍后再试`,
       );
     }
-    const row = await this.prisma.opportunityCorrection.create({
-      data: {
-        userId,
-        unitId,
-        announcementId: target.announcementId,
-        versionId: target.versionId,
-        fieldPath,
-        content,
-        contact:
-          typeof body.contact === 'string' && body.contact.trim()
-            ? body.contact.trim().slice(0, 200)
-            : null,
-      },
+    const registrationEnd =
+      catalog
+        .find((a) => a.id === target.announcementId)
+        ?.versions.find((v) => v.id === target.versionId)?.timeline?.registrationEnd ?? null;
+    const row = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.opportunityCorrection.create({
+        data: {
+          userId,
+          unitId,
+          announcementId: target.announcementId,
+          versionId: target.versionId,
+          fieldPath,
+          content,
+          contact:
+            typeof body.contact === 'string' && body.contact.trim()
+              ? body.contact.trim().slice(0, 200)
+              : null,
+        },
+      });
+      if (this.serviceDesk) {
+        await this.serviceDesk.createTaskTx(tx, {
+          type: 'correction',
+          refId: created.id,
+          status: created.status,
+          createdAt: created.createdAt,
+          registrationEnd,
+        });
+      }
+      return created;
     });
-    return { id: row.id, status: row.status };
+    return {
+      id: row.id,
+      ticketNo: makeTicketNo('correction', row.id),
+      status: row.status,
+    };
   }
 
   // ==================== 纠错处理闭环（P0-F / 模块 8） ====================
 
-  /** 用户查看自己提交过的纠错及员工处理状态 */
-  async listMyCorrections(userId: string): Promise<CorrectionDTO[]> {
+  /** 用户查看自己提交过的纠错及员工处理状态（分页，全部记录可访问） */
+  async listMyCorrections(
+    userId: string,
+    page = 1,
+    pageSize = 10,
+  ): Promise<{ items: CorrectionDTO[]; total: number; page: number; pageSize: number }> {
+    const safePage = Math.max(1, Math.floor(page) || 1);
+    const safeSize = Math.min(50, Math.max(1, Math.floor(pageSize) || 10));
     const catalog = await this.loadCatalog();
-    const rows = await this.prisma.opportunityCorrection.findMany({
-      where: { userId },
-      orderBy: { createdAt: 'desc' },
-      take: 100,
+    const [rows, total] = await Promise.all([
+      this.prisma.opportunityCorrection.findMany({
+        where: { userId },
+        orderBy: { createdAt: 'desc' },
+        skip: (safePage - 1) * safeSize,
+        take: safeSize,
+      }),
+      this.prisma.opportunityCorrection.count({ where: { userId } }),
+    ]);
+    return {
+      items: rows.map((row) => this.toCorrectionDTO(row, catalog)),
+      total,
+      page: safePage,
+      pageSize: safeSize,
+    };
+  }
+
+  /** 用户查看自己的单条纠错详情（含公开时间线与补充信息） */
+  async getMyCorrection(userId: string, correctionId: string) {
+    const catalog = await this.loadCatalog();
+    const row = await this.prisma.opportunityCorrection.findUnique({
+      where: { id: correctionId },
     });
-    return rows.map((row) => this.toCorrectionDTO(row, catalog));
+    if (!row || row.userId !== userId) {
+      throw new NotFoundException('未找到该纠错记录，或你无权访问');
+    }
+    const [events, supplements] = await Promise.all([
+      this.prisma.ticketEvent.findMany({
+        where: { ticketType: 'correction', ticketId: row.id, visibility: 'public' },
+        orderBy: { createdAt: 'asc' },
+        take: 200,
+      }),
+      this.prisma.ticketSupplement.findMany({
+        where: { ticketType: 'correction', ticketId: row.id },
+        orderBy: { createdAt: 'asc' },
+        take: 100,
+      }),
+    ]);
+    return {
+      ...this.toCorrectionDTO(row, catalog),
+      timeline: this.publicTimeline(events),
+      supplements: supplements.map((item) => ({
+        id: item.id,
+        body: item.body,
+        links: Array.isArray(item.links) ? item.links : [],
+        createdAt: item.createdAt.toISOString(),
+      })),
+    };
+  }
+
+  /** 在原纠错工单补充信息（编号不变、原文不变） */
+  async submitCorrectionSupplement(
+    userId: string,
+    correctionId: string,
+    body: { body?: unknown; links?: unknown; dedupeKey?: unknown },
+  ) {
+    if (!this.serviceDesk) {
+      throw new ServiceUnavailableException('人工工单服务暂不可用，请稍后重试');
+    }
+    return this.serviceDesk.submitSupplement(userId, 'correction', correctionId, body);
   }
 
   /** 员工跨用户纠错队列；status 为空时返回全部 */
@@ -1347,6 +1439,31 @@ export class OpportunitiesService {
         return this.toCorrectionDTO(latest ?? row, catalog);
       }
 
+      if (this.serviceDesk) {
+        const action =
+          result.status === 'need_supplement'
+            ? 'request_supplement'
+            : result.status === 'reviewing'
+              ? 'start_review'
+              : result.status;
+        await this.serviceDesk.syncTransitionTx(tx, {
+          type: 'correction',
+          refId: row.id,
+          fromStatus: row.status,
+          toStatus: result.status,
+          action,
+          actorId: reviewer.id,
+          actorRole: reviewer.role,
+          message: effectiveNote,
+          visibility: result.status === 'reviewing' ? 'system' : 'public',
+          effective:
+            result.status === 'resolved' || result.status === 'rejected' || result.status === 'need_supplement',
+          createdAt: row.createdAt,
+          dedupeKey: `review:${result.status}:${row.reviewedAt?.getTime() ?? ''}`,
+        });
+      }
+
+      const ticketLink = `/me?ticket=correction:${row.id}#ticket-correction-${row.id}`;
       if (result.status === 'resolved') {
         const body =
           resolvedVersionId !== null
@@ -1363,21 +1480,22 @@ export class OpportunitiesService {
             eventKey: `correction:${row.id}`,
             reminderStage: `correction_resolved_${now.getTime()}`,
             relatedUnitId: row.unitId,
+            linkPath: ticketLink,
           },
         });
       } else if (result.status === 'need_supplement') {
         await tx.notificationRecord.create({
           data: {
             userId: row.userId,
-            severity: 'info',
+            severity: 'must_handle',
             title: `你提交的「${unitName}」纠错需要补充信息`,
             body:
-              `我们核对你反馈的「${fieldPathLabel(row.fieldPath)}」问题时还需要更多信息。` +
-              `${noteLine}请在「我的资料」页查看这条纠错，并重新提交一条包含补充信息的纠错，` +
-              `我们会继续跟进。`,
+              `需要你补充：${result.note ?? effectiveNote ?? '具体问题'}。` +
+              `请点开原工单补充，受理编号 ${makeTicketNo('correction', row.id)} 和原始反馈不会改变。`,
             eventKey: `correction:${row.id}`,
             reminderStage: `correction_need_supplement_${now.getTime()}`,
             relatedUnitId: row.unitId,
+            linkPath: ticketLink,
           },
         });
       } else if (result.status === 'rejected') {
@@ -1392,6 +1510,7 @@ export class OpportunitiesService {
             eventKey: `correction:${row.id}`,
             reminderStage: `correction_rejected_${now.getTime()}`,
             relatedUnitId: row.unitId,
+            linkPath: ticketLink,
           },
         });
       }
@@ -1414,7 +1533,7 @@ export class OpportunitiesService {
       regionCode?: unknown;
       note?: unknown;
     },
-  ): Promise<{ id: string; status: string }> {
+  ): Promise<{ id: string; ticketNo: string; status: string }> {
     const check = validateSubmissionInput(body);
     if (!check.ok || !check.value) {
       throw new BadRequestException(check.message ?? '补录信息不完整');
@@ -1453,29 +1572,129 @@ export class OpportunitiesService {
       }
       throw new ConflictException(decision.message);
     }
-    const row = await this.prisma.announcementSubmission.create({
-      data: {
-        userId,
-        officialUrl: value.officialUrl,
-        urlHash: value.urlHash,
-        publisherName: value.publisherName,
-        regionCode: value.regionCode,
-        note: value.note,
-      },
+    const row = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.announcementSubmission.create({
+        data: {
+          userId,
+          officialUrl: value.officialUrl,
+          urlHash: value.urlHash,
+          publisherName: value.publisherName,
+          regionCode: value.regionCode,
+          note: value.note,
+        },
+      });
+      if (this.serviceDesk) {
+        await this.serviceDesk.createTaskTx(tx, {
+          type: 'announcement_submission',
+          refId: created.id,
+          status: created.status,
+          createdAt: created.createdAt,
+        });
+      }
+      return created;
     });
-    return { id: row.id, status: row.status };
+    return {
+      id: row.id,
+      ticketNo: makeTicketNo('announcement_submission', row.id),
+      status: row.status,
+    };
   }
 
-  /** 当前用户提交过的补录与处理状态（我的页） */
+  /** 当前用户提交过的补录与处理状态（分页，全部记录可访问） */
   async listMyAnnouncementSubmissions(
     userId: string,
-  ): Promise<AnnouncementSubmissionDTO[]> {
-    const rows = await this.prisma.announcementSubmission.findMany({
-      where: { userId },
-      orderBy: { createdAt: 'desc' },
-      take: 100,
+    page = 1,
+    pageSize = 10,
+  ): Promise<{
+    items: AnnouncementSubmissionDTO[];
+    total: number;
+    page: number;
+    pageSize: number;
+  }> {
+    const safePage = Math.max(1, Math.floor(page) || 1);
+    const safeSize = Math.min(50, Math.max(1, Math.floor(pageSize) || 10));
+    const [rows, total] = await Promise.all([
+      this.prisma.announcementSubmission.findMany({
+        where: { userId },
+        orderBy: { createdAt: 'desc' },
+        skip: (safePage - 1) * safeSize,
+        take: safeSize,
+      }),
+      this.prisma.announcementSubmission.count({ where: { userId } }),
+    ]);
+    return {
+      items: rows.map((row) => this.toSubmissionDTO(row)),
+      total,
+      page: safePage,
+      pageSize: safeSize,
+    };
+  }
+
+  /** 用户查看自己的单条补录详情（含公开时间线与补充信息） */
+  async getMyAnnouncementSubmission(userId: string, submissionId: string) {
+    const row = await this.prisma.announcementSubmission.findUnique({
+      where: { id: submissionId },
     });
-    return rows.map((row) => this.toSubmissionDTO(row));
+    if (!row || row.userId !== userId) {
+      throw new NotFoundException('未找到该补录记录，或你无权访问');
+    }
+    const [events, supplements] = await Promise.all([
+      this.prisma.ticketEvent.findMany({
+        where: {
+          ticketType: 'announcement_submission',
+          ticketId: row.id,
+          visibility: 'public',
+        },
+        orderBy: { createdAt: 'asc' },
+        take: 200,
+      }),
+      this.prisma.ticketSupplement.findMany({
+        where: { ticketType: 'announcement_submission', ticketId: row.id },
+        orderBy: { createdAt: 'asc' },
+        take: 100,
+      }),
+    ]);
+    // 真实公告入口：仅当结案关联了有效发布版本时给出（历史缺关联不伪造）
+    let resolvedUnitId: string | null = null;
+    if (row.resolvedVersionId && !row.historyPendingVerification) {
+      const version = await this.prisma.publishedAnnouncementVersion.findUnique({
+        where: { id: row.resolvedVersionId },
+        select: { payload: true },
+      });
+      const payload = version?.payload as
+        | { version?: { units?: Array<{ unitId?: string }> } }
+        | null
+        | undefined;
+      resolvedUnitId = payload?.version?.units?.[0]?.unitId ?? null;
+    }
+    return {
+      ...this.toSubmissionDTO(row),
+      resolvedUnitId,
+      timeline: this.publicTimeline(events),
+      supplements: supplements.map((item) => ({
+        id: item.id,
+        body: item.body,
+        links: Array.isArray(item.links) ? item.links : [],
+        createdAt: item.createdAt.toISOString(),
+      })),
+    };
+  }
+
+  /** 在原补录工单补充信息（编号不变、原文不变） */
+  async submitAnnouncementSubmissionSupplement(
+    userId: string,
+    submissionId: string,
+    body: { body?: unknown; links?: unknown; dedupeKey?: unknown },
+  ) {
+    if (!this.serviceDesk) {
+      throw new ServiceUnavailableException('人工工单服务暂不可用，请稍后重试');
+    }
+    return this.serviceDesk.submitSupplement(
+      userId,
+      'announcement_submission',
+      submissionId,
+      body,
+    );
   }
 
   /** 员工补录队列；status 为空时返回全部 */
@@ -1519,20 +1738,32 @@ export class OpportunitiesService {
   }
 
   /**
-   * 员工处理补录：与纠错共用状态机（need_supplement 须附说明；
-   * resolved = 已收录）。终态/需补充均给提交人发站内通知；
-   * 处理只改变补录记录本身，不直接修改任何公共目录或发布数据。
+   * 员工处理补录：与纠错共用状态机（need_supplement 须附说明）。
+   * 「已收录」（resolved）必须关联真实、正式发布、未撤回、未取代的公告版本；
+   * 仅关联公告 id 不够，后端拒绝空关联。终态/需补充均在事务内通知提交人。
    */
   async reviewAnnouncementSubmission(
     reviewer: { id: string; role: string },
     submissionId: string,
-    body: { status?: unknown; reviewNote?: unknown },
+    body: {
+      status?: unknown;
+      reviewNote?: unknown;
+      expectedAnnouncementId?: unknown;
+      expectedVersionId?: unknown;
+      resolutionBasis?: unknown;
+    },
   ): Promise<AnnouncementSubmissionDTO> {
+    if (!REVIEW_ROLES.includes(reviewer.role)) {
+      throw new ForbiddenException('当前账号没有处理补录的权限');
+    }
     const row = await this.prisma.announcementSubmission.findUnique({
       where: { id: submissionId },
     });
     if (!row) {
       throw new NotFoundException('未找到该补录记录');
+    }
+    if (isTerminalStatus(row.status) && row.status === body.status) {
+      return this.toSubmissionDTO(row);
     }
     const result = validateReview({
       from: row.status,
@@ -1543,51 +1774,193 @@ export class OpportunitiesService {
     if (!result.ok) {
       throw new ConflictException(result.message);
     }
-    const updated = await this.prisma.announcementSubmission.update({
-      where: { id: row.id },
-      data: {
-        status: result.status,
-        reviewNote: result.note ?? row.reviewNote,
-        reviewerId: reviewer.id,
-        reviewedAt: new Date(),
-      },
-    });
-    const noteLine = result.note ? `处理说明：${result.note}` : '';
+
+    let announcementId: string | null = null;
+    let versionId: string | null = null;
+    let basis: string | null = null;
+    let unitId: string | null = null;
     if (result.status === 'resolved') {
-      await this.prisma.notificationRecord.create({
-        data: {
-          userId: row.userId,
-          severity: 'info',
-          title: `你补录的「${row.publisherName}」公告已收录处理`,
-          body: `我们会按官方来源核对该公告并纳入监测，感谢你的补录。${noteLine}`,
-          eventKey: null,
-          relatedUnitId: null,
+      const expectedAnnouncementId =
+        typeof body.expectedAnnouncementId === 'string'
+          ? body.expectedAnnouncementId.trim()
+          : '';
+      const expectedVersionId =
+        typeof body.expectedVersionId === 'string'
+          ? body.expectedVersionId.trim()
+          : '';
+      const version = expectedVersionId
+        ? await this.prisma.publishedAnnouncementVersion.findUnique({
+            where: { id: expectedVersionId },
+          })
+        : null;
+      const payload = (version?.payload ?? null) as Record<string, unknown> | null;
+      const payloadAnnouncement = payload?.announcement as
+        | { officialUrl?: string; lifecycle?: string }
+        | undefined;
+      const payloadUnits = (payload?.version as { units?: Array<{ unitId?: string }> } | undefined)
+        ?.units;
+      const gate = validatePublishedResolution({
+        submission: { officialUrl: row.officialUrl, status: row.status },
+        announcement: {
+          id: version?.announcementId ?? expectedAnnouncementId,
+          officialUrl: payloadAnnouncement?.officialUrl ?? null,
+          dataset: typeof payload?.dataset === 'string' ? payload.dataset : null,
+          lifecycle: payloadAnnouncement?.lifecycle ?? null,
         },
+        version: version
+          ? {
+              id: version.id,
+              announcementId: version.announcementId,
+              status: version.status,
+              supersededAt: version.supersededAt,
+              withdrawnAt: version.withdrawnAt,
+            }
+          : null,
+        announcedAnnouncementId: expectedAnnouncementId,
+        announcedVersionId: expectedVersionId,
+        resolutionBasis:
+          typeof body.resolutionBasis === 'string' ? body.resolutionBasis : null,
       });
-    } else if (result.status === 'need_supplement') {
-      await this.prisma.notificationRecord.create({
-        data: {
-          userId: row.userId,
-          severity: 'info',
-          title: `你补录的「${row.publisherName}」公告需要补充信息`,
-          body: `处理这条补录还需要更多信息。${noteLine}`,
-          eventKey: null,
-          relatedUnitId: null,
-        },
-      });
-    } else if (result.status === 'rejected') {
-      await this.prisma.notificationRecord.create({
-        data: {
-          userId: row.userId,
-          severity: 'info',
-          title: `你补录的「${row.publisherName}」公告暂未采纳`,
-          body: `我们核对后暂未采纳这条补录。${noteLine}`,
-          eventKey: null,
-          relatedUnitId: null,
-        },
-      });
+      if (!gate.ok) {
+        throw gate.kind === 'basis_required'
+          ? new BadRequestException(gate.message)
+          : new ConflictException(gate.message);
+      }
+      announcementId = gate.announcementId;
+      versionId = gate.versionId;
+      basis = gate.basis;
+      unitId = Array.isArray(payloadUnits) ? (payloadUnits[0]?.unitId ?? null) : null;
     }
-    return this.toSubmissionDTO(updated);
+
+    const effectiveNote = result.note ?? row.reviewNote ?? null;
+    const now = new Date();
+    return this.prisma.$transaction(async (tx) => {
+      if (result.status === 'resolved' && versionId) {
+        // 撤回/取代竞态：结案前同一事务内复核
+        const current = await tx.publishedAnnouncementVersion.findUnique({
+          where: { id: versionId },
+        });
+        if (
+          !current ||
+          current.status !== 'published' ||
+          current.withdrawnAt ||
+          current.supersededAt
+        ) {
+          throw new ConflictException(
+            '关联公告版本已撤回或被取代，不能作为当前有效结果结案',
+          );
+        }
+      }
+      const claimed = await tx.announcementSubmission.updateMany({
+        where: { id: row.id, status: row.status },
+        data: {
+          status: result.status,
+          reviewNote: effectiveNote,
+          reviewerId: reviewer.id,
+          reviewedAt: now,
+          ...(result.status === 'resolved'
+            ? {
+                resolvedAnnouncementId: announcementId,
+                resolvedVersionId: versionId,
+                resolutionBasis: basis,
+                historyPendingVerification: false,
+              }
+            : {}),
+        },
+      });
+      if (claimed.count === 0) {
+        const latest = await tx.announcementSubmission.findUnique({
+          where: { id: row.id },
+        });
+        return this.toSubmissionDTO(latest ?? row);
+      }
+
+      if (this.serviceDesk) {
+        const action =
+          result.status === 'need_supplement'
+            ? 'request_supplement'
+            : result.status === 'reviewing'
+              ? 'start_review'
+              : result.status;
+        await this.serviceDesk.syncTransitionTx(tx, {
+          type: 'announcement_submission',
+          refId: row.id,
+          fromStatus: row.status,
+          toStatus: result.status,
+          action,
+          actorId: reviewer.id,
+          actorRole: reviewer.role,
+          message: effectiveNote,
+          visibility: result.status === 'reviewing' ? 'system' : 'public',
+          effective:
+            result.status === 'resolved' ||
+            result.status === 'rejected' ||
+            result.status === 'need_supplement',
+          createdAt: row.createdAt,
+          dedupeKey: `review:${result.status}:${row.reviewedAt?.getTime() ?? ''}`,
+        });
+      }
+
+      const ticketLink =
+        result.status === 'resolved' && versionId && unitId
+          ? `/opportunities/${unitId}?version=${versionId}`
+          : `/me?ticket=announcement_submission:${row.id}#ticket-announcement_submission-${row.id}`;
+      const noteLine = effectiveNote ? `处理说明：${effectiveNote}` : '';
+      if (result.status === 'resolved') {
+        await tx.notificationRecord.create({
+          data: {
+            userId: row.userId,
+            severity: 'info',
+            title: `你补录的「${row.publisherName}」公告已收录`,
+            body: `已关联正式发布公告，可点开公告详情查看。${noteLine}`,
+            eventKey: `submission:${row.id}`,
+            reminderStage: `submission_resolved_${now.getTime()}`,
+            relatedUnitId: unitId,
+            linkPath: ticketLink,
+          },
+        });
+      } else if (result.status === 'need_supplement') {
+        await tx.notificationRecord.create({
+          data: {
+            userId: row.userId,
+            severity: 'must_handle',
+            title: `你补录的「${row.publisherName}」公告需要补充信息`,
+            body:
+              `需要你补充：${effectiveNote ?? '具体问题'}。` +
+              `请点开原工单补充，受理编号 ${makeTicketNo('announcement_submission', row.id)} 和原始内容不会改变。`,
+            eventKey: `submission:${row.id}`,
+            reminderStage: `submission_need_supplement_${now.getTime()}`,
+            relatedUnitId: null,
+            linkPath: `/me?ticket=announcement_submission:${row.id}#ticket-announcement_submission-${row.id}`,
+          },
+        });
+      } else if (result.status === 'rejected') {
+        await tx.notificationRecord.create({
+          data: {
+            userId: row.userId,
+            severity: 'info',
+            title: `你补录的「${row.publisherName}」公告暂未采纳`,
+            body: `我们核对后暂未采纳这条补录。${noteLine}`,
+            eventKey: `submission:${row.id}`,
+            reminderStage: `submission_rejected_${now.getTime()}`,
+            relatedUnitId: null,
+            linkPath: `/me?ticket=announcement_submission:${row.id}#ticket-announcement_submission-${row.id}`,
+          },
+        });
+      }
+      return this.toSubmissionDTO({
+        ...row,
+        status: result.status,
+        reviewNote: effectiveNote,
+        reviewerId: reviewer.id,
+        reviewedAt: now,
+        resolvedAnnouncementId: result.status === 'resolved' ? announcementId : row.resolvedAnnouncementId,
+        resolvedVersionId: result.status === 'resolved' ? versionId : row.resolvedVersionId,
+        resolutionBasis: result.status === 'resolved' ? basis : row.resolutionBasis,
+        historyPendingVerification:
+          result.status === 'resolved' ? false : row.historyPendingVerification,
+      });
+    });
   }
 
   // ==================== 内部工具 ====================
@@ -1671,6 +2044,7 @@ export class OpportunitiesService {
     const meta = this.findCatalogUnitMeta(row.unitId, catalog);
     return {
       id: row.id,
+      ticketNo: makeTicketNo('correction', row.id),
       unitId: row.unitId,
       unitName: meta?.unitName ?? null,
       announcementId: row.announcementId,
@@ -1681,12 +2055,56 @@ export class OpportunitiesService {
       content: row.content,
       contact: row.contact,
       status: row.status,
+      statusLabel: (TICKET_STATUS_LABELS as Record<string, string>)[row.status] ?? row.status,
       reviewNote: row.reviewNote,
       reviewerId: row.reviewerId,
       reviewedAt: row.reviewedAt ? row.reviewedAt.toISOString() : null,
       resolvedVersionId: row.resolvedVersionId ?? null,
+      historyPendingVerification:
+        row.status === 'resolved' &&
+        isVersionCorrectableField(row.fieldPath) &&
+        !row.resolvedVersionId,
+      relatedTicketNo:
+        (row as { relatedTicketNo?: string | null }).relatedTicketNo ?? null,
+      supplementRequest: row.status === 'need_supplement' ? row.reviewNote : null,
       createdAt: row.createdAt.toISOString(),
     };
+  }
+
+  /** 用户可见的公开处理时间线；过滤内部备注与系统记录 */
+  private publicTimeline(
+    events: Array<{
+      action: string;
+      message: string | null;
+      createdAt: Date;
+      actorRole: string | null;
+      afterValue: unknown;
+    }>,
+  ) {
+    const actionLabels: Record<string, string> = {
+      submitted: '已提交',
+      request_supplement: '工作人员请求补充信息',
+      user_supplement: '你已提交补充信息',
+      claimed: '工作人员已接单',
+      start_review: '工作人员开始核对',
+      public_update: '工作人员更新处理进展',
+      resolved: '已结案',
+      rejected: '已完成核对（未采纳）',
+    };
+    return events
+      .filter(
+        (event) =>
+          !['internal_note', 'priority_changed', 'transferred', 'legacy_summary', 'escalated'].includes(
+            event.action,
+          ),
+      )
+      .map((event) => ({
+        action: event.action,
+        label: actionLabels[event.action] ?? '状态更新',
+        message: event.message,
+        actorRole: event.actorRole,
+        createdAt: event.createdAt.toISOString(),
+      }));
   }
 
   private toSubmissionDTO(row: {
@@ -1698,20 +2116,36 @@ export class OpportunitiesService {
     status: string;
     reviewNote: string | null;
     reviewerId: string | null;
-    reviewedAt: Date | null;
+    reviewedAt: Date | string | null;
     createdAt: Date;
+    resolvedAnnouncementId?: string | null;
+    resolvedVersionId?: string | null;
+    resolutionBasis?: string | null;
+    historyPendingVerification?: boolean;
+    relatedTicketNo?: string | null;
   }): AnnouncementSubmissionDTO {
+    const reviewedAt =
+      row.reviewedAt instanceof Date
+        ? row.reviewedAt.toISOString()
+        : (row.reviewedAt ?? null);
     return {
       id: row.id,
+      ticketNo: makeTicketNo('announcement_submission', row.id),
       officialUrl: row.officialUrl,
       publisherName: row.publisherName,
       regionCode: row.regionCode,
       note: row.note,
       status: row.status,
+      statusLabel: (TICKET_STATUS_LABELS as Record<string, string>)[row.status] ?? row.status,
       reviewNote: row.reviewNote,
       reviewerId: row.reviewerId,
-      reviewedAt: row.reviewedAt ? row.reviewedAt.toISOString() : null,
+      reviewedAt,
       createdAt: row.createdAt.toISOString(),
+      resolvedAnnouncementId: row.resolvedAnnouncementId ?? null,
+      resolvedVersionId: row.resolvedVersionId ?? null,
+      resolutionBasis: row.resolutionBasis ?? null,
+      historyPendingVerification: row.historyPendingVerification ?? false,
+      relatedTicketNo: row.relatedTicketNo ?? null,
     };
   }
 

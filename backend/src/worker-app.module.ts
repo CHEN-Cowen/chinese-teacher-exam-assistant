@@ -11,6 +11,7 @@ import { PrismaModule } from './prisma.module.js';
 import { bullRedisConnection } from './sourcing/redis.js';
 import { SourcingWorkerModule } from './sourcing/sourcing-worker.module.js';
 import { KnowledgeWorkerModule } from './knowledge/knowledge-worker.module.js';
+import { ServiceDeskWorkerModule } from './service-desk/service-desk-worker.module.js';
 
 @Module({
   imports: [
@@ -19,6 +20,8 @@ import { KnowledgeWorkerModule } from './knowledge/knowledge-worker.module.js';
     SourcingWorkerModule,
     // W2：知识索引与抓取共用同一 Worker 进程；解析/向量化只在 Worker 执行
     KnowledgeWorkerModule,
+    // 异常转人工内部时限：5 分钟持久化重复任务 + 独立 Worker 扫描
+    ServiceDeskWorkerModule,
   ],
 })
 export class WorkerAppModule {}

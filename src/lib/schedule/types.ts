@@ -93,6 +93,8 @@ export interface NotificationDTO {
   title: string;
   body: string;
   relatedUnitId: string | null;
+  /** 站内深链（仅接受以 / 开头的站内路径） */
+  linkPath?: string | null;
   readAt: string | null;
   createdAt: string;
 }

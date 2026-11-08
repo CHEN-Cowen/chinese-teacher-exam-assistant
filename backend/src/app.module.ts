@@ -20,6 +20,7 @@ import { SourcingModule } from './sourcing/sourcing.module.js';
 import { SubjectsModule } from './subjects/subjects.module.js';
 import { AiModule } from './ai/ai.module.js';
 import { KnowledgeModule } from './knowledge/knowledge.module.js';
+import { ServiceDeskModule } from './service-desk/service-desk.module.js';
 import { bullRedisConnection } from './sourcing/redis.js';
 
 @Module({
@@ -40,6 +41,7 @@ import { bullRedisConnection } from './sourcing/redis.js';
     SubjectsModule,
     AiModule,
     KnowledgeModule,
+    ServiceDeskModule,
   ],
   controllers: [AppController, HealthController],
   providers: [

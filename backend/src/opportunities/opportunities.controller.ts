@@ -308,11 +308,40 @@ export class OpportunitiesController {
     return this.service.submitCorrection(req.user!.id, unitId, body);
   }
 
-  /** 当前用户提交过的纠错与员工处理状态（我的页） */
+  /** 当前用户提交过的纠错与员工处理状态（我的页；分页，全部记录可访问） */
   @Get('corrections/mine')
   @UseGuards(UserGuard)
-  listMyCorrections(@Req() req: AuthenticatedRequest) {
-    return this.service.listMyCorrections(req.user!.id);
+  listMyCorrections(
+    @Req() req: AuthenticatedRequest,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+  ) {
+    return this.service.listMyCorrections(
+      req.user!.id,
+      Number(page) || 1,
+      Number(pageSize) || 10,
+    );
+  }
+
+  /** 我的纠错详情：公开处理时间线 + 历次补充（仅本人可见） */
+  @Get('corrections/:id')
+  @UseGuards(UserGuard)
+  getMyCorrection(
+    @Param('id') id: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.service.getMyCorrection(req.user!.id, id);
+  }
+
+  /** 在原纠错工单追加补充信息（编号不变、原文不变，状态进入待复核） */
+  @Post('corrections/:id/supplements')
+  @UseGuards(UserGuard)
+  supplementCorrection(
+    @Param('id') id: string,
+    @Body() body: { body?: unknown; links?: unknown; dedupeKey?: unknown },
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.service.submitCorrectionSupplement(req.user!.id, id, body);
   }
 
   /** 员工纠错队列：STAFF_ROLES 可读（resource_reviewer 只读浏览） */
@@ -361,11 +390,44 @@ export class OpportunitiesController {
     return this.service.submitAnnouncementSubmission(req.user!.id, body);
   }
 
-  /** 当前用户提交过的补录与处理状态（我的页） */
+  /** 当前用户提交过的补录与处理状态（我的页；分页，全部记录可访问） */
   @Get('announcement-submissions/mine')
   @UseGuards(UserGuard)
-  listMyAnnouncementSubmissions(@Req() req: AuthenticatedRequest) {
-    return this.service.listMyAnnouncementSubmissions(req.user!.id);
+  listMyAnnouncementSubmissions(
+    @Req() req: AuthenticatedRequest,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+  ) {
+    return this.service.listMyAnnouncementSubmissions(
+      req.user!.id,
+      Number(page) || 1,
+      Number(pageSize) || 10,
+    );
+  }
+
+  /** 我的补录详情：公开处理时间线 + 历次补充（仅本人可见） */
+  @Get('announcement-submissions/:id')
+  @UseGuards(UserGuard)
+  getMyAnnouncementSubmission(
+    @Param('id') id: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.service.getMyAnnouncementSubmission(req.user!.id, id);
+  }
+
+  /** 在原补录工单追加补充信息（编号不变、原文不变，状态进入待复核） */
+  @Post('announcement-submissions/:id/supplements')
+  @UseGuards(UserGuard)
+  supplementAnnouncementSubmission(
+    @Param('id') id: string,
+    @Body() body: { body?: unknown; links?: unknown; dedupeKey?: unknown },
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.service.submitAnnouncementSubmissionSupplement(
+      req.user!.id,
+      id,
+      body,
+    );
   }
 
   /** 员工补录队列：STAFF_ROLES 可读 */
@@ -385,7 +447,14 @@ export class OpportunitiesController {
   @UseGuards(ReviewGuard)
   reviewAnnouncementSubmission(
     @Param('id') id: string,
-    @Body() body: { status?: unknown; reviewNote?: unknown },
+    @Body()
+    body: {
+      status?: unknown;
+      reviewNote?: unknown;
+      expectedAnnouncementId?: unknown;
+      expectedVersionId?: unknown;
+      resolutionBasis?: unknown;
+    },
     @Req() req: AuthenticatedRequest,
   ) {
     return this.service.reviewAnnouncementSubmission(

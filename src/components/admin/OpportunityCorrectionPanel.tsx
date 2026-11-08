@@ -39,6 +39,7 @@ const STATUS_META: Record<
   submitted: { label: "待核对", variant: "warning" },
   reviewing: { label: "核对中", variant: "info" },
   need_supplement: { label: "需补充", variant: "warning" },
+  pending_review: { label: "待复核", variant: "info" },
   resolved: { label: "已修正", variant: "success" },
   rejected: { label: "不采纳", variant: "muted" },
 };

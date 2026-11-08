@@ -12,6 +12,8 @@ model User {
   email     String   @unique
   name      String?
   role      String   @default("user")
+  /** 账号是否启用；停用后不能登录、既有会话失效，也不能被配置为运营负责人 */
+  isActive  Boolean  @default(true) @map("is_active")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -225,6 +227,8 @@ model OpportunityCorrection {
   reviewedAt     DateTime? @map("reviewed_at")
   /** D08：采纳修正时登记的已发布版本 id（处理人填写，供用户回详情核对） */
   resolvedVersionId String? @map("resolved_version_id")
+  /** 终态后用户有新问题时关联的原受理编号（原记录保留，不重开） */
+  relatedTicketNo String? @map("related_ticket_no")
   createdAt      DateTime  @default(now()) @map("created_at")
 
   @@index([userId, createdAt])
@@ -253,6 +257,16 @@ model AnnouncementSubmission {
   /** 最近一次处理人（员工账号 id） */
   reviewerId    String?   @map("reviewer_id")
   reviewedAt    DateTime? @map("reviewed_at")
+  /** 结案时关联的正式公告 id（必填于「已收录」；历史记录为空即待核验） */
+  resolvedAnnouncementId String? @map("resolved_announcement_id")
+  /** 结案时关联的已发布版本 id */
+  resolvedVersionId String? @map("resolved_version_id")
+  /** 人工关联核验依据（不同链接关联时必须填写） */
+  resolutionBasis String? @map("resolution_basis")
+  /** 历史结案缺少发布关联：仅标记待核验，不猜测回填 */
+  historyPendingVerification Boolean @default(false) @map("history_pending_verification")
+  /** 终态后用户有新问题时关联的原受理编号（原记录保留，不重开） */
+  relatedTicketNo String? @map("related_ticket_no")
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
 
@@ -746,6 +760,8 @@ model NotificationRecord {
    */
   reminderStage String?  @map("reminder_stage")
   relatedUnitId String?  @map("related_unit_id")
+  /** 站内跳转路径（服务端生成，仅站内相对路径；工单通知直达原工单详情） */
+  linkPath      String?  @map("link_path")
   readAt        DateTime? @map("read_at")
   createdAt     DateTime @default(now()) @map("created_at")
 
@@ -1229,6 +1245,188 @@ model QaFeedback {
   @@index([answerId])
   @@index([status, createdAt])
   @@map("qa_feedback")
+}
+
+// ==================== 异常转人工与人工处理闭环（2026-11-08） ====================
+//
+// 设计边界：
+// - 纠错、公告补录、扫描件待人工、来源告警保留各自业务对象与结案标准；
+// - ServiceTask 只是这些对象的「人工处理工作项」外壳，承载负责人、认领、
+//   优先级、内部时限、催办升级等待办能力，不复制公告/原件/发布版本事实；
+// - 所有状态推进、历史追加和通知写入同一事务；历史只追加不覆盖。
+
+model ServiceTask {
+  id            String   @id @default(uuid())
+  /** 稳定受理编号（仅定位，不替代权限校验） */
+  ticketNo      String   @unique @map("ticket_no")
+  /** correction / announcement_submission / parse_manual / source_alert */
+  type          String
+  /** 业务对象 id（纠错/补录/解析 run/告警） */
+  refId         String   @map("ref_id")
+  /** 派生任务幂等键：同一未恢复故障复用活动待办，调度重跑不重复建任务 */
+  refKey        String?  @unique @map("ref_key")
+  /** 与业务对象状态同步的工作项状态 */
+  status        String   @default("submitted")
+  /** 默认责任归属（创建时的日常负责人），不等于实际认领人 */
+  defaultOwnerId String? @map("default_owner_id")
+  /** 当前负责人：认领/转交后唯一确定 */
+  assigneeId    String?  @map("assignee_id")
+  claimedAt     DateTime? @map("claimed_at")
+  /** 最后处理人（与当前负责人分开记录，不混用语义） */
+  lastHandlerId String?  @map("last_handler_id")
+  /** high / medium / low */
+  priority      String   @default("medium")
+  priorityReason String? @map("priority_reason")
+  /** system / staff */
+  prioritySource String  @default("system") @map("priority_source")
+  /** user / official / null（staff=平台处理中） */
+  waitingOn     String?  @map("waiting_on")
+  /** 乐观锁版本：每次状态/负责人/优先级变更递增 */
+  statusVersion Int      @default(1) @map("status_version")
+  /** 首次有效公开响应时间（认领/查看/内部备注不算） */
+  firstResponseAt DateTime? @map("first_response_at")
+  /** 最近一次有效公开处理更新时间 */
+  lastEffectiveUpdateAt DateTime? @map("last_effective_update_at")
+  /** 首次响应到期 */
+  responseDueAt DateTime? @map("response_due_at")
+  /** 下一次有效处理更新到期 */
+  updateDueAt   DateTime? @map("update_due_at")
+  /** 升级宽限到期 */
+  escalationDueAt DateTime? @map("escalation_due_at")
+  /** 当前计时周期开始时间（用于周期级提醒去重） */
+  cycleStartedAt DateTime? @map("cycle_started_at")
+  /** 待用户补充暂停时保存的剩余额度（毫秒） */
+  pausedRemainingMs Int? @map("paused_remaining_ms")
+  pausedAt      DateTime? @map("paused_at")
+  /** 累计等待用户时长（恢复时累加，用于区分平台处理与用户等待） */
+  totalPausedMs Int      @default(0) @map("total_paused_ms")
+  /** 等待官方回复：原因、最近核对、下次跟进（暂停不解除更新要求） */
+  waitingReason String?  @map("waiting_reason")
+  lastCheckedAt DateTime? @map("last_checked_at")
+  nextFollowUpAt DateTime? @map("next_follow_up_at")
+  lastReminderAt DateTime? @map("last_reminder_at")
+  escalationCount Int    @default(0) @map("escalation_count")
+  /** 负责人/备用负责人均不可用，进入管理员未分配异常队列 */
+  routedToAdmin Boolean  @default(false) @map("routed_to_admin")
+  routeIssue    String?  @map("route_issue")
+  /** 派生任务人工结案结果：resolved / limited / rejected */
+  outcome       String?
+  resolutionNote String? @map("resolution_note")
+  resolvedBy    String?  @map("resolved_by")
+  resolvedAt    DateTime? @map("resolved_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@unique([type, refId])
+  @@index([status, priority, updateDueAt])
+  @@index([assigneeId, status])
+  @@index([defaultOwnerId, status])
+  @@index([type, status])
+  @@map("service_tasks")
+}
+
+/** 工单补充信息（追加式；首版仅文字与链接，不做附件/OCR） */
+model TicketSupplement {
+  id          String   @id @default(uuid())
+  taskId      String   @map("task_id")
+  /** correction / announcement_submission */
+  ticketType  String   @map("ticket_type")
+  ticketId    String   @map("ticket_id")
+  authorId    String   @map("author_id")
+  body        String
+  /** [{ url, label? }]，仅 http/https，最多 5 个；只保存不自动抓取 */
+  links       Json?
+  /** 幂等键：同一工单同一键只保存一次 */
+  dedupeKey   String?  @map("dedupe_key")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@unique([taskId, dedupeKey])
+  @@index([ticketType, ticketId, createdAt])
+  @@map("ticket_supplements")
+}
+
+/** 追加式处理历史：提交/补充/认领/转交/优先级/状态/公开进展/内部备注/结案 */
+model TicketEvent {
+  id          String   @id @default(uuid())
+  taskId      String   @map("task_id")
+  ticketNo    String   @map("ticket_no")
+  ticketType  String   @map("ticket_type")
+  ticketId    String   @map("ticket_id")
+  action      String
+  actorId     String?  @map("actor_id")
+  actorRole   String?  @map("actor_role")
+  /** public（用户可见）/ internal（员工可见）/ system（系统记录） */
+  visibility  String   @default("public")
+  message     String?
+  beforeValue Json?    @map("before_value")
+  afterValue  Json?    @map("after_value")
+  /** 幂等键：重发/Worker 重跑不产生重复记录 */
+  dedupeKey   String?  @map("dedupe_key")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@unique([taskId, dedupeKey])
+  @@index([ticketType, ticketId, createdAt])
+  @@index([taskId, visibility, createdAt])
+  @@map("ticket_events")
+}
+
+/** 运营负责人配置（单例；只由管理员修改并留痕） */
+model ServiceDeskConfig {
+  id            String   @id @default("default")
+  dutyOwnerId   String?  @map("duty_owner_id")
+  backupOwnerId String?  @map("backup_owner_id")
+  version       Int      @default(1)
+  updatedBy     String?  @map("updated_by")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@map("service_desk_configs")
+}
+
+/** 内部处理时限策略版本：新配置只作用于新开始的处理阶段 */
+model ServiceDeskPolicy {
+  id                  String   @id @default(uuid())
+  priority            String
+  firstResponseMinutes Int     @map("first_response_minutes")
+  updateMinutes       Int      @map("update_minutes")
+  escalationGraceMinutes Int   @map("escalation_grace_minutes")
+  version             Int
+  createdBy           String?  @map("created_by")
+  active              Boolean  @default(true)
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  @@unique([priority, version])
+  @@index([priority, active, version])
+  @@map("service_desk_policies")
+}
+
+/** 负责人/时限配置修改审计（只追加） */
+model ServiceDeskConfigAudit {
+  id        String   @id @default(uuid())
+  entity    String
+  actorId   String   @map("actor_id")
+  reason    String?
+  beforeValue Json?  @map("before_value")
+  afterValue  Json?  @map("after_value")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([entity, createdAt])
+  @@map("service_desk_config_audits")
+}
+
+/** 催办/升级去重：任务+阶段/周期+接收人+级别唯一 */
+model ServiceDeskReminder {
+  id          String   @id @default(uuid())
+  taskId      String   @map("task_id")
+  stage       String
+  level       String
+  cycleKey    String   @map("cycle_key")
+  recipientId String   @map("recipient_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@unique([taskId, stage, level, cycleKey, recipientId])
+  @@index([taskId, createdAt])
+  @@map("service_desk_reminders")
 }
 
 // ==================== W4：AI 用量预算 ====================

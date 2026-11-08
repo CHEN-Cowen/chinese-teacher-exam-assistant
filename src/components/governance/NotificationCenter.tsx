@@ -212,7 +212,12 @@ function BackendNotificationRow({
 }) {
   const meta = BACKEND_SEVERITY_META[item.severity];
   const unread = !item.readAt;
-  const href = item.relatedUnitId ? `/opportunities` : "/schedule";
+  // 仅使用站内路径，避免后端通知被注入外部跳转
+  const internalLink =
+    item.linkPath && item.linkPath.startsWith("/") && !item.linkPath.startsWith("//")
+      ? item.linkPath
+      : null;
+  const href = internalLink ?? (item.relatedUnitId ? `/opportunities` : "/schedule");
 
   return (
     <li>

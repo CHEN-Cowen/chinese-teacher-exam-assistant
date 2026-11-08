@@ -25,6 +25,7 @@ export const CORRECTION_STATUSES = [
   'submitted',
   'reviewing',
   'need_supplement',
+  'pending_review',
   'resolved',
   'rejected',
 ] as const;
@@ -47,7 +48,9 @@ export const REVIEW_ACTIONS: readonly CorrectionStatus[] = [
 const ALLOWED_TRANSITIONS: Record<CorrectionStatus, readonly CorrectionStatus[]> = {
   submitted: ['reviewing', 'need_supplement', 'resolved', 'rejected'],
   reviewing: ['need_supplement', 'resolved', 'rejected'],
-  need_supplement: ['reviewing', 'resolved', 'rejected'],
+  /** 用户补充后进入待复核；员工继续核对时回到处理中 */
+  need_supplement: ['pending_review', 'reviewing', 'resolved', 'rejected'],
+  pending_review: ['reviewing', 'need_supplement', 'resolved', 'rejected'],
   resolved: [],
   rejected: [],
 };
@@ -85,6 +88,12 @@ export function validateReview(input: {
   const to = input.to;
   if (to === 'submitted') {
     return { ok: false, message: '不能将纠错退回到已提交状态' };
+  }
+  if (to === 'pending_review') {
+    return {
+      ok: false,
+      message: '「待复核」只能由用户在待补充工单提交补充信息后产生，员工不能手动设置',
+    };
   }
   if (!canTransition(input.from, to)) {
     return isTerminalStatus(input.from)
@@ -239,6 +248,8 @@ export function fieldPathLabel(fieldPath: string): string {
 /** 纠错记录对外 DTO（不含他人联系方式；contact 仅员工队列按权限使用） */
 export interface CorrectionDTO {
   id: string;
+  /** 稳定受理编号（仅定位，不替代权限校验） */
+  ticketNo: string | null;
   unitId: string;
   /** 单元已随旧版本移除时为 null，记录仍保留可审计 */
   unitName: string | null;
@@ -250,11 +261,18 @@ export interface CorrectionDTO {
   content: string;
   contact: string | null;
   status: string;
+  statusLabel?: string;
   reviewNote: string | null;
   reviewerId: string | null;
   reviewedAt: string | null;
   /** D08：采纳修正时登记的已发布版本 id（处理人填写，可空；供用户回详情核对） */
   resolvedVersionId: string | null;
+  /** 历史结案缺少发布关联/版本依据，仅标记待核验，不伪造回填 */
+  historyPendingVerification?: boolean;
+  /** 终态后新问题关联的原受理编号 */
+  relatedTicketNo?: string | null;
+  /** 待用户补充时由员工填写的具体问题（最近一次） */
+  supplementRequest?: string | null;
   createdAt: string;
 }
 

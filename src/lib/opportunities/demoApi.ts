@@ -41,14 +41,19 @@ import type {
   MatchResponse,
   MaterialStatus,
   OpportunityCorrectionDTO,
+  OpportunityCorrectionDetailDTO,
   OrganizationFollowDTO,
   StudyTargetRole,
   SubscriptionDTO,
   SubscriptionSyncDTO,
   SubscriptionUpdateInput,
+  TicketPageResult,
+  TicketSupplementDTO,
+  TicketTimelineEventDTO,
   UnitDetailResponse,
   UnitMatchDTO,
   AnnouncementSubmissionDTO,
+  AnnouncementSubmissionDetailDTO,
 } from "./api-types";
 import { checkOfficialUrl } from "./announcement-submission";
 
@@ -56,11 +61,19 @@ interface DemoFollow extends FollowDTO {
   remindersMuted: boolean;
 }
 
+/** 演示通道的工单补充（localStorage 内按用户隔离） */
+interface DemoSupplement extends TicketSupplementDTO {
+  ticketType: "correction" | "announcement_submission";
+  ticketId: string;
+}
+
 interface DemoData {
   follows: DemoFollow[];
   corrections: OpportunityCorrectionDTO[];
   /** D08：公告补录提交（localStorage 按用户隔离） */
   submissions: AnnouncementSubmissionDTO[];
+  /** 工单补充与公开时间线（演示通道同样保留历史，不覆盖原文） */
+  supplements: DemoSupplement[];
   /** D07：单位关注（按身份键精确匹配） */
   orgFollows: OrganizationFollowDTO[];
   /** D07：单位关注已记录的幂等键（org:{identityKey}:{announcementId}:{versionId}） */
@@ -84,6 +97,7 @@ function emptyDemoData(): DemoData {
     follows: [],
     corrections: [],
     submissions: [],
+    supplements: [],
     orgFollows: [],
     orgNoticeKeys: [],
     notifications: [],
@@ -304,6 +318,107 @@ function loadDemoSubscription(profile: UserRecruitmentProfile): SubscriptionDTO 
       updatedAt: fallback.updatedAt,
     };
   }
+}
+
+function paginateTickets<T>(all: T[], page = 1, pageSize = 10): TicketPageResult<T> {
+  const safePage = Math.max(1, Math.floor(page) || 1);
+  const safeSize = Math.min(50, Math.max(1, Math.floor(pageSize) || 10));
+  const start = (safePage - 1) * safeSize;
+  return {
+    items: all.slice(start, start + safeSize),
+    total: all.length,
+    page: safePage,
+    pageSize: safeSize,
+  };
+}
+
+/** 演示通道公开时间线：仅由当前状态与补充记录派生，不编造员工动作 */
+function demoTimeline(
+  status: string,
+  createdAt: string,
+  reviewNote: string | null,
+  supplements: DemoSupplement[],
+  resolvedLabel = "已办结",
+): TicketTimelineEventDTO[] {
+  const events: TicketTimelineEventDTO[] = [
+    {
+      action: "submitted",
+      label: "已提交",
+      message: null,
+      actorRole: "user",
+      createdAt,
+    },
+  ];
+  for (const item of supplements) {
+    events.push({
+      action: "user_supplement",
+      label: "你已提交补充信息",
+      message: item.body,
+      actorRole: "user",
+      createdAt: item.createdAt,
+    });
+  }
+  if (status === "need_supplement" && reviewNote) {
+    events.push({
+      action: "request_supplement",
+      label: "工作人员请求补充信息",
+      message: reviewNote,
+      actorRole: "staff",
+      createdAt,
+    });
+  }
+  if (status === "resolved" || status === "rejected") {
+    events.push({
+      action: status,
+      label: status === "resolved" ? resolvedLabel : "已完成核对（未采纳）",
+      message: reviewNote,
+      actorRole: "staff",
+      createdAt,
+    });
+  }
+  return events;
+}
+
+/** 演示通道补充输入校验：与后端 1—2000 字、最多 5 条 http/https 链接一致 */
+function validateDemoSupplement(input: { body?: string; links?: string[] }) {
+  const body = (input.body ?? "").trim();
+  if (body.length < 1 || body.length > 2000) {
+    throw new Error("补充说明需要 1—2000 字");
+  }
+  const links = (input.links ?? []).filter((link) => link.trim().length > 0);
+  if (links.length > 5) throw new Error("最多添加 5 个链接");
+  for (const link of links) {
+    const check = checkOfficialUrl(link.trim());
+    if (!check.ok || !check.normalized) {
+      throw new Error(check.message ?? "链接不合法");
+    }
+  }
+  return { body, links: links.map((link) => link.trim()) };
+}
+
+function supplementTicket(
+  data: DemoData,
+  ticketType: DemoSupplement["ticketType"],
+  ticketId: string,
+  input: { body?: string; links?: string[]; dedupeKey?: string },
+) {
+  const { body, links } = validateDemoSupplement(input);
+  const duplicates = data.supplements.filter(
+    (item) => item.ticketType === ticketType && item.ticketId === ticketId,
+  );
+  if (input.dedupeKey && duplicates.some((item) => item.id.endsWith(input.dedupeKey!))) {
+    return duplicates[duplicates.length - 1]!;
+  }
+  const created: DemoSupplement = {
+    id: `demo-supplement-${Date.now()}-${input.dedupeKey ?? duplicates.length}`,
+    ticketType,
+    ticketId,
+    body,
+    links,
+    createdAt: new Date().toISOString(),
+  };
+  data.supplements.push(created);
+  return created;
 }
 
 export const demoOpportunitiesApi = {
@@ -651,8 +766,58 @@ export const demoOpportunitiesApi = {
     return { id, status: "submitted" };
   },
 
-  async listMyCorrections(): Promise<OpportunityCorrectionDTO[]> {
-    return load().corrections;
+  async listMyCorrections(
+    page = 1,
+    pageSize = 10,
+  ): Promise<TicketPageResult<OpportunityCorrectionDTO>> {
+    return paginateTickets(load().corrections, page, pageSize);
+  },
+
+  async getMyCorrection(id: string): Promise<OpportunityCorrectionDetailDTO> {
+    const data = load();
+    const row = data.corrections.find((item) => item.id === id);
+    if (!row) throw new Error("未找到该纠错记录，或你无权访问");
+    const supplements = data.supplements.filter(
+      (item) => item.ticketType === "correction" && item.ticketId === id,
+    );
+    return {
+      ...row,
+      ticketNo: row.ticketNo ?? `JC${id.slice(-6)}`,
+      timeline: demoTimeline(row.status, row.createdAt, row.reviewNote, supplements),
+      supplements: supplements.map((item) => ({
+        id: item.id,
+        body: item.body,
+        links: item.links,
+        createdAt: item.createdAt,
+      })),
+    };
+  },
+
+  async supplementCorrection(
+    id: string,
+    input: { body: string; links?: string[]; dedupeKey?: string },
+  ) {
+    const data = load();
+    const row = data.corrections.find((item) => item.id === id);
+    if (!row) throw new Error("未找到该纠错记录，或你无权访问");
+    if (row.status !== "need_supplement") {
+      const error = new Error("当前状态不接受补充，请刷新后重试") as Error & {
+        status?: number;
+      };
+      error.status = 409;
+      throw error;
+    }
+    const created = supplementTicket(data, "correction", id, input);
+    row.status = "pending_review";
+    persist(data);
+    return {
+      id: created.id,
+      taskId: `demo-task-${id}`,
+      ticketNo: row.ticketNo ?? `JC${id.slice(-6)}`,
+      status: "pending_review",
+      statusLabel: "待复核",
+      createdAt: created.createdAt,
+    };
   },
 
   // ==================== 公告补录（D08 / PRD 11.9 U08） ====================
@@ -697,8 +862,66 @@ export const demoOpportunitiesApi = {
     return { id, status: "submitted" };
   },
 
-  async listMyAnnouncementSubmissions(): Promise<AnnouncementSubmissionDTO[]> {
-    return load().submissions;
+  async listMyAnnouncementSubmissions(
+    page = 1,
+    pageSize = 10,
+  ): Promise<TicketPageResult<AnnouncementSubmissionDTO>> {
+    return paginateTickets(load().submissions, page, pageSize);
+  },
+
+  async getMyAnnouncementSubmission(
+    id: string,
+  ): Promise<AnnouncementSubmissionDetailDTO> {
+    const data = load();
+    const row = data.submissions.find((item) => item.id === id);
+    if (!row) throw new Error("未找到该补录记录，或你无权访问");
+    const supplements = data.supplements.filter(
+      (item) => item.ticketType === "announcement_submission" && item.ticketId === id,
+    );
+    return {
+      ...row,
+      ticketNo: row.ticketNo ?? `BK${id.slice(-6)}`,
+      timeline: demoTimeline(
+        row.status,
+        row.createdAt,
+        row.reviewNote,
+        supplements,
+        "已收录",
+      ),
+      supplements: supplements.map((item) => ({
+        id: item.id,
+        body: item.body,
+        links: item.links,
+        createdAt: item.createdAt,
+      })),
+    };
+  },
+
+  async supplementAnnouncementSubmission(
+    id: string,
+    input: { body: string; links?: string[]; dedupeKey?: string },
+  ) {
+    const data = load();
+    const row = data.submissions.find((item) => item.id === id);
+    if (!row) throw new Error("未找到该补录记录，或你无权访问");
+    if (row.status !== "need_supplement") {
+      const error = new Error("当前状态不接受补充，请刷新后重试") as Error & {
+        status?: number;
+      };
+      error.status = 409;
+      throw error;
+    }
+    const created = supplementTicket(data, "announcement_submission", id, input);
+    row.status = "pending_review";
+    persist(data);
+    return {
+      id: created.id,
+      taskId: `demo-task-${id}`,
+      ticketNo: row.ticketNo ?? `BK${id.slice(-6)}`,
+      status: "pending_review",
+      statusLabel: "待复核",
+      createdAt: created.createdAt,
+    };
   },
 
   // ==================== 往年参考（D06 / PRD 11.7 U06） ====================
