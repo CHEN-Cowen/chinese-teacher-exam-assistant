@@ -44,7 +44,12 @@ export const DOCUMENT_PARSER_VERSION = 'wp4-v1';
 
 export interface FetchOutcome {
   status:
-    'downloaded' | 'unchanged' | 'structure_changed' | 'blocked' | 'failed';
+    | 'downloaded'
+    | 'unchanged'
+    | 'structure_changed'
+    | 'blocked'
+    | 'failed'
+    | 'skipped';
   snapshotId?: string;
   contentHash?: string;
   errorSummary?: string;
