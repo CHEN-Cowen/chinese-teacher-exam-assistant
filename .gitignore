@@ -62,7 +62,8 @@ next-env.d.ts
 # ===== [项目特有] 历史遗留与编辑器缓存（非源码，不跟踪）=====
 /.legacy-git-metadata/
 /.merge-primary-repo/
-/.trae/
+/.trae/*
+!/.trae/skills/
 
 # 本地抓取/探针临时产物
 /.tmp-probe/
