@@ -22,6 +22,7 @@
  * 关联真实样本：tests/fixtures/golden-sources/changsha-education/
  */
 import { load } from 'cheerio';
+import { attachmentNameFromLink } from '../public-column.js';
 import { discoverWcm5Records } from '../wcm5-list.js';
 import {
   AdapterParseError,
@@ -93,8 +94,7 @@ export class ChangshaEducationAdapter implements OfficialSiteAdapter {
       if (!href) return;
       const target = resolveUrl(input.url, href);
       if (!CHANGSHA_ATTACHMENT_PATTERN.test(target)) return;
-      const name = $(e).text().replace(/\s+/g, ' ').trim();
-      if (!name) throw mismatch('长沙正文附件缺少名称');
+      const name = attachmentNameFromLink($, e, target);
       attachments.set(target, { name, url: target });
     });
     return {

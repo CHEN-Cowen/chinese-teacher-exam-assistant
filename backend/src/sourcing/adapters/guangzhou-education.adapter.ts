@@ -32,7 +32,10 @@ import {
   type ListPageSnapshot,
   type OfficialSiteAdapter,
 } from '../official-site-adapter.js';
-import { discoverStaticAnchorList } from '../public-column.js';
+import {
+  attachmentNameFromLink,
+  discoverStaticAnchorList,
+} from '../public-column.js';
 import { nfcmsIndexPages } from '../nfcms-list.js';
 
 export const GUANGZHOU_ADAPTER_KEY = 'guangzhou-education';
@@ -88,8 +91,7 @@ export class GuangzhouEducationAdapter implements OfficialSiteAdapter {
       if (!href) return;
       const target = new URL(href, input.url).toString();
       if (!GUANGZHOU_ATTACHMENT_PATTERN.test(target)) return;
-      const name = $(e).text().trim();
-      if (!name) throw mismatch('广州正文附件缺少名称');
+      const name = attachmentNameFromLink($, e, target);
       attachments.set(target, { name, url: target });
     });
     return {

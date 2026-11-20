@@ -22,6 +22,10 @@ export type SafeFetchErrorCode =
   | 'HOST_NOT_ALLOWED'
   | 'BLOCKED_HOST'
   | 'BLOCKED_IP'
+  /** host 在 allowlist 内，但匹配了已知的官方反爬端点 pattern；
+   *  非基础设施故障，不应重试。典型如宁波 jpaas
+   *  `/front/document/download?fileUrl=<密文>` 返回 60 字节「禁止访问！」。 */
+  | 'BLOCKED_ENDPOINT'
   | 'DNS_FAILED'
   | 'TOO_MANY_REDIRECTS'
   | 'TIMEOUT'
@@ -106,6 +110,13 @@ export interface RequestOptions {
 /** POST 请求体上限（字节）：栏目分页参数远小于此值 */
 export const MAX_POST_BODY_BYTES = 4096;
 
+export interface PathDenylistEntry {
+  /** 对 URL.pathname + 规范化 query 小写后执行；匹配时拦截 */
+  pattern: RegExp;
+  /** 人类可读的拦截原因，写入审计 */
+  reason: string;
+}
+
 export interface SafeFetcherOptions {
   /** 来源 host allowlist；host 等于或为其子域时放行 */
   allowedHosts: readonly string[];
@@ -130,6 +141,9 @@ export interface SafeFetcherOptions {
     concurrency: number,
   ) => Promise<() => void>;
   hostConcurrency?: number;
+  /** 已知的官方反爬端点 pattern：host 在 allowlist 内但路径命中时拦截，
+   *  错误码为 BLOCKED_ENDPOINT、不重试、上层审计归 skipped 而非 failed */
+  pathDenylist?: readonly PathDenylistEntry[];
 }
 
 const REDIRECT_STATUS = new Set([301, 302, 303, 307, 308]);
@@ -139,6 +153,21 @@ const BLOCKED_HOSTNAMES = new Set([
   'metadata',
   'metadata.google.internal',
 ]);
+
+/**
+ * 已知官方反爬端点（host 合法但路径命中则直接拦截，不重试）。
+ *
+ * 目前登记：宁波 jpaas 附件接口 `/front/document/download?fileUrl=<密文>`
+ * 带合法 UA/Cookie/Referer 也返回 200 + 60 字节「禁止访问！」；
+ * 同域 `/front/document/file-download?fileUrl=/cms_files/…` 可正常 302 下载。
+ * 两个 endpoint 路径只差 `download` vs `file-download`，pattern 必须精确。
+ */
+export const DEFAULT_PATH_DENYLIST: readonly PathDenylistEntry[] = [
+  {
+    pattern: /\/front\/document\/download(?:\?|$)/i,
+    reason: '官方反爬附件端点（需浏览器会话）',
+  },
+];
 
 /** IPv4/IPv6 是否属于环回 / 私网 / 链路本地 / 元数据等封禁范围 */
 export function isBlockedIp(ip: string): boolean {
@@ -192,6 +221,7 @@ export class SafeFetcher {
   private readonly log: (line: string) => void;
   private readonly acquireHostPermit?: SafeFetcherOptions['acquireHostPermit'];
   private readonly hostConcurrency: number;
+  private readonly pathDenylist: readonly PathDenylistEntry[];
 
   constructor(options: SafeFetcherOptions) {
     this.allowedHosts = options.allowedHosts.map((h) => h.toLowerCase());
@@ -220,6 +250,7 @@ export class SafeFetcher {
     this.log = options.log ?? (() => undefined);
     this.acquireHostPermit = options.acquireHostPermit;
     this.hostConcurrency = options.hostConcurrency ?? 1;
+    this.pathDenylist = options.pathDenylist ?? DEFAULT_PATH_DENYLIST;
   }
 
   async fetch(
@@ -413,7 +444,20 @@ export class SafeFetcher {
         `host 不在 allowlist：${host}`,
       );
     }
+    this.assertPathAllowed(url);
     return url;
+  }
+
+  private assertPathAllowed(url: URL): void {
+    const key = (url.pathname + url.search).toLowerCase();
+    for (const entry of this.pathDenylist) {
+      if (entry.pattern.test(key)) {
+        throw new SafeFetchError(
+          'BLOCKED_ENDPOINT',
+          `path 命中反爬端点（${entry.reason}）：${redactUrl(url.toString())}`,
+        );
+      }
+    }
   }
 
   private hostAllowed(host: string): boolean {

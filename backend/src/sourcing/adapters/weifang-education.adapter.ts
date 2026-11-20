@@ -12,6 +12,7 @@
  * 关联真实样本：tests/fixtures/golden-sources/weifang/
  */
 import { load } from 'cheerio';
+import { attachmentNameFromLink } from '../public-column.js';
 import {
   AdapterParseError,
   normalizeUrl,
@@ -70,8 +71,7 @@ export class WeifangEducationAdapter implements OfficialSiteAdapter {
         )
       )
         return;
-      const name = $(e).text().trim();
-      if (!name) throw mismatch('潍坊正文附件缺少名称');
+      const name = attachmentNameFromLink($, e, target);
       attachments.set(target, { name, url: target });
     });
     return {

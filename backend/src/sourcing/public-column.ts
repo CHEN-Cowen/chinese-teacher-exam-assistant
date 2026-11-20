@@ -271,6 +271,47 @@ export function publicColumnHtml(content: string): string {
   }
 }
 
+/**
+ * 附件名解析：锚点文本 → title/aria-label → 下载地址的 fileName/filename/name 参数
+ * → 带扩展名的 URL 末段。官方正文偶有空锚点（常州 2026-11-20 实测
+ * `<a href="…xlsx"></a>`），直接抛错会让整篇公告连同其余附件一起失败；
+ * 只有全部来源都取不到名称时才失败，不静默丢弃附件。
+ */
+export function attachmentNameFromLink(
+  $: CheerioAPI,
+  element: unknown,
+  target: string,
+): string {
+  const node = $(element as never);
+  const text = node
+    .text()
+    .replace(/\u00a0/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (text) return text;
+  const label = (node.attr('title') ?? node.attr('aria-label') ?? '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (label) return label;
+  try {
+    const url = new URL(target);
+    for (const key of ['fileName', 'filename', 'name']) {
+      const value = url.searchParams.get(key)?.trim();
+      if (value) return decodeURIComponent(value).trim();
+    }
+    const base = decodeURIComponent(
+      url.pathname.split('/').filter(Boolean).pop() ?? '',
+    ).trim();
+    if (/\.[a-z0-9]{2,5}$/i.test(base)) return base;
+  } catch {
+    // 非法 URL 落到统一失败分支
+  }
+  throw new AdapterParseError(
+    'DOM_MISMATCH',
+    '公开正文附件缺少名称，且无法从下载地址推导',
+  );
+}
+
 /** 实测宁波/鄞州正文共用 #zoom 与官方元数据，缺项不回退全页抓取。 */
 export function locatePublicArticle(
   url: string,
@@ -293,9 +334,7 @@ export function locatePublicArticle(
       )
     )
       return;
-    const name = $(e).text().trim();
-    if (!name)
-      throw new AdapterParseError('DOM_MISMATCH', '公开正文附件缺少名称');
+    const name = attachmentNameFromLink($, e, target);
     attachments.set(target, { name, url: target });
   });
   return {
@@ -363,9 +402,7 @@ export function locateOfficialArticle(
       )
     )
       continue;
-    const name = $(e).text().trim();
-    if (!name)
-      throw new AdapterParseError('DOM_MISMATCH', '公开正文附件缺少名称');
+    const name = attachmentNameFromLink($, e, target);
     attachments.set(target, { name, url: target });
   }
   return {
@@ -937,6 +974,48 @@ export function jsPaginationPages(
       'JS 分页超出预算，需调整检查范围',
     );
   return indexes.map((index) => pages.get(index)!);
+}
+
+/**
+ * 河南政务 .jhtml 静态分页：列表页以 index_2.jhtml、index_3.jhtml 数字锚点声明后续页
+ * （郑州市教育局 2026-11-20 实测）。只派生同目录 index_N.jhtml，首页为 index.jhtml。
+ * 已是 index_N.jhtml 分页页时返回 []，避免把分页页当新首屏反复派生。
+ */
+export function jhtmlIndexPages(
+  baseUrl: string,
+  content: string,
+  maxPages = 20,
+): string[] {
+  let base: URL;
+  try {
+    base = new URL(baseUrl);
+  } catch {
+    return [];
+  }
+  if (/\/index_\d+\.jhtml$/.test(base.pathname)) return [];
+  const $ = load(content);
+  let total = 1;
+  $('a[href]').each((_i, e) => {
+    const href = $(e).attr('href') ?? '';
+    const match = href.match(/index_(\d+)\.jhtml(?:[?#]|$)/i);
+    if (!match) return;
+    const index = Number(match[1]);
+    if (Number.isSafeInteger(index) && index > total) total = index;
+  });
+  if (total <= 1) return [];
+  if (total > maxPages)
+    throw new AdapterParseError(
+      'DOM_MISMATCH',
+      `jhtml 分页超出预算（${total} > ${maxPages}），需核验后调整窗口`,
+    );
+  const dirPath = base.pathname.replace(/index(?:_\d+)?\.jhtml$/, '');
+  const urls: string[] = [];
+  for (let index = 2; index <= total; index += 1) {
+    const page = new URL(base.href);
+    page.pathname = `${dirPath}index_${index}.jhtml`;
+    urls.push(page.href);
+  }
+  return urls;
 }
 
 /** 静态列表分页 URL：保持域与路径，替换 _<n> 序号；其余不变。 */

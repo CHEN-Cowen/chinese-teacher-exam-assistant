@@ -168,6 +168,17 @@ export class DocumentFetchService {
         );
         return { status: 'blocked', errorSummary: signal };
       }
+      // 已知官方反爬端点（如宁波 jpaas document/download）：允许 host 但路径命中 denylist，
+      // 非基础设施故障，也不是解析结构问题；跳过，不计入失败、不触发重试、不降级来源健康。
+      if (
+        error instanceof SafeFetchError &&
+        error.code === 'BLOCKED_ENDPOINT'
+      ) {
+        return {
+          status: 'skipped',
+          errorSummary: `blocked_endpoint:${error.message.slice(0, 200)}`,
+        };
+      }
       const summary =
         error instanceof SafeFetchError
           ? `${error.code}:${error.status ?? ''}`

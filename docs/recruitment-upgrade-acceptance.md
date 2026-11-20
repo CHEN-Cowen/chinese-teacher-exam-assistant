@@ -82,3 +82,18 @@
 现有阿里云信息来自用户上次终端输出：项目 jiaozhao-standalone；目录 /home/admin/chinese-teacher-exam-assistant/deploy；配置 docker-compose.standalone.yml + deploy-release.yml；数据库容器 jiaozhao-standalone-db-1，数据绑定在该目录 data/postgres。执行前重新确认，不套用旧 kaobian-postgres 复用拓扑。
 
 本轮仅清理文档、校正状态和审查，不部署服务器、不合并 main、不执行生产迁移、不修改业务代码。
+
+## 7. 2026-11-20 线上采集批次（未升级部署）
+
+本节记录本轮通过服务器现有权限执行的真实运行，不改变第 6 节的部署门槛结论。线上容器未重建、未执行迁移。
+
+- 环境与版本：`https://kbzs.al.qich.top`，运行镜像 `sha-a3c881a91c7733c7d0c82e05677d92efb7328b20`（2026-11-08 启动，API/Worker/前端同 revision）；PostgreSQL 17、Redis 7、Worker 心跳 up、队列 waiting/active 为 0。部署 `.env` 的 `IMAGE_TAG` 为 `sha-2a7fb10f…`，与实际运行版本不一致，发布漂移需单独处理。
+- 目录差异：线上镜像内目录 15 项（11 ready），不含 N1—N3 新增适配器；当前仓库目录 32 项（28 招聘 ready + 1 政策 ready + 2 候选 + 1 受阻）。因此本轮无法在线上执行广州、武汉、福州、郑州、贵阳等 N3 来源，仅执行线上已具备的 11 个来源。
+- 批次结果（11 个来源）：发现 563、下载/新增 311、未变 711、失败 65；`pending_review` 56 → 378（+322，含 3 条人工补录），快照 +595。partial 3（南京、杭州、绍兴）；结构/解析异常 8（常州、嘉兴、丽水、蚌埠、萧山“公开正文附件缺少名称”，丽水、萧山另有跨域附件拦截；苏州线上失败，live 回放证明适配器未漂移）。
+- 人工补录：上海松江、福建大田、湖北黄石 3 条均进入 `pending_review`；大田入库 2 个附件、黄石 1 个附件；黄石报名已于 2026-11-18 截止。抽取值存在偏差（如黄石学历被识别为“博士研究生”、报名时间仅保留开始日；大田单位名误取联系电话），需人工审核修正。
+- 分页核验：广州分页为 `index.html`、`index_2.html`…`index_20.html`，`index_1.html` 是 404 且不属于分页序列，此前“第 2 页 7 字节缺口”系探测脚本页码命名错误，已更正；6 页窗口第 6 页 20 条、最早 2025-12-11。武汉 6 页至 2025-10-22；福州 6 页 90 条至 2026-07-01；潍坊 6 页 120 条至 2025-09-11；贵阳第 1 页最新 2026-10-17；郑州新政务 4 页 35 条、最新 2026-10-12。苏州 live 回放官方 3 页 34 条（最新 2025-03-12、最旧 2013-05-16），分页派生与官方 `createPageHTML` 一致。烟台本轮未做真实回放，仍按 6 页窗口记录为待复核。
+- 代码变更：郑州适配器补充新政务 `.jhtml` 列表解析，并在 `source-discover` 接入 `jhtmlIndexPages` 派生 `index_2…index_N.jhtml`；新增共享函数 `attachmentNameFromLink`（锚点文本 → title/aria-label → 下载地址 fileName 参数 → 带扩展名的 URL 末段，全部取不到才失败），替换公开正文与长沙/福州/广州/贵阳/石家庄/泰安/潍坊/武汉 8 个适配器里的“附件缺少名称即整篇失败”逻辑。验证命令：`cd backend && npx vitest run src/sourcing`（37 文件、445 通过、2 跳过）。live 回放：郑州官方 4 页 35 条 + 1 篇正文；苏州官方 3 页 34 条；常州空锚点附件页命名为 `20261022092735_32017.xlsx` 而非报错。
+- 宁波/鄞州排查（2026-11-20，服务器侧）：DNS 与网络正常（上游 100.100.2.136/138；两站解析到 CDN `203.107.60.182`；容器内 `index.html` 200、0.1–0.4 秒，连续 5 次无超时）。逐小时 `structure_changed` 的真因是栏目页为 jpaas JS 壳（`queryData` → `/api-gateway/jpaas-publish-server/front/page/build/unit`），原始 HTML 无 `/art/` 链接，`listUrls` 为空时回退首页必然解析失配；补齐 `listUrls` 后即时检查发现宁波 34 条、鄞州 74 条。宁波 10 个失败为 `document/download?fileUrl=<密文>` 附件端点反爬：带 Cookie/Referer/浏览器 UA 仍返回 200 + 60 字节“禁止访问！”，同域 `document/file-download?fileUrl=/cms_files/…` 可正常 302 下载，需浏览器会话或官方凭据，放宽 allowlist 无效。鄞州 2 个失败为附件缺名，已代码修复待部署。
+- 未完成/阻塞：N3 适配器上线需部署 `a3c881a9..HEAD`（43 个提交）并执行 5 个待应用迁移，需单独授权与备份窗口；宁波附件需按 `document/download` 反爬结论另定方案（暂标人工补录）；苏州线上失败需在部署后复查线上 `listUrls`（本地 live 回放已通过）；黄石岗位表（193KB）与松江图片附件受人工提交 100KB 请求体限制未入库；丽水/萧山跨域附件需确认重定向目标主机后再决定是否加入 allowlist。
+- 持续运行观察：自 2026-11-20 14:35（北京时间）起算，7 天观察 0/7；不宣称持续运行通过。
+

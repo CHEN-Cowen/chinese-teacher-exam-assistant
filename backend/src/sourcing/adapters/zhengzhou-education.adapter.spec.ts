@@ -168,6 +168,41 @@ describe('ZhengzhouEducationAdapter', () => {
     expect(err.code).toBe('DOM_MISMATCH');
   });
 
+  it('discover：新政务 jhtml 列表（span 标题 + em 日期）解析为绝对 URL', () => {
+    const html = `
+      <div class="page-tile">
+        <a class="focus">1</a><a href="index_2.jhtml">2</a><em>共 13 条</em>
+      </div>
+      <ul>
+        <li><a href="https://zzjy.zhengzhou.gov.cn/tzgg/10291575.jhtml"><span>2026年郑州市事业单位公开招聘（市级联考）郑州市教育局直属学校拟聘用人员公示</span><em>2026-10-12</em></a></li>
+        <li><a href="/wsgs/10338513.jhtml"><span>郑州市教育局关于2026年义务教育地方课程教材选用结果的公示</span><em>2026-11-06</em></a></li>
+      </ul>`;
+    const items = adapter.discover(
+      snapshot('https://zzjy.zhengzhou.gov.cn/tzgg/index.jhtml', html),
+    );
+    expect(items).toHaveLength(2);
+    expect(items[0]).toMatchObject({
+      url: 'https://zzjy.zhengzhou.gov.cn/tzgg/10291575.jhtml',
+      publishedAt: '2026-10-12',
+      kind: 'announcement',
+    });
+    expect(items[1]).toMatchObject({
+      url: 'https://zzjy.zhengzhou.gov.cn/wsgs/10338513.jhtml',
+      publishedAt: '2026-11-06',
+    });
+  });
+
+  it('DOM 失配：新政务列表条目缺 em 日期 → 抛 DOM_MISMATCH（不默认今天）', () => {
+    const html = `
+      <ul>
+        <li><a href="/tzgg/10291575.jhtml"><span>某招聘公告</span></a></li>
+      </ul>`;
+    const err = captureParseError(() =>
+      adapter.discover(snapshot('https://zzjy.zhengzhou.gov.cn/tzgg/index.jhtml', html)),
+    );
+    expect(err.code).toBe('DOM_MISMATCH');
+  });
+
   it('DOM 失配：shtml 详情删除 div#article → locateArticle 抛 DOM_MISMATCH', () => {
     const content = readSample('detail-10-34486640.shtml.html').replace(
       /<div[^>]*id=["']article["'][^>]*>[\s\S]*?<\/div>/i,

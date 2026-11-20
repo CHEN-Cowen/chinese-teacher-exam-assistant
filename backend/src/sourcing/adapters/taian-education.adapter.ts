@@ -15,6 +15,7 @@
  * 关联真实样本：tests/fixtures/golden-sources/taian/
  */
 import { load } from 'cheerio';
+import { attachmentNameFromLink } from '../public-column.js';
 import {
   AdapterParseError,
   normalizeUrl,
@@ -83,8 +84,7 @@ export class TaianEducationAdapter implements OfficialSiteAdapter {
         )
       )
         return;
-      const name = $(e).text().trim();
-      if (!name) throw mismatch('泰安正文附件缺少名称');
+      const name = attachmentNameFromLink($, e, target);
       attachments.set(target, { name, url: target });
     });
     return {

@@ -21,6 +21,7 @@
  * 关联真实样本：tests/fixtures/golden-sources/shijiazhuang-education/
  */
 import { load } from 'cheerio';
+import { attachmentNameFromLink } from '../public-column.js';
 import {
   AdapterParseError,
   normalizeUrl,
@@ -79,8 +80,8 @@ export class ShijiazhuangEducationAdapter implements OfficialSiteAdapter {
       if (!href) return;
       const target = new URL(href, input.url).toString();
       if (!SHIJIAZHUANG_ATTACHMENT_PATTERN.test(target)) return;
-      const name = $(e).text().replace(/ /g, ' ').replace(/\s+/g, ' ').trim();
-      if (!name) throw mismatch('石家庄正文附件缺少名称');
+      let name = $(e).text().replace(/ /g, ' ').replace(/\s+/g, ' ').trim();
+      if (!name) name = attachmentNameFromLink($, e, target);
       attachments.set(target, { name, url: target });
     });
     return {

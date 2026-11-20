@@ -146,6 +146,33 @@ describe('URL 校验（validateUrl）', () => {
     );
     expect(error.code).toBe('BLOCKED_HOST');
   });
+
+  it('官方反爬附件端点命中默认 pathDenylist → BLOCKED_ENDPOINT（不重试）', async () => {
+    const { impl, calls } = makeFetch(() => htmlResponse('<html></html>'));
+    const error = await captureError(
+      makeFetcher({
+        allowedHosts: ['jyj.ningbo.gov.cn'],
+        fetchImpl: impl,
+        retry: { attempts: 3, baseDelayMs: 1 },
+      }).fetch(
+        'https://jyj.ningbo.gov.cn/api-gateway/jpaas-web-server/front/document/download?fileUrl=YW5U',
+      ),
+    );
+    expect(error.code).toBe('BLOCKED_ENDPOINT');
+    expect(calls).toHaveLength(0); // denylist 在 fetch 前拦截，不发任何请求
+  });
+
+  it('同域合法附件端点不被误拦', async () => {
+    const { impl, calls } = makeFetch(() => htmlResponse('<html></html>'));
+    const fetcher = makeFetcher({
+      allowedHosts: ['jyj.ningbo.gov.cn'],
+      fetchImpl: impl,
+    });
+    await fetcher.fetch(
+      'https://jyj.ningbo.gov.cn/api-gateway/jpaas-web-server/front/document/file-download?fileUrl=/cms_files/x.xlsx',
+    );
+    expect(calls).toHaveLength(1);
+  });
 });
 
 describe('DNS 解析后复查（SSRF / DNS rebinding）', () => {

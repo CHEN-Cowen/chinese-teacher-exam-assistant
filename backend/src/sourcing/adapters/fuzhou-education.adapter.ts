@@ -18,6 +18,7 @@
  * 关联真实样本：tests/fixtures/golden-sources/fuzhou-education/
  */
 import { load } from 'cheerio';
+import { attachmentNameFromLink } from '../public-column.js';
 import {
   AdapterParseError,
   normalizeUrl,
@@ -84,8 +85,7 @@ export class FuzhouEducationAdapter implements OfficialSiteAdapter {
         !FUZHOU_ATTACHMENT_FILE_PATTERN.test(target)
       )
         return;
-      const name = $(e).text().trim();
-      if (!name) throw mismatch('福州正文附件缺少名称');
+      const name = attachmentNameFromLink($, e, target);
       attachments.set(target, { name, url: target });
     });
     return {

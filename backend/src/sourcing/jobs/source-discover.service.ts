@@ -21,6 +21,7 @@ import {
   publicColumnRequest,
   publicColumnPages,
   staticListPages,
+  jhtmlIndexPages,
   jsPaginationPages,
   govInfoListPages,
 } from '../public-column.js';
@@ -268,6 +269,9 @@ export class SourceDiscoverService {
             if (!listUrls.includes(page)) listUrls.push(page);
           for (const page of staticListPages(result.finalUrl, body))
             if (!listUrls.includes(page)) listUrls.push(page);
+          // 河南政务 .jhtml 数字锚点分页（郑州 tzgg/wsgs）：派生 index_2.jhtml 后续页。
+          for (const page of jhtmlIndexPages(result.finalUrl, body))
+            if (!listUrls.includes(page)) listUrls.push(page);
           for (const page of jsPaginationPages(result.finalUrl, body))
             if (!listUrls.includes(page)) listUrls.push(page);
           for (const page of govInfoListPages(result.finalUrl, body))
@@ -326,6 +330,9 @@ export class SourceDiscoverService {
         for (const page of nfcmsIndexPages(result.finalUrl, result.body))
           if (!listUrls.includes(page)) listUrls.push(page);
         for (const page of staticListPages(result.finalUrl, result.body))
+          if (!listUrls.includes(page)) listUrls.push(page);
+        // 河南政务 .jhtml 数字锚点分页（郑州 tzgg/wsgs）：派生 index_2.jhtml 后续页。
+        for (const page of jhtmlIndexPages(result.finalUrl, result.body))
           if (!listUrls.includes(page)) listUrls.push(page);
         for (const page of jsPaginationPages(result.finalUrl, result.body))
           if (!listUrls.includes(page)) listUrls.push(page);

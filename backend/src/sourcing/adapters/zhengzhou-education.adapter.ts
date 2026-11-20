@@ -14,8 +14,12 @@
  *      正文容器 `div.news_content_content`（locateOfficialArticle 的选择器不覆盖）。
  * - 列表 DOM：`ul#pageCont > li > div.sx_mainL_zi > div.bt.font_yahei >
  *   a.new_link[title] + p > span`（span 内日期 `M月D日`，补当年年份）。
- * - 分页：`pageTotal=7`，但分页为 JS 按钮"加载更多"（bfreeTools.js），
- *   不走静态文件 URL；适配器首版**只抓首屏 20 条**，分页后续加 helper。
+ * - 老站分页：`pageTotal=7`，但分页为 JS 按钮"加载更多"（bfreeTools.js），
+ *   不走静态文件 URL；老站列表只抓首屏。
+ * - 新政务列表（2026-11-20 核验）：`zzjy.zhengzhou.gov.cn/tzgg/index.jhtml`
+ *   为静态数字锚点分页（index_2.jhtml … index_N.jhtml），条目结构为
+ *   `a[href=/tzgg/<ID>.jhtml] > span 标题 + em YYYY-MM-DD`。
+ *   分页由 source-discover 的 jhtmlIndexPages 派生。
  *
  * 约定同其他来源：只吃快照、不联网、不写库、不抽取资格结论；
  * DOM 骨架失配抛 AdapterParseError('DOM_MISMATCH')，绝不静默返回 0 条。
@@ -43,7 +47,7 @@ export const ZHENGZHOU_ADAPTER_KEY = 'zhengzhou-education';
 
 /** 详情 URL：老站 shtml（news.zzedu.net.cn）或新政务 jhtml（zzjy.zhengzhou.gov.cn）。 */
 const ZHENGZHOU_DETAIL_PATTERN =
-  /news\.zzedu\.net\.cn\/tz\/\d{1,2}\/\d+\.shtml(?:[?#]|$)|zzjy\.zhengzhou\.gov\.cn\/tzgg\/\d+\.jhtml(?:[?#]|$)/i;
+  /news\.zzedu\.net\.cn\/tz\/\d{1,2}\/\d+\.shtml(?:[?#]|$)|zzjy\.zhengzhou\.gov\.cn\/(?:tzgg|wsgs)\/\d+\.jhtml(?:[?#]|$)/i;
 
 const ZHENGZHOU_JHTML_HOST = 'zzjy.zhengzhou.gov.cn';
 
@@ -62,6 +66,9 @@ function discoverZhengzhouList(
   content: string,
 ): DiscoveredDocument[] {
   const $ = load(content);
+  // 老站：ul#pageCont a.new_link；新政务：数字锚点列表（无 ul#pageCont）。
+  if (!$('ul#pageCont a.new_link[href]').length)
+    return discoverZhengzhouJhtmlList(baseUrl, content);
   // 直接选 .new_link，避免被 li 内其他 a（缩略图）或非公告 li 干扰
   const links = $('ul#pageCont a.new_link[href]');
   if (!links.length)
@@ -97,6 +104,43 @@ function discoverZhengzhouList(
   });
   if (!items.length)
     throw mismatch('郑州列表无任何条目（静默 0 条视为故障）');
+  return items;
+}
+
+/**
+ * 新政务 .jhtml 列表（zzjy.zhengzhou.gov.cn/tzgg|wsgs/index.jhtml）：
+ * 条目为 `a[href=.../<ID>.jhtml] > span 标题 + em YYYY-MM-DD`。
+ * 分页 index_2.jhtml… 由 source-discover 的 jhtmlIndexPages 派生，这里只解析当前页。
+ * 日期缺失或不是 YYYY-MM-DD 时显式失败，绝不默认为今天。
+ */
+function discoverZhengzhouJhtmlList(
+  baseUrl: string,
+  content: string,
+): DiscoveredDocument[] {
+  const $ = load(content);
+  const items: DiscoveredDocument[] = [];
+  const seen = new Set<string>();
+  let candidates = 0;
+  $('a[href]').each((_i, e) => {
+    const link = $(e);
+    const href = link.attr('href') ?? '';
+    const url = normalizeUrl(resolveUrl(baseUrl, href));
+    if (!ZHENGZHOU_DETAIL_PATTERN.test(url)) return;
+    candidates += 1;
+    const title =
+      link.find('span').first().text().trim() || (link.attr('title') ?? '').trim();
+    const dateText = link.find('em').first().text().trim();
+    if (!title) throw mismatch(`郑州 jhtml 列表条目缺少标题: ${url}`);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateText))
+      throw mismatch(`郑州 jhtml 列表条目日期不是 YYYY-MM-DD: ${url} -> ${dateText}`);
+    if (seen.has(url)) return;
+    seen.add(url);
+    items.push({ title, publishedAt: dateText, url, kind: classifyDocumentKind(title) });
+  });
+  if (!candidates)
+    throw mismatch('郑州 jhtml 列表未找到 /tzgg|wsgs/<ID>.jhtml 条目结构');
+  if (!items.length)
+    throw mismatch('郑州 jhtml 列表无任何条目（静默 0 条视为故障）');
   return items;
 }
 

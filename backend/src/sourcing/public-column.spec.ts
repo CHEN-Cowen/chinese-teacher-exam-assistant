@@ -8,6 +8,8 @@ import {
   discoverPublicColumn,
   publicColumnHtml,
   locatePublicArticle,
+  locateOfficialArticle,
+  jhtmlIndexPages,
 } from './public-column.js';
 
 const base = 'https://jyj.ningbo.gov.cn/col/col1229166692/index.html';
@@ -161,5 +163,67 @@ describe('公开动态栏目协议', () => {
         'ningbo',
       ),
     ).toThrow(/空列表/);
+  });
+  it('jhtml 数字锚点分页派生 index_2…index_N，分页页不重复派生', () => {
+    const html =
+      '<div class="page-tile"><a class="focus">1</a><a href="index_2.jhtml">2</a><a href="index_3.jhtml">3</a></div>';
+    expect(
+      jhtmlIndexPages('https://zzjy.zhengzhou.gov.cn/tzgg/index.jhtml', html),
+    ).toEqual([
+      'https://zzjy.zhengzhou.gov.cn/tzgg/index_2.jhtml',
+      'https://zzjy.zhengzhou.gov.cn/tzgg/index_3.jhtml',
+    ]);
+    expect(
+      jhtmlIndexPages(
+        'https://zzjy.zhengzhou.gov.cn/tzgg/index_2.jhtml',
+        html,
+      ),
+    ).toEqual([]);
+  });
+});
+
+describe('正文附件名兜底', () => {
+  const page = (anchors: string) =>
+    `<html><head><meta name="ArticleTitle" content="2026年公开招聘教师公告"><meta name="PubDate" content="2026-10-22"></head><body><div class="NewsText">正文${anchors}</div></body></html>`;
+
+  it('空锚点按 fileName 参数与地址末段回退，不再整篇失败', () => {
+    const content = page(
+      '<a href="/uploadfile/jyj/2026/1022/20261022092735_32017.xlsx"></a>' +
+        '<a href="/api/download?fileUrl=abc&amp;fileName=%E9%99%84%E4%BB%B6%EF%BC%9A%E5%B2%97%E4%BD%8D%E8%A1%A8.xlsx"></a>',
+    );
+    const article = locateOfficialArticle(
+      'https://jyj.changzhou.gov.cn/html/jyj/2026/QFJEPCBL_1013/114583.html',
+      content,
+    );
+    expect(article.attachments.map((item) => item.name)).toEqual([
+      '20261022092735_32017.xlsx',
+      '附件：岗位表.xlsx',
+    ]);
+  });
+
+  it('地址无可推导名称时仍然显式失败', () => {
+    const content = page(
+      '<a href="/api-gateway/jpaas-web-server/front/document/download?fileUrl=YW5U"></a>',
+    );
+    expect(() =>
+      locateOfficialArticle(
+        'https://jyj.lishui.gov.cn/col/col1229223905/art/2026/art_x.html',
+        content,
+      ),
+    ).toThrow(/缺少名称/);
+  });
+
+  it('锚点文本与 title 优先于地址兜底', () => {
+    const content = page(
+      '<a href="/a.xlsx">岗位表</a><a href="/b.xlsx" title="报名表"></a>',
+    );
+    const article = locateOfficialArticle(
+      'https://jyj.changzhou.gov.cn/html/jyj/2026/x.html',
+      content,
+    );
+    expect(article.attachments.map((item) => item.name)).toEqual([
+      '岗位表',
+      '报名表',
+    ]);
   });
 });
