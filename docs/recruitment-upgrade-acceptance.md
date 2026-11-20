@@ -97,3 +97,53 @@
 - 未完成/阻塞：N3 适配器上线需部署 `a3c881a9..HEAD`（43 个提交）并执行 5 个待应用迁移，需单独授权与备份窗口；宁波附件需按 `document/download` 反爬结论另定方案（暂标人工补录）；苏州线上失败需在部署后复查线上 `listUrls`（本地 live 回放已通过）；黄石岗位表（193KB）与松江图片附件受人工提交 100KB 请求体限制未入库；丽水/萧山跨域附件需确认重定向目标主机后再决定是否加入 allowlist。
 - 持续运行观察：自 2026-11-20 14:35（北京时间）起算，7 天观察 0/7；不宣称持续运行通过。
 
+## 8. 2026-11-20 部署与修复验证（sha-3fb504a）
+
+本节记录将 pathDenylist + attachmentNameFromLink 修复部署到生产服务器并验证宁波/鄞州归零的真实运行。此部署执行于第 7 节批次之后，服务器已完成镜像升级和滚动重建。
+
+### 8.1 部署操作
+
+- **备份**：数据库 `pg_dump` 38MB 至 `/home/admin/jiaozhao-backup-2026-11-20-163457.sql`；`.env` 同时备份；二者已在服务器留存。
+- **CI 镜像**：commit `3fb504abe1700dc47736e178d1311a089ae152cd` 的 `docker-publish` 运行（GH Actions 44702577210）全绿，verify + frontend-verify + publish 四 job 成功。镜像推至 `ghcr.io/chen-cowen/chinese-teacher-exam-assistant-project-api`（后端）和 `ghcr.io/chen-cowen/chinese-teacher-exam-assistant-project`（前端）——仓库名含 `-project`，与 compose 默认的 `chinese-teacher-exam-assistant-api` 不一致（见 8.4 遗留项）。
+- **镜像拉取**：`docker pull ghcr.io/chen-cowen/chinese-teacher-exam-assistant-project-api:sha-3fb504a…` 和 `docker pull ghcr.io/chen-cowen/chinese-teacher-exam-assistant-project:sha-3fb504a…` 成功，随后 `docker tag` 打 compose 期望的旧仓库名 tag（绕过配置不匹配）；`.env` 中 `IMAGE_TAG` 更新为 `sha-3fb504a…`。
+- **滚动重建**：`docker compose -f docker-compose.standalone.yml up -d` 输出 migrate Exited(0)、backend Healthy、worker Started、frontend Started；db 和 redis 保留未重建。
+- **健康检查**：`curl http://127.0.0.1:3000/api/health` 返回 `{"status":"ok","api":"up","db":"up","redis":"up","worker":"up","workerLastSeenAt":"2026-11-20T08:49:56Z"}`；`docker inspect` 确认 backend/worker/frontend 均运行新 image id。
+
+### 8.2 修复验证
+
+即时检查通过后端容器内 Node.js 脚本（NestFactory + CrawlOrchestrator.checkSource）触发，绕过 AdminGuard 的 session cookie 依赖。
+
+**宁波市教育局**（sourceId `5943c9b0…`，adapter `ningbo-education`）：
+| 指标 | 修复前（sha-a3c881a9） | 修复后（sha-3fb504a） |
+|---|---|---|
+| run status | structure_changed | **succeeded** ✅ |
+| discovered_count | 34 | 34 |
+| failed_count | 10 | **0** ✅ |
+| fetch_audit 反爬端点 | failed × 10 | **skipped × 17** ✅ |
+| error_summary | 反爬附件端点"禁止访问" | 空 |
+
+pathDenylist 命中 `\/front\/document\/download(?:\?|$)`，fetch 前拦截不发请求、不计入 failed。宁波同域 `document/file-download` 合法端点不受影响。
+
+**宁波市鄞州区人民政府**（sourceId `5a186329…`，adapter `yinzhou-government`）：
+| 指标 | 修复前（sha-a3c881a9） | 修复后（sha-3fb504a） |
+|---|---|---|
+| run status | structure_changed | **succeeded** ✅ |
+| discovered_count | 74 | 74 |
+| failed_count | 2（附件缺名） | **0** ✅ |
+| fetch_audit 反爬端点 | 未识别（鄞州也用 jpaas） | **skipped × 46** ✅ |
+| fetch_audit downloaded | — | 2 |
+| fetch_audit unchanged | — | 82 |
+| error_summary | "公开正文附件缺少名称" | 空 |
+
+双修复同时生效：pathDenylist 覆盖鄞州区同样的 jpaas `document/download` 反爬端点，attachmentNameFromLink 解决空锚点导致的"附件缺少名称即整篇失败"。鄞州修复前的 2 个 failed 是空锚点问题，现在也归零。
+
+### 8.3 测试覆盖
+
+`cd backend && npx vitest run src/sourcing`（commit `3fb504a`）：37 文件、447 通过、2 跳过，新增 2 个 pathDenylist 单测。`npm run build` 通过；CI verify 包含后端 lint + 447 单测 + build + runtime smoke（PostgreSQL + Redis + migrate + API + Worker + /health）。
+
+### 8.4 遗留项
+
+- **镜像仓库名漂移**：compose 默认 `${GHCR_OWNER:-chen-cowen}/chinese-teacher-exam-assistant-api`，CI 实际推到 `${GHCR_OWNER:-chen-cowen}/chinese-teacher-exam-assistant-project-api`（因仓库名含 `-project`）。本次通过服务器 `docker tag` 临时绕过；长期需统一 compose 镜像名或 CI `GITHUB_REPOSITORY` 来源。
+- **生产 IMAGE_TAG 漂移历史**：服务器 `.env` 的 `IMAGE_TAG` 长期与实际运行版本不一致（之前是 `sha-2a7fb10f`，运行 `sha-a3c881a9`），本次修正为 `sha-3fb504a` 并同步到 `.env.bak-*`。
+- **其他来源附件失败**：常州（"公开正文附件缺少名称"）在 attachmentNameFromLink 修复后应归零，但本轮未批量复跑，需在后续观察窗口中验证。
+
