@@ -13,6 +13,13 @@ import {
 } from './public-column.js';
 
 const base = 'https://jyj.ningbo.gov.cn/col/col1229166692/index.html';
+
+it.each([
+  'https://jyj.fuzhou.gov.cn/fjdzapp/search',
+  'https://jyj.weifang.gov.cn/els-service/article/1/20',
+])('ignores unrelated column JSON at %s', (url) => {
+  expect(publicColumnPages(url, '{"data":[]}')).toEqual([]);
+});
 const script = `<script src="/cms_files/default/script/AuthorizedRead/unitbuild.js" url="/api-gateway/jpaas-publish-server/front/page/build/unit" queryData="{'parseType':'bulidstatic','webId':'3505','tplSetId':'t','pageType':'column','tagId':'列表','editType':'null','pageId':'1229166692'}"></script>`;
 
 describe('公开动态栏目协议', () => {
@@ -84,7 +91,8 @@ describe('公开动态栏目协议', () => {
         html: '<table class="pagination" querydata="{}" rows="15" count="34" pageNo="1"></table>',
       },
     });
-    const pages = publicColumnPages(base, response);
+    const endpoint = publicColumnRequest(base, script)!;
+    const pages = publicColumnPages(endpoint, response);
     expect(pages).toHaveLength(2);
     expect(
       JSON.parse(new URL(pages[0]).searchParams.get('paramJson')!),
@@ -96,8 +104,8 @@ describe('公开动态栏目协议', () => {
         response.replace('pageNo=\\"1\\"', 'pageNo=\\"2\\"'),
       ),
     ).toEqual([]);
-    expect(() => publicColumnPages(base, response, 2)).toThrow(/预算/);
-    expect(() => publicColumnPages(base, response.replace('34', '-1'))).toThrow(
+    expect(() => publicColumnPages(endpoint, response, 2)).toThrow(/预算/);
+    expect(() => publicColumnPages(endpoint, response.replace('34', '-1'))).toThrow(
       /参数/,
     );
   });
