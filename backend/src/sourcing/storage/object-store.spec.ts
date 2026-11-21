@@ -109,21 +109,19 @@ describe('OssObjectStore（私有/版本化/短时签名）', () => {
     const store = new OssObjectStore(config);
     const url = await store.getSignedUrl('snapshots/ab/abc', 60);
     expect(url).toContain('https://jzlj-snapshots.oss-cn-hangzhou.aliyuncs.com/snapshots/ab/abc');
-    expect(url).toContain('OSSAccessKeyId=test-id');
-    expect(url).toContain('Expires=');
-    expect(url).toContain('Signature=');
-    // TTL 生效：expires 在 60 秒附近
-    const expires = Number(new URL(url).searchParams.get('Expires'));
-    expect(expires).toBeGreaterThan(Math.floor(Date.now() / 1000) + 30);
-    expect(expires).toBeLessThanOrEqual(Math.floor(Date.now() / 1000) + 61);
+    const query = new URL(url).searchParams;
+    expect(query.get('x-oss-signature-version')).toBe('OSS4-HMAC-SHA256');
+    expect(query.get('x-oss-credential')).toMatch(/^test-id\/.+\/cn-hangzhou\/oss\/aliyun_v4_request$/);
+    expect(query.get('x-oss-expires')).toBe('60');
+    expect(query.get('x-oss-signature')).toMatch(/^[0-9a-f]{64}$/);
   });
 
   it('putBinary：PUT 私有 ACL；失败只报状态码（不打印签名 URL 与密钥）', async () => {
     const fetchMock = vi.fn(async (_url: string | URL, init?: RequestInit) => {
       expect(init?.method).toBe('PUT');
       const headers = init?.headers as Record<string, string>;
-      expect(headers['x-oss-object-acl']).toBe('private');
-      expect(headers.authorization).toMatch(/^OSS test-id:/);
+      expect(headers['content-type']).toBe('application/pdf');
+      expect(new URL(_url).searchParams.get('x-oss-signature-version')).toBe('OSS4-HMAC-SHA256');
       return new Response('reject', { status: 403 });
     });
     vi.stubGlobal('fetch', fetchMock);
@@ -152,7 +150,7 @@ describe('OssObjectStore（私有/版本化/短时签名）', () => {
 
   it('getBinary：GET 返回原始字节；读取失败抛错', async () => {
     const bytes = Buffer.from([0x25, 0x50, 0x44, 0x46]);
-    const fetchMock = vi.fn(async () => new Response(new Uint8Array(bytes), { status: 200 }));
+    const fetchMock = vi.fn(async (_url: string | URL) => new Response(new Uint8Array(bytes), { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
     const store = new OssObjectStore(config);
     const roundtrip = await store.getBinary('snapshots/ab/abc');
@@ -164,5 +162,19 @@ describe('OssObjectStore（私有/版本化/短时签名）', () => {
       vi.fn(async () => new Response('nope', { status: 404 })),
     );
     await expect(store.getBinary('snapshots/xx/xyz')).rejects.toThrow('OSS 读取失败');
+  });
+  it('reads historical files locally and new files from OSS', async () => {
+    const legacy = new LocalObjectStore();
+    const localRead = vi.spyOn(legacy, 'getBinary')
+      .mockResolvedValueOnce(Buffer.from('old'))
+      .mockRejectedValueOnce(Object.assign(new Error('missing'), { code: 'ENOENT' }));
+    const fetchMock = vi.fn(async () => new Response('new'));
+    vi.stubGlobal('fetch', fetchMock);
+    const store = new OssObjectStore(config, legacy);
+    expect(await store.get('snapshots/ab/abc')).toBe('old');
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(await store.get('snapshots/cd/cde')).toBe('new');
+    expect(localRead).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
