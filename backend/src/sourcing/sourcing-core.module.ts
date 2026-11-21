@@ -108,7 +108,8 @@ import { BullmqTaskQueue } from './jobs/bullmq-task-queue.js';
       // 生产（配置 OSS_* 环境变量）→ 私有版本化 OSS；开发/测试 → 本地内容寻址快照
       useFactory: () => {
         const oss = readOssConfigFromEnv();
-        return oss ? new OssObjectStore(oss) : new LocalObjectStore();
+          const localStore = new LocalObjectStore();
+          return oss ? new OssObjectStore(oss, localStore) : localStore;
       },
     },
     BullmqTaskQueue,
