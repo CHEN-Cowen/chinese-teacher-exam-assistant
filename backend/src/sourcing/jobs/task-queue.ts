@@ -24,13 +24,14 @@ const TRANSIENT_FETCH_CODES = new Set([
   'TIMEOUT',
   'NETWORK_ERROR',
   'DNS_FAILED',
+  'ATTACHMENT_HTML',
 ]);
 const TRANSIENT_HTTP_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
 
 export function isTransientFetchFailure(errorSummary?: string): boolean {
   if (!errorSummary) return false;
   return errorSummary.split('; ').some((part) => {
-    const code = part.match(/^(TIMEOUT|NETWORK_ERROR|DNS_FAILED)(?::|@)/)?.[1];
+    const code = part.match(/^(TIMEOUT|NETWORK_ERROR|DNS_FAILED|ATTACHMENT_HTML)(?::|@)/)?.[1];
     if (code && TRANSIENT_FETCH_CODES.has(code)) return true;
     const status = part.match(/^HTTP_ERROR(?::|@.+:)(\d+)$/)?.[1];
     return status !== undefined && TRANSIENT_HTTP_STATUSES.has(Number(status));
@@ -80,6 +81,8 @@ export interface DocumentParsePayload {
   /** 逻辑文档身份，供材料包聚合回溯正文/附件关系 */
   documentId?: string;
   documentParserVersion: string;
+  /** 产生本次快照的抓取运行；用于按 runId 停止后续派生 */
+  runId?: string;
 }
 
 export interface AnnouncementExtractPayload {
@@ -87,6 +90,8 @@ export interface AnnouncementExtractPayload {
   /** 当前解析所属逻辑文档；用于回溯公告材料包 */
   documentId?: string;
   parserVersion: string;
+  /** 产生本次快照的抓取运行；用于按 runId 停止后续派生 */
+  runId?: string;
 }
 
 export interface CatalogProjectPayload {

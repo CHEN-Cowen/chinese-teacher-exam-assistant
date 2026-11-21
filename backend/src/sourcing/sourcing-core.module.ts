@@ -15,6 +15,7 @@ import {
   readOssConfigFromEnv,
 } from './storage/oss-object-store.js';
 import { CrawlRunStore } from './crawl-run-store.js';
+import { PrismaCrawlBudgetStore } from './crawl-budget.store.js';
 import { SourceDocumentStore } from './source-document-store.js';
 import { CrawlHealthService } from './crawl-health.service.js';
 import { SourcingAlertService } from './sourcing-alert.service.js';
@@ -88,6 +89,7 @@ import { BullmqTaskQueue } from './jobs/bullmq-task-queue.js';
     AdapterRegistry,
     SafeFetcherFactory,
     CrawlRunStore,
+    PrismaCrawlBudgetStore,
     SourceDocumentStore,
     CrawlHealthService,
     SourcingAlertService,
@@ -119,6 +121,7 @@ import { BullmqTaskQueue } from './jobs/bullmq-task-queue.js';
     AdapterRegistry,
     SafeFetcherFactory,
     CrawlRunStore,
+    PrismaCrawlBudgetStore,
     SourceDocumentStore,
     CrawlHealthService,
     SourcingAlertService,

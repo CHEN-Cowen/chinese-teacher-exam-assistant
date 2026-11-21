@@ -9,7 +9,7 @@
  *
  * 调度、限速、安全获取、URL 规范化、去重、快照与任务投递都在实现内部处理。
  */
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { CrawlRunStore, type SourceRecord } from './crawl-run-store.js';
 import {
   QueueUnavailableError,
@@ -21,6 +21,11 @@ import {
   type SourceDiscoverPayload,
 } from './jobs/task-queue.js';
 import { CRAWL_TASK_QUEUE } from './sourcing.tokens.js';
+import type {
+  TrialBudgetLimits,
+  TrialBudgetSnapshot,
+} from './crawl-budget.js';
+import { PrismaCrawlBudgetStore } from './crawl-budget.store.js';
 
 /** 本版适配器版本标识，随适配器实现升级 */
 export const SOURCE_ADAPTER_VERSION = 'wp4-v1';
@@ -36,6 +41,8 @@ export interface CrawlRunRef {
   /** 投递任务 id；来源暂停时为 null */
   jobId: string | null;
   deduplicated: boolean;
+  /** 试跑预算快照（仅带预算的手动运行返回） */
+  budget?: TrialBudgetSnapshot;
 }
 
 export interface CheckSourceOptions {
@@ -43,6 +50,8 @@ export interface CheckSourceOptions {
   now?: Date;
   /** 非 schedule 触发时的窗口 nonce（每次手动检查应不同） */
   nonce?: string;
+  /** 手动试跑预算；提供时本次运行的发现/下载/附件全部受预算约束 */
+  trialBudget?: TrialBudgetLimits;
 }
 
 @Injectable()
@@ -50,6 +59,8 @@ export class CrawlOrchestrator {
   constructor(
     private readonly store: CrawlRunStore,
     @Inject(CRAWL_TASK_QUEUE) private readonly queue: CrawlTaskQueue,
+    @Optional()
+    private readonly budget?: PrismaCrawlBudgetStore,
   ) {}
 
   async checkSource(
@@ -114,6 +125,26 @@ export class CrawlOrchestrator {
     const adapterVersion = this.adapterVersion(source);
     const run = await this.store.createRun({ sourceId, trigger, adapterVersion });
 
+    // 手动试跑：预算行先落库，发现任务才允许投递；预算创建失败则本次运行直接失败，
+    // 绝不以“无预算”状态误跑成常规抓取。
+    let trialBudget: TrialBudgetSnapshot | undefined;
+    if (options.trialBudget) {
+      if (!this.budget) throw new Error('试跑预算组件未配置，拒绝执行无预算的试跑');
+      try {
+        trialBudget = await this.budget.create(
+          run.id,
+          sourceId,
+          options.trialBudget,
+        );
+      } catch (error) {
+        await this.store.finishRun(run.id, {
+          status: 'failed',
+          errorSummary: 'trial_budget_creation_failed',
+        });
+        throw error;
+      }
+    }
+
     const checkWindow = computeCheckWindow(
       trigger,
       source.pollEveryMinutes,
@@ -143,6 +174,7 @@ export class CrawlOrchestrator {
         status: 'queued',
         jobId: result.jobId,
         deduplicated: result.deduplicated,
+        ...(trialBudget ? { budget: trialBudget } : {}),
       };
     } catch (error) {
       // 队列（Redis）暂时不可用：记录为失败但不计入来源连续失败，

@@ -6,7 +6,9 @@
  * 本表（CrawlRun）才是业务审计事实。
  */
 import { Injectable, Optional } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service.js';
+import type { TrialBudgetSnapshot } from './crawl-budget.js';
 import { SourcingMetrics } from './observability.js';
 import { ALERT_TYPES, SourcingAlertService } from './sourcing-alert.service.js';
 
@@ -57,6 +59,8 @@ export interface CrawlRunPatch {
   failedCount?: number;
   errorSummary?: string | null;
   adapterVersion?: string;
+  /** 试跑预算快照（仅试跑写入审计，便于事后核对已用/剩余） */
+  budget?: TrialBudgetSnapshot;
 }
 
 export interface CrawlRunCounters {
@@ -288,6 +292,49 @@ export class CrawlRunStore {
         failed: patch.failedCount ?? 0,
         error: patch.errorSummary ?? null,
       };
+      if (patch.budget) audit.budget = patch.budget;
+    });
+  }
+
+  /**
+   * 按 runId 停止：运行标记 stopped，尚未执行的 URL 账本改为 skipped。
+   *
+   * 只改本条运行，不动队列里的其它任务；已排队任务被 Worker 取到时会因预算
+   * 状态为 stopped 而直接跳过（不发 HTTP、不再派生附件/解析）。
+   */
+  async markRunStopped(runId: string, reason: string): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      const run = await tx.crawlRun.update({
+        where: { id: runId },
+        data: { updatedAt: new Date() },
+      });
+      const audit = (run.fetchAudit ?? { urls: {} }) as {
+        urls: Record<string, { status: string; error?: string }>;
+        discovery?: {
+          status: string;
+          count: number;
+          failed: number;
+          error: string | null;
+        };
+        budget?: TrialBudgetSnapshot;
+      };
+      for (const [url, entry] of Object.entries(audit.urls)) {
+        if (['queued', 'retrying'].includes(entry.status)) {
+          audit.urls[url] = { status: 'skipped', error: 'run_stopped' };
+        }
+      }
+      if (audit.discovery?.status === 'running') {
+        audit.discovery.status = 'stopped';
+      }
+      await tx.crawlRun.update({
+        where: { id: runId },
+        data: {
+          status: 'stopped',
+          finishedAt: run.finishedAt ?? new Date(),
+          errorSummary: reason.slice(0, 500),
+          fetchAudit: audit as unknown as Prisma.InputJsonValue,
+        },
+      });
     });
   }
 
@@ -301,6 +348,7 @@ export class CrawlRunStore {
         failed: number;
         error: string | null;
       };
+      budget?: TrialBudgetSnapshot;
     }) => void,
   ): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
@@ -317,8 +365,11 @@ export class CrawlRunStore {
           failed: number;
           error: string | null;
         };
+        budget?: TrialBudgetSnapshot;
       };
       mutate(audit);
+      const stopped =
+        run.status === 'stopped' || audit.budget?.status === 'stopped';
       const results = Object.values(audit.urls);
       const pending = results.some((item) =>
         ['queued', 'retrying'].includes(item.status),
@@ -341,9 +392,13 @@ export class CrawlRunStore {
       await tx.crawlRun.update({
         where: { id: runId },
         data: {
-          fetchAudit: audit,
-          status: complete ? terminal : 'running',
-          finishedAt: complete ? new Date() : null,
+          fetchAudit: audit as unknown as Prisma.InputJsonValue,
+          status: stopped ? 'stopped' : complete ? terminal : 'running',
+          finishedAt: stopped
+            ? (run.finishedAt ?? new Date())
+            : complete
+              ? new Date()
+              : null,
           discoveredCount: audit.discovery?.count ?? run.discoveredCount,
           downloadedCount: results.filter(
             (item) => item.status === 'downloaded',

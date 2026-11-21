@@ -394,9 +394,67 @@ model CrawlRun {
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")
 
+  budget           CrawlRunBudget?
+
   @@index([sourceId, startedAt])
   @@index([status])
   @@map("crawl_runs")
+}
+
+/**
+ * 手动试跑预算（v7.2 受控单来源试跑）。
+ *
+ * 只有带预算的手动运行才建行；常规调度不建行，行为保持原样。
+ * 计数口径：
+ * - list_pages_used：已发起的安全获取栏目页数（含 304，按实际请求页计）；
+ * - details_used / attachments_used：已准入的逻辑任务数（按 canonicalUrl 去重，
+ *   重投/重放不重复占用额度）；
+ * - http_requests_used：实际发出的 HTTP 请求次数（含重试与重定向跳转）。
+ * status：active / stopped（人工按 runId 停止）/ exhausted（额度用尽）。
+ */
+model CrawlRunBudget {
+  id                        String    @id @default(uuid())
+  runId                     String    @unique @map("run_id")
+  run                       CrawlRun  @relation(fields: [runId], references: [id], onDelete: Cascade)
+  sourceId                  String    @map("source_id")
+  maxListPages              Int       @map("max_list_pages")
+  maxDetails                Int       @map("max_details")
+  maxAttachmentsPerDocument Int       @map("max_attachments_per_document")
+  maxAttachmentsTotal       Int       @map("max_attachments_total")
+  maxHttpRequests           Int       @map("max_http_requests")
+  listPagesUsed             Int       @default(0) @map("list_pages_used")
+  detailsUsed               Int       @default(0) @map("details_used")
+  attachmentsUsed           Int       @default(0) @map("attachments_used")
+  httpRequestsUsed          Int       @default(0) @map("http_requests_used")
+  listPagesDeferred         Int       @default(0) @map("list_pages_deferred")
+  detailsDeferred           Int       @default(0) @map("details_deferred")
+  attachmentsDeferred       Int       @default(0) @map("attachments_deferred")
+  status                    String    @default("active")
+  stopReason                String?   @map("stop_reason")
+  stoppedAt                 DateTime? @map("stopped_at")
+  createdAt                 DateTime  @default(now()) @map("created_at")
+  updatedAt                 DateTime  @updatedAt @map("updated_at")
+
+  @@map("crawl_run_budgets")
+}
+
+/**
+ * 试跑准入记录：同一运行下同一 URL 只准入一次。
+ *
+ * 唯一键承担幂等：BullMQ 重投、Worker 重放、重复点击都不会重复占用详情/附件额度；
+ * kind：document（详情/公告页）/ attachment（附件）。
+ */
+model CrawlRunAdmission {
+  id               String   @id @default(uuid())
+  runId            String   @map("run_id")
+  kind             String
+  canonicalUrl     String   @map("canonical_url")
+  parentDocumentId String?  @map("parent_document_id")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@unique([runId, kind, canonicalUrl])
+  @@index([runId, kind, parentDocumentId])
+  @@map("crawl_run_admissions")
 }
 
 /** URL 级条件请求缓存：同一来源不同 URL 独立保存验证头。 */
