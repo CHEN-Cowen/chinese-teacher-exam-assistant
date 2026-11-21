@@ -146,6 +146,33 @@ describe('URL 校验（validateUrl）', () => {
     );
     expect(error.code).toBe('BLOCKED_HOST');
   });
+
+  it('官方反爬附件端点命中默认 pathDenylist → BLOCKED_ENDPOINT（不重试）', async () => {
+    const { impl, calls } = makeFetch(() => htmlResponse('<html></html>'));
+    const error = await captureError(
+      makeFetcher({
+        allowedHosts: ['jyj.ningbo.gov.cn'],
+        fetchImpl: impl,
+        retry: { attempts: 3, baseDelayMs: 1 },
+      }).fetch(
+        'https://jyj.ningbo.gov.cn/api-gateway/jpaas-web-server/front/document/download?fileUrl=YW5U',
+      ),
+    );
+    expect(error.code).toBe('BLOCKED_ENDPOINT');
+    expect(calls).toHaveLength(0); // denylist 在 fetch 前拦截，不发任何请求
+  });
+
+  it('同域合法附件端点不被误拦', async () => {
+    const { impl, calls } = makeFetch(() => htmlResponse('<html></html>'));
+    const fetcher = makeFetcher({
+      allowedHosts: ['jyj.ningbo.gov.cn'],
+      fetchImpl: impl,
+    });
+    await fetcher.fetch(
+      'https://jyj.ningbo.gov.cn/api-gateway/jpaas-web-server/front/document/file-download?fileUrl=/cms_files/x.xlsx',
+    );
+    expect(calls).toHaveLength(1);
+  });
 });
 
 describe('DNS 解析后复查（SSRF / DNS rebinding）', () => {
@@ -539,5 +566,120 @@ describe('Referer 头（附件防盗链）', () => {
     });
     await makeFetcher({ fetchImpl: impl }).fetch('https://allow.host/page');
     expect(seen.referer).toBeUndefined();
+  });
+});
+
+describe('POST 表单请求边界（jpage dataproxy）', () => {
+  it('允许 form-urlencoded 小请求体，并透传 method/body/content-type', async () => {
+    let seen: RequestInit = {};
+    const { impl } = makeFetch((_url, init) => {
+      seen = init;
+      return htmlResponse('<html>ok</html>');
+    });
+    const result = await makeFetcher({ fetchImpl: impl }).fetch(
+      'https://allow.host/module/web/jpage/dataproxy.jsp?startrecord=46',
+      {},
+      {},
+      {
+        method: 'POST',
+        body: 'col=1&columnid=45480',
+        contentType: 'application/x-www-form-urlencoded',
+      },
+    );
+    expect(result.status).toBe(200);
+    expect(seen.method).toBe('POST');
+    expect(seen.body).toBe('col=1&columnid=45480');
+    expect((seen.headers as Record<string, string>)['content-type']).toBe(
+      'application/x-www-form-urlencoded',
+    );
+  });
+
+  it('重定向后的后续跳降级为 GET，不携带请求体', async () => {
+    const seen: { method?: string; body?: unknown }[] = [];
+    const { impl } = makeFetch((url, init) => {
+      seen.push({ method: init.method, body: init.body });
+      return url.endsWith('/start')
+        ? redirectResponse('https://allow.host/final')
+        : htmlResponse('<html>ok</html>');
+    });
+    await makeFetcher({ fetchImpl: impl }).fetch(
+      'https://allow.host/start',
+      {},
+      {},
+      {
+        method: 'POST',
+        body: 'a=1',
+        contentType: 'application/x-www-form-urlencoded',
+      },
+    );
+    expect(seen[0]).toEqual({ method: 'POST', body: 'a=1' });
+    expect(seen[1]).toEqual({ method: 'GET', body: undefined });
+  });
+
+  it('缺少请求体、Content-Type 不符或请求体超限时显式拒绝', async () => {
+    const { impl } = makeFetch(() => htmlResponse('<html>ok</html>'));
+    const fetcher = makeFetcher({ fetchImpl: impl });
+    await expect(
+      fetcher.fetch('https://allow.host/list', {}, {}, {
+        method: 'POST',
+        contentType: 'application/x-www-form-urlencoded',
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+    await expect(
+      fetcher.fetch('https://allow.host/list', {}, {}, {
+        method: 'POST',
+        body: 'a=1',
+        contentType: 'text/plain' as never,
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+    await expect(
+      fetcher.fetch('https://allow.host/list', {}, {}, {
+        method: 'POST',
+        body: 'a='.repeat(3000),
+        contentType: 'application/x-www-form-urlencoded',
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+  });
+});
+
+describe('POST JSON 请求边界（潍坊 els-service）', () => {
+  it('允许固定模板 JSON 对象请求体，并透传 method/body/content-type', async () => {
+    let seen: RequestInit = {};
+    const { impl } = makeFetch((_url, init) => {
+      seen = init;
+      return htmlResponse('<html>ok</html>');
+    });
+    const result = await makeFetcher({ fetchImpl: impl }).fetch(
+      'https://allow.host/els-service/article/1/20?catas=x&dwid=1&dq=1',
+      {},
+      {},
+      {
+        method: 'POST',
+        body: '{"dq":"162","dwid":"55332","catas":["trs1308521"]}',
+        contentType: 'application/json',
+      },
+    );
+    expect(result.status).toBe(200);
+    expect(seen.method).toBe('POST');
+    expect(seen.body).toBe('{"dq":"162","dwid":"55332","catas":["trs1308521"]}');
+    expect((seen.headers as Record<string, string>)['content-type']).toBe(
+      'application/json',
+    );
+  });
+
+  it.each([
+    ['非合法 JSON', '{"dq":'],
+    ['顶层数组', '[1,2,3]'],
+    ['顶层标量', '"hello"'],
+  ])('JSON 请求体 %s → INVALID_REQUEST', async (_label, body) => {
+    const { impl } = makeFetch(() => htmlResponse('<html>ok</html>'));
+    await expect(
+      makeFetcher({ fetchImpl: impl }).fetch(
+        'https://allow.host/els-service/article/1/20',
+        {},
+        {},
+        { method: 'POST', body, contentType: 'application/json' },
+      ),
+    ).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
   });
 });

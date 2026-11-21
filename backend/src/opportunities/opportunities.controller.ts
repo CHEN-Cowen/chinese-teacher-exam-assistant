@@ -36,6 +36,49 @@ export class OpportunitiesController {
     return this.service.coverage();
   }
 
+  /**
+   * 往年参考列表（D06 / PRD 11.7 U06：公开只读）。
+   * 已截止/已撤回的往年公告，不进入当前可报名计数，无任何报名动作。
+   */
+  @Get('history')
+  listHistory(
+    @Query('year') year?: string,
+    @Query('regionCode') regionCode?: string,
+    @Query('stage') stage?: string,
+    @Query('nature') nature?: string,
+    @Query('keyword') keyword?: string,
+    @Query('educationLevel') educationLevel?: string,
+    @Query('major') major?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+  ) {
+    return this.service.listHistory({
+      year,
+      regionCode,
+      stage,
+      nature,
+      keyword,
+      educationLevel,
+      major,
+      page,
+      pageSize,
+    });
+  }
+
+  /**
+   * 往年参考详情（D06：公开；画像可选）。
+   * 未登录用户在请求体携带访客画像用于对照；已登录用户画像由服务端读取；
+   * 都没有时对照区为 null，历史事实仍可读。
+   */
+  @Post('history/:unitId/detail')
+  historyDetail(
+    @Param('unitId') unitId: string,
+    @Body() body: { profile?: unknown } | undefined,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.service.historyDetail(body?.profile, req.user?.id, unitId);
+  }
+
   /** 当前用户的新机会订阅（v7.1 M6；未开启过返回 null） */
   @Get('subscription')
   @UseGuards(UserGuard)
@@ -123,6 +166,33 @@ export class OpportunitiesController {
   @UseGuards(UserGuard)
   listGoals(@Req() req: AuthenticatedRequest) {
     return this.service.listGoals(req.user!.id);
+  }
+
+  /** 当前用户的单位关注列表（D07 / PRD 11.8 U07） */
+  @Get('organization-follows')
+  @UseGuards(UserGuard)
+  listOrganizationFollows(@Req() req: AuthenticatedRequest) {
+    return this.service.listOrganizationFollows(req.user!.id);
+  }
+
+  /** 关注单位：身份键 = 规范化发布主体名 + 地区码（仅精确匹配；重复关注幂等） */
+  @Post('organization-follows')
+  @UseGuards(UserGuard)
+  followOrganization(
+    @Body() body: { publisherName?: unknown; regionCode?: unknown },
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.service.followOrganization(req.user!.id, body ?? {});
+  }
+
+  /** 取消单位关注（按身份键；幂等） */
+  @Delete('organization-follows/:identityKey')
+  @UseGuards(UserGuard)
+  unfollowOrganization(
+    @Param('identityKey') identityKey: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.service.unfollowOrganization(req.user!.id, identityKey);
   }
 
   /** 关注（初始恒为"考虑中"，收藏不自动等于准备报名） */
@@ -238,11 +308,40 @@ export class OpportunitiesController {
     return this.service.submitCorrection(req.user!.id, unitId, body);
   }
 
-  /** 当前用户提交过的纠错与员工处理状态（我的页） */
+  /** 当前用户提交过的纠错与员工处理状态（我的页；分页，全部记录可访问） */
   @Get('corrections/mine')
   @UseGuards(UserGuard)
-  listMyCorrections(@Req() req: AuthenticatedRequest) {
-    return this.service.listMyCorrections(req.user!.id);
+  listMyCorrections(
+    @Req() req: AuthenticatedRequest,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+  ) {
+    return this.service.listMyCorrections(
+      req.user!.id,
+      Number(page) || 1,
+      Number(pageSize) || 10,
+    );
+  }
+
+  /** 我的纠错详情：公开处理时间线 + 历次补充（仅本人可见） */
+  @Get('corrections/:id')
+  @UseGuards(UserGuard)
+  getMyCorrection(
+    @Param('id') id: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.service.getMyCorrection(req.user!.id, id);
+  }
+
+  /** 在原纠错工单追加补充信息（编号不变、原文不变，状态进入待复核） */
+  @Post('corrections/:id/supplements')
+  @UseGuards(UserGuard)
+  supplementCorrection(
+    @Param('id') id: string,
+    @Body() body: { body?: unknown; links?: unknown; dedupeKey?: unknown },
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.service.submitCorrectionSupplement(req.user!.id, id, body);
   }
 
   /** 员工纠错队列：STAFF_ROLES 可读（resource_reviewer 只读浏览） */
@@ -262,10 +361,103 @@ export class OpportunitiesController {
   @UseGuards(ReviewGuard)
   reviewCorrection(
     @Param('id') id: string,
-    @Body() body: { status?: unknown; reviewNote?: unknown },
+    @Body()
+    body: { status?: unknown; reviewNote?: unknown; resolvedVersionId?: unknown },
     @Req() req: AuthenticatedRequest,
   ) {
     return this.service.reviewCorrection(
+      { id: req.user!.id, role: req.user!.role },
+      id,
+      body,
+    );
+  }
+
+  // ==================== 公告补录（D08 / PRD 11.9 U08） ====================
+
+  /** 用户补录未收录官方公告：只进运营待办，不直接发布 */
+  @Post('announcement-submissions')
+  @UseGuards(UserGuard)
+  submitAnnouncementSubmission(
+    @Body()
+    body: {
+      officialUrl?: unknown;
+      publisherName?: unknown;
+      regionCode?: unknown;
+      note?: unknown;
+    },
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.service.submitAnnouncementSubmission(req.user!.id, body);
+  }
+
+  /** 当前用户提交过的补录与处理状态（我的页；分页，全部记录可访问） */
+  @Get('announcement-submissions/mine')
+  @UseGuards(UserGuard)
+  listMyAnnouncementSubmissions(
+    @Req() req: AuthenticatedRequest,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+  ) {
+    return this.service.listMyAnnouncementSubmissions(
+      req.user!.id,
+      Number(page) || 1,
+      Number(pageSize) || 10,
+    );
+  }
+
+  /** 我的补录详情：公开处理时间线 + 历次补充（仅本人可见） */
+  @Get('announcement-submissions/:id')
+  @UseGuards(UserGuard)
+  getMyAnnouncementSubmission(
+    @Param('id') id: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.service.getMyAnnouncementSubmission(req.user!.id, id);
+  }
+
+  /** 在原补录工单追加补充信息（编号不变、原文不变，状态进入待复核） */
+  @Post('announcement-submissions/:id/supplements')
+  @UseGuards(UserGuard)
+  supplementAnnouncementSubmission(
+    @Param('id') id: string,
+    @Body() body: { body?: unknown; links?: unknown; dedupeKey?: unknown },
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.service.submitAnnouncementSubmissionSupplement(
+      req.user!.id,
+      id,
+      body,
+    );
+  }
+
+  /** 员工补录队列：STAFF_ROLES 可读 */
+  @Get('admin/announcement-submissions')
+  @UseGuards(AdminGuard)
+  listStaffAnnouncementSubmissions(
+    @Query('status') status: string | undefined,
+    @Req() _req: AuthenticatedRequest,
+  ) {
+    const normalized =
+      typeof status === 'string' && status.trim() ? status.trim() : null;
+    return this.service.listAnnouncementSubmissionsForStaff(normalized);
+  }
+
+  /** 员工处理补录：仅 exam_reviewer/admin；状态推进通知提交人 */
+  @Patch('admin/announcement-submissions/:id')
+  @UseGuards(ReviewGuard)
+  reviewAnnouncementSubmission(
+    @Param('id') id: string,
+    @Body()
+    body: {
+      status?: unknown;
+      reviewNote?: unknown;
+      expectedAnnouncementId?: unknown;
+      expectedVersionId?: unknown;
+      resolutionBasis?: unknown;
+    },
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.service.reviewAnnouncementSubmission(
       { id: req.user!.id, role: req.user!.role },
       id,
       body,

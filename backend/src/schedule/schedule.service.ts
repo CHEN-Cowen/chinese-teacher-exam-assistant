@@ -100,6 +100,8 @@ export interface NotificationDTO {
   title: string;
   body: string;
   relatedUnitId: string | null;
+  /** 站内跳转路径（如 /me?ticket=correction:<id>）；空表示无深链 */
+  linkPath: string | null;
   readAt: string | null;
   createdAt: string;
 }
@@ -512,6 +514,7 @@ export class ScheduleService {
       title: r.title,
       body: r.body,
       relatedUnitId: r.relatedUnitId,
+      linkPath: r.linkPath ?? null,
       readAt: r.readAt ? r.readAt.toISOString() : null,
       createdAt: r.createdAt.toISOString(),
     }));

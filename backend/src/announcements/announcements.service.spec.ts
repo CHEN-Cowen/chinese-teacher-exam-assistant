@@ -423,3 +423,115 @@ describe('AnnouncementsService.getSnapshotParsed', () => {
     expect(result.change.hasPreviousSnapshot).toBe(false);
   });
 });
+
+// ==================== 跨阶段流水线汇总（D09 / U10） ====================
+
+describe('AnnouncementsService.pipelineSummary', () => {
+  function makeSummaryPrisma(data: {
+    sourceTotal?: number;
+    sourceHealth?: Array<{ healthStatus: string; count: number }>;
+    lastSuccessAt?: Date | null;
+    snapshotTotal?: number;
+    snapshotLast24h?: number;
+    parseStatus?: Array<{ status: string; count: number }>;
+    extractionStatus?: Array<{ status: string; count: number }>;
+    publishedStatus?: Array<{ status: string; count: number }>;
+    lastPublishedAt?: Date | null;
+  }) {
+    const groupBy = (rows: Array<{ status?: string; healthStatus?: string; count: number }>) =>
+      vi.fn(async () => rows.map((r) => ({ ...r, _count: r.count })));
+    return {
+      source: {
+        count: vi.fn(async () => data.sourceTotal ?? 0),
+        groupBy: groupBy((data.sourceHealth ?? []).map((r) => ({ healthStatus: r.healthStatus, count: r.count }))),
+        findFirst: vi.fn(async () =>
+          data.lastSuccessAt ? { lastSuccessAt: data.lastSuccessAt } : null,
+        ),
+      },
+      sourceSnapshot: {
+        count: vi
+          .fn()
+          .mockResolvedValueOnce(data.snapshotTotal ?? 0)
+          .mockResolvedValueOnce(data.snapshotLast24h ?? 0),
+      },
+      documentParseRun: {
+        groupBy: groupBy((data.parseStatus ?? []).map((r) => ({ status: r.status, count: r.count }))),
+      },
+      extractionRun: {
+        groupBy: groupBy((data.extractionStatus ?? []).map((r) => ({ status: r.status, count: r.count }))),
+      },
+      publishedAnnouncementVersion: {
+        groupBy: groupBy((data.publishedStatus ?? []).map((r) => ({ status: r.status, count: r.count }))),
+        findFirst: vi.fn(async () =>
+          data.lastPublishedAt ? { publishedAt: data.lastPublishedAt } : null,
+        ),
+      },
+    } as any;
+  }
+
+  it('汇总各阶段真实计数与最新时间；空库时全为 0/null', async () => {
+    const empty = new AnnouncementsService(makeSummaryPrisma({}));
+    const emptyResult: any = await empty.pipelineSummary();
+    expect(emptyResult.sources.total).toBe(0);
+    expect(emptyResult.sources.byHealthStatus).toEqual({});
+    expect(emptyResult.sources.lastSuccessAt).toBeNull();
+    expect(emptyResult.snapshots.total).toBe(0);
+    expect(emptyResult.snapshots.last24h).toBe(0);
+    expect(emptyResult.parseRuns.byStatus).toEqual({});
+    expect(emptyResult.extractionRuns.byStatus).toEqual({});
+    expect(emptyResult.publishedVersions.byStatus).toEqual({});
+    expect(emptyResult.publishedVersions.lastPublishedAt).toBeNull();
+    expect(typeof emptyResult.generatedAt).toBe('string');
+
+    const now = new Date('2026-10-28T10:00:00Z');
+    const populated = new AnnouncementsService(
+      makeSummaryPrisma({
+        sourceTotal: 11,
+        sourceHealth: [
+          { healthStatus: 'healthy', count: 9 },
+          { healthStatus: 'degraded', count: 2 },
+        ],
+        lastSuccessAt: now,
+        snapshotTotal: 42,
+        snapshotLast24h: 3,
+        parseStatus: [
+          { status: 'parsed', count: 30 },
+          { status: 'pending_manual', count: 5 },
+          { status: 'failed', count: 2 },
+        ],
+        extractionStatus: [
+          { status: 'pending_review', count: 4 },
+          { status: 'published', count: 12 },
+          { status: 'failed', count: 1 },
+        ],
+        publishedStatus: [
+          { status: 'published', count: 9 },
+          { status: 'superseded', count: 3 },
+        ],
+        lastPublishedAt: now,
+      }),
+    );
+    const result: any = await populated.pipelineSummary();
+    expect(result.sources).toEqual({
+      total: 11,
+      byHealthStatus: { healthy: 9, degraded: 2 },
+      lastSuccessAt: now.toISOString(),
+    });
+    expect(result.snapshots).toEqual({ total: 42, last24h: 3 });
+    expect(result.parseRuns.byStatus).toEqual({
+      parsed: 30,
+      pending_manual: 5,
+      failed: 2,
+    });
+    expect(result.extractionRuns.byStatus).toEqual({
+      pending_review: 4,
+      published: 12,
+      failed: 1,
+    });
+    expect(result.publishedVersions.byStatus).toEqual({
+      published: 9,
+      superseded: 3,
+    });
+    expect(result.publishedVersions.lastPublishedAt).toBe(now.toISOString());
+  });
+});

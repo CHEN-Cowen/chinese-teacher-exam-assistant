@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 /**
- * v7.2 统一结果工作台 E2E（ff_new_results 开启态，跑在 3100）。
+ * v7.2 统一结果工作台 E2E（ff_new_results 开启态，跑在 3123）。
  *
  * 覆盖（本任务 §4/§5/§6/§7/§10）：
  * - /preview（访客）与 /opportunities（登录）使用同一套三标签工作台与同一套岗位卡：
@@ -65,7 +65,7 @@ async function seedGuestProfile(page: Page, naturePreference?: string) {
 async function demoLogin(page: Page) {
   await page.goto("/login");
   await page.waitForLoadState("networkidle");
-  await page.getByLabel("账号").fill("student@demo.app");
+  await page.getByLabel("邮箱").fill("student@demo.app");
   await page.getByLabel("密码").fill("demo1234");
   await page.getByRole("button", { name: "登录", exact: true }).click();
   await page.waitForURL(/\/opportunities/);
@@ -244,7 +244,7 @@ test.describe("v7.2 统一结果工作台：/preview 访客端", () => {
     );
 
     // 登录 → 返回原岗位详情页（URL 精确匹配原岗位，未跳回 /onboarding）
-    await page.getByLabel("账号").fill("student@demo.app");
+    await page.getByLabel("邮箱").fill("student@demo.app");
     await page.getByLabel("密码").fill("demo1234");
     await page.getByRole("button", { name: "登录", exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/opportunities/${unitId}$`));

@@ -99,7 +99,7 @@ export function OpportunityCard({
       <div className="p-4">
         {/* 演示标识：访客预览中的机会均为虚拟示例，固定标出 */}
         <p className="mb-2">
-          <span className="inline-flex items-center rounded-full bg-canvas px-2 py-0.5 text-xs font-medium text-ink-muted ring-1 ring-line">
+          <span className="inline-flex h-6 items-center rounded bg-canvas px-2 text-xs font-medium text-ink-muted ring-1 ring-line">
             虚拟示例
           </span>
         </p>
@@ -194,7 +194,7 @@ export function OpportunityCard({
                 <li key={`${row.unitId}-${dim.label}`} className="py-2.5">
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-sm font-medium text-ink">{dim.label}</span>
-                    <span className={cn("inline-flex shrink-0 items-center gap-1 rounded-full bg-canvas px-2 py-0.5 text-xs font-medium", meta.className)}>
+                    <span className={cn("inline-flex h-6 shrink-0 items-center gap-1 rounded bg-canvas px-2 text-xs font-medium", meta.className)}>
                       <span aria-hidden="true">{meta.symbol}</span>
                       {meta.text}
                     </span>

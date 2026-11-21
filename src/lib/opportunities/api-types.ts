@@ -17,6 +17,8 @@ export type FollowStatus =
   | "considering"
   | "preparing"
   | "registered"
+  /** D07：报名完成、等待考试（只能由 registered 进入，只能去 closed/abandoned） */
+  | "waiting_exam"
   | "abandoned"
   | "closed";
 
@@ -90,6 +92,16 @@ export interface DimensionDTO {
   hard: boolean;
   requirementDescription?: string;
   evidence?: EvidenceAnchorDTO;
+  /** 用户事实摘要（采用哪条资料/哪一阶段） */
+  userFact?: string;
+  /** 专业条件实际采用的教育经历 */
+  adoptedEducation?: {
+    experienceId: string;
+    stage?: string;
+    majorFullName: string;
+  }[];
+  /** 该条件下一步动作 */
+  nextStep?: string;
 }
 
 export interface FollowStatusEventDTO {
@@ -148,8 +160,12 @@ export interface UnitMatchDTO {
     code: string;
     name: string;
     region: RegionRefDTO;
-    /** 学科（v7.1 M4 卡片第一层：学段和学科） */
+    /** 学科（v7.1 M4 卡片第一层：学段和学科）；兼容旧单值 */
     subject: string;
+    /** W1：岗位全部学科（复数优先） */
+    subjects?: string[];
+    /** 官方岗位表学科原文 */
+    subjectOriginal?: string;
     stage: string;
     headcount: number;
     organizationType: string;
@@ -173,6 +189,8 @@ export interface UnitMatchDTO {
     publisher: string;
     organizationType: string;
     officialUrl: string;
+    /** 公告级地区（单位关注身份键匹配用，D07） */
+    region: RegionRefDTO;
     /** demo=演示数据；real=真实监测台账数据 */
     dataset: "demo" | "real";
     reviewStatus: "ai_reviewed_pending" | "human_reviewed";
@@ -203,6 +221,8 @@ export interface UnitMatchDTO {
   gates: GateDTO[];
   dimensions: DimensionDTO[];
   overall: OpportunityMatchStatus;
+  /** 资格初步符合但不在“必须接受”的地区范围内（偏好范围外，不是不符合） */
+  preferenceOutOfScope?: boolean;
   summary: string;
   follow: FollowDTO | null;
   /** 需官方确认维度的咨询问题模板 */
@@ -217,14 +237,35 @@ export interface MetaDTO {
   evaluatedAt: string;
 }
 
-/** 真实监测覆盖说明（覆盖地区/核对时间/当前在报数） */
+/**
+ * M01/F1-F2 统一覆盖投影（与后端 coverage-projection.ts 同构）。
+ *
+ * 访客与登录用户共用同一接口、同一事实来源：
+ * - 来源级状态区分已登记/核验通过/近期检查正常/检查失败/暂停/核验不可用；
+ * - 省级状态区分未收录/已登记/已核验/监测中无在报/监测中在报/暂停；
+ * - caliber 携带统计口径、生成时间与非实时回退标注。
+ */
+export type CoverageSourceStateDTO =
+  | "registered"
+  | "verified"
+  | "recently_healthy"
+  | "check_failed"
+  | "paused"
+  | "blocked";
+
 export interface CoverageSourceDTO {
+  /** 台账 sourceKey */
   id: string;
   name: string;
   url: string;
-  lastCheckedAt: string;
-  ok: boolean;
-  failReason?: string | null;
+  /** 6 位行政区划代码 */
+  regionCode: string;
+  authorityLevel: string;
+  state: CoverageSourceStateDTO;
+  /** 最近一次来源级检查时间；无检查记录为 null */
+  lastCheckedAt: string | null;
+  /** 人类可读的判定依据 */
+  note: string;
 }
 
 export interface CoverageRegionDTO {
@@ -235,20 +276,39 @@ export interface CoverageRegionDTO {
 }
 
 export type CoverageStatusDTO =
+  | "not_started"
+  /** 已登记官方入口，等待核验 */
+  | "registered"
+  /** 已核验通过，但近期检查未运行/未达阈值/已超窗 */
+  | "verified"
   | "monitoring_no_open"
   | "open_batch_exists"
-  | "paused"
-  /** 尚未开始监测的省份：只允许表达「暂未收录·待接入」，无城市无来源 */
-  | "not_started";
+  | "paused";
 
 /** 逐省覆盖口径：用户选择省时只能看到该省实际监测的城市 */
 export interface ProvinceScopeDTO {
   code: string;
   label: string;
   status: CoverageStatusDTO;
-  /** 该省已实际监测的市级代码；not_started 省份为空数组 */
+  /** 该省已登记市/区县级来源的地区代码；省级候选不计入 */
   monitoredRegionCodes: string[];
   scopeNote: string;
+}
+
+/** 统计口径：说明「按什么口径统计、何时生成、是否为非实时回退」。 */
+export interface CoverageCaliberDTO {
+  generatedAt: string;
+  version: string;
+  registeredSources: number;
+  verifiedSources: number;
+  recentlyHealthySources: number;
+  failedSources: number;
+  pausedSources: number;
+  blockedSources: number;
+  publishedOpenUnits: number;
+  /** 运行状态不可用、使用台账静态投影回退（非实时） */
+  isFallback: boolean;
+  fallbackNote: string | null;
 }
 
 export interface CoverageDTO {
@@ -258,10 +318,13 @@ export interface CoverageDTO {
   status: CoverageStatusDTO;
   provinces: ProvinceScopeDTO[];
   regions: CoverageRegionDTO[];
+  /** 扁平来源列表（含状态与判定依据），与 regions 内 sources 同构 */
+  sources: CoverageSourceDTO[];
   lastCheckedAt: string;
   openOpportunityCount: number;
   nextWindowNote: string;
   scopeNote: string;
+  caliber: CoverageCaliberDTO;
 }
 
 /**
@@ -341,16 +404,51 @@ export interface GoalsResponse {
   primaryTargetUnitId: string | null;
 }
 
-/** 机会纠错处理状态（P0-F）：与后端 corrections.domain 对齐 */
+/** 机会纠错处理状态（P0-F / D08 扩展）：与后端 corrections.domain 对齐 */
 export type OpportunityCorrectionStatus =
   | "submitted"
   | "reviewing"
+  | "need_supplement"
+  | "pending_review"
   | "resolved"
   | "rejected";
+
+/** 通用分页结果（我的纠错 / 我的补录） */
+export interface TicketPageResult<T> {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+/** 工单公开时间线（内部备注、转交、优先级等不返回给用户） */
+export interface TicketTimelineEventDTO {
+  action: string;
+  label: string;
+  message: string | null;
+  actorRole: string | null;
+  createdAt: string;
+}
+
+/** 用户在原工单追加的补充记录 */
+export interface TicketSupplementDTO {
+  id: string;
+  body: string;
+  links: string[];
+  createdAt: string;
+}
 
 /** 用户视角的纠错记录（GET /opportunities/corrections/mine） */
 export interface OpportunityCorrectionDTO {
   id: string;
+  /** 稳定受理编号，仅用于定位；权限仍由服务端校验 */
+  ticketNo?: string;
+  statusLabel?: string;
+  /** 历史结案但缺少发布关联：只展示历史摘要，不伪造查看入口 */
+  historyPendingVerification?: boolean;
+  relatedTicketNo?: string | null;
+  /** need_supplement 时的具体补充问题 */
+  supplementRequest?: string | null;
   unitId: string;
   unitName: string | null;
   announcementId: string;
@@ -364,6 +462,8 @@ export interface OpportunityCorrectionDTO {
   reviewNote: string | null;
   reviewerId: string | null;
   reviewedAt: string | null;
+  /** D08：已采纳修正时登记的已发布版本 id（可空，供回详情核对） */
+  resolvedVersionId: string | null;
   createdAt: string;
 }
 
@@ -377,8 +477,181 @@ export interface StaffOpportunityCorrectionDTO
   };
 }
 
+/**
+ * 公告补录提交（D08 / PRD 11.9 U08）：用户报告未收录的官方公告。
+ * 处理状态与纠错共用同一状态机（submitted/reviewing/need_supplement/resolved/rejected）。
+ */
+export interface AnnouncementSubmissionDTO {
+  id: string;
+  ticketNo?: string;
+  statusLabel?: string;
+  resolvedAnnouncementId?: string | null;
+  resolvedVersionId?: string | null;
+  resolutionBasis?: string | null;
+  historyPendingVerification?: boolean;
+  relatedTicketNo?: string | null;
+  officialUrl: string;
+  publisherName: string;
+  regionCode: string;
+  note: string | null;
+  status: OpportunityCorrectionStatus;
+  reviewNote: string | null;
+  reviewerId: string | null;
+  reviewedAt: string | null;
+  createdAt: string;
+}
+
+/** 我的纠错详情：列表字段 + 公开时间线 + 历次补充 */
+export interface OpportunityCorrectionDetailDTO
+  extends OpportunityCorrectionDTO {
+  timeline: TicketTimelineEventDTO[];
+  supplements: TicketSupplementDTO[];
+}
+
+/** 我的补录详情：列表字段 + 公开时间线 + 历次补充 */
+export interface AnnouncementSubmissionDetailDTO
+  extends AnnouncementSubmissionDTO {
+  /** 结案关联的正式公告单元（仅有效发布版本才有；历史缺关联为 null） */
+  resolvedUnitId?: string | null;
+  timeline: TicketTimelineEventDTO[];
+  supplements: TicketSupplementDTO[];
+}
+
+/** 员工补录队列项（GET /opportunities/admin/announcement-submissions） */
+export interface StaffAnnouncementSubmissionDTO
+  extends AnnouncementSubmissionDTO {
+  submitter: {
+    id: string;
+    email: string;
+    name: string | null;
+  };
+}
+
 /** POST 请求体：前端只提交画像与补问答案，判定在后端完成 */
 export type ProfilePayload = { profile: UserRecruitmentProfile };
+
+// ==================== 往年参考（D06 / PRD 11.7 U06） ====================
+
+/** 往年参考完整程度（日期口径：报名起止/笔试/面试 4 项） */
+export interface HistoryCompletenessDTO {
+  knownDateCount: number;
+  totalDateCount: number;
+  materialCount: number;
+  /** 全部证据已人工核对=official；含 AI 初核/待复核内容时如实标注 */
+  evidenceState: "official" | "ai_extracted" | "pending_review";
+}
+
+/** 往年参考列表项（只读历史事实，无报名/关注动作） */
+export interface HistoryUnitDTO {
+  unitId: string;
+  unitCode: string;
+  unitName: string;
+  region: RegionRefDTO;
+  subject: string;
+  /** W1：岗位全部学科（兼容旧 subject） */
+  subjects?: string[];
+  stage: string;
+  headcount: number;
+  organizationType: string;
+  employmentNature: { code: string; officialName: string };
+  allocation: { code: string; description: string };
+  teachingScope?: string;
+  schoolPlacement?: SchoolPlacementDTO;
+  announcement: {
+    id: string;
+    title: string;
+    publisher: string;
+    officialUrl: string;
+    dataset: "demo" | "real";
+    reviewStatus: "ai_reviewed_pending" | "human_reviewed";
+  };
+  /** 招聘批次年（报名开始年，缺报名日期回退公告发布年；无法确定为 null） */
+  batchYear: number | null;
+  /** 公告发布时间 ISO 原文 */
+  publishedAt: string;
+  /** 公告原文日期（不臆造；缺省表示公告未公布该节点） */
+  registrationStart?: string;
+  registrationEnd?: string;
+  writtenExamDate?: string;
+  interviewDate?: string;
+  /** 官方明确待定的日程项 */
+  pendingItems: string[];
+  completeness: HistoryCompletenessDTO;
+  /** 官方来源失效时的存档说明（链接失效仍显示留档） */
+  archiveNote: string | null;
+}
+
+/** 往年参考列表筛选条件（地区为 6 位区划代码前缀） */
+export interface HistoryFilters {
+  year?: number;
+  regionCode?: string;
+  stage?: string;
+  /** W1：学科代码（岗位任一学科命中） */
+  subject?: string;
+  nature?: string;
+  keyword?: string;
+  /** 岗位要求的最低学历（精确匹配该档，不是“可报”推断） */
+  educationLevel?: "secondary" | "college" | "bachelor" | "master" | "doctorate";
+  /** 岗位专业范围包含该专业名称 */
+  major?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface HistoryListResponse {
+  meta: MetaDTO;
+  /** 收录样本范围说明（单年样本/年份区间，不推测本年必招时间） */
+  sampleNote: string;
+  /** 全部历史数据（未筛选）中的可筛选批次年，倒序 */
+  years: number[];
+  /** 全部历史数据（未筛选）中的可选地区 */
+  availableRegions: { code: string; label: string }[];
+  /** 全部历史数据（未筛选）中出现过的学历档（岗位最低学历） */
+  educationLevels: {
+    code: "secondary" | "college" | "bachelor" | "master" | "doctorate";
+    label: string;
+  }[];
+  /** 全部历史数据（未筛选）中出现过的专业名 */
+  availableMajors: string[];
+  /** W1：全部历史数据中出现过的学科代码 */
+  availableSubjects: string[];
+  total: number;
+  page: number;
+  pageSize: number;
+  items: HistoryUnitDTO[];
+}
+
+/** 往年参考详情：历史事实 + 版本链 + 用当前资料的可选对照 */
+export interface HistoryDetailResponse {
+  meta: MetaDTO;
+  item: HistoryUnitDTO;
+  requirements: {
+    id: string;
+    dimension: DimensionDTO["dimension"];
+    description: string;
+    hard: boolean;
+    evidence: EvidenceAnchorDTO;
+  }[];
+  materials: MaterialItemDTO[];
+  previousVersions: {
+    id: string;
+    versionNumber: number;
+    sourceKind: string;
+    publishedAt: string;
+    supersededAt?: string;
+    changeNote?: string;
+  }[];
+  /**
+   * 用当前填写的资料对照当年条件（无画像时为 null）。
+   * 不等同用户当年身份，也不等同今年新公告的资格要求。
+   */
+  comparison: {
+    computedAt: string;
+    overall: OpportunityMatchStatus;
+    summary: string;
+    dimensions: DimensionDTO[];
+  } | null;
+}
 
 // ==================== 新机会订阅（v7.1 M6） ====================
 
@@ -392,7 +665,10 @@ export interface SubscriptionRegionDTO {
 /** 新机会订阅（每用户一条；enabled=false 关闭后停止新提醒，历史通知保留） */
 export interface SubscriptionDTO {
   regions: SubscriptionRegionDTO[];
+  /** 兼容字段：subjects[0] */
   subject: string;
+  /** W1：订阅关注的全部学科 */
+  subjects: string[];
   naturePreference: "public_only" | "official_open" | "undecided";
   qualification: {
     degree?: string;
@@ -408,6 +684,9 @@ export interface SubscriptionDTO {
 /** PUT /opportunities/subscription 请求体：部分更新，未传字段保留现值 */
 export interface SubscriptionUpdateInput {
   regions?: SubscriptionRegionDTO[];
+  /** W1：多学科关注；与 subject 同时出现时以 subjects 为准 */
+  subjects?: string[];
+  subject?: string;
   naturePreference?: SubscriptionDTO["naturePreference"];
   enabled?: boolean;
 }
@@ -418,4 +697,17 @@ export interface SubscriptionSyncDTO {
   subscribed: boolean;
   newNotices: number;
   backfilled: number;
+  /** D07：本次单位关注新提醒数（无单位关注时为 0） */
+  orgNewNotices: number;
+  /** D07：本次单位关注基线回填数 */
+  orgBackfilled: number;
+}
+
+/** 单位关注（D07 / PRD 11.8 U07）：身份键仅精确匹配，展示名原样保存 */
+export interface OrganizationFollowDTO {
+  id: string;
+  identityKey: string;
+  publisherName: string;
+  regionCode: string;
+  followedAt: string;
 }

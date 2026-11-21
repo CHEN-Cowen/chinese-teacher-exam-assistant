@@ -22,6 +22,10 @@ export type SafeFetchErrorCode =
   | 'HOST_NOT_ALLOWED'
   | 'BLOCKED_HOST'
   | 'BLOCKED_IP'
+  /** host 在 allowlist 内，但匹配了已知的官方反爬端点 pattern；
+   *  非基础设施故障，不应重试。典型如宁波 jpaas
+   *  `/front/document/download?fileUrl=<密文>` 返回 60 字节「禁止访问！」。 */
+  | 'BLOCKED_ENDPOINT'
   | 'DNS_FAILED'
   | 'TOO_MANY_REDIRECTS'
   | 'TIMEOUT'
@@ -29,7 +33,8 @@ export type SafeFetchErrorCode =
   | 'BAD_CONTENT_TYPE'
   | 'MAGIC_BYTES_MISMATCH'
   | 'NETWORK_ERROR'
-  | 'HTTP_ERROR';
+  | 'HTTP_ERROR'
+  | 'INVALID_REQUEST';
 
 export class SafeFetchError extends Error {
   readonly code: SafeFetchErrorCode;
@@ -85,6 +90,51 @@ export interface ExtraRequestHeaders {
   referer?: string;
 }
 
+/**
+ * 非 GET 列表请求（仅用于官网明确要求 POST 的栏目分页，如泰安 jpage dataproxy、
+ * 潍坊 els-service JSON 接口）。
+ * 安全边界：只允许 form-urlencoded / 固定模板 JSON、请求体 ≤ 4KB；
+ * URL 仍走完整 allowlist/SSRF/DNS 校验，重定向后的后续跳一律降级为 GET，
+ * 不把请求体带到新地址。
+ */
+export type SafePostContentType =
+  | 'application/x-www-form-urlencoded'
+  | 'application/json';
+
+export interface RequestOptions {
+  method?: 'GET' | 'POST';
+  body?: string;
+  contentType?: SafePostContentType;
+}
+
+/**
+ * 请求闸门：每次**实际发起** HTTP 请求前调用（含重试与每一跳重定向）。
+ *
+ * 抛错即表示本次请求被预算/运行控制阻止，SafeFetcher 不会发出请求，
+ * 也不把它当作可重试错误；调用方据此把任务记为 skipped。
+ */
+export interface RequestGuard {
+  beforeRequest?: () => Promise<void>;
+}
+
+/** 预算或运行控制阻止了请求；reason 为 'exhausted' | 'stopped' 等 */
+export class RequestBlockedError extends Error {
+  constructor(readonly reason: string) {
+    super(`请求被运行预算阻止：${reason}`);
+    this.name = 'RequestBlockedError';
+  }
+}
+
+/** POST 请求体上限（字节）：栏目分页参数远小于此值 */
+export const MAX_POST_BODY_BYTES = 4096;
+
+export interface PathDenylistEntry {
+  /** 对 URL.pathname + 规范化 query 小写后执行；匹配时拦截 */
+  pattern: RegExp;
+  /** 人类可读的拦截原因，写入审计 */
+  reason: string;
+}
+
 export interface SafeFetcherOptions {
   /** 来源 host allowlist；host 等于或为其子域时放行 */
   allowedHosts: readonly string[];
@@ -109,6 +159,9 @@ export interface SafeFetcherOptions {
     concurrency: number,
   ) => Promise<() => void>;
   hostConcurrency?: number;
+  /** 已知的官方反爬端点 pattern：host 在 allowlist 内但路径命中时拦截，
+   *  错误码为 BLOCKED_ENDPOINT、不重试、上层审计归 skipped 而非 failed */
+  pathDenylist?: readonly PathDenylistEntry[];
 }
 
 const REDIRECT_STATUS = new Set([301, 302, 303, 307, 308]);
@@ -118,6 +171,21 @@ const BLOCKED_HOSTNAMES = new Set([
   'metadata',
   'metadata.google.internal',
 ]);
+
+/**
+ * 已知官方反爬端点（host 合法但路径命中则直接拦截，不重试）。
+ *
+ * 目前登记：宁波 jpaas 附件接口 `/front/document/download?fileUrl=<密文>`
+ * 带合法 UA/Cookie/Referer 也返回 200 + 60 字节「禁止访问！」；
+ * 同域 `/front/document/file-download?fileUrl=/cms_files/…` 可正常 302 下载。
+ * 两个 endpoint 路径只差 `download` vs `file-download`，pattern 必须精确。
+ */
+export const DEFAULT_PATH_DENYLIST: readonly PathDenylistEntry[] = [
+  {
+    pattern: /\/front\/document\/download(?:\?|$)/i,
+    reason: '官方反爬附件端点（需浏览器会话）',
+  },
+];
 
 /** IPv4/IPv6 是否属于环回 / 私网 / 链路本地 / 元数据等封禁范围 */
 export function isBlockedIp(ip: string): boolean {
@@ -171,6 +239,7 @@ export class SafeFetcher {
   private readonly log: (line: string) => void;
   private readonly acquireHostPermit?: SafeFetcherOptions['acquireHostPermit'];
   private readonly hostConcurrency: number;
+  private readonly pathDenylist: readonly PathDenylistEntry[];
 
   constructor(options: SafeFetcherOptions) {
     this.allowedHosts = options.allowedHosts.map((h) => h.toLowerCase());
@@ -199,12 +268,15 @@ export class SafeFetcher {
     this.log = options.log ?? (() => undefined);
     this.acquireHostPermit = options.acquireHostPermit;
     this.hostConcurrency = options.hostConcurrency ?? 1;
+    this.pathDenylist = options.pathDenylist ?? DEFAULT_PATH_DENYLIST;
   }
 
   async fetch(
     input: string,
     conditional: ConditionalHeaders = {},
     extraHeaders: ExtraRequestHeaders = {},
+    request: RequestOptions = {},
+    guard?: RequestGuard,
   ): Promise<FetchResult> {
     const startedAt = Date.now();
     const deadline = startedAt + this.totalTimeoutMs;
@@ -220,6 +292,8 @@ export class SafeFetcher {
             startedAt,
             conditional,
             extraHeaders,
+            request,
+            guard,
           ),
           deadline,
         );
@@ -260,6 +334,8 @@ export class SafeFetcher {
     startedAt: number,
     conditional: ConditionalHeaders,
     extraHeaders: ExtraRequestHeaders = {},
+    request: RequestOptions = {},
+    guard?: RequestGuard,
   ): Promise<FetchResult> {
     let currentUrl = startUrl;
     let redirects = 0;
@@ -277,11 +353,14 @@ export class SafeFetcher {
       try {
         if (Date.now() >= deadline)
           throw new SafeFetchError('TIMEOUT', '等待同域许可超时');
+        // 每一跳、每次重试都先过预算闸门：没有额度就不发请求
+        await guard?.beforeRequest?.();
         const response = await this.doFetch(
           currentUrl,
           deadline,
           currentUrl === startUrl ? conditional : {},
           extraHeaders,
+          currentUrl === startUrl ? request : {},
         );
         const status = response.status;
 
@@ -388,7 +467,20 @@ export class SafeFetcher {
         `host 不在 allowlist：${host}`,
       );
     }
+    this.assertPathAllowed(url);
     return url;
+  }
+
+  private assertPathAllowed(url: URL): void {
+    const key = (url.pathname + url.search).toLowerCase();
+    for (const entry of this.pathDenylist) {
+      if (entry.pattern.test(key)) {
+        throw new SafeFetchError(
+          'BLOCKED_ENDPOINT',
+          `path 命中反爬端点（${entry.reason}）：${redactUrl(url.toString())}`,
+        );
+      }
+    }
   }
 
   private hostAllowed(host: string): boolean {
@@ -433,22 +525,70 @@ export class SafeFetcher {
     }
   }
 
+  /**
+   * POST 请求边界：只允许官网栏目分页使用的 form-urlencoded / 固定模板 JSON 小请求体。
+   * 其他方法/自定义 Content-Type/超长或非法请求体一律拒绝，避免把抓取器变成通用外发通道。
+   */
+  private assertRequestOptions(request: RequestOptions): void {
+    if (request.method !== 'POST') return;
+    if (!request.body) {
+      throw new SafeFetchError('INVALID_REQUEST', 'POST 请求必须提供表单请求体');
+    }
+    if (
+      request.contentType !== 'application/x-www-form-urlencoded' &&
+      request.contentType !== 'application/json'
+    ) {
+      throw new SafeFetchError(
+        'INVALID_REQUEST',
+        'POST 仅允许 application/x-www-form-urlencoded 或 application/json',
+      );
+    }
+    if (Buffer.byteLength(request.body) > MAX_POST_BODY_BYTES) {
+      throw new SafeFetchError(
+        'INVALID_REQUEST',
+        `POST 请求体超过上限 ${MAX_POST_BODY_BYTES} 字节`,
+      );
+    }
+    if (request.contentType === 'application/json') {
+      // JSON 通道只发固定模板的栏目查询对象，不发送任意 JSON（数组/标量/嵌套自由结构）。
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(request.body);
+      } catch {
+        throw new SafeFetchError('INVALID_REQUEST', 'JSON 请求体必须是合法 JSON');
+      }
+      if (
+        typeof parsed !== 'object' ||
+        parsed === null ||
+        Array.isArray(parsed)
+      ) {
+        throw new SafeFetchError(
+          'INVALID_REQUEST',
+          'JSON 请求体必须是对象（固定栏目查询模板）',
+        );
+      }
+    }
+  }
+
   private async doFetch(
     url: string,
     deadline: number,
     conditional: ConditionalHeaders = {},
     extraHeaders: ExtraRequestHeaders = {},
+    request: RequestOptions = {},
   ): Promise<Response> {
     const remaining = deadline - Date.now();
     if (remaining <= 0) {
       throw new SafeFetchError('TIMEOUT', '整体请求超时');
     }
+    this.assertRequestOptions(request);
+    const method = request.method ?? 'GET';
     const controller = new AbortController();
     const timeout = Math.min(this.connectTimeoutMs, remaining);
     const timer = setTimeout(() => controller.abort(), timeout);
     try {
       return await this.fetchImpl(url, {
-        method: 'GET',
+        method,
         redirect: 'manual',
         signal: controller.signal,
         headers: {
@@ -460,8 +600,12 @@ export class SafeFetcher {
           ...(conditional.ifModifiedSince
             ? { 'if-modified-since': conditional.ifModifiedSince }
             : {}),
+          ...(method === 'POST'
+            ? { 'content-type': request.contentType }
+            : {}),
           ...this.refererHeader(url, extraHeaders),
         },
+        ...(method === 'POST' ? { body: request.body } : {}),
       });
     } catch (error) {
       if (controller.signal.aborted) {

@@ -10,6 +10,7 @@
  */
 import type {
   CoverageDTO,
+  DimensionDTO,
   MatchResponse,
   MetaDTO,
   UnitMatchDTO,
@@ -90,6 +91,12 @@ export interface OpportunityListViewModel {
   excludedCount: number;
   /** 没有任何可行动机会（四档全空）：页面展示空结果态，留档分区仍可查 */
   emptyResult: boolean;
+  /**
+   * D04：真实目录中「AI 初核待人工复核」记录的汇总数量（按报考单元去重，只计数）。
+   * 这些记录不进入用户可见分组，但无结果归因需如实说明「有公告正在核对中」；
+   * 仅暴露数量属于经权限允许的汇总状态，不泄露受限审核材料内容。
+   */
+  pendingReviewCount: number;
   /**
    * v7.2 工作台三标签视图模型：三标签单一数据源 + 留档区。
    * priority/supplement/outOfScope 互斥，由 classify.ts 统一分桶；
@@ -208,8 +215,14 @@ export function buildListViewModel(
   profile?: UserRecruitmentProfile,
 ): OpportunityListViewModel {
   const { groups, primaryTargetUnitId, meta, coverage } = response;
-  const preliminary = groups.preliminary.filter((unit) =>
-    isActionableRecommendation(unit, "preliminary_eligible"),
+  // D03：偏好范围外也是 preliminary_eligible，但不能进“初次符合”主列表或有效计数。
+  const preferenceOut = groups.preliminary.filter(
+    (unit) => unit.preferenceOutOfScope === true,
+  );
+  const preliminary = groups.preliminary.filter(
+    (unit) =>
+      unit.preferenceOutOfScope !== true &&
+      isActionableRecommendation(unit, "preliminary_eligible"),
   );
   const needInfoGroups = groups.needInfo
     .map((group) => {
@@ -242,12 +255,31 @@ export function buildListViewModel(
   const realMonitored: UnitMatchDTO[] = [];
   // 地区偏好不重叠与资格不符合分离（仅前端叙事拆分，后端分组结构不变）
   const visibleNotEligible = groups.notEligible.filter(isPublishedForUser);
-  const regionOutOfScope = visibleNotEligible.filter(isRegionOnlyMismatch);
+  const regionOutOfScope = [
+    ...preferenceOut.filter(isPublishedForUser),
+    ...visibleNotEligible.filter(isRegionOnlyMismatch),
+  ];
   const notEligible = visibleNotEligible.filter(
     (u) => !isRegionOnlyMismatch(u),
   );
   const uncoveredRegions = computeUncoveredRegions(profile, response);
   const closedBuckets = bucketClosedUnits(closed, (u) => u.gates);
+  // D04：待人工复核汇总（真实目录、未通过人工发布门槛），只计数不展示内容
+  const pendingReviewCount = new Set(
+    [
+      ...groups.preliminary,
+      ...groups.needInfo.flatMap((group) => group.units),
+      ...groups.manualReview,
+      ...groups.notEligible,
+      ...groups.closed,
+    ]
+      .filter(
+        (unit) =>
+          unit.announcement.dataset === "real" &&
+          unit.announcement.reviewStatus !== "human_reviewed",
+      )
+      .map((unit) => unit.unit.id),
+  ).size;
   const excludedCount =
     visibleNotEligible.length + closed.length;
   const emptyResult =
@@ -255,13 +287,17 @@ export function buildListViewModel(
     needInfoCount === 0 &&
     manualReview.length === 0 &&
     visibleNotEligible.length === 0 &&
-    closed.length === 0;
+    closed.length === 0 &&
+    preferenceOut.length === 0;
 
   // v7.2 工作台三标签：对所有可见单元跑 classifyOpportunity 单一事实源分桶。
   // 收集顺序与后端分组顺序一致（preliminary → needInfo → manualReview → notEligible → closed），
   // 保证桶内顺序稳定；isPublishedForUser 已在上述数组里兜底，real AI 初核记录不进入 workbench。
+  // D04 修正：preferenceOut（资格初步符合但偏好范围外）必须进入分桶输入，
+  // 否则「偏好范围外」标签会丢失这类单元（classify 规则 3 依赖 preferenceOutOfScope 标记）。
   const workbench = buildWorkbench([
     ...preliminary,
+    ...preferenceOut.filter(isPublishedForUser),
     ...needInfoGroups.flatMap((group) => group.units),
     ...manualReview,
     ...visibleNotEligible,
@@ -281,6 +317,8 @@ export function buildListViewModel(
     conclusion = `还没有能直接判断的机会：补充 ${needInfoCount} 个机会缺失的信息后会重新判断`;
   } else if (manualReview.length > 0) {
     conclusion = `有 ${manualReview.length} 个机会的条件需要向招聘单位确认`;
+  } else if (preferenceOut.length > 0) {
+    conclusion = `有 ${preferenceOut.length} 个岗位资格初步符合，但不在你“必须接受”的地区范围内（偏好范围外，不是资格不符合）`;
   } else if (uncoveredRegions.length > 0) {
     conclusion = "你选择的地区当前暂未收录官方公告";
   } else {
@@ -305,6 +343,7 @@ export function buildListViewModel(
     conclusion,
     excludedCount,
     emptyResult,
+    pendingReviewCount,
     workbench,
   };
 }
@@ -343,6 +382,29 @@ function buildWorkbench(units: readonly UnitMatchDTO[]): WorkbenchViewModel {
     outOfScope: { count: outOfScope.length, units: outOfScope },
     excluded,
   };
+}
+
+/**
+ * 各待补维度影响的岗位数（D05「影响岗位」提示，PRD 11.6）。
+ *
+ * 口径与结果页 needInfoGroups 一致：只计可行动（已发布且未触发闸门）的
+ * need_more_info 单元；同一单元缺多个维度时在每个维度各计一次（维度分组语义，
+ * 不是去重总数）。数据全部来自后端分组，调用方在请求失败时不得展示本提示
+ * （不编造数量）。
+ */
+export function dimensionImpactCounts(
+  response: MatchResponse,
+): Partial<Record<DimensionDTO["dimension"], number>> {
+  const result: Partial<Record<DimensionDTO["dimension"], number>> = {};
+  for (const group of response.groups.needInfo) {
+    const count = group.units.filter((unit) =>
+      isActionableRecommendation(unit, "need_more_info"),
+    ).length;
+    if (count > 0) {
+      result[group.dimension as DimensionDTO["dimension"]] = count;
+    }
+  }
+  return result;
 }
 
 /**

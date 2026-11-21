@@ -5,11 +5,19 @@ import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Select, Textarea, Input } from "@/components/ui/Input";
 
+/**
+ * 问题位置选项（D08 / PRD 11.9）：补齐匹配结论、失效链接、重复收录。
+ * 与后端 corrections.domain FIELD_PATH_LABELS 同口径；遗漏公告走
+ * 补录通道（AnnouncementSubmissionModal），不占用单元纠错位置。
+ */
 const FIELD_OPTIONS = [
   { value: "major", label: "专业目录 / 资格条件" },
   { value: "timeline", label: "报名时间 / 考试安排" },
   { value: "headcount", label: "招聘人数 / 岗位信息" },
   { value: "evidence", label: "官方来源或原文摘录" },
+  { value: "matching", label: "匹配结论（符合/不符合判断）" },
+  { value: "dead_link", label: "官方链接失效" },
+  { value: "duplicate", label: "重复收录" },
   { value: "other", label: "其他问题" },
 ];
 
@@ -17,6 +25,8 @@ interface CorrectionModalProps {
   isOpen: boolean;
   onClose: () => void;
   submitting: boolean;
+  /** 打开时预选的问题位置（如从逐条件解释行进入，自动带上该条件） */
+  initialFieldPath?: string;
   onSubmit: (input: {
     fieldPath: string;
     content: string;
@@ -25,16 +35,17 @@ interface CorrectionModalProps {
 }
 
 /**
- * 详情第三层纠错入口（PRD 7.10）：
- * 提交后只在后台留痕，由运营核对并走模块 2 发布新版本，不会自动改判。
+ * 纠错入口（PRD 7.10 / 11.9）：
+ * 提交后只在后台留痕，由运营核对并走发布新版本，不会自动改判。
  */
 export function CorrectionModal({
   isOpen,
   onClose,
   submitting,
+  initialFieldPath,
   onSubmit,
 }: CorrectionModalProps) {
-  const [fieldPath, setFieldPath] = useState("");
+  const [fieldPath, setFieldPath] = useState(initialFieldPath ?? "");
   const [content, setContent] = useState("");
   const [contact, setContact] = useState("");
   const [error, setError] = useState("");

@@ -21,6 +21,7 @@ import {
 } from "@/lib/ia/labels";
 import { MATCH_STATUS_LABELS } from "@/lib/matching/types";
 import { opportunitiesApi } from "@/lib/opportunities/api";
+import { correctionTicketCode } from "@/lib/opportunities/correction-code";
 import type {
   FollowStatus,
   MaterialStatus,
@@ -44,6 +45,7 @@ import { ConditionRows } from "@/components/opportunities/ConditionRows";
 import { useCurrentUser } from "@/lib/auth";
 import { upsertGuestFollow } from "@/lib/guest/guestFollows";
 import { FollowControls } from "@/components/opportunities/FollowControls";
+import { OrganizationFollowButton } from "@/components/opportunities/OrganizationFollowButton";
 import { SupplementForm } from "@/components/opportunities/SupplementForm";
 import {
   OfficialSourceSection,
@@ -52,6 +54,7 @@ import {
 import { CorrectionModal } from "@/components/opportunities/CorrectionModal";
 import { MaterialsList } from "@/components/opportunities/MaterialsList";
 import { ConsultationPanel } from "@/components/opportunities/ConsultationPanel";
+import { QaPanel } from "@/components/opportunities/QaPanel";
 import { SavedNextActionPanel } from "@/components/opportunities/SavedNextActionPanel";
 import {
   selectSavedNextAction,
@@ -106,8 +109,13 @@ export default function OpportunityDetailPage() {
   const [actionRetry, setActionRetry] = useState<(() => void) | null>(null);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
   const [correctionOpen, setCorrectionOpen] = useState(false);
+  /** D08：从逐条件解释行进入纠错时预选的问题位置（undefined＝由用户自选） */
+  const [correctionFieldPath, setCorrectionFieldPath] = useState<
+    string | undefined
+  >(undefined);
   const [correctionSubmitting, setCorrectionSubmitting] = useState(false);
-  const [correctionDone, setCorrectionDone] = useState(false);
+  /** 提交成功后的回执编号（M10）：凭编号可在「我的」页查询状态与结果 */
+  const [correctionDone, setCorrectionDone] = useState<string | null>(null);
   // v7.2：本次会话刚保存成功＝面板绿色强调态；syncedEventCount 仅 follow 响应携带
   const [justSaved, setJustSaved] = useState(false);
   const [syncedEventCount, setSyncedEventCount] = useState<number | undefined>(
@@ -557,14 +565,21 @@ export default function OpportunityDetailPage() {
     setCorrectionSubmitting(true);
     setActionError(null);
     try {
-      await opportunitiesApi.submitCorrection(unitId, input);
+      const receipt = await opportunitiesApi.submitCorrection(unitId, input);
       setCorrectionOpen(false);
-      setCorrectionDone(true);
+      setCorrectionDone(correctionTicketCode(receipt.id));
     } catch (e) {
       setActionError(e instanceof Error ? e.message : "纠错提交失败");
     } finally {
       setCorrectionSubmitting(false);
     }
+  };
+
+  /** D08：从逐条件解释行打开纠错，预选「匹配结论」问题位置 */
+  const openCorrectionForField = (_fieldPath: string) => {
+    setCorrectionDone(null);
+    setCorrectionFieldPath(_fieldPath);
+    setCorrectionOpen(true);
   };
 
   return (
@@ -609,6 +624,11 @@ export default function OpportunityDetailPage() {
           {unit.announcement.publisher} · 报名
           {closed ? "" : deadline.text}
         </p>
+        {/* D07：单位关注入口（身份键=发布主体+公告级地区码，仅精确匹配） */}
+        <OrganizationFollowButton
+          publisherName={unit.announcement.publisher}
+          regionCode={unit.announcement.region.code}
+        />
         {/* 任教学校（v7.1 M4）：逐校列明才给校名和市区；录用后选岗/统一调配给官方口径，
             招聘单位与岗位组名不等于最终任教学校 */}
         <p className="text-sm text-ink-muted" data-testid="school-placement">
@@ -723,8 +743,9 @@ export default function OpportunityDetailPage() {
         />
       )}
       {correctionDone && (
-        <Callout variant="ok" title="纠错已提交并留痕">
+        <Callout variant="ok" title={`纠错已提交并留痕（编号 ${correctionDone}）`}>
           我们会核对官方原文；如需更正将通过新版本发布，不会直接改动结论。
+          处理状态与结果可在「我的」页的「我的纠错」中查看，不承诺人工即时响应。
         </Callout>
       )}
       {!online && (
@@ -817,7 +838,11 @@ export default function OpportunityDetailPage() {
             title="需要补充的信息"
             count={groups.missingInfo.length}
           >
-            <ConditionRows dimensions={groups.missingInfo} showDescription />
+            <ConditionRows
+              dimensions={groups.missingInfo}
+              showDescription
+              onCorrectCondition={openCorrectionForField}
+            />
           </Disclosure>
         )}
 
@@ -827,7 +852,11 @@ export default function OpportunityDetailPage() {
             title="需要向招聘单位确认"
             count={groups.confirmOfficial.length}
           >
-            <ConditionRows dimensions={groups.confirmOfficial} showDescription />
+            <ConditionRows
+              dimensions={groups.confirmOfficial}
+              showDescription
+              onCorrectCondition={openCorrectionForField}
+            />
           </Disclosure>
         )}
 
@@ -837,13 +866,21 @@ export default function OpportunityDetailPage() {
             title="明确不符合项"
             count={groups.unsatisfied.length}
           >
-            <ConditionRows dimensions={groups.unsatisfied} showDescription />
+            <ConditionRows
+              dimensions={groups.unsatisfied}
+              showDescription
+              onCorrectCondition={openCorrectionForField}
+            />
           </Disclosure>
         )}
 
         {groups.satisfied.length > 0 && (
           <Disclosure title="已满足的条件" count={groups.satisfied.length}>
-            <ConditionRows dimensions={groups.satisfied} showDescription />
+            <ConditionRows
+              dimensions={groups.satisfied}
+              showDescription
+              onCorrectCondition={openCorrectionForField}
+            />
           </Disclosure>
         )}
 
@@ -949,18 +986,26 @@ export default function OpportunityDetailPage() {
           <OfficialSourceSection detail={detail} />
           <VerificationSection
             detail={detail}
-            onOpenCorrection={() => {
-              setCorrectionDone(false);
+            onOpenCorrection={(fieldPath?: string) => {
+              setCorrectionDone(null);
+              setCorrectionFieldPath(fieldPath);
               setCorrectionOpen(true);
             }}
           />
         </div>
       </details>
 
+      {/* W3：问这份公告（仅受邀环境有后端问答；演示环境自动隐藏） */}
+      <QaPanel unitId={unitId} announcementId={unit.announcement.id} />
+
       <CorrectionModal
         isOpen={correctionOpen}
-        onClose={() => setCorrectionOpen(false)}
+        onClose={() => {
+          setCorrectionOpen(false);
+          setCorrectionFieldPath(undefined);
+        }}
         submitting={correctionSubmitting}
+        initialFieldPath={correctionFieldPath}
         onSubmit={(input) => void handleCorrection(input)}
       />
     </div>

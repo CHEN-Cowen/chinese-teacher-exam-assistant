@@ -201,13 +201,13 @@ describe("OpportunityListItem：地图入口显隐", () => {
 });
 
 describe("OpportunityListItem：按钮统一", () => {
-  it("查看官方依据与保存机会两按钮同高 h-11 同圆角 rounded-xl", () => {
+  it("查看官方依据与保存机会两按钮同高 h-11 同圆角 rounded-lg", () => {
     const html = render(makeUnit("u1", "preliminary_eligible"), "priority");
-    // 两个按钮都含 h-11 和 rounded-xl
+    // 两个按钮都含 h-11 和 rounded-lg
     const h11Count = (html.match(/h-11/g) ?? []).length;
-    const roundedXlCount = (html.match(/rounded-xl/g) ?? []).length;
+    const roundedLgCount = (html.match(/rounded-lg/g) ?? []).length;
     expect(h11Count).toBeGreaterThanOrEqual(2);
-    expect(roundedXlCount).toBeGreaterThanOrEqual(2);
+    expect(roundedLgCount).toBeGreaterThanOrEqual(2);
   });
 
   it("查看官方依据是 Link 到详情（href 含 /opportunities/）", () => {
@@ -233,7 +233,7 @@ describe("OpportunityListItem：按钮统一", () => {
     );
     expect(html).toContain("处理中…");
     expect(html).toContain("h-11");
-    expect(html).toContain("rounded-xl");
+    expect(html).toContain("rounded-lg");
   });
 });
 

@@ -15,8 +15,10 @@ import {
   readOssConfigFromEnv,
 } from './storage/oss-object-store.js';
 import { CrawlRunStore } from './crawl-run-store.js';
+import { PrismaCrawlBudgetStore } from './crawl-budget.store.js';
 import { SourceDocumentStore } from './source-document-store.js';
 import { CrawlHealthService } from './crawl-health.service.js';
+import { SourcingAlertService } from './sourcing-alert.service.js';
 import { SourcingMetrics } from './observability.js';
 import { REDIS_CLIENT, createRedisClient } from './redis.js';
 import { SafeFetcherFactory } from './fetch/safe-fetcher-factory.js';
@@ -32,6 +34,24 @@ import { SuzhouEducationAdapter } from './adapters/suzhou-education.adapter.js';
 import { ChangzhouEducationAdapter } from './adapters/changzhou-education.adapter.js';
 import { BengbuEducationAdapter } from './adapters/bengbu-education.adapter.js';
 import { XiaoshanEducationAdapter } from './adapters/xiaoshan-education.adapter.js';
+import { AnhuiEducationPolicyAdapter } from './adapters/anhui-education-policy.adapter.js';
+import { HuzhouEducationAdapter } from './adapters/huzhou-education.adapter.js';
+import { TaizhouEducationAdapter } from './adapters/taizhou-education.adapter.js';
+import { BozhouEducationAdapter } from './adapters/bozhou-education.adapter.js';
+import { FuyangEducationAdapter } from './adapters/fuyang-education.adapter.js';
+import { JinanEducationAdapter } from './adapters/jinan-education.adapter.js';
+import { YantaiEducationAdapter } from './adapters/yantai-education.adapter.js';
+import { TaianEducationAdapter } from './adapters/taian-education.adapter.js';
+import { WeifangEducationAdapter } from './adapters/weifang-education.adapter.js';
+import { NanchangEducationAdapter } from './adapters/nanchang-education.adapter.js';
+import { TaiyuanEducationAdapter } from './adapters/taiyuan-education.adapter.js';
+import { ZhengzhouEducationAdapter } from './adapters/zhengzhou-education.adapter.js';
+import { FuzhouEducationAdapter } from './adapters/fuzhou-education.adapter.js';
+import { GuangzhouEducationAdapter } from './adapters/guangzhou-education.adapter.js';
+import { ShijiazhuangEducationAdapter } from './adapters/shijiazhuang-education.adapter.js';
+import { WuhanEducationAdapter } from './adapters/wuhan-education.adapter.js';
+import { ChangshaEducationAdapter } from './adapters/changsha-education.adapter.js';
+import { GuiyangEducationAdapter } from './adapters/guiyang-education.adapter.js';
 import { BullmqTaskQueue } from './jobs/bullmq-task-queue.js';
 
 @Module({
@@ -48,11 +68,31 @@ import { BullmqTaskQueue } from './jobs/bullmq-task-queue.js';
     ChangzhouEducationAdapter,
     BengbuEducationAdapter,
     XiaoshanEducationAdapter,
+    AnhuiEducationPolicyAdapter,
+    HuzhouEducationAdapter,
+    TaizhouEducationAdapter,
+    BozhouEducationAdapter,
+    FuyangEducationAdapter,
+    JinanEducationAdapter,
+    YantaiEducationAdapter,
+    TaianEducationAdapter,
+    WeifangEducationAdapter,
+    NanchangEducationAdapter,
+    TaiyuanEducationAdapter,
+    ZhengzhouEducationAdapter,
+    FuzhouEducationAdapter,
+    GuangzhouEducationAdapter,
+    ShijiazhuangEducationAdapter,
+    WuhanEducationAdapter,
+    ChangshaEducationAdapter,
+    GuiyangEducationAdapter,
     AdapterRegistry,
     SafeFetcherFactory,
     CrawlRunStore,
+    PrismaCrawlBudgetStore,
     SourceDocumentStore,
     CrawlHealthService,
+    SourcingAlertService,
     SourcingMetrics,
     {
       provide: REDIS_CLIENT,
@@ -70,7 +110,8 @@ import { BullmqTaskQueue } from './jobs/bullmq-task-queue.js';
       // 生产（配置 OSS_* 环境变量）→ 私有版本化 OSS；开发/测试 → 本地内容寻址快照
       useFactory: () => {
         const oss = readOssConfigFromEnv();
-        return oss ? new OssObjectStore(oss) : new LocalObjectStore();
+          const localStore = new LocalObjectStore();
+          return oss ? new OssObjectStore(oss, localStore) : localStore;
       },
     },
     BullmqTaskQueue,
@@ -80,8 +121,10 @@ import { BullmqTaskQueue } from './jobs/bullmq-task-queue.js';
     AdapterRegistry,
     SafeFetcherFactory,
     CrawlRunStore,
+    PrismaCrawlBudgetStore,
     SourceDocumentStore,
     CrawlHealthService,
+    SourcingAlertService,
     SourcingMetrics,
     REDIS_CLIENT,
     OBJECT_STORE,

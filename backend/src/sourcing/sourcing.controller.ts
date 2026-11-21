@@ -11,6 +11,8 @@ import {
   Get,
   Inject,
   Logger,
+  NotFoundException,
+  Optional,
   Param,
   Post,
   Query,
@@ -20,6 +22,8 @@ import { AdminGuard, StrictAdminGuard } from '../auth/admin.guard.js';
 import { CrawlOrchestrator } from './crawl-orchestrator.js';
 import { CrawlRunStore } from './crawl-run-store.js';
 import { SourceDocumentStore } from './source-document-store.js';
+import { CrawlHealthService } from './crawl-health.service.js';
+import { SourcingAlertService } from './sourcing-alert.service.js';
 import { SourcingMetrics } from './observability.js';
 import type {
   CrawlTrigger,
@@ -35,6 +39,12 @@ import {
 } from './source-catalog.js';
 import { summarizeAllMonitoring } from './source-monitoring.js';
 import { CRAWL_TASK_QUEUE } from './sourcing.tokens.js';
+import { PrismaCrawlBudgetStore } from './crawl-budget.store.js';
+import {
+  TrialBudgetValidationError,
+  resolveTrialBudget,
+  type TrialBudgetLimits,
+} from './crawl-budget.js';
 import {
   CONFIRMED_RELATION_TYPES,
   type RelationKind,
@@ -53,6 +63,9 @@ export class SourcingController {
     private readonly documents: SourceDocumentStore,
     @Inject(CRAWL_TASK_QUEUE) private readonly queue: CrawlTaskQueue,
     private readonly metrics: SourcingMetrics,
+    private readonly healthService: CrawlHealthService,
+    private readonly alerts: SourcingAlertService,
+    @Optional() private readonly budget?: PrismaCrawlBudgetStore,
   ) {}
 
   // ==================== v7.2：公告关系（补充/延期/取消）人工确认 ====================
@@ -133,12 +146,53 @@ export class SourcingController {
     return { count: registered.length, sources: registered };
   }
 
+  /**
+   * 按运行停止试跑：本次待执行任务在 Worker 取到时跳过，正在执行的任务
+   * 在下一次 HTTP 请求闸门处终止，且不再派生附件/解析/抽取任务。
+   *
+   * 只影响指定 runId；不删除队列、不动其它运行与历史失败记录。
+   */
+  @Post('runs/:runId/stop')
+  @UseGuards(AdminGuard)
+  async stopRun(
+    @Param('runId') runId: string,
+    @Body() body: { reason?: string } = {},
+  ) {
+    if (!this.budget) {
+      throw new BadRequestException('试跑预算组件未配置');
+    }
+    const reason = body.reason?.slice(0, 200) || 'stopped_by_admin';
+    const snapshot = await this.budget.stop(runId, reason);
+    if (!snapshot) throw new NotFoundException(`未找到试跑预算：${runId}`);
+    await this.store.markRunStopped(runId, reason);
+    return { runId, stopped: true, budget: snapshot };
+  }
+
+  /** 查询试跑预算的执行口径：已用/剩余/预算内未覆盖量 */
+  @Get('runs/:runId/budget')
+  @UseGuards(AdminGuard)
+  async runBudget(@Param('runId') runId: string) {
+    if (!this.budget) {
+      throw new BadRequestException('试跑预算组件未配置');
+    }
+    const snapshot = await this.budget.get(runId);
+    if (!snapshot) throw new NotFoundException(`未找到试跑预算：${runId}`);
+    return { budget: snapshot };
+  }
+
   /** 手动检查来源；trigger 缺省为 admin，重试失败来源用 retry */
   @Post(':sourceId/check')
   @UseGuards(AdminGuard)
   async check(
     @Param('sourceId') sourceId: string,
-    @Body() body: { trigger?: string } = {},
+    @Body()
+    body: {
+      trigger?: string;
+      /** 手动试跑：开启预算约束（默认值=1 页/3 详情/每篇 2 附件/整轮 6 附件/20 请求） */
+      trial?: boolean;
+      /** 覆盖默认预算；服务端会按硬上限校验并拒绝越界值 */
+      budget?: Partial<TrialBudgetLimits>;
+    } = {},
   ) {
     const trigger = (body.trigger ?? 'admin') as CrawlTrigger;
     if (!MANUAL_TRIGGERS.includes(trigger)) {
@@ -146,8 +200,23 @@ export class SourcingController {
         `手动触发只接受 admin / retry，收到：${body.trigger}`,
       );
     }
+    let trialBudget: TrialBudgetLimits | undefined;
+    if (body.trial || body.budget) {
+      try {
+        trialBudget = resolveTrialBudget(body.budget);
+      } catch (error) {
+        if (error instanceof TrialBudgetValidationError) {
+          throw new BadRequestException(error.message);
+        }
+        throw error;
+      }
+      if (!this.budget) {
+        throw new BadRequestException('试跑预算组件未配置，拒绝无预算试跑');
+      }
+    }
     return this.orchestrator.checkSource(sourceId, trigger, {
       nonce: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+      ...(trialBudget ? { trialBudget } : {}),
     });
   }
 
@@ -170,15 +239,20 @@ export class SourcingController {
   /**
    * 来源健康概览：连续失败、健康状态、下次检查时间、最近一次运行、
    * 最新解析器版本、待审核积压；queue 为队列积压计数（队列不可用时为 null）。
+   *
+   * M02/F3：补充 worker（Redis 心跳推导）与 activeAlerts（持久化运行告警），
+   * 与公开覆盖投影（coverage-projection）共用 Source 表同一份运行事实。
    */
   @Get('health')
   @UseGuards(AdminGuard)
   async health() {
-    const [sources, queue] = await Promise.all([
+    const [sources, queue, worker, activeAlerts] = await Promise.all([
       this.store.listHealth(),
       this.queueBacklog(),
+      this.healthService.workerStatus().catch(() => null),
+      this.alerts.listActive().catch(() => null),
     ]);
-    return { sources, queue };
+    return { sources, queue, worker, activeAlerts };
   }
 
   /** 队列积压计数：实现不支持或 Redis 不可用时降级为 null（不拖垮健康接口） */

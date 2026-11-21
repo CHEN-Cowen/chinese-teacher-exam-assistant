@@ -35,24 +35,25 @@ export function Modal({ isOpen, onClose, title, children, footer }: ModalProps) 
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="relative bg-white rounded-xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto"
+        className="relative max-h-[90vh] w-full max-w-[560px] overflow-y-auto rounded-xl border border-line bg-surface shadow-2"
       >
         <div className="p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
+          <div className="mb-4 flex items-center justify-between">
+            <h3 className="text-xl font-bold text-ink">{title}</h3>
             <button
               onClick={onClose}
-              className="text-slate-400 hover:text-slate-600 transition-colors"
+              aria-label="关闭"
+              className="rounded-lg p-1 text-ink-muted transition-colors hover:bg-surface-2 hover:text-ink"
             >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
           </div>
-          <div className="text-slate-600">{children}</div>
+          <div className="text-sm text-ink-muted">{children}</div>
         </div>
         {footer && (
-          <div className="px-6 py-4 bg-slate-50 rounded-b-xl flex justify-end gap-3">
+          <div className="flex justify-end gap-3 border-t border-line px-6 py-4">
             {footer}
           </div>
         )}

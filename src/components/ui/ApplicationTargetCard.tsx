@@ -78,7 +78,7 @@ export function ApplicationTargetCard({
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             {isPrimary && (
-              <span className="inline-flex items-center px-2 py-0.5 rounded-pill bg-brand text-on-dark text-xs font-semibold">
+              <span className="inline-flex h-6 items-center rounded px-2 bg-brand text-on-dark text-xs font-semibold">
                 主目标
               </span>
             )}
@@ -92,7 +92,7 @@ export function ApplicationTargetCard({
         {countdown && (
           <div
             className={cn(
-              "px-3 py-1 rounded-pill text-xs font-semibold border",
+              "inline-flex h-6 items-center rounded px-2.5 text-xs font-semibold border",
               countdown.overdue
                 ? "bg-no-bg border-no-line text-no-ink"
                 : "bg-ask-bg border-ask-line text-ask-ink"
@@ -128,7 +128,7 @@ export function ApplicationTargetCard({
               href={officialUrl}
               target="_blank"
               rel="noreferrer"
-              className="ml-auto inline-flex items-center gap-1 px-3 py-1.5 rounded-pill bg-brand text-on-dark text-xs font-semibold hover:bg-brand-strong transition-colors"
+              className="ml-auto inline-flex h-8 items-center gap-1 rounded-lg px-3 bg-brand text-on-dark text-xs font-semibold hover:bg-brand-strong transition-colors"
             >
               {officialUrlLabel}
               <span aria-hidden="true">↗</span>

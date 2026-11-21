@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 /**
- * v7.2 响应式浏览器 E2E（跑在 3100，production 构建 + v7.2 开关开启）。
+ * v7.2 响应式浏览器 E2E（跑在 3123，production 构建 + v7.2 开关开启）。
  *
  * 覆盖：在 320 / 375 / 768 / 1024 / 1440 五档视口下打开 `/` 与 `/opportunities`，
  * 断言无横向溢出（documentElement.scrollWidth <= innerWidth + 1），
@@ -57,7 +57,7 @@ async function seedGuestProfile(page: Page) {
 async function demoLogin(page: Page) {
   await page.goto("/login");
   await page.waitForLoadState("networkidle");
-  await page.getByLabel("账号").fill("student@demo.app");
+  await page.getByLabel("邮箱").fill("student@demo.app");
   await page.getByLabel("密码").fill("demo1234");
   await page.getByRole("button", { name: "登录", exact: true }).click();
   await page.waitForURL(/\/opportunities$/);

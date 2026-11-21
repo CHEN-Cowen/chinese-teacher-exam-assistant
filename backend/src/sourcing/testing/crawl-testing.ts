@@ -22,6 +22,16 @@ import {
   SafeFetcherFactory,
   resolveAllowedHosts,
 } from '../fetch/safe-fetcher-factory.js';
+import {
+  remainingOf,
+  type AdmissionResult,
+  type BudgetGate,
+  type CrawlBudgetPort,
+  type DeferrableKind,
+  type TrialBudgetLimits,
+  type TrialBudgetSnapshot,
+  type TrialBudgetStatus,
+} from '../crawl-budget.js';
 import type { SourceRecord } from '../crawl-run-store.js';
 
 export { CRAWL_TASK_QUEUE, OBJECT_STORE };
@@ -43,6 +53,8 @@ interface SourceRow extends Record<string, unknown> {
   lastCheckedAt: Date | null;
   etag: string | null;
   lastModified: string | null;
+  regionCode: string | null;
+  contactInfo: string | null;
 }
 
 function applyUpdate(
@@ -119,6 +131,8 @@ export class FakePrisma {
       lastCheckedAt: partial.lastCheckedAt ?? null,
       etag: partial.etag ?? null,
       lastModified: partial.lastModified ?? null,
+      regionCode: partial.regionCode ?? null,
+      contactInfo: partial.contactInfo ?? null,
     };
     this.sources.push(row);
     return row;
@@ -511,6 +525,134 @@ export class FakePrisma {
       this.snapshots.push(row);
       return row;
     },
+    /** 来源台账（M08）：按来源统计材料（快照）数量 */
+    count: async ({
+      where,
+    }: {
+      where: { sourceId?: string };
+    }) => {
+      const sourceId = where?.sourceId;
+      if (!sourceId) return this.snapshots.length;
+      return this.snapshots.filter((s) => s.sourceId === sourceId).length;
+    },
+  };
+
+  /** ---------- publishedAnnouncementVersion（M08 来源台账：发布状态计数） ---------- */
+
+  publishedVersions: Array<Record<string, unknown> & { id: string }> = [];
+
+  readonly publishedAnnouncementVersion = {
+    count: async ({
+      where,
+    }: {
+      where: { status?: string; run?: { snapshot?: { sourceId?: string } } };
+    }) => {
+      let rows = [...this.publishedVersions];
+      if (where?.status) rows = rows.filter((r) => r.status === where.status);
+      const sourceId = where?.run?.snapshot?.sourceId;
+      if (sourceId) {
+        const snapshotIds = new Set(
+          this.snapshots.filter((s) => s.sourceId === sourceId).map((s) => s.id),
+        );
+        const runIds = new Set(
+          this.extractionRuns
+            .filter((r) => snapshotIds.has(String(r.snapshotId)))
+            .map((r) => r.id),
+        );
+        rows = rows.filter((r) => runIds.has(String(r.runId)));
+      }
+      return rows.length;
+    },
+    create: async ({ data }: { data: Record<string, unknown> }) => {
+      const row = {
+        id: this.nextModelId('pav'),
+        publishedAt: new Date(),
+        ...data,
+      } as Record<string, unknown> & { id: string };
+      this.publishedVersions.push(row);
+      return row;
+    },
+  };
+
+  /** ---------- sourcingAlert（M02/F3：运行告警持久化） ---------- */
+
+  alerts: Array<Record<string, unknown> & { id: string }> = [];
+
+  readonly sourcingAlert = {
+    findFirst: async ({
+      where,
+      select,
+    }: {
+      where: { type?: string; sourceId?: string | null };
+      select?: Record<string, boolean>;
+    }) => {
+      const row =
+        this.alerts.find(
+          (alert) =>
+            (where.type === undefined || alert.type === where.type) &&
+            (where.sourceId === undefined ||
+              alert.sourceId === where.sourceId),
+        ) ?? null;
+      return row ? pickSelect(row, select) : null;
+    },
+    create: async ({ data }: { data: Record<string, unknown> }) => {
+      const row = {
+        id: this.nextModelId('alert'),
+        // 与数据库 default(null) 对齐：活跃告警 resolvedAt 为空
+        resolvedAt: null,
+        ...data,
+      } as Record<string, unknown> & { id: string };
+      this.alerts.push(row);
+      return row;
+    },
+    update: async ({
+      where,
+      data,
+    }: {
+      where: { id: string };
+      data: Record<string, unknown>;
+    }) => {
+      const row = this.alerts.find((alert) => alert.id === where.id);
+      if (!row) throw new Error(`sourcingAlert not found: ${where.id}`);
+      applyUpdate(row, data);
+      return row;
+    },
+    updateMany: async ({
+      where,
+      data,
+    }: {
+      where: { type?: string; sourceId?: string; resolvedAt?: null };
+      data: Record<string, unknown>;
+    }) => {
+      const rows = this.alerts.filter(
+        (alert) =>
+          (where.resolvedAt === undefined ||
+            alert.resolvedAt === where.resolvedAt) &&
+          (where.type === undefined || alert.type === where.type) &&
+          (where.sourceId === undefined || alert.sourceId === where.sourceId),
+      );
+      for (const row of rows) applyUpdate(row, data);
+      return { count: rows.length };
+    },
+    findMany: async ({
+      where,
+      take,
+    }: {
+      where?: { resolvedAt?: null };
+      orderBy?: unknown;
+      take?: number;
+    } = {}) => {
+      let rows = [...this.alerts];
+      if (where?.resolvedAt === null) {
+        rows = rows.filter((alert) => alert.resolvedAt === null);
+      }
+      rows.sort(
+        (a, b) =>
+          ((b.lastSeenAt as Date)?.getTime() ?? 0) -
+          ((a.lastSeenAt as Date)?.getTime() ?? 0),
+      );
+      return take ? rows.slice(0, take) : rows;
+    },
   };
 
   /** 供断言：把内部数组按 id 查找 */
@@ -656,7 +798,10 @@ export class FakePrisma {
       if (include?.snapshot) {
         const snapshot =
           this.snapshots.find((s) => s.id === row!.snapshotId) ?? null;
-        return { ...row, snapshot };
+        const source = snapshot
+          ? (this.sources.find((item) => item.id === snapshot.sourceId) ?? null)
+          : null;
+        return { ...row, snapshot: snapshot ? { ...snapshot, source } : null };
       }
       return row;
     },
@@ -729,7 +874,199 @@ export class FakePrisma {
   };
 }
 
-/** ---------- 内存队列 ---------- */
+/** ---------- 内存试跑预算（与 Prisma 实现同口径） ---------- */
+
+interface MemoryBudgetRow {
+  sourceId: string;
+  limits: TrialBudgetLimits;
+  listPagesUsed: number;
+  detailsUsed: number;
+  attachmentsUsed: number;
+  httpRequestsUsed: number;
+  listPagesDeferred: number;
+  detailsDeferred: number;
+  attachmentsDeferred: number;
+  status: TrialBudgetStatus;
+  stopReason: string | null;
+  stoppedAt: string | null;
+  /** key = kind|canonicalUrl，value = parentDocumentId */
+  admissions: Map<string, string | null>;
+}
+
+export class InMemoryCrawlBudgetStore implements CrawlBudgetPort {
+  private readonly rows = new Map<string, MemoryBudgetRow>();
+
+  async create(
+    runId: string,
+    sourceId: string,
+    limits: TrialBudgetLimits,
+  ): Promise<TrialBudgetSnapshot> {
+    const existing = this.rows.get(runId);
+    if (existing) return this.snapshot(runId, existing);
+    this.rows.set(runId, {
+      sourceId,
+      limits,
+      listPagesUsed: 0,
+      detailsUsed: 0,
+      attachmentsUsed: 0,
+      httpRequestsUsed: 0,
+      listPagesDeferred: 0,
+      detailsDeferred: 0,
+      attachmentsDeferred: 0,
+      status: 'active',
+      stopReason: null,
+      stoppedAt: null,
+      admissions: new Map(),
+    });
+    return this.snapshot(runId, this.rows.get(runId)!);
+  }
+
+  async get(runId: string): Promise<TrialBudgetSnapshot | null> {
+    const row = this.rows.get(runId);
+    return row ? this.snapshot(runId, row) : null;
+  }
+
+  async consumeListPage(runId: string): Promise<BudgetGate> {
+    const row = this.rows.get(runId);
+    if (!row) return 'unbudgeted';
+    if (row.status !== 'active') return row.status;
+    if (row.listPagesUsed >= row.limits.maxListPages) return 'exhausted';
+    row.listPagesUsed += 1;
+    return 'ok';
+  }
+
+  async admitDocument(
+    runId: string,
+    canonicalUrl: string,
+  ): Promise<AdmissionResult> {
+    return this.admit(runId, 'document', canonicalUrl, null);
+  }
+
+  async admitAttachment(
+    runId: string,
+    parentDocumentId: string,
+    canonicalUrl: string,
+  ): Promise<AdmissionResult> {
+    return this.admit(runId, 'attachment', canonicalUrl, parentDocumentId);
+  }
+
+  async isAdmitted(
+    runId: string,
+    kind: 'document' | 'attachment',
+    canonicalUrl: string,
+  ): Promise<boolean | 'unbudgeted'> {
+    const row = this.rows.get(runId);
+    if (!row) return 'unbudgeted';
+    return row.admissions.has(`${kind}|${canonicalUrl}`);
+  }
+
+  async consumeHttpAttempt(runId: string): Promise<BudgetGate> {
+    const row = this.rows.get(runId);
+    if (!row) return 'unbudgeted';
+    if (row.status !== 'active') return row.status;
+    if (row.httpRequestsUsed >= row.limits.maxHttpRequests)
+      return 'exhausted';
+    row.httpRequestsUsed += 1;
+    return 'ok';
+  }
+
+  async markDeferred(
+    runId: string,
+    kind: DeferrableKind,
+    count: number,
+  ): Promise<void> {
+    const row = this.rows.get(runId);
+    if (!row || count <= 0) return;
+    if (kind === 'listPages') row.listPagesDeferred += count;
+    if (kind === 'details') row.detailsDeferred += count;
+    if (kind === 'attachments') row.attachmentsDeferred += count;
+  }
+
+  async stop(
+    runId: string,
+    reason: string,
+  ): Promise<TrialBudgetSnapshot | null> {
+    const row = this.rows.get(runId);
+    if (!row) return null;
+    if (row.status !== 'stopped') {
+      row.status = 'stopped';
+      row.stopReason = reason;
+      row.stoppedAt = new Date().toISOString();
+    }
+    return this.snapshot(runId, row);
+  }
+
+  async isStopped(runId: string): Promise<boolean> {
+    return this.rows.get(runId)?.status === 'stopped';
+  }
+
+  private admit(
+    runId: string,
+    kind: 'document' | 'attachment',
+    canonicalUrl: string,
+    parentDocumentId: string | null,
+  ): AdmissionResult {
+    const row = this.rows.get(runId);
+    if (!row) return 'unbudgeted';
+    if (row.status !== 'active') return row.status;
+    const key = `${kind}|${canonicalUrl}`;
+    if (row.admissions.has(key)) return 'duplicate';
+    if (kind === 'document') {
+      if (row.detailsUsed >= row.limits.maxDetails) {
+        row.detailsDeferred += 1;
+        return 'exhausted';
+      }
+      row.admissions.set(key, null);
+      row.detailsUsed += 1;
+      return 'admitted';
+    }
+    const perParent = [...row.admissions.entries()].filter(
+      ([entryKey, parent]) =>
+        entryKey.startsWith('attachment|') && parent === parentDocumentId,
+    ).length;
+    if (
+      row.attachmentsUsed >= row.limits.maxAttachmentsTotal ||
+      perParent >= row.limits.maxAttachmentsPerDocument
+    ) {
+      row.attachmentsDeferred += 1;
+      return 'exhausted';
+    }
+    row.admissions.set(key, parentDocumentId);
+    row.attachmentsUsed += 1;
+    return 'admitted';
+  }
+
+  private snapshot(runId: string, row: MemoryBudgetRow): TrialBudgetSnapshot {
+    const counters = {
+      maxListPages: row.limits.maxListPages,
+      maxDetails: row.limits.maxDetails,
+      maxAttachmentsTotal: row.limits.maxAttachmentsTotal,
+      maxHttpRequests: row.limits.maxHttpRequests,
+      listPagesUsed: row.listPagesUsed,
+      detailsUsed: row.detailsUsed,
+      attachmentsUsed: row.attachmentsUsed,
+      httpRequestsUsed: row.httpRequestsUsed,
+    };
+    return {
+      runId,
+      sourceId: row.sourceId,
+      ...row.limits,
+      listPagesUsed: row.listPagesUsed,
+      detailsUsed: row.detailsUsed,
+      attachmentsUsed: row.attachmentsUsed,
+      httpRequestsUsed: row.httpRequestsUsed,
+      listPagesDeferred: row.listPagesDeferred,
+      detailsDeferred: row.detailsDeferred,
+      attachmentsDeferred: row.attachmentsDeferred,
+      remaining: remainingOf(counters),
+      status: row.status,
+      stopReason: row.stopReason,
+      stoppedAt: row.stoppedAt,
+    };
+  }
+}
+
+/** ---------- 内存抓取队列 ---------- */
 
 export class FakeCrawlTaskQueue implements CrawlTaskQueue {
   readonly jobs = new Map<string, { name: string; payload: unknown }>();

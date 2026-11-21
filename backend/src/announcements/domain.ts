@@ -14,6 +14,10 @@
  */
 import { createHash } from 'node:crypto';
 import { HIGH_IMPACT_FIELD_SET } from './field-registry.js';
+import {
+  MajorCriterionError,
+  parseStructuredMajor,
+} from './major-criterion.js';
 
 // ==================== 类型 ====================
 
@@ -956,6 +960,7 @@ export function applyFieldDecisions(
  * 返回错误信息列表；空数组表示合法。
  * - 原因必填非空（adopt/edit/reject/pending 一致）；
  * - edit 必须提供非空 afterValue；
+ * - major 字段的结构化分阶段值必须在审核时就合法（R02：不能拖到发布才失败）；
  * - identity 必须能定位到候选字段（由 applyFieldDecisions 再次兜底）。
  */
 export function validateFieldDecisions(
@@ -968,6 +973,17 @@ export function validateFieldDecisions(
     }
     if (d.action === 'edit' && (d.afterValue === undefined || d.afterValue.trim() === '')) {
       errors.push(`字段 ${d.field} 的 edit 决策缺少新值`);
+    }
+    if (d.action === 'edit' && d.field === 'major' && d.afterValue) {
+      try {
+        parseStructuredMajor(d.afterValue, `major 字段 ${d.identity}`);
+      } catch (e) {
+        if (e instanceof MajorCriterionError) {
+          errors.push(e.message);
+        } else {
+          throw e;
+        }
+      }
     }
     if (!d.identity || !d.field) {
       errors.push('字段决策缺少 identity 或 field');

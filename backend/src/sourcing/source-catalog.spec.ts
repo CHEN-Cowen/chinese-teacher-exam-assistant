@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  MAX_CATALOG_SIZE,
+  MIN_CATALOG_SIZE,
   SOURCE_CATALOG,
   SOURCE_MONITORING_RECORDS,
   appendSourceCheck,
@@ -14,9 +16,9 @@ import {
 } from './source-monitoring.js';
 
 describe('S5 来源目录', () => {
-  it('保留 10-20 个候选来源，并区分省级、市级和区县级', () => {
-    expect(SOURCE_CATALOG.length).toBeGreaterThanOrEqual(10);
-    expect(SOURCE_CATALOG.length).toBeLessThanOrEqual(20);
+  it('保留 10-60 个候选来源，并区分省级、市级和区县级', () => {
+    expect(SOURCE_CATALOG.length).toBeGreaterThanOrEqual(MIN_CATALOG_SIZE);
+    expect(SOURCE_CATALOG.length).toBeLessThanOrEqual(MAX_CATALOG_SIZE);
     expect(
       new Set(SOURCE_CATALOG.map((entry) => entry.authorityLevel)),
     ).toEqual(new Set(['province', 'city', 'district']));
@@ -27,7 +29,22 @@ describe('S5 来源目录', () => {
     const seedable = getSeedableSources();
     // S5 真实核验通过：南京、宁波、鄞州、杭州、绍兴、嘉兴、苏州、常州、丽水；
     // S5 遗留任务 1 补入：蚌埠（服务端渲染静态列表 + pageIndex 分页）、
-    // 萧山（区县级 jpaas 公开接口 + paramJson 分页）。
+    // 萧山（区县级 jpaas 公开接口 + paramJson 分页）；
+    // N1 跨省首批：湖州（jpaas 表格行 + initJpage）、泰州（jpaas li + span）、
+    // 亳州（服务端渲染 section.m-tglist + pagination）、
+    // N2 公开接口族首批：济南（jpaas 表格行 + td.bt_time + DOM 属性分页）、
+    // 烟台（jpaas li.cf + span.fr + 单来源分页窗口）、
+    // 泰安（jpage datastore 首屏 + dataproxy form POST 分页）、
+    // 潍坊（els-service JSON POST 列表 + 单来源分页窗口）；
+    // N3 静态列表族首批：南昌（ul.item li + 同级 span 日期 + createPageHTML 分页）、
+    // 太原（ul.List_list li + JS 跳转分页）、
+    // 郑州（河南首个，ul#pageCont a.new_link + 双域名 shtml/jhtml 详情）、
+    // 福州（福建首个，fjdzapp/search 表单 POST 列表 + 单来源分页窗口）、
+    // 广州（广东首个，NFCMS 静态锚点分页）、
+    // 石家庄（河北首个，PageFront 表单 POST 分页，官方整站仅 HTTP）、
+    // 武汉（湖北首个，navbox 静态锚点 index_N.shtml 分页）、
+    // 长沙（湖南首个，WCM createPageHTML5 静态分页，官方整站仅 HTTP）、
+    // 贵阳（贵州首个，WCM createPage 4 参静态分页）。
     expect(seedable.map((source) => source.adapterKey)).toEqual([
       'nanjing-education',
       'hangzhou-education',
@@ -36,17 +53,35 @@ describe('S5 来源目录', () => {
       'shaoxing-education',
       'jiaxing-education',
       'suzhou-education',
+      'huzhou-education',
+      'taizhou-education',
+      'bozhou-education',
+      'fuyang-education',
+      'jinan-education',
+      'yantai-education',
+      'taian-education',
+      'weifang-education',
+      'nanchang-education',
+      'taiyuan-education',
+      'zhengzhou-education',
+      'fuzhou-education',
+      'guangzhou-education',
+      'shijiazhuang-education',
+      'wuhan-education',
+      'changsha-education',
+      'guiyang-education',
       'changzhou-education',
       'lishui-education',
       'bengbu-education',
       'xiaoshan-education',
+      'anhui-education-policy',
     ]);
     expect(
       SOURCE_CATALOG.filter((entry) => entry.status === 'candidate'),
     ).toHaveLength(2);
     expect(
       SOURCE_CATALOG.filter((entry) => entry.status === 'blocked'),
-    ).toHaveLength(2);
+    ).toHaveLength(1);
   });
 
   it('禁止把目录外域名或非 HTTPS 链接投入 seed', () => {
@@ -138,7 +173,7 @@ describe('S5 来源目录', () => {
         : entry,
     );
     expect(validateSourceCatalog(invalid)).toContain(
-      '省级来源不得登记栏目列表: jiangsu-education-candidate',
+      '省级招聘来源不得登记栏目列表: jiangsu-education-candidate',
     );
   });
 
@@ -158,14 +193,42 @@ describe('S5 来源目录', () => {
     expect(verifiedAtOf('lishui-education')).toBe('2026-10-26');
     expect(verifiedAtOf('bengbu-education')).toBe('2026-10-26');
     expect(verifiedAtOf('xiaoshan-education')).toBe('2026-10-26');
+    expect(verifiedAtOf('anhui-education-policy')).toBe('2026-11-05');
+    expect(verifiedAtOf('huzhou-education')).toBe('2026-11-05');
+    expect(verifiedAtOf('taizhou-education')).toBe('2026-11-05');
+    expect(verifiedAtOf('bozhou-education')).toBe('2026-11-05');
+    expect(verifiedAtOf('fuyang-education')).toBe('2026-11-05');
+    expect(verifiedAtOf('jinan-education')).toBe('2026-11-05');
+    expect(verifiedAtOf('yantai-education')).toBe('2026-11-06');
+    expect(verifiedAtOf('taian-education')).toBe('2026-11-06');
+    expect(verifiedAtOf('weifang-education')).toBe('2026-11-06');
+    expect(verifiedAtOf('nanchang-education')).toBe('2026-11-06');
+    expect(verifiedAtOf('taiyuan-education')).toBe('2026-11-06');
+    expect(verifiedAtOf('zhengzhou-education')).toBe('2026-11-06');
+    expect(verifiedAtOf('fuzhou-education')).toBe('2026-11-06');
+    expect(verifiedAtOf('guangzhou-education')).toBe('2026-11-06');
+    expect(verifiedAtOf('shijiazhuang-education')).toBe('2026-11-06');
+    expect(verifiedAtOf('wuhan-education')).toBe('2026-11-06');
+    expect(verifiedAtOf('changsha-education')).toBe('2026-11-06');
   });
 });
 
 describe('S5 来源级检查记录与监测状态', () => {
   it('ready 来源完成两次真实检查后，才可声称正常监测', () => {
     const ready = SOURCE_CATALOG.filter((entry) => entry.status === 'ready');
-    expect(ready.length).toBe(11);
-    for (const entry of ready) {
+    // 郑州、福州、广州、石家庄、武汉、长沙、贵阳刚完成首次真实采样，checks 只有 1 次，仍处于 unverified 状态（未满 7 天观察窗）
+    const readyWith2Checks = ready.filter(
+      (e) =>
+        e.sourceKey !== 'zhengzhou-education' &&
+        e.sourceKey !== 'fuzhou-education' &&
+        e.sourceKey !== 'guangzhou-education' &&
+        e.sourceKey !== 'shijiazhuang-education' &&
+        e.sourceKey !== 'wuhan-education' &&
+        e.sourceKey !== 'changsha-education' &&
+        e.sourceKey !== 'guiyang-education',
+    );
+    expect(ready.length).toBe(29);
+    for (const entry of readyWith2Checks) {
       const record = getSourceMonitoringRecord(entry.sourceKey);
       expect(record.checks.length, entry.sourceKey).toBe(2);
       const summary = summarizeMonitoring(record);
@@ -176,14 +239,23 @@ describe('S5 来源级检查记录与监测状态', () => {
         /^[0-9a-f]{64}$/,
       );
     }
-    // 只有南京第二次发现了新公告；其余 10 个列表条目未变，记 no_new 仍算成功。
+    // 只有南京第二次发现了新公告；其余来源列表条目未变，记 no_new 仍算成功。
     expect(
       getSourceMonitoringRecord('nanjing-education').checks[1]?.outcome,
     ).toBe('succeeded');
+    // 郑州、福州、广州、石家庄、武汉、长沙与贵阳只有 1 次检查（首次采样，未满观察窗），不算入第二次 outcome 断言
     const unchanged = SOURCE_MONITORING_RECORDS.filter(
-      (record) => record.sourceKey !== 'nanjing-education',
+      (record) =>
+        record.sourceKey !== 'nanjing-education' &&
+        record.sourceKey !== 'zhengzhou-education' &&
+        record.sourceKey !== 'fuzhou-education' &&
+        record.sourceKey !== 'guangzhou-education' &&
+        record.sourceKey !== 'shijiazhuang-education' &&
+        record.sourceKey !== 'wuhan-education' &&
+        record.sourceKey !== 'changsha-education' &&
+        record.sourceKey !== 'guiyang-education',
     );
-    expect(unchanged).toHaveLength(10);
+    expect(unchanged).toHaveLength(21);
     for (const record of unchanged) {
       expect(record.checks[1]?.outcome, record.sourceKey).toBe('no_new');
     }
@@ -218,6 +290,16 @@ describe('S5 来源级检查记录与监测状态', () => {
     expect(checkedAtOf('lishui-education')).toBe('2026-10-26T04:08:21.242Z');
     expect(checkedAtOf('bengbu-education')).toBe('2026-10-26T08:47:12.061Z');
     expect(checkedAtOf('xiaoshan-education')).toBe('2026-10-26T08:50:44.919Z');
+    expect(checkedAtOf('huzhou-education')).toBe('2026-11-05T15:20:44.363Z');
+    expect(checkedAtOf('taizhou-education')).toBe('2026-11-05T15:20:46.630Z');
+    expect(checkedAtOf('bozhou-education')).toBe('2026-11-05T15:20:53.703Z');
+    expect(checkedAtOf('fuyang-education')).toBe('2026-11-05T15:54:03.976Z');
+    expect(checkedAtOf('jinan-education')).toBe('2026-11-05T16:17:30.985Z');
+    expect(checkedAtOf('yantai-education')).toBe('2026-11-06T01:08:05.494Z');
+    expect(checkedAtOf('taian-education')).toBe('2026-11-06T01:53:26.910Z');
+    expect(checkedAtOf('weifang-education')).toBe('2026-11-06T02:57:47.297Z');
+    expect(checkedAtOf('nanchang-education')).toBe('2026-11-06T03:59:14.704Z');
+    expect(checkedAtOf('taiyuan-education')).toBe('2026-11-06T05:55:17.588Z');
   });
 
   it('补录检查是纯函数，追加后连续成功次数加一且不改原记录', () => {

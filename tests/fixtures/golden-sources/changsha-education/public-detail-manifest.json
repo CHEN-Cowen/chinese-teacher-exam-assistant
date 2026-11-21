@@ -1,0 +1,36 @@
+{
+  "source": "changsha-education",
+  "capturedAt": "2026-11-06T00:00:00Z",
+  "scope": "public-detail",
+  "site": "http://jyj.changsha.gov.cn/",
+  "files": [
+    {
+      "name": "detail-12609393.html",
+      "url": "http://jyj.changsha.gov.cn/zfxxgk/fdzdgk/jszp/202611/t20261105_12609393.html",
+      "sha256": "d6a040e91a12a82d3fdaa6eaaa380d7be2f6e1351030d7ab15a8ae28babdc4bb",
+      "method": "GET",
+      "note": "「星斗」工程 2027 年教育类硕博人才选拔入围笔试人员名单（招聘相关）：meta 名带前后空格（name=\" ArticleTitle \" / name=\" Pubdate \"，取值需 trim）+ div.content-main 正文（内层 .trs_editor_view）+ 正文内 ./P0202...pdf 附件 1 个"
+    },
+    {
+      "name": "detail-12407887.html",
+      "url": "http://jyj.changsha.gov.cn/zfxxgk/fdzdgk/jszp/202606/t20260616_12407887.html",
+      "sha256": "ff578a5cfe088304f6b27b539910168839b025ad26b10354995da1467b850d29",
+      "method": "GET",
+      "note": "2026 年第三轮公开招聘教职工公告（核心招聘公告）：3 个附件 ./P0202...xlsx（岗位表）+ 2 个 docx（专业目录、报考指南）；同时出现在首屏与第 2 页（置顶）"
+    },
+    {
+      "name": "detail-11795340.html",
+      "url": "http://jyj.changsha.gov.cn/zfxxgk/fdzdgk/jszp/202503/t20250330_11795340.html",
+      "sha256": "a79b5d32a160128ad8ff72f160778fa047cb2b0be34bfff69d10bee0811463c3",
+      "method": "GET",
+      "note": "2025 年第二轮公开招聘教职工公告（首屏置顶旧公告）：7 个 ./P0202...pdf 附件（公费师范生 / 高校毕业研究生 / 骨干教师岗位表等，多附件上限回放）"
+    },
+    {
+      "name": "detail-12280817.html",
+      "url": "http://jyj.changsha.gov.cn/zfxxgk/fdzdgk/jszp/202602/t20260209_12280817.html",
+      "sha256": "623ae1916bf2473a3979035e703c17be28a13688ee997caa73c3a611f51f28d1",
+      "method": "GET",
+      "note": "2025 年第二轮公开招聘教职工拟聘用人员名单（缓检批）：零附件条目回放，正文 741 字"
+    }
+  ]
+}

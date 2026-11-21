@@ -19,12 +19,17 @@ interface BadgeProps {
   className?: string;
 }
 
+/**
+ * 状态与分类标签（v1.1 同层级一致性）：
+ * 固定高 24px，字号 12/20，500，水平内边距 8，圆角 4。
+ * 状态同时使用文本与颜色，不只用颜色。
+ */
 const variantStyles: Record<string, string> = {
   default: "bg-brand-soft/60 text-ink",
   primary: "bg-brand-soft text-brand",
-  success: "bg-success-soft text-success",
-  warning: "bg-warn-soft text-warn",
-  danger: "bg-danger-soft text-danger",
+  success: "bg-ok-bg text-ok-ink",
+  warning: "bg-ask-bg text-ask-ink",
+  danger: "bg-no-bg text-no-ink",
   info: "bg-brand-soft text-brand",
   muted: "bg-brand-soft/40 text-ink-muted",
 };
@@ -33,7 +38,7 @@ export function Badge({ variant = "default", children, className }: BadgeProps) 
   return (
     <span
       className={cn(
-        "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium",
+        "inline-flex h-6 items-center justify-center whitespace-nowrap rounded px-2 text-xs font-medium leading-none",
         variantStyles[variant],
         className
       )}

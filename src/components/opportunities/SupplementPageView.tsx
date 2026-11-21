@@ -13,10 +13,16 @@ import { SupplementForm } from "@/components/opportunities/SupplementForm";
 import { useActiveProfile } from "@/lib/opportunities/useOpportunities";
 import { useCurrentUser } from "@/lib/auth";
 import { opportunitiesApi } from "@/lib/opportunities/api";
-import type { UnitDetailResponse, OpportunityMatchStatus } from "@/lib/opportunities/api-types";
+import type { UnitDetailResponse, OpportunityMatchStatus, DimensionDTO } from "@/lib/opportunities/api-types";
 import type { UserRecruitmentProfile } from "@/lib/profile/types";
 import { groupDimensions, nextAction, primaryGate } from "@/lib/opportunities/detail-view";
-import { supplementFactsService, buildActiveProfile, type SupplementFacts } from "@/lib/profile/activeProfile";
+import { dimensionImpactCounts } from "@/lib/opportunities/list-view";
+import {
+  supplementFactsService,
+  buildActiveProfile,
+  profileToSupplementFacts,
+  type SupplementFacts,
+} from "@/lib/profile/activeProfile";
 import {
   createProfileRepository,
   ProfileConflictError,
@@ -97,35 +103,59 @@ export function SupplementPageView({
   const [detail, setDetail] = useState<UnitDetailResponse | null>(null);
   const [loading, setLoading] = useState(() => profileState.status === "ready");
   const [error, setError] = useState<string | null>(null);
-  const [facts, setFacts] = useState<SupplementFacts>(() =>
-    supplementFactsService.load(),
+  // D05 账号隔离（PRD 11.6「草稿与私密数据按账号隔离」）：
+  // 本机 localStorage 补充事实只服务 demo/访客；受邀登录用户的初始值从服务端画像派生，
+  // 绝不用共享 localStorage 预填（可能属于本机其他账号或未登录访客）。
+  const useLocalFacts = isDemo || isGuest;
+  const [localFacts, setLocalFacts] = useState<SupplementFacts>(() =>
+    mode === "demo" ? supplementFactsService.load() : {},
   );
+  const [localFactsLoaded, setLocalFactsLoaded] = useState(mode === "demo");
+  // 渲染期间调整状态（React 推荐模式）：profileState 就绪后一次性装载本机事实
+  if (!localFactsLoaded && useLocalFacts) {
+    setLocalFactsLoaded(true);
+    setLocalFacts(supplementFactsService.load());
+  }
+  const [serverFacts, setServerFacts] = useState<SupplementFacts | null>(null);
+  const facts = useLocalFacts ? localFacts : (serverFacts ?? {});
+  const factsReady = useLocalFacts ? localFactsLoaded : serverFacts !== null;
   const [saving, setSaving] = useState(false);
   const [conflictError, setConflictError] = useState<string | null>(null);
   const [beforeOverall, setBeforeOverall] = useState<OpportunityMatchStatus | null>(null);
   const [afterOverall, setAfterOverall] = useState<OpportunityMatchStatus | null>(null);
   const [statusAnnouncement, setStatusAnnouncement] = useState<string | null>(null);
   const [profileUpdatedAt, setProfileUpdatedAt] = useState<string | undefined>();
+  /** D05「影响岗位」：各待补维度影响的机会数；null=未加载或加载失败（不展示、不编造） */
+  const [impact, setImpact] = useState<Partial<
+    Record<DimensionDTO["dimension"], number>
+  > | null>(null);
 
   // 登录画像的版本只在服务端读取一次，后续 PATCH 必须携带它。
+  // D05：同一次读取顺便派生补充表单初始值（服务端口径），不再读共享 localStorage。
   useEffect(() => {
     if (profileState.status !== "ready") return;
-    if (profileState.isGuest || authStatus !== "authenticated") {
+    // demo/访客链路不读服务端画像：demo 构建没有后端代理（/api 恒 503），
+    // 访客事实本机隔离；只有受邀登录用户才需要服务端口径的补充初始值。
+    if (useLocalFacts || authStatus !== "authenticated") {
       return;
     }
     let cancelled = false;
     void createProfileRepository(true)
       .read()
       .then((result) => {
-        if (!cancelled) setProfileUpdatedAt(result.updatedAt);
+        if (cancelled) return;
+        setProfileUpdatedAt(result.updatedAt);
+        setServerFacts(profileToSupplementFacts(result.profile));
       })
       .catch(() => {
         // 详情页仍可展示；保存时会再次读取并在失败时保留输入。
+        // 初始值读取失败时按空值渲染表单，不回退到共享 localStorage。
+        if (!cancelled) setServerFacts({});
       });
     return () => {
       cancelled = true;
     };
-  }, [authStatus, profileState]);
+  }, [authStatus, profileState, useLocalFacts]);
 
   // 3. 加载最新详情
   const loadDetail = useCallback(
@@ -171,6 +201,25 @@ export function SupplementPageView({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profileState.status]);
+
+  // D05「影响岗位」提示（PRD 11.6：补充提示说明原因、影响岗位及不填的后果）：
+  // 复用只读 match 接口统计各待补维度影响的机会数（后端分组计数，含本岗位）。
+  // 请求失败保持 null——表单不显示该提示，绝不编造数量。
+  useEffect(() => {
+    if (profileState.status !== "ready") return;
+    let cancelled = false;
+    opportunitiesApi
+      .match(profileState.profile, { sendProfile: isGuest })
+      .then((res) => {
+        if (!cancelled) setImpact(dimensionImpactCounts(res));
+      })
+      .catch(() => {
+        if (!cancelled) setImpact(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [profileState, isGuest]);
 
   if (profileState.status === "loading" || (authStatus === "loading" && !loading && !detail)) {
     return <LoadingPage />;
@@ -260,12 +309,12 @@ export function SupplementPageView({
     setConflictError(null);
     setError(null);
     try {
-      // Demo 模式：只写 localStorage，不调服务端
       if (isDemo || isGuest) {
+        // Demo/访客：只写 localStorage，不调服务端
         const saved = supplementFactsService.save(next);
-        setFacts(saved);
+        setLocalFacts(saved);
       } else {
-        // 真实模式：通过 ProfileRepository.patch() 更新
+        // 受邀登录：通过 ProfileRepository.patch() 更新服务端画像（白名单 + 乐观锁）
         const repo = createProfileRepository(authStatus === "authenticated");
         const patch: ProfilePatch = {};
         if (next.birthDate !== undefined) patch.birthDate = next.birthDate;
@@ -280,31 +329,55 @@ export function SupplementPageView({
         }
         const saved = await repo.patch(patch, expectedUpdatedAt);
         setProfileUpdatedAt(saved.updatedAt);
-        // 同步本地缓存
-        setFacts(supplementFactsService.load());
+        // D05：回显服务端合并后的画像派生值（本账号口径），不读共享 localStorage
+        setServerFacts(
+          saved.profile ? profileToSupplementFacts(saved.profile) : next,
+        );
       }
 
-      // 11. 保存后重新详情与匹配
-      const active = buildActiveProfile();
-      if (active.ready) {
-        const fresh = await loadDetail(active.profile);
+      // 11. 保存后重新详情与匹配。
+      // D05 修复：受邀登录用户没有本机草稿，buildActiveProfile() 会 ready=false，
+      // 导致结论播报与返回按钮根本不出现；登录链路用占位画像提交
+      // （sendProfile=false，后端忽略请求体、读取服务端已持久化画像）。
+      let reloadProfile: UserRecruitmentProfile | null = null;
+      if (isDemo || isGuest) {
+        const active = buildActiveProfile();
+        if (active.ready) reloadProfile = active.profile;
+      } else if (profileState.status === "ready") {
+        reloadProfile = profileState.profile;
+      }
+      if (reloadProfile) {
+        const fresh = await loadDetail(reloadProfile);
         if (fresh) {
           setAfterOverall(fresh.unit.overall);
           // v7.2 埋点：补充保存后重算成功（结论是否变化由 qualification_supplemented 承载）
           track("supplement_recomputed", "profile", { targetId: unitId });
-          // 13. 返回正确标签 + 15. 可访问状态播报
+          // 13. 返回正确标签 + 15. 可访问状态播报（含仍需核实项，PRD 11.6）
           const newOverall = fresh.unit.overall;
           const tag = overallTag(newOverall);
+          const remainingUnknown = fresh.unit.dimensions.filter(
+            (d) => d.value === "UNKNOWN",
+          ).length;
+          const remainingManual = fresh.unit.dimensions.filter(
+            (d) => d.value === "MANUAL_REVIEW",
+          ).length;
+          const remainingNote =
+            remainingUnknown + remainingManual > 0
+              ? `仍需核实 ${remainingUnknown + remainingManual} 项` +
+                `（待补充 ${remainingUnknown} 项、需向招聘单位确认 ${remainingManual} 项）。`
+              : "";
           if (beforeOverall !== newOverall) {
             setStatusAnnouncement(
-              `信息已保存。机会判断已更新为：${tag}。`,
+              `信息已保存。机会判断已更新为：${tag}。${remainingNote}`,
             );
             track("qualification_supplemented", "profile", {
               targetId: unitId,
               props: { conclusionChanged: 1 },
             });
           } else {
-            setStatusAnnouncement("信息已保存，当前判断暂时没有变化。");
+            setStatusAnnouncement(
+              `信息已保存，当前判断暂时没有变化。${remainingNote}`,
+            );
           }
         }
       }
@@ -313,9 +386,13 @@ export function SupplementPageView({
         // 9. 409 可恢复
         setConflictError("画像已在其他设备更新，已同步最新状态，请重试。");
         setProfileUpdatedAt(e.currentUpdatedAt);
-        // 读取最新状态
-        const active = buildActiveProfile();
-        if (active.ready) await loadDetail(active.profile);
+        // 读取最新状态（登录链路同样不能依赖本机草稿）
+        if (isDemo || isGuest) {
+          const active = buildActiveProfile();
+          if (active.ready) await loadDetail(active.profile);
+        } else if (profileState.status === "ready") {
+          await loadDetail(profileState.profile);
+        }
       } else {
         // 8. 保存失败保留输入（不 clear facts）
         setError(e instanceof Error ? e.message : "保存失败");
@@ -381,13 +458,20 @@ export function SupplementPageView({
         <StatusMessage tone="danger" message={error} />
       )}
 
-      {/* 2/3. 只渲染仍缺失的子字段；已知信息不重复问 */}
-      <SupplementForm
-        dimensions={unit.dimensions}
-        initial={facts}
-        saving={saving}
-        onSave={handleSave}
-      />
+      {/* 2/3. 只渲染仍缺失的子字段；已知信息不重复问。
+          D05：受邀登录用户等服务端画像派生的初始值就绪后再挂载表单，
+          避免先用空值渲染再被一次性初始化的表单快照锁死（SupplementForm 只在挂载时取 initial）。 */}
+      {factsReady ? (
+        <SupplementForm
+          dimensions={unit.dimensions}
+          initial={facts}
+          saving={saving}
+          onSave={handleSave}
+          impact={impact}
+        />
+      ) : (
+        <p className="text-xs text-ink-muted">正在读取已保存的补充信息…</p>
+      )}
 
       {/* 6. MANUAL_REVIEW → 官方确认提示 */}
       {groups.confirmOfficial.length > 0 && (
@@ -450,6 +534,10 @@ export function SupplementPageView({
  * v7.2 链路 B：origin=opportunities 且已发生重算（afterOverall 非 null）时，
  * 带上结果页对应的三标签 key，返回时直接落在正确分类。
  * preview / detail 保持既有行为，不带 tab。
+ *
+ * D05（PRD 11.6「保留筛选、列表位置」）：origin=opportunities 时追加
+ * `#unit-<id>` 锚点，结果页数据就绪后滚动定位到原岗位卡片；
+ * 未重算时同样带锚点（回到原浏览位置）。
  */
 function getReturnHref(
   origin: SupplementOrigin,
@@ -461,7 +549,8 @@ function getReturnHref(
       return "/preview";
     case "opportunities": {
       const tab = resultTabForOverall(afterOverall);
-      return tab ? `/opportunities?tab=${tab}` : "/opportunities";
+      const base = tab ? `/opportunities?tab=${tab}` : "/opportunities";
+      return `${base}#unit-${encodeURIComponent(unitId)}`;
     }
     case "detail":
       return `/opportunities/${unitId}`;

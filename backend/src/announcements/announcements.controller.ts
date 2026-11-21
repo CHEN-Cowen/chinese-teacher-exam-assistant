@@ -78,6 +78,13 @@ export class AnnouncementsController {
 
   // ==================== 管理员：任务列表与详情 ====================
 
+  /** 跨阶段流水线汇总（D09 / U10）：来源/快照/解析/提取/发布各阶段真实计数 */
+  @Get('admin/pipeline-summary')
+  @UseGuards(AdminGuard)
+  async pipelineSummary() {
+    return this.service.pipelineSummary();
+  }
+
   @Get('runs')
   @UseGuards(AdminGuard)
   async listRuns(@Query('status') status?: string, @Query('announcementId') announcementId?: string) {

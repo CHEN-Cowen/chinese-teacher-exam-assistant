@@ -20,11 +20,25 @@ export function NavIcon({ id, className }: { id: PrimaryNavId; className?: strin
           <path d="m15.5 8.5-2.2 4.8-4.8 2.2 2.2-4.8 4.8-2.2Z" strokeLinejoin="round" />
         </svg>
       );
-    case "schedule":
+    case "history":
       return (
         <svg {...common} strokeWidth={1.8}>
-          <rect x="3" y="4.5" width="18" height="17" rx="2" />
-          <path d="M16 2.5v4M8 2.5v4M3 10h18" strokeLinecap="round" />
+          <path
+            d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <path d="M3 3v5h5" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M12 7v5l4 2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      );
+    case "follows":
+      return (
+        <svg {...common} strokeWidth={1.8}>
+          <path
+            d="M12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2Z"
+            strokeLinejoin="round"
+          />
         </svg>
       );
     case "me":

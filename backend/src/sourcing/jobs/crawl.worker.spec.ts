@@ -288,6 +288,8 @@ function makeScheduler(
   const scheduler = new CrawlScheduler(
     orchestrator as never,
     store as unknown as CrawlRunStore,
+    // M02/F3：告警巡检桩（tick 先行调用，不参与投递断言）
+    { sweep: vi.fn(async () => {}) } as never,
   );
   return { scheduler, orchestrator, store };
 }
@@ -365,6 +367,7 @@ describe('CrawlScheduler.tick（定时投递）', () => {
     const scheduler = new CrawlScheduler(
       orchestrator as never,
       store as unknown as CrawlRunStore,
+      { sweep: vi.fn(async () => {}) } as never,
     );
 
     await expect(scheduler.tick()).resolves.toBeUndefined();

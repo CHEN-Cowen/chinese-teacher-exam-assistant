@@ -14,9 +14,20 @@ const PUBLIC_PATHS = new Set([
   // 公开注册（比赛现场自助注册体验）：开关 PUBLIC_REGISTRATION 未开启时
   // 由控制器层拒绝（401），守卫只负责放行匿名可达
   '/auth/register',
+  // M05/F7：忘记密码与重置密码（匿名可达；限速与防枚举在控制器内实现）
+  '/auth/forgot-password',
+  '/auth/reset-password',
   // 引导首个管理员的前提是系统尚无任何账号；无人持有会话，必须匿名可达；
   // 安全性由控制器内 ADMIN_BOOTSTRAP_TOKEN 校验 + 已有管理员时接口自动关闭保证
   '/admin/bootstrap-admin',
+  // M01/F1：首页公开覆盖摘要（精确只读路径）。个人接口与写操作不在此列，
+  // 访客与登录用户读取同一份统一覆盖投影（coverage-projection.ts）。
+  '/opportunities/coverage',
+  // W1：全学科字典与原文解析（只读、不含用户数据）
+  '/subjects',
+  '/subjects/resolve',
+  // W5：政策覆盖查询是公开只读聚合（只统计已发布材料，不含用户数据）
+  '/knowledge/policy-coverage',
 ]);
 
 /**
@@ -27,6 +38,11 @@ const PUBLIC_PATHS = new Set([
 const PUBLIC_PATTERNS: RegExp[] = [
   /^\/opportunities\/match$/,
   /^\/opportunities\/units\/[^/]+\/detail$/,
+  // M12：支付渠道回调专用路径。匿名可达不等于匿名可信——该路径的认证
+  // 机制是渠道验签（控制器第一道动作即验签，失败 401 不落库不放行），
+  // 其余支付接口仍全部要求登录或管理员身份。`[^/]+` 同时匹配渠道名与
+  // Nest 路由参数形态（:channel）。
+  /^\/payments\/callbacks\/[^/]+$/,
 ];
 
 function isPublicPath(path: string): boolean {

@@ -17,12 +17,19 @@
  * - 两边冲突要求用户确认，不静默覆盖。
  */
 import type { UserRecruitmentProfile } from "@/lib/profile/types";
+import type {
+  EducationExperience,
+  EmploymentNaturePreference,
+  LegacyEducationConfirmation,
+  RegionPreference,
+} from "@/lib/profile/types";
 import type { SupplementFacts } from "@/lib/profile/activeProfile";
 import {
   buildActiveProfile,
   supplementFactsService,
 } from "@/lib/profile/activeProfile";
 import { guestSessionService } from "@/lib/guest/guestSession";
+import { educationExperiencesService } from "@/lib/profile/educationStore";
 import { profileApi } from "@/lib/profile/profileApi";
 
 /**
@@ -43,6 +50,15 @@ export interface ProfilePatch {
   workExperienceMonths?: number;
   /** 公告特有条件（requirementId → 用户答复文本） */
   extraAnswers?: Record<string, string>;
+  /**
+   * R01：偏好调整走字段级更新（地区级别 / 用工偏好），
+   * 不再整份画像 PUT，避免覆盖同时修改的最新教育经历。
+   */
+  regions?: RegionPreference[];
+  employmentNaturePreference?: EmploymentNaturePreference;
+  /** R01：教育页只提交教育字段；显式 [] 表示用户删除全部经历 */
+  educationExperiences?: EducationExperience[];
+  legacyEducation?: LegacyEducationConfirmation;
 }
 
 /** PATCH 画像时携带的乐观锁值（服务端返回的 updatedAt） */
@@ -156,6 +172,23 @@ export class GuestLocalProfileAdapter implements ProfileRepository {
     _expectedUpdatedAt?: ExpectedUpdatedAt,
   ): Promise<ProfileReadResult> {
     void _expectedUpdatedAt; // 本地模式无乐观锁
+    // R01：偏好与教育经历按字段落到各自的本机存储，互不覆盖
+    if (
+      changes.regions !== undefined ||
+      changes.employmentNaturePreference !== undefined
+    ) {
+      guestSessionService.save({
+        draft: {
+          ...(changes.regions !== undefined ? { regions: changes.regions } : {}),
+          ...(changes.employmentNaturePreference !== undefined
+            ? { employmentNaturePreference: changes.employmentNaturePreference }
+            : {}),
+        },
+      });
+    }
+    if (changes.educationExperiences !== undefined) {
+      educationExperiencesService.save(changes.educationExperiences);
+    }
     // 合并已有补充事实与本次 patch
     const existing = supplementFactsService.load();
     const merged = mergeFacts(existing, changes);

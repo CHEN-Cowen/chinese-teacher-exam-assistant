@@ -1,0 +1,20 @@
+{
+  "source": "taiyuan-education",
+  "capturedAt": "2026-11-06T05:55:17.588Z",
+  "scope": "public-detail",
+  "site": "https://jyj.taiyuan.gov.cn/",
+  "files": [
+    {
+      "name": "public-detail.html",
+      "url": "https://jyj.taiyuan.gov.cn/tzgg/20260916/30320146.html",
+      "sha256": "8bd025bc0bc099f0953bef8ab7f6450b027a81f65fbdeb295efa3e03af409f86",
+      "note": "太原国科实验学校2026年公开招聘博士研究生拟聘用人员公示；官方 meta ArticleTitle/PubDate + #zoom；附件为 /u/cms/site28/202609/16091734m19f.xlsx（拟聘用人员名单）"
+    },
+    {
+      "name": "public-detail-2.html",
+      "url": "https://jyj.taiyuan.gov.cn/tzgg/20260911/30319565.html",
+      "sha256": "e9915ab0df9a251bea339a06a239792cb2aadbaf8e94388015175cf3c38cf4c2",
+      "note": "关于开展2026年度全市中小学高级教师和市直属中小学一级教师职称评审工作的通知；同栏目非招聘条目，无附件，用于验证同构正文与零附件情形"
+    }
+  ]
+}

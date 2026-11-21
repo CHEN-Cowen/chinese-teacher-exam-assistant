@@ -16,20 +16,32 @@ import {
 } from "@/lib/profile/activeProfile";
 import { profileApi } from "@/lib/profile/profileApi";
 import {
-  CREDENTIAL_LEVEL_OPTIONS,
   EMPLOYMENT_STATUS_OPTIONS,
   subjectLabel,
   TEACHER_CERT_STATUS_OPTIONS,
 } from "@/lib/guest/guestSession";
 import { stageLabel } from "@/lib/ia/labels";
 import { opportunitiesApi } from "@/lib/opportunities/api";
+import { MyTicketSection } from "@/components/opportunities/MyTicketSection";
+import { correctionTicketCode } from "@/lib/opportunities/correction-code";
 import type {
+  AnnouncementSubmissionDTO,
+  AnnouncementSubmissionDetailDTO,
   GoalsResponse,
   OpportunityCorrectionDTO,
+  OpportunityCorrectionDetailDTO,
   OpportunityCorrectionStatus,
 } from "@/lib/opportunities/api-types";
 import type { UserRecruitmentProfile } from "@/lib/profile/types";
+import {
+  EDUCATION_STAGE_LABELS,
+  resolveEducationFacts,
+} from "@/lib/profile/education";
 import { buildMyProgressView } from "@/lib/me/progress-view";
+import {
+  fetchMyMembership,
+  type MembershipViewDTO,
+} from "@/lib/membership/api";
 
 const AUTH_MODE_INVITED = AUTH_MODE === "invited";
 
@@ -39,14 +51,25 @@ const CORRECTION_STATUS_META: Record<
 > = {
   submitted: { label: "待核对", variant: "warning" },
   reviewing: { label: "核对中", variant: "info" },
+  need_supplement: { label: "需补充", variant: "warning" },
+  pending_review: { label: "待复核", variant: "info" },
   resolved: { label: "已修正", variant: "success" },
   rejected: { label: "不采纳", variant: "muted" },
 };
 
+const STATUS_FALLBACK: Record<string, string> = {
+  submitted: "已提交",
+  reviewing: "核对中",
+  need_supplement: "待你补充",
+  pending_review: "待复核",
+  resolved: "已办结",
+  rejected: "未采纳",
+};
+
 /**
- * 「我的」（v7.0 信息架构）：报考信息、已保存机会、备考次级入口、
- * 纠错记录、通知、隐私与账号设置的统一入口。
- * 不设置独立「备考」主导航：备考入口仅在用户已设置主要目标时出现。
+ * 「我的资料」（PRD U09 第四主入口）：报考信息、已保存机会、日程与备考
+ * 次级入口、纠错与补录记录、通知、隐私与账号设置的统一入口。
+ * 备考等能力为次级入口，不设独立主导航。
  */
 export default function MePage() {
   const { user, role, hasRole, logout } = useCurrentUser();
@@ -56,7 +79,7 @@ export default function MePage() {
   return (
     <div className="mx-auto max-w-2xl space-y-6 pb-4">
       <header>
-        <p className="text-xs font-semibold tracking-wide text-brand">我的</p>
+        <p className="text-xs font-semibold tracking-wide text-brand">我的资料</p>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">
           {user.name}
         </h1>
@@ -66,11 +89,17 @@ export default function MePage() {
       {/* 当前进度：首屏只推动一个下一步 */}
       <MyProgressCard />
 
+      {/* 会员状态（M11：免费/有效/已到期三态，失败静默不展示） */}
+      <MembershipCard />
+
       {/* 报考信息 */}
       <ProfileCard />
 
       {/* 我的纠错 */}
       <MyCorrectionsCard />
+
+      {/* 我的公告补录（D08） */}
+      <MySubmissionsCard />
 
       {/* 次级入口集中收纳，避免与首屏主行动竞争 */}
       <Card>
@@ -79,6 +108,31 @@ export default function MePage() {
           description="不常用的内容统一放在这里"
         />
         <div className="divide-y divide-line">
+          <SettingsRow
+            href="/applications"
+            title="日程与报考"
+            description="保存的机会、报考状态与考试时间线汇总"
+          />
+          <SettingsRow
+            href="/schedule"
+            title="日程时间线"
+            description="报名、缴费、考试等关键时间与变更记录"
+          />
+          <SettingsRow
+            href="/study"
+            title="备考练习"
+            description="按已保存机会生成的每日备考任务"
+          />
+          <SettingsRow
+            href="/policy"
+            title="政策检索"
+            description="按地区和年份检索已发布的官方政策与招聘材料"
+          />
+          <SettingsRow
+            href="/me/education"
+            title="教育经历"
+            description="按本科、硕士等阶段分别填写专业与师范背景"
+          />
           <SettingsRow
             href="/materials"
             title="学习资料"
@@ -167,15 +221,25 @@ function ProfileCard() {
     return active.ready ? active.profile : null;
   });
   const [loaded, setLoaded] = useState(!AUTH_MODE_INVITED);
+  /** R01：读取失败与“没有画像”是两件事，不能混为引导重新填写 */
+  const [loadFailed, setLoadFailed] = useState(false);
 
   useEffect(() => {
     if (!AUTH_MODE_INVITED) return;
     let cancelled = false;
-    profileApi.getProfile().then((persisted) => {
-      if (cancelled) return;
-      setProfile(persisted);
-      setLoaded(true);
-    });
+    profileApi
+      .getProfile()
+      .then((persisted) => {
+        if (cancelled) return;
+        setProfile(persisted);
+        setLoaded(true);
+      })
+      .catch(() => {
+        // R01：读取失败不能伪装成“没有画像”，提示重试而不是引导重新填写
+        if (cancelled) return;
+        setLoadFailed(true);
+        setLoaded(true);
+      });
     return () => {
       cancelled = true;
     };
@@ -189,9 +253,25 @@ function ProfileCard() {
     );
   }
 
+  if (loadFailed) {
+    return (
+      <Card>
+        <p className="text-sm font-semibold text-ink">没能读取报考信息</p>
+        <p className="mt-1 text-xs leading-5 text-ink-muted">
+          这不代表你还没有填写资料。请稍后重试，或直接查看教育经历与机会列表。
+        </p>
+        <div className="mt-3">
+          <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
+            重试
+          </Button>
+        </div>
+      </Card>
+    );
+  }
+
   if (!profile) {
     return (
-      <Card className="rounded-3xl border-brand/15 p-5 shadow-[0_12px_36px_rgba(30,64,120,0.07)]">
+      <Card className="border-brand/15 p-5 shadow-2">
         <p className="text-xs font-semibold tracking-wide text-brand">报考信息</p>
         <h2 className="mt-2 text-2xl font-semibold tracking-tight text-ink">
           先填写报考信息
@@ -223,7 +303,7 @@ function ProfileCard() {
       label: "学历 / 学位",
       value:
         [
-          CREDENTIAL_LEVEL_OPTIONS.find((o) => o.value === profile.educationLevel)?.label,
+          educationLevelSummary(profile),
           profile.degree && profile.degree !== "none"
             ? { bachelor: "学士", master: "硕士", doctorate: "博士" }[profile.degree]
             : null,
@@ -231,7 +311,10 @@ function ProfileCard() {
           .filter(Boolean)
           .join(" / ") || "未填写",
     },
-    { label: "毕业证专业", value: profile.majorFullName || "未填写" },
+    {
+      label: "毕业证专业",
+      value: educationMajorSummary(profile),
+    },
     {
       label: "毕业与就业状态",
       value:
@@ -265,7 +348,7 @@ function ProfileCard() {
     .join(" · ");
 
   return (
-    <Card className="rounded-3xl border-brand/15 p-5 shadow-[0_12px_36px_rgba(30,64,120,0.07)]">
+    <Card className="border-brand/15 p-5 shadow-2">
       <p className="text-xs font-semibold tracking-wide text-brand">报考信息</p>
       <h2 className="mt-2 text-2xl font-semibold tracking-tight text-ink">
         {missingGraduationDate
@@ -319,7 +402,7 @@ function MyProgressCard() {
 
   if (failed) {
     return (
-      <Card className="rounded-3xl">
+      <Card>
         <p className="text-xs font-semibold tracking-wide text-brand">当前进度</p>
         <h2 className="mt-2 text-xl font-semibold text-ink">进度暂时没有加载出来</h2>
         <p className="mt-1 text-sm text-ink-muted">你的记录没有丢失，可以稍后再试。</p>
@@ -341,7 +424,7 @@ function MyProgressCard() {
 
   if (!data) {
     return (
-      <Card className="rounded-3xl">
+      <Card>
         <p className="text-sm text-ink-muted">正在整理你的进度…</p>
       </Card>
     );
@@ -350,7 +433,7 @@ function MyProgressCard() {
   const view = buildMyProgressView(data);
 
   return (
-    <Card className="rounded-3xl border-brand/15 p-5 shadow-[0_12px_36px_rgba(30,64,120,0.07)]">
+    <Card className="border-brand/15 p-5 shadow-2">
       <p className="text-xs font-semibold tracking-wide text-brand">当前进度</p>
       <h2 className="mt-2 text-2xl font-semibold tracking-tight text-ink">{view.conclusion}</h2>
       <p className="mt-2 text-sm leading-6 text-ink-muted">{view.description}</p>
@@ -387,15 +470,20 @@ function MyProgressCard() {
   );
 }
 
-function MyCorrectionsCard() {
-  const [items, setItems] = useState<OpportunityCorrectionDTO[] | null>(null);
+/**
+ * 会员状态卡片（M11）。
+ * - 三态：免费（当前全部功能免费开放）/ 有效（显示到期日）/ 已到期（权益失效、资料保留）；
+ * - demo 模式显示静态免费态；invited 模式请求失败时静默不展示；
+ * - 链接到 /pricing 查看套餐与透明口径。
+ */
+function MembershipCard() {
+  const [data, setData] = useState<MembershipViewDTO | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    opportunitiesApi
-      .listMyCorrections()
-      .then((data) => {
-        if (!cancelled) setItems(data);
+    fetchMyMembership()
+      .then((d) => {
+        if (!cancelled) setData(d);
       })
       .catch(() => {
         // 无后端环境（如公开演示）不展示该卡片
@@ -405,43 +493,176 @@ function MyCorrectionsCard() {
     };
   }, []);
 
-  if (items === null || items.length === 0) return null;
+  if (!data) return null;
+
+  const { status, endsAt } = data.membership;
 
   return (
-    <details className="group rounded-2xl border border-line bg-surface">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-4 [&::-webkit-details-marker]:hidden">
-        <span>
-          <span className="block text-sm font-semibold text-ink">我的纠错</span>
-          <span className="mt-0.5 block text-xs text-ink-muted">{items.length} 条提交记录</span>
-        </span>
-        <span className="text-ink-muted transition-transform group-open:rotate-180">⌄</span>
-      </summary>
-      <div className="border-t border-line p-4">
-        <ul className="space-y-3">
-          {items.slice(0, 10).map((c) => (
-            <li key={c.id} className="rounded-lg border border-line p-3">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-medium text-ink truncate">
-                  {c.unitName ?? "岗位已随旧版本移除"} · {c.fieldLabel}
-                </p>
-                <Badge variant={CORRECTION_STATUS_META[c.status].variant}>
-                  {CORRECTION_STATUS_META[c.status].label}
-                </Badge>
-              </div>
-              <p className="mt-1 text-xs text-ink-muted line-clamp-2">{c.content}</p>
-              {c.reviewNote && (
-                <p className="mt-1.5 rounded bg-canvas px-2 py-1 text-xs text-ink-muted whitespace-pre-line">
-                  处理说明：{c.reviewNote}
-                </p>
-              )}
-              <p className="mt-1 text-[11px] text-ink-muted">
-                提交于 {formatDateTime(c.createdAt)}
-                {c.reviewedAt ? ` · 处理于 ${formatDateTime(c.reviewedAt)}` : ""}
-              </p>
-            </li>
-          ))}
-        </ul>
+    <Card>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-ink">会员</p>
+          {status === "free" && (
+            <p className="mt-1 text-sm text-ink-muted">
+              当前全部功能免费开放，无需开通会员
+            </p>
+          )}
+          {status === "active" && endsAt && (
+            <p className="mt-1 text-sm text-ink-muted">
+              有效期至 {formatDateTime(endsAt)}；到期后资料与历史成果保留
+            </p>
+          )}
+          {status === "expired" && (
+            <p className="mt-1 text-sm text-ink-muted">
+              会员已到期，权益已失效；你的资料、收藏与历史成果全部保留
+            </p>
+          )}
+        </div>
+        <Badge variant={status === "active" ? "success" : "muted"}>
+          {status === "free" ? "免费" : status === "active" ? "有效" : "已到期"}
+        </Badge>
       </div>
-    </details>
+      <Link
+        href="/pricing"
+        className="mt-3 inline-block text-sm font-medium text-brand hover:underline"
+      >
+        查看套餐与价格 →
+      </Link>
+    </Card>
+  );
+}
+
+/** D01：最高学历优先取分阶段经历，旧画像回退单一字段 */
+function educationLevelSummary(profile: UserRecruitmentProfile): string | null {
+  const facts = resolveEducationFacts(profile);
+  if (!facts.highestStage) return null;
+  const suffix = facts.hasUnconfirmedLegacy ? "（阶段待确认）" : "";
+  return `${EDUCATION_STAGE_LABELS[facts.highestStage]}${suffix}`;
+}
+
+/** D01：多阶段时展示最高阶段专业与总段数 */
+function educationMajorSummary(profile: UserRecruitmentProfile): string {
+  const facts = resolveEducationFacts(profile);
+  if (!facts.majorFullName) return "未填写";
+  if (facts.fromLegacyFields) return facts.majorFullName;
+  const count = facts.experiences.length;
+  return count > 1 ? `${facts.majorFullName}（共 ${count} 段经历）` : facts.majorFullName;
+}
+
+function MyCorrectionsCard() {
+  return (
+    <MyTicketSection<OpportunityCorrectionDTO, OpportunityCorrectionDetailDTO>
+      title="我的纠错"
+      countUnit="条提交记录"
+      emptyHint="暂无提交记录。在机会详情页发现数据有误时，可在对应条件旁提交纠错。"
+      list={(page, pageSize) => opportunitiesApi.listMyCorrections(page, pageSize)}
+      detail={(id) => opportunitiesApi.getMyCorrection(id)}
+      supplement={(id, input) =>
+        opportunitiesApi.supplementCorrection(id, input)
+      }
+      itemId={(item) => item.id}
+      itemStatus={(item) => item.status}
+      renderSummary={(item) => (
+        <p className="truncate text-sm font-medium text-ink">
+          <span className="mr-1.5 font-mono text-xs text-ink-muted">
+            {item.ticketNo ?? correctionTicketCode(item.id)}
+          </span>
+          {item.unitName ?? "岗位已随旧版本移除"} · {item.fieldLabel}
+        </p>
+      )}
+      renderDetailHeader={(detail) => (
+        <div className="space-y-1 text-xs text-ink-muted">
+          <p>
+            受理编号{" "}
+            <span className="font-mono text-ink">
+              {detail.ticketNo ?? correctionTicketCode(detail.id)}
+            </span>
+            ｜当前状态：{detail.statusLabel ?? CORRECTION_STATUS_META[detail.status].label}
+          </p>
+          <p className="whitespace-pre-line break-words text-ink">
+            原始反馈：{detail.content}
+          </p>
+          {detail.reviewNote && (
+            <p>处理说明：{detail.reviewNote}</p>
+          )}
+        </div>
+      )}
+      renderResolved={(detail) =>
+        detail.resolvedVersionId ? (
+          <p className="mt-2 rounded bg-surface px-2 py-1.5 text-xs text-ink-muted">
+            已在新版本中更正（版本 {detail.resolvedVersionId}），可回到该机会详情核对。
+          </p>
+        ) : null
+      }
+    />
+  );
+}
+
+/** D08：我提交的公告补录与处理状态（受理编号可对账；仅本人可见） */
+function MySubmissionsCard() {
+  return (
+    <MyTicketSection<AnnouncementSubmissionDTO, AnnouncementSubmissionDetailDTO>
+      title="我的公告补录"
+      countUnit="条补录记录"
+      emptyHint="暂无补录记录。发现官方公告已发布但站内未收录时，可在机会页提交补录。"
+      list={(page, pageSize) =>
+        opportunitiesApi.listMyAnnouncementSubmissions(page, pageSize)
+      }
+      detail={(id) => opportunitiesApi.getMyAnnouncementSubmission(id)}
+      supplement={(id, input) =>
+        opportunitiesApi.supplementAnnouncementSubmission(id, input)
+      }
+      itemId={(item) => item.id}
+      itemStatus={(item) => item.status}
+      renderSummary={(item) => (
+        <p className="truncate text-sm font-medium text-ink">
+          <span className="mr-1.5 font-mono text-xs text-ink-muted">
+            {item.ticketNo ?? correctionTicketCode(item.id)}
+          </span>
+          {item.publisherName}
+        </p>
+      )}
+      renderDetailHeader={(detail) => (
+        <div className="space-y-1 text-xs text-ink-muted">
+          <p>
+            受理编号{" "}
+            <span className="font-mono text-ink">
+              {detail.ticketNo ?? correctionTicketCode(detail.id)}
+            </span>
+            ｜当前状态：{detail.statusLabel ?? STATUS_FALLBACK[detail.status]}
+          </p>
+          <a
+            className="block truncate text-brand underline"
+            href={detail.officialUrl}
+            target="_blank"
+            rel="noopener noreferrer nofollow"
+          >
+            {detail.officialUrl}
+          </a>
+          {detail.note && <p>补充说明：{detail.note}</p>}
+          {detail.reviewNote && <p>处理说明：{detail.reviewNote}</p>}
+          {detail.historyPendingVerification && (
+            <p className="rounded bg-surface px-2 py-1.5">
+              历史结案记录：发布关联待核验，暂不提供公告入口。
+            </p>
+          )}
+        </div>
+      )}
+      renderResolved={(detail) =>
+        detail.resolvedVersionId && !detail.historyPendingVerification ? (
+          <p className="mt-2 rounded bg-surface px-2 py-1.5 text-xs text-ink-muted">
+            已关联正式发布的公告。
+            {detail.resolvedUnitId && (
+              <Link
+                className="ml-1 font-medium text-brand underline"
+                href={`/opportunities/${encodeURIComponent(detail.resolvedUnitId)}`}
+              >
+                查看公告
+              </Link>
+            )}
+          </p>
+        ) : null
+      }
+    />
   );
 }

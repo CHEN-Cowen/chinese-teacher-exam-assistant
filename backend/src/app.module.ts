@@ -13,8 +13,14 @@ import { AuthModule } from './auth/auth.module.js';
 import { SessionAuthGuard } from './auth/session.guard.js';
 import { ProfileModule } from './profile/profile.module.js';
 import { PlansModule } from './plans/plans.module.js';
+import { MembershipModule } from './membership/membership.module.js';
+import { PaymentsModule } from './payments/payments.module.js';
 import { TrialModule } from './trial/trial.module.js';
 import { SourcingModule } from './sourcing/sourcing.module.js';
+import { SubjectsModule } from './subjects/subjects.module.js';
+import { AiModule } from './ai/ai.module.js';
+import { KnowledgeModule } from './knowledge/knowledge.module.js';
+import { ServiceDeskModule } from './service-desk/service-desk.module.js';
 import { bullRedisConnection } from './sourcing/redis.js';
 
 @Module({
@@ -28,8 +34,14 @@ import { bullRedisConnection } from './sourcing/redis.js';
     AuthModule,
     ProfileModule,
     PlansModule,
+    MembershipModule,
+    PaymentsModule,
     TrialModule,
     SourcingModule,
+    SubjectsModule,
+    AiModule,
+    KnowledgeModule,
+    ServiceDeskModule,
   ],
   controllers: [AppController, HealthController],
   providers: [

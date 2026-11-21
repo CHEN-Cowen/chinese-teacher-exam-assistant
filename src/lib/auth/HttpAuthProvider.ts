@@ -1,6 +1,7 @@
 import { User } from "@/types";
 import { AuthCredentials, AuthService, RegistrationInput, Session } from "./types";
 import { profileApi } from "@/lib/profile/profileApi";
+import { setActiveIdentity } from "@/lib/storageIdentity";
 
 const API_BASE = "/api/auth";
 
@@ -54,6 +55,8 @@ export class HttpAuthProvider implements AuthService {
     }
     const data = (await res.json()) as { user: User };
     this.session = this.buildSession(data.user);
+    // R01：先切换本机存储身份，再迁移访客数据；迁移只读取该身份可用的本机数据
+    setActiveIdentity(data.user.id);
     // v7.2 登录迁移：服务端非空优先；缺失则迁入；冲突要求用户确认，不静默覆盖。
     // 必须在通知"已登录"前完成：机会页首屏 match 依赖服务端已持久化的画像，
     // 否则与迁移请求竞态导致首次匹配为空；迁移失败不阻塞登录本身。
@@ -94,6 +97,7 @@ export class HttpAuthProvider implements AuthService {
     }
     const data = (await res.json()) as { user: User };
     this.session = this.buildSession(data.user);
+    setActiveIdentity(data.user.id);
     this.emitChange();
     return this.session;
   }
@@ -108,6 +112,7 @@ export class HttpAuthProvider implements AuthService {
       // 网络异常不阻塞本地登出
     }
     this.session = null;
+    setActiveIdentity(null);
     this.emitChange();
   }
 
@@ -122,11 +127,13 @@ export class HttpAuthProvider implements AuthService {
       });
       if (!res.ok) {
         this.session = null;
+        setActiveIdentity(null);
         this.emitChange();
         return null;
       }
       const data = (await res.json()) as { user: User };
       this.session = this.buildSession(data.user);
+      setActiveIdentity(data.user.id);
       return this.session;
     } catch {
       return null;

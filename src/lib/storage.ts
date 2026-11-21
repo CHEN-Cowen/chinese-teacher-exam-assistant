@@ -43,8 +43,14 @@ export function clearAllStorage(): void {
     removeFromStorage(key);
   });
   if (typeof window !== "undefined") {
+    // R01：身份作用域键（`原键::user:<id>`）也要一并清空，
+    // 否则“清空全部数据”后账号下的草稿/教育经历仍然残留。
+    const scopedPrefixes = Object.values(STORAGE_KEYS).map((key) => `${key}::`);
     for (const key of Object.keys(localStorage)) {
       if (key.startsWith("kb_demo_opportunities_v1_")) removeFromStorage(key);
+      if (scopedPrefixes.some((prefix) => key.startsWith(prefix))) {
+        removeFromStorage(key);
+      }
     }
   }
 }

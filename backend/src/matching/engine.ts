@@ -16,11 +16,18 @@
  * 不变量：用户未填写的信息只能得到 UNKNOWN，永远不会被转换成 FAIL。
  */
 import {
+  degreeFacts,
+  majorCandidates,
+  resolveEducationFacts,
+  type DegreeFact,
+} from './education.js';
+import { unitHasOpenSubject } from '../subjects/subject-catalog.js';
+import {
   IN_SCOPE_EMPLOYMENT_NATURES,
-  OPEN_SUBJECTS,
   type AnnouncementVersion,
   type ApplicationUnit,
   type CredentialLevel,
+  type DegreeCode,
   type EmploymentNatureCode,
   type GateResult,
   type MatchDimensionResult,
@@ -56,6 +63,21 @@ const EDUCATION_RANK: Record<CredentialLevel, number> = {
   bachelor: 2,
   master: 3,
   doctorate: 4,
+};
+
+const EDUCATION_STAGE_LABELS: Record<CredentialLevel, string> = {
+  secondary: '中专/高中',
+  college: '大专',
+  bachelor: '本科',
+  master: '硕士研究生',
+  doctorate: '博士研究生',
+};
+
+const DEGREE_LABELS: Record<DegreeCode, string> = {
+  none: '无学位',
+  bachelor: '学士',
+  master: '硕士',
+  doctorate: '博士',
 };
 
 /** 专业名归一化：去多余空白、统一全角括号与大小写（不删除“师范”等语义） */
@@ -117,15 +139,25 @@ export function isUserVisibleInCatalog(
   return true;
 }
 
-/**
- * 地区匹配：画像地区按省级（前2位）或市级（前4位）前缀匹配。
- * 画像未填任何地区 → UNKNOWN（不臆造意向，也不判不符合）。
- */
+/** 地区编码前缀：省级前 2 位、市级前 4 位 */
 function regionPrefix(code: string): string {
-  return code.endsWith('0000') ? code.slice(0, 2)
-    : code.endsWith('00') ? code.slice(0, 4) : code;
+  return code.endsWith('0000')
+    ? code.slice(0, 2)
+    : code.endsWith('00')
+      ? code.slice(0, 4)
+      : code;
 }
 
+/**
+ * 地区匹配（D03：偏好与资格分离）。
+ *
+ * 语义（PRD U02）：
+ * - `required` 才算“浏览范围”：岗位不在 required 内属于偏好范围外，
+ *   不是资格不符合，标记 `dimension=region` 的 FAIL 但 `hard=false`；
+ * - `preferred` / `consider` 只影响排序和提示，不排除岗位；
+ * - 未填任何地区 → UNKNOWN，不能臆造意向；
+ * - 区县未明确且省级意向存在 → UNKNOWN，不确认“在范围内”。
+ */
 export function evaluateRegion(
   unitRegionCode: string,
   profile: UserRecruitmentProfile,
@@ -133,8 +165,21 @@ export function evaluateRegion(
   const base = {
     requirementId: 'region',
     dimension: 'region' as const,
-    hard: true,
+    hard: false,
   };
+  const userFact =
+    profile.regions
+      .map(
+        (pref) =>
+          `${pref.province}${pref.city ?? ''}（${
+            pref.level === 'required'
+              ? '必须接受'
+              : pref.level === 'preferred'
+                ? '优先'
+                : '可考虑'
+          }）`,
+      )
+      .join('、') || undefined;
   if (profile.regions.length === 0) {
     return {
       ...base,
@@ -142,31 +187,67 @@ export function evaluateRegion(
       reason: '尚未填写可接受地区，补充后才能按地域筛选',
     };
   }
-  const accepted = profile.regions.find((pref) => {
+  const matched = profile.regions.find((pref) => {
     const prefix = regionPrefix(pref.code);
     return unitRegionCode.startsWith(prefix);
   });
-  if (accepted) {
+  if (matched?.level === 'required') {
     return {
       ...base,
       value: 'PASS',
-      reason: `岗位地区在你可接受的${accepted.province}${accepted.city ?? ''}范围内`,
+      reason: `岗位地区在你必须接受的${matched.province}${matched.city ?? ''}范围内`,
+      ...(userFact ? { userFact } : {}),
     };
   }
-  if (profile.regions.some((pref) => pref.code.startsWith(regionPrefix(unitRegionCode)))) {
-    return { ...base, value: 'UNKNOWN', reason: '岗位区县尚未明确，不能确认是否在意向地区内' };
+  if (matched) {
+    return {
+      ...base,
+      value: 'PASS',
+      reason:
+        matched.level === 'preferred'
+          ? `岗位地区在你优先考虑的${matched.province}${matched.city ?? ''}范围内（偏好只影响排序）`
+          : `岗位地区在你可考虑的${matched.province}${matched.city ?? ''}范围内（偏好只影响排序）`,
+      ...(userFact ? { userFact } : {}),
+    };
+  }
+  if (
+    profile.regions.some((pref) => pref.code.startsWith(regionPrefix(unitRegionCode)))
+  ) {
+    return {
+      ...base,
+      value: 'UNKNOWN',
+      reason: '岗位区县尚未明确，不能确认是否在意向地区内',
+      ...(userFact ? { userFact } : {}),
+    };
+  }
+  const hasRequired = profile.regions.some((pref) => pref.level === 'required');
+  if (!hasRequired) {
+    return {
+      ...base,
+      value: 'PASS',
+      reason: '未设置“必须接受”的地区范围，该岗位地区只作为排序参考',
+      ...(userFact ? { userFact } : {}),
+    };
   }
   return {
     ...base,
     value: 'FAIL',
-    reason: '岗位地区不在你填写的可接受就业地区范围内',
+    reason:
+      '岗位不在你“必须接受”的地区范围内：属于偏好范围外，不是资格不符合；可调整地区偏好后恢复',
+    ...(userFact ? { userFact } : {}),
   };
 }
+
+type DimensionExtras = Pick<
+  MatchDimensionResult,
+  'userFact' | 'adoptedEducation'
+>;
 
 function dimensionResult(
   req: Requirement,
   value: MatchValue,
   reason: string,
+  extras: DimensionExtras = {},
 ): MatchDimensionResult {
   return {
     requirementId: req.id,
@@ -174,17 +255,30 @@ function dimensionResult(
     value,
     reason,
     hard: req.hard,
+    ...extras,
   };
 }
 
-const pass = (req: Requirement, reason: string) =>
-  dimensionResult(req, 'PASS', reason);
-const fail = (req: Requirement, reason: string) =>
-  dimensionResult(req, 'FAIL', reason);
-const unknown = (req: Requirement, reason: string) =>
-  dimensionResult(req, 'UNKNOWN', reason);
-const manual = (req: Requirement, reason: string) =>
-  dimensionResult(req, 'MANUAL_REVIEW', reason);
+const pass = (
+  req: Requirement,
+  reason: string,
+  extras?: DimensionExtras,
+) => dimensionResult(req, 'PASS', reason, extras);
+const fail = (
+  req: Requirement,
+  reason: string,
+  extras?: DimensionExtras,
+) => dimensionResult(req, 'FAIL', reason, extras);
+const unknown = (
+  req: Requirement,
+  reason: string,
+  extras?: DimensionExtras,
+) => dimensionResult(req, 'UNKNOWN', reason, extras);
+const manual = (
+  req: Requirement,
+  reason: string,
+  extras?: DimensionExtras,
+) => dimensionResult(req, 'MANUAL_REVIEW', reason, extras);
 
 /**
  * 专业精确匹配（含已审核别名）。
@@ -212,42 +306,306 @@ export function evaluateRequirement(
   const c = req.criterion;
   switch (c.kind) {
     case 'education': {
-      const educationLevel = profile.educationLevel;
+      const facts = resolveEducationFacts(profile);
+      const educationLevel = facts.highestStage ?? profile.educationLevel;
       const rank = educationLevel ? EDUCATION_RANK[educationLevel] : undefined;
+      const userFact = educationLevel
+        ? `${EDUCATION_STAGE_LABELS[educationLevel]}${facts.adoptedExperienceId ? '（分阶段经历）' : '（旧单一字段）'}`
+        : undefined;
       if (rank == null) return unknown(req, '尚未填写最高学历');
       if (rank >= EDUCATION_RANK[c.minLevel]) {
-        return pass(req, '你的学历满足公告要求的最低学历');
+        const fromExperience = facts.adoptedExperienceId
+          ? `（采用${EDUCATION_STAGE_LABELS[educationLevel!]}阶段经历）`
+          : '';
+        return pass(req, `你的学历满足公告要求的最低学历${fromExperience}`, {
+          ...(userFact ? { userFact } : {}),
+        });
       }
-      return fail(req, '最高学历低于公告要求的最低学历');
+      return fail(req, '最高学历低于公告要求的最低学历', {
+        ...(userFact ? { userFact } : {}),
+      });
     }
     case 'degree': {
-      if (!profile.degree) return unknown(req, '尚未填写学位信息');
-      if (
-        EDUCATION_RANK[degreeToLevel(profile.degree)] >=
-        EDUCATION_RANK[degreeToLevel(c.requiredDegree)]
-      ) {
-        return pass(req, '学位满足公告要求');
+      const facts = degreeFacts(profile);
+      if (facts.length === 0) return unknown(req, '尚未填写学位信息');
+      const requiredRank = EDUCATION_RANK[degreeToLevel(c.requiredDegree)];
+      const statusLabel = (fact: DegreeFact): string =>
+        fact.degreeStatus === 'obtained'
+          ? '已取得'
+          : fact.degreeStatus === 'in_progress'
+            ? '在读/待取得'
+            : fact.degreeStatus === 'none'
+              ? '无学位'
+              : '未填写取得状态';
+      const factLabel = (fact: DegreeFact): string => {
+        const stage = fact.stage ? `${EDUCATION_STAGE_LABELS[fact.stage]}阶段` : '';
+        return `${stage}${DEGREE_LABELS[fact.degree]}（${statusLabel(fact)}）`;
+      };
+      const userFact = facts.map(factLabel).join('；');
+      const extras = { userFact };
+      const rankOk = (fact: DegreeFact): boolean =>
+        fact.degree !== 'none' &&
+        EDUCATION_RANK[degreeToLevel(fact.degree)] >= requiredRank;
+
+      // 1) 已取得的学位达到要求即满足（多段经历任一即可，不要求每段都填）
+      const obtained = facts.filter(
+        (fact) => fact.degreeStatus === 'obtained' && rankOk(fact),
+      );
+      if (obtained.length > 0) {
+        return pass(req, '已取得的学位满足公告要求', extras);
       }
-      return fail(req, '学位未达到公告要求');
+      // 2) 未填写取得状态的旧画像/旧字段：按用户已声明的学位层次判断，并提示补充状态
+      const declaredLegacy = facts.filter(
+        (fact) => fact.degreeStatus === undefined && rankOk(fact),
+      );
+      if (declaredLegacy.length > 0) {
+        return pass(
+          req,
+          '学位满足公告要求（未填写取得状态，旧资料按已声明学位判断，建议补充）',
+          extras,
+        );
+      }
+      // 3) 在读/待取得：只有公告明确允许限期取得才能接受
+      const inProgress = facts.filter(
+        (fact) => fact.degreeStatus === 'in_progress' && rankOk(fact),
+      );
+      if (inProgress.length > 0) {
+        const fact = inProgress[0];
+        if (!c.acceptInProgress) {
+          return manual(
+            req,
+            '你的学位尚在取得中，公告未明确是否接受在读/待取得学位报考，请向招聘单位确认；取得后重新判断',
+            extras,
+          );
+        }
+        if (!c.obtainBy) {
+          return manual(
+            req,
+            '公告允许在期限内取得学位，但期限尚未核对明确，请向招聘单位确认',
+            extras,
+          );
+        }
+        if (!fact.graduationDate) {
+          return unknown(
+            req,
+            '请补充预计取得学位的时间，以判断能否在公告期限内取得',
+            extras,
+          );
+        }
+        const deadline = new Date(c.obtainBy).getTime();
+        const expected = new Date(fact.graduationDate).getTime();
+        if (
+          Number.isNaN(deadline) ||
+          Number.isNaN(expected)
+        ) {
+          return manual(
+            req,
+            '公告期限或你填写的取得时间无法解析，请核对后重新判断',
+            extras,
+          );
+        }
+        if (expected > deadline) {
+          return fail(
+            req,
+            `你预计 ${fact.graduationDate} 取得学位，晚于公告要求的 ${c.obtainBy}`,
+            extras,
+          );
+        }
+        return pass(
+          req,
+          `公告允许在 ${c.obtainBy} 前取得学位，你预计 ${fact.graduationDate} 取得`,
+          extras,
+        );
+      }
+      // 4) 明确没有学位或学位层次不足
+      const onlyNoDegree = facts.every(
+        (fact) => fact.degree === 'none' || fact.degreeStatus === 'none',
+      );
+      if (onlyNoDegree) {
+        return fail(
+          req,
+          `你填写为无学位，公告要求${DEGREE_LABELS[c.requiredDegree]}及以上学位`,
+          extras,
+        );
+      }
+      return fail(req, '学位未达到公告要求', extras);
     }
     case 'major': {
-      const profileMajor = normalizeMajor(profile.majorFullName ?? '');
-      if (!profileMajor) return unknown(req, '尚未填写毕业证专业全称');
-      if (majorNameMatches(profile.majorFullName ?? '', c.majorNames)) {
-        return pass(req, '专业与公告列明专业（或已审核等价专业）一致');
+      const candidates = majorCandidates(profile);
+      if (candidates.length === 0)
+        return unknown(req, '尚未填写毕业证专业全称');
+      const stageLabels = (stage?: CredentialLevel) =>
+        stage ? EDUCATION_STAGE_LABELS[stage] : '未分阶段（旧资料）';
+      const userFact =
+        candidates
+          .map(
+            (candidate) =>
+              `${stageLabels(candidate.stage)}${candidate.stageUnconfirmed ? '（阶段待确认）' : ''}：${candidate.majorFullName}`,
+          )
+          .join('；') || undefined;
+      const extras = userFact ? { userFact } : {};
+      const adoptedOf = (list: typeof candidates) =>
+        list.map((candidate) => ({
+          experienceId: candidate.experienceId ?? 'legacy-major',
+          ...(candidate.stage ? { stage: candidate.stage } : {}),
+          majorFullName: candidate.majorFullName,
+        }));
+      const matched = (candidate: (typeof candidates)[number]) =>
+        majorNameMatches(candidate.majorFullName, c.majorNames);
+
+      const stages = c.stages ? [...new Set(c.stages)] : [];
+      const stageMode = c.stageMode ?? 'any';
+
+      if (stages.length === 0) {
+        // 公告未明确适用阶段（R03）：任一已填阶段命中即通过，
+        // 不得只取最高阶段专业判不符合；均不命中属阶段歧义 → 官方确认。
+        // 阶段待确认的迁移记录不能凭名称直接算命中（R03）
+        const confirmed = candidates.filter(
+          (candidate) => !candidate.stageUnconfirmed,
+        );
+        const hits = confirmed.filter(matched);
+        if (hits.length > 0) {
+          const note = hits
+            .map(
+              (candidate) =>
+                `${stageLabels(candidate.stage)}${
+                  candidate.stageUnconfirmed ? '（阶段待确认）' : ''
+                }专业“${candidate.majorFullName}”`,
+            )
+            .join('、');
+          return pass(
+            req,
+            `专业与公告列明专业（或已审核等价专业）一致（采用${note}）`,
+            { ...extras, adoptedEducation: adoptedOf(hits) },
+          );
+        }
+        if (candidates.some((candidate) => candidate.stageUnconfirmed)) {
+          return unknown(
+            req,
+            '从旧资料迁移的专业尚未确认所属学历阶段，请先确认后再判断',
+            extras,
+          );
+        }
+        if (c.ambiguous) {
+          return manual(
+            req,
+            '公告专业目录表述存在解释空间，建议向招聘单位确认后再报名',
+            extras,
+          );
+        }
+        return manual(req, '公告未明确该专业要求适用的学历阶段，且你的专业未精确命中列明专业；请向招聘单位确认后再判断', {
+          ...extras,
+          adoptedEducation: adoptedOf(candidates),
+        });
       }
-      // 专业目录存在解释空间（“相关专业/师范类方向”等），不得自动判定
+
+      // 公告指定了阶段：未确认阶段归属的迁移记录不能当作该阶段事实
+      const stageCandidates = stages.map((stage) => {
+        const all = candidates.filter((candidate) => candidate.stage === stage);
+        const confirmed = all.filter((candidate) => !candidate.stageUnconfirmed);
+        return { stage, all, confirmed, hits: confirmed.filter(matched) };
+      });
+      const missing = stageCandidates.filter((entry) => entry.all.length === 0);
+
+      if (stageMode === 'all') {
+        if (missing.length > 0) {
+          return unknown(
+            req,
+            `公告要求${missing
+              .map((entry) => stageLabels(entry.stage))
+              .join('、')}阶段专业同时符合，你尚未填写该阶段经历`,
+            extras,
+          );
+        }
+        const unconfirmed = stageCandidates.filter(
+          (entry) => entry.confirmed.length === 0,
+        );
+        if (unconfirmed.length > 0) {
+          return unknown(
+            req,
+            `你的${unconfirmed
+              .map((entry) => stageLabels(entry.stage))
+              .join('、')}阶段经历尚未确认阶段归属，请先确认后再判断`,
+            extras,
+          );
+        }
+        if (stageCandidates.every((entry) => entry.hits.length > 0)) {
+          const adopted = stageCandidates.flatMap((entry) => adoptedOf(entry.hits));
+          return pass(
+            req,
+            `公告要求${stages
+              .map((stage) => stageLabels(stage))
+              .join('、')}阶段专业同时符合，你的各阶段专业均符合`,
+            { ...extras, adoptedEducation: adopted },
+          );
+        }
+        if (c.ambiguous) {
+          return manual(
+            req,
+            '公告专业目录表述存在解释空间，建议向招聘单位确认后再报名',
+            extras,
+          );
+        }
+        const failedStage = stageCandidates.find((entry) => entry.hits.length === 0);
+        return fail(
+          req,
+          `公告要求${stageLabels(failedStage?.stage)}阶段专业同时符合，你的该阶段专业不在列明范围内`,
+          extras,
+        );
+      }
+
+      // any：任一阶段命中即可，另一可选阶段缺资料不影响已命中的结论
+      const stageHits = stageCandidates.flatMap((entry) => entry.hits);
+      if (stageHits.length > 0) {
+        const hitStages = [
+          ...new Set(
+            stageCandidates
+              .filter((entry) => entry.hits.length > 0)
+              .map((entry) => stageLabels(entry.stage)),
+          ),
+        ];
+        return pass(
+          req,
+          `专业与公告列明专业（或已审核等价专业）一致（采用${hitStages.join('、')}阶段专业）`,
+          { ...extras, adoptedEducation: adoptedOf(stageHits) },
+        );
+      }
+      if (missing.length > 0) {
+        return unknown(
+          req,
+          `公告要求${missing
+            .map((entry) => stageLabels(entry.stage))
+            .join('、')}阶段任一专业符合，你尚未填写该阶段经历`,
+          extras,
+        );
+      }
+      if (stageCandidates.some((entry) => entry.confirmed.length === 0)) {
+        return unknown(
+          req,
+          '你的相关阶段经历尚未确认阶段归属，请先确认后再判断',
+          extras,
+        );
+      }
       if (c.ambiguous) {
         return manual(
           req,
           '公告专业目录表述存在解释空间，建议向招聘单位确认后再报名',
+          extras,
         );
       }
-      return fail(req, '专业不在公告列明的可报专业范围内');
+      return fail(
+        req,
+        `公告列明阶段（${stages
+          .map((stage) => stageLabels(stage))
+          .join('、')}）的专业均不在可报范围内`,
+        extras,
+      );
     }
     case 'graduate_status': {
       if (!c.requireFresh) return pass(req, '公告未限制应届身份');
-      if (!profile.graduationDate)
+      const facts = resolveEducationFacts(profile);
+      const graduationDate = facts.graduationDate ?? profile.graduationDate;
+      if (!graduationDate)
         return unknown(
           req,
           '尚未填写毕业时间，无法按本公告口径判断应届身份',
@@ -283,6 +641,9 @@ export function evaluateRequirement(
       if (!cert?.status) {
         return unknown(req, '尚未填写教师资格情况，补充信息后判断');
       }
+      const certFact = cert.subject && cert.stage
+        ? `${cert.subject} · ${cert.stage}${cert.status === 'in_progress' ? '（在途）' : ''}`
+        : undefined;
       if (cert.status === 'none')
         return fail(req, '尚未取得公告要求的教师资格');
       if (cert.status === 'in_progress') {
@@ -290,15 +651,33 @@ export function evaluateRequirement(
           return manual(
             req,
             '教师资格在途，是否接受“领证中”报考需向招聘单位确认',
+            { ...(certFact ? { userFact: certFact } : {}) },
           );
         }
       }
       if (!cert.subject || !cert.stage)
         return unknown(req, '尚未填写教师资格的学科与学段');
       if (cert.subject === c.subject && cert.stage === c.stage) {
-        return pass(req, '教师资格的学科与学段与岗位一致');
+        return pass(req, '教师资格的学科与学段与岗位一致', {
+          ...(certFact ? { userFact: certFact } : {}),
+        });
       }
-      return fail(req, '教师资格的学科或学段与岗位要求不一致');
+      // 公告原文明确允许高学段资格报考低学段岗位时，才按“学段向下兼容”放宽；
+      // 没有该明确表述时不得自行放宽。
+      if (
+        c.acceptHigherStage &&
+        cert.subject === c.subject &&
+        teacherStageRank(cert.stage) >= teacherStageRank(c.stage)
+      ) {
+        return pass(
+          req,
+          '公告明确允许高学段教师资格报考低学段岗位，你的资格学段高于岗位要求',
+          { ...(certFact ? { userFact: certFact } : {}) },
+        );
+      }
+      return fail(req, '教师资格的学科或学段与岗位要求不一致', {
+        ...(certFact ? { userFact: certFact } : {}),
+      });
     }
     case 'age': {
       const age = ageAt(profile.birthDate, c.referenceDate ?? nowIso);
@@ -357,6 +736,17 @@ function degreeToLevel(degree: string): CredentialLevel {
   return 'secondary';
 }
 
+/** 教师资格学段高低：幼儿园 0、小学 1、初中 2、高中 3；未知返回 -1 */
+function teacherStageRank(stage: string): number {
+  const ranks: Record<string, number> = {
+    kindergarten: 0,
+    primary: 1,
+    middle: 2,
+    high: 3,
+  };
+  return ranks[stage] ?? -1;
+}
+
 /**
  * 高影响资格维度（与 announcements/domain.ts 的 HIGH_IMPACT_FIELDS 同口径）：
  * 这些条件的证据只要未经人工核对（state !== 'official'），该机会就不得进入
@@ -387,15 +777,14 @@ export function evaluateGates(
 ): GateResult[] {
   const gates: GateResult[] = [];
 
-  const subjectOpen = OPEN_SUBJECTS.includes(
-    unit.subject as (typeof OPEN_SUBJECTS)[number],
-  );
+  // W1：岗位可含多个学科（subjects），任一学科开放即通过；旧单值字段兜底。
+  const subjectOpen = unitHasOpenSubject(unit);
   gates.push({
     code: 'subject_not_open',
     passed: subjectOpen,
     reason: subjectOpen
-      ? '学科在当前开放范围内'
-      : '该学科当前尚未开放匹配',
+      ? '岗位学科在已开放范围内'
+      : '该岗位学科尚未识别或未开放匹配',
   });
 
   // 报名时间闸门分两层：官方未给具体日期（预告/「另行通知」）→ unconfirmed；
@@ -545,31 +934,75 @@ export function evaluateGates(
   return gates;
 }
 
-/** 四值聚合（唯一口径，见文件头注释） */
+/**
+ * 四值聚合（唯一口径，见文件头注释）。
+ *
+ * D03：地区是偏好约束，不参与资格聚合：
+ * - 资格维度（非 region）硬 FAIL → 明确不符合；
+ * - 资格维度 MANUAL_REVIEW / 软 FAIL → 需人工确认；
+ * - 资格维度 UNKNOWN 或地区 UNKNOWN → 信息不足；
+ * - 否则初步符合（即使岗位在偏好范围外，资格结论仍是初步符合）。
+ */
 export function aggregateOverall(
   dimensions: MatchDimensionResult[],
 ): OpportunityMatchStatus {
-  if (dimensions.some((d) => d.hard && d.value === 'FAIL'))
+  const qualification = dimensions.filter((d) => d.dimension !== 'region');
+  if (qualification.some((d) => d.hard && d.value === 'FAIL'))
     return 'not_eligible';
   if (
-    dimensions.some(
+    qualification.some(
       (d) => d.value === 'MANUAL_REVIEW' || (!d.hard && d.value === 'FAIL'),
     )
   ) {
     return 'manual_review';
   }
-  if (dimensions.some((d) => d.value === 'UNKNOWN')) return 'need_more_info';
+  const region = dimensions.find((d) => d.dimension === 'region');
+  if (
+    qualification.some((d) => d.value === 'UNKNOWN') ||
+    region?.value === 'UNKNOWN'
+  ) {
+    return 'need_more_info';
+  }
   return 'preliminary_eligible';
+}
+
+/**
+ * 逐条件下一步动作（D03）：让用户知道“现在能做什么”，
+ * 而不是只看到一个结论标签。文案不承诺报名结果。
+ */
+function nextStepFor(dimension: MatchDimensionResult): string {
+  if (dimension.dimension === 'region') {
+    if (dimension.value === 'FAIL')
+      return '如需浏览该岗位，可在地区偏好中把对应地区设为必须接受，或取消“必须接受”限制';
+    if (dimension.value === 'UNKNOWN')
+      return '在“我的资料”补充必须接受的地区后重新判断';
+    return '无需操作；地区偏好只影响排序和浏览范围';
+  }
+  switch (dimension.value) {
+    case 'PASS':
+      return '无需操作；最终以招聘单位资格审核为准';
+    case 'FAIL':
+      return '查看公告原文确认后，改报其他岗位或补充可补正的材料';
+    case 'UNKNOWN':
+      return '在“我的资料”或在岗位详情补充该条件所需信息后重新判断';
+    case 'MANUAL_REVIEW':
+      return '按公告联系方式向招聘单位确认口径后再决定是否报名';
+  }
 }
 
 function summarize(
   status: OpportunityMatchStatus,
   dimensions: MatchDimensionResult[],
+  preferenceOutOfScope: boolean,
 ): string {
-  const firstNotPass = dimensions.find((d) => d.value !== 'PASS');
+  const firstNotPass = dimensions.find(
+    (d) => d.value !== 'PASS' && d.dimension !== 'region',
+  );
   switch (status) {
     case 'preliminary_eligible':
-      return '关键资格条件初步符合，可关注并准备报名材料';
+      return preferenceOutOfScope
+        ? '关键资格条件初步符合，但岗位不在你“必须接受”的地区范围内（偏好范围外，不是资格不符合）'
+        : '关键资格条件初步符合，可关注并准备报名材料';
     case 'need_more_info':
       return `需要补充信息后再判断：${firstNotPass?.reason ?? '部分条件待补充'}`;
     case 'manual_review':
@@ -595,8 +1028,19 @@ export function evaluateOpportunity(
     ...unit.requirements.map((req) =>
       evaluateRequirement(req, profile, nowIso),
     ),
-  ];
+  ].map((dimension) => ({
+    ...dimension,
+    nextStep: nextStepFor(dimension),
+  }));
   const overall = aggregateOverall(dimensions);
+  const region = dimensions.find((d) => d.dimension === 'region');
+  // 偏好范围外与资格结论分离：地区不在“必须接受”范围，且没有硬性资格不符合，
+  // 就标记 preferenceOutOfScope（即使资格仍需补充信息）。这类岗位可见但不计入有效机会。
+  const preferenceOutOfScope =
+    region?.value === 'FAIL' &&
+    !dimensions.some(
+      (d) => d.dimension !== 'region' && d.hard && d.value === 'FAIL',
+    );
   return {
     unitId: unit.id,
     announcementId: announcement.id,
@@ -604,7 +1048,8 @@ export function evaluateOpportunity(
     gates,
     dimensions,
     overall,
-    summary: summarize(overall, dimensions),
+    ...(preferenceOutOfScope ? { preferenceOutOfScope: true } : {}),
+    summary: summarize(overall, dimensions, preferenceOutOfScope),
   };
 }
 
@@ -632,12 +1077,13 @@ export function buildCandidates(
 }
 
 /**
- * 有效机会：闸门全过、非明确不符合、地区意向已明确（非 UNKNOWN）。
- * 闸门失败（含已截止/非当前学科）不进入有效推荐。
+ * 有效机会：闸门全过、非明确不符合、地区意向已明确（非 UNKNOWN），
+ * 且不在“偏好范围外”（D03）。偏好范围外仍然可见，但不计入有效机会。
  */
 export function isValidOpportunity(match: OpportunityMatchResult): boolean {
   if (!match.gates.every((g) => g.passed)) return false;
   if (match.overall === 'not_eligible') return false;
+  if (match.preferenceOutOfScope) return false;
   const region = match.dimensions.find((d) => d.dimension === 'region');
   if (region?.value === 'UNKNOWN') return false;
   return true;

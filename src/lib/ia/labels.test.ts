@@ -30,8 +30,8 @@ describe("学段学科枚举格式化", () => {
     expect(subjectLabel("english")).toBe("英语");
   });
 
-  it("subjectLabel 对未知学科返回「其他学科」", () => {
-    expect(subjectLabel("unknown" as never)).toBe("其他学科");
+  it("subjectLabel 对未知学科保留原文，便于人工审核", () => {
+    expect(subjectLabel("unknown" as never)).toBe("unknown");
   });
 
   it("stageSubjectLabel 组合显示为「初中 · 语文」格式", () => {

@@ -54,7 +54,7 @@ function RiskLine({ risk }: { risk: OpportunityRisk }) {
 }
 
 const ACTION_CLASS =
-  "group inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-brand px-6 text-base font-semibold text-white shadow-[0_8px_20px_rgba(57,115,230,0.2)] transition-all hover:-translate-y-0.5 hover:bg-brand-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50";
+  "group inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-brand px-6 text-base font-semibold text-white transition-colors hover:bg-brand-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 disabled:pointer-events-none disabled:bg-[#E9EDF5] disabled:text-ink-muted";
 
 function ActionContent({ label }: { label: string }) {
   return (
@@ -82,7 +82,7 @@ export function Hero({ meta, conclusion, risk, action, children }: HeroProps) {
   return (
     <section
       aria-label="结论与下一步"
-      className="relative overflow-hidden rounded-3xl border border-brand/15 bg-surface p-5 shadow-[0_12px_36px_rgba(30,64,120,0.07)] sm:p-6"
+      className="relative overflow-hidden rounded-2xl border border-brand/15 bg-surface p-5 shadow-2 sm:p-6"
     >
       <span
         aria-hidden="true"

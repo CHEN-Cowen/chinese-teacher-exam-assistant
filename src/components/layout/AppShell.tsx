@@ -4,7 +4,7 @@ import { ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { BottomNav } from "./BottomNav";
 import { Header } from "./Header";
-import { DesktopNav } from "./DesktopNav";
+import { Sidebar } from "./Sidebar";
 import { RequireAuth } from "@/components/auth/RequireAuth";
 import { DemoBanner, DEMO_BANNER_SPACER_CLASS } from "@/components/demo/DemoBanner";
 
@@ -32,8 +32,8 @@ export function AppShell({ children }: { children: ReactNode }) {
     );
   }
 
-  // 价值首页 / 30 秒说明 / 快速问答 / 首次结果页 / 访客定向补充页：无导航外壳，
-  // 未登录也可访问（v5.1 先体验后登录；v7.2 访客补充流程绝不进入登录或 onboarding）
+  // 价值首页 / 产品说明 / 快速问答 / 首次结果页 / 访客定向补充页：无导航外壳，
+  // 未登录也可访问
   if (
     pathname === "/" ||
     pathname === "/learn" ||
@@ -50,18 +50,20 @@ export function AppShell({ children }: { children: ReactNode }) {
     );
   }
 
-  // 用户端常规页面
+  // 用户端常规页面：桌面 190px 侧栏 + 主内容；手机底部主导航
   return (
     <div className="min-h-screen bg-canvas">
       <DemoBanner />
       <div className={DEMO_BANNER_SPACER_CLASS} />
-      <DesktopNav />
-      <Header />
-      <main className="pb-16 md:pb-0">
-        <div className="mx-auto max-w-[1200px] px-4 py-6 md:px-6">
-          <RequireAuth>{children}</RequireAuth>
-        </div>
-      </main>
+      <Sidebar />
+      <div className="md:pl-[190px]">
+        <Header />
+        <main className="pb-20 md:pb-8">
+          <div className="mx-auto max-w-[1440px] px-5 py-6 md:px-7">
+            <RequireAuth>{children}</RequireAuth>
+          </div>
+        </main>
+      </div>
       <BottomNav />
     </div>
   );

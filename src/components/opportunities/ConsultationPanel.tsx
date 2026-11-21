@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Textarea } from "@/components/ui/Input";
 import type {
@@ -91,6 +91,14 @@ export function ConsultationPanel({
   const [questionDrafts, setQuestionDrafts] = useState<Record<string, string>>({});
   /** 自由文本补充草稿（与已存答复分开管理，失焦保存） */
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
+  /** 复制反馈的自动清除计时器；卸载时必须清理，避免 teardown 后 setState */
+  const feedbackTimer = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (feedbackTimer.current !== null) window.clearTimeout(feedbackTimer.current);
+    };
+  }, []);
 
   const dimensionByKey = new Map<string, DimensionDTO>(
     dimensions.map((d) => [d.dimension, d]),
@@ -107,7 +115,9 @@ export function ConsultationPanel({
       ok,
       text: ok ? "已复制" : "复制失败，请手动选择文本",
     });
-    window.setTimeout(() => {
+    if (feedbackTimer.current !== null) window.clearTimeout(feedbackTimer.current);
+    feedbackTimer.current = window.setTimeout(() => {
+      feedbackTimer.current = null;
       setCopyFeedback((current) => (current?.scope === scope ? null : current));
     }, 2000);
   };

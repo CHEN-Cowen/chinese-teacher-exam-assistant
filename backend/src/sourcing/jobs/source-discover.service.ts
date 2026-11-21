@@ -21,6 +21,9 @@ import {
   publicColumnRequest,
   publicColumnPages,
   staticListPages,
+  jhtmlIndexPages,
+  jsPaginationPages,
+  govInfoListPages,
 } from '../public-column.js';
 import {
   CrawlRunStore,
@@ -29,8 +32,33 @@ import {
 } from '../crawl-run-store.js';
 import { SourceDocumentStore } from '../source-document-store.js';
 import { SafeFetcherFactory } from '../fetch/safe-fetcher-factory.js';
-import { SafeFetchError } from '../fetch/safe-fetcher.js';
+import {
+  isJpageDataUrl,
+  jpageDataproxyPages,
+  jpagePostRequest,
+} from '../jpage-list.js';
+import {
+  elsArticlePages,
+  elsJsonRequest,
+  isElsArticleUrl,
+} from '../els-list.js';
+import {
+  fjdzSearchPages,
+  fjdzSearchRequest,
+  isFjdzSearchUrl,
+} from '../fz-list.js';
+import { nfcmsIndexPages } from '../nfcms-list.js';
+import {
+  isPagefrontUrl,
+  pagefrontPages,
+  pagefrontRequest,
+} from '../pagefront-list.js';
+import { whsnavPages } from '../whsnav-list.js';
+import { wcm5Pages } from '../wcm5-list.js';
+import { SafeFetchError, RequestBlockedError } from '../fetch/safe-fetcher.js';
 import { SourcingMetrics } from '../observability.js';
+import type { TrialBudgetSnapshot } from '../crawl-budget.js';
+import { PrismaCrawlBudgetStore } from '../crawl-budget.store.js';
 import {
   interventionFromBody,
   interventionFromError,
@@ -55,13 +83,19 @@ export interface DiscoverOutcome {
     | 'structure_changed'
     | 'blocked'
     | 'failed'
-    | 'partial';
+    | 'partial'
+    | 'partial_budget'
+    | 'stopped';
   discoveredCount: number;
   downloadedCount: number;
   unchangedCount: number;
   /** 本轮失败计数（部分栏目失败时成功路径也可能 >0） */
   failedCount?: number;
   errorSummary?: string;
+  /** 试跑预算快照（已用/剩余/未扫描量）；非试跑为 undefined */
+  budget?: TrialBudgetSnapshot;
+  /** full=按来源配置完整扫描；partial_budget=受预算限制未覆盖全量 */
+  coverage?: 'full' | 'partial_budget';
 }
 
 /** 本轮获取的观测信息（HTTP 状态与 304 命中，供结构化日志使用） */
@@ -81,6 +115,8 @@ export class SourceDiscoverService {
     @Inject(OBJECT_STORE) private readonly objectStore: ObjectStore,
     // 可选指标出口：测试缺省不传则完全不产生日志
     @Optional() private readonly metrics?: SourcingMetrics,
+    // 可选试跑预算：常规调度不注入预算行，行为与之前一致
+    @Optional() private readonly budget?: PrismaCrawlBudgetStore,
   ) {}
 
   async handle(
@@ -162,6 +198,39 @@ export class SourceDiscoverService {
         : [source.officialUrl];
     const fetcher = this.fetcherFactory.create(source);
 
+    // 试跑预算：只有该 run 有预算行时才生效；常规调度 trial 为 null，行为不变。
+    const trial = this.budget ? await this.budget.get(payload.runId) : null;
+    if (trial && trial.status === 'stopped') {
+      const reason = 'stopped_by_admin';
+      await this.runStore.finishRun(payload.runId, {
+        status: 'stopped',
+        errorSummary: reason,
+      });
+      return {
+        status: 'stopped',
+        discoveredCount: 0,
+        downloadedCount: 0,
+        unchangedCount: 0,
+        errorSummary: reason,
+        budget: trial,
+        coverage: 'partial_budget',
+      };
+    }
+    const requestGuard =
+      trial && this.budget
+        ? {
+            beforeRequest: async () => {
+              const gate = await this.budget!.consumeHttpAttempt(payload.runId);
+              if (gate === 'ok' || gate === 'unbudgeted') return;
+              throw new RequestBlockedError(gate);
+            },
+          }
+        : undefined;
+    /** 试跑中的列表页额度阻挡原因；null 表示未发生 */
+    let listGate: 'stopped' | 'exhausted' | null = null;
+    /** 试跑中的 HTTP 请求总预算阻挡原因；null 表示未发生 */
+    let httpGate: 'stopped' | 'exhausted' | null = null;
+
     const discovered = new Map<string, DiscoveredDocument>();
     const errors: string[] = [];
     let structureMismatch: string | null = null;
@@ -169,27 +238,81 @@ export class SourceDiscoverService {
     // 实际拿回 200 并交给适配器解析的栏目页数（304 不算“抓取到内容”）
     let fetchedPages = 0;
 
-    for (const listUrl of listUrls) {
+    // 用下标遍历：分页会在循环中追加到 listUrls，需要按实际新增页继续受预算约束。
+    let listIndex = 0;
+    while (listIndex < listUrls.length) {
+      const listUrl = listUrls[listIndex];
+      listIndex += 1;
+      // 试跑列表预算：每个栏目页（含派生分页）都要先扣一次额度，超限即停止扫描
+      if (trial && this.budget) {
+        const gate = await this.budget.consumeListPage(payload.runId);
+        if (gate !== 'ok') {
+          listGate = gate === 'stopped' ? 'stopped' : 'exhausted';
+          await this.budget.markDeferred(
+            payload.runId,
+            'listPages',
+            listUrls.length - listIndex + 1,
+          );
+          break;
+        }
+      }
       let result;
       let cache;
       try {
         cache = await this.documentStore.getUrlCache(source.id, listUrl);
-        // 仅已验证的公开栏目 API 使用 JSON 通道，仍复用全部 DNS/重定向/大小/并发限制。
+        // 仅已验证的公开栏目 API 使用 JSON/XML 通道，仍复用全部 DNS/重定向/大小/并发限制。
+        const isJpage = isJpageDataUrl(listUrl);
+        const isEls = isElsArticleUrl(listUrl);
+        const isFjdz = isFjdzSearchUrl(listUrl);
+        const isPagefront = isPagefrontUrl(listUrl);
         const requestFetcher =
           new URL(listUrl).pathname ===
-          '/api-gateway/jpaas-publish-server/front/page/build/unit'
+            '/api-gateway/jpaas-publish-server/front/page/build/unit' ||
+          isJpage ||
+          isEls ||
+          isFjdz ||
+          isPagefront
             ? this.fetcherFactory.createForAttachment(source)
             : fetcher;
-        result = await requestFetcher.fetch(listUrl, {
-          ifNoneMatch: cache?.etag ?? undefined,
-          ifModifiedSince: cache?.lastModified ?? undefined,
-        });
+        result = await requestFetcher.fetch(
+          listUrl,
+          {
+            ifNoneMatch: cache?.etag ?? undefined,
+            ifModifiedSince: cache?.lastModified ?? undefined,
+          },
+          // 福州 fjdzapp/search 必须携带同源 Referer（站点配置校验），
+          // 缺 Referer 返回 {"error":true,"info":"获取站点配置失败"}；
+          // 石家庄 PageFront 无 Referer 要求（实测带与不带均 200）。
+          isFjdz ? { referer: source.officialUrl } : {},
+          isJpage
+            ? jpagePostRequest(listUrl)
+            : isEls
+              ? elsJsonRequest(listUrl)
+              : isFjdz
+                ? fjdzSearchRequest(listUrl)
+                : isPagefront
+                  ? pagefrontRequest(listUrl)
+                  : {},
+          requestGuard,
+        );
         if (result.status === 304) {
           if (!cache) throw new Error('not_modified_without_snapshot');
         }
         telemetry.httpStatus = result.status;
         if (result.status === 304) telemetry.notModified = true;
       } catch (error) {
+        // 预算/运行控制在发请求前拦截：不发 HTTP，也不当作可重试失败
+        if (error instanceof RequestBlockedError) {
+          httpGate = error.reason === 'stopped' ? 'stopped' : 'exhausted';
+          if (trial && this.budget) {
+            await this.budget.markDeferred(
+              payload.runId,
+              'listPages',
+              listUrls.length - listIndex + 1,
+            );
+          }
+          break;
+        }
         if (
           error instanceof SafeFetchError &&
           typeof error.status === 'number'
@@ -213,7 +336,36 @@ export class SourceDiscoverService {
             listUrls.push(publicUrl);
           for (const page of publicColumnPages(result.finalUrl, body))
             if (!listUrls.includes(page)) listUrls.push(page);
+          // NFCMS 集约化平台（广州）分页为静态锚点 index_N.html（官方声明
+          // createPageHTML 已被注释失效），staticListPages 对这类页面返回空，需单独派生。
+          for (const page of nfcmsIndexPages(result.finalUrl, body))
+            if (!listUrls.includes(page)) listUrls.push(page);
           for (const page of staticListPages(result.finalUrl, body))
+            if (!listUrls.includes(page)) listUrls.push(page);
+          // 河南政务 .jhtml 数字锚点分页（郑州 tzgg/wsgs）：派生 index_2.jhtml 后续页。
+          for (const page of jhtmlIndexPages(result.finalUrl, body))
+            if (!listUrls.includes(page)) listUrls.push(page);
+          for (const page of jsPaginationPages(result.finalUrl, body))
+            if (!listUrls.includes(page)) listUrls.push(page);
+          for (const page of govInfoListPages(result.finalUrl, body))
+            if (!listUrls.includes(page)) listUrls.push(page);
+          for (const page of jpageDataproxyPages(result.finalUrl, body))
+            if (!listUrls.includes(page)) listUrls.push(page);
+          for (const page of elsArticlePages(result.finalUrl, body))
+            if (!listUrls.includes(page)) listUrls.push(page);
+          for (const page of fjdzSearchPages(result.finalUrl, body))
+            if (!listUrls.includes(page)) listUrls.push(page);
+          // PageFront 表单分页（石家庄）：从 pageForm 提取 parseId/categoryId
+          // 派生 /dynamic/PageFront.jsp?...pageNo=N 后续页，无 Referer 要求。
+          for (const page of pagefrontPages(result.finalUrl, body))
+            if (!listUrls.includes(page)) listUrls.push(page);
+          // 武汉 navbox 静态锚点分页：div#navbox 数字页码 + pagenav_tail 尾页
+          // 派生同目录 index_N.shtml 后续页（栏目目录为第 1 页）。
+          for (const page of whsnavPages(result.finalUrl, body))
+            if (!listUrls.includes(page)) listUrls.push(page);
+          // 长沙 WCM createPageHTML5 静态分页：官方脚本声明总页数/前缀/后缀，
+          // 派生同目录 index_N.html 后续页（index.html 为第 1 页）。
+          for (const page of wcm5Pages(result.finalUrl, body))
             if (!listUrls.includes(page)) listUrls.push(page);
           const items = publicUrl
             ? []
@@ -246,7 +398,36 @@ export class SourceDiscoverService {
           listUrls.push(publicUrl);
         for (const page of publicColumnPages(result.finalUrl, result.body))
           if (!listUrls.includes(page)) listUrls.push(page);
+        // NFCMS 集约化平台（广州）分页为静态锚点 index_N.html（官方声明
+        // createPageHTML 已被注释失效），staticListPages 对这类页面返回空，需单独派生。
+        for (const page of nfcmsIndexPages(result.finalUrl, result.body))
+          if (!listUrls.includes(page)) listUrls.push(page);
         for (const page of staticListPages(result.finalUrl, result.body))
+          if (!listUrls.includes(page)) listUrls.push(page);
+        // 河南政务 .jhtml 数字锚点分页（郑州 tzgg/wsgs）：派生 index_2.jhtml 后续页。
+        for (const page of jhtmlIndexPages(result.finalUrl, result.body))
+          if (!listUrls.includes(page)) listUrls.push(page);
+        for (const page of jsPaginationPages(result.finalUrl, result.body))
+          if (!listUrls.includes(page)) listUrls.push(page);
+        for (const page of govInfoListPages(result.finalUrl, result.body))
+          if (!listUrls.includes(page)) listUrls.push(page);
+        for (const page of jpageDataproxyPages(result.finalUrl, result.body))
+          if (!listUrls.includes(page)) listUrls.push(page);
+        for (const page of elsArticlePages(result.finalUrl, result.body))
+          if (!listUrls.includes(page)) listUrls.push(page);
+        for (const page of fjdzSearchPages(result.finalUrl, result.body))
+          if (!listUrls.includes(page)) listUrls.push(page);
+        // PageFront 表单分页（石家庄）：从 pageForm 提取 parseId/categoryId
+        // 派生 /dynamic/PageFront.jsp?...pageNo=N 后续页，无 Referer 要求。
+        for (const page of pagefrontPages(result.finalUrl, result.body))
+          if (!listUrls.includes(page)) listUrls.push(page);
+        // 武汉 navbox 静态锚点分页：div#navbox 数字页码 + pagenav_tail 尾页
+        // 派生同目录 index_N.shtml 后续页（栏目目录为第 1 页）。
+        for (const page of whsnavPages(result.finalUrl, result.body))
+          if (!listUrls.includes(page)) listUrls.push(page);
+        // 长沙 WCM createPageHTML5 静态分页：官方脚本声明总页数/前缀/后缀，
+        // 派生同目录 index_N.html 后续页（index.html 为第 1 页）。
+        for (const page of wcm5Pages(result.finalUrl, result.body))
           if (!listUrls.includes(page)) listUrls.push(page);
         const items = publicUrl
           ? []
@@ -287,6 +468,36 @@ export class SourceDiscoverService {
         }
       }
     }
+
+    // 试跑被停止：立即结束，不再派生任何下载/解析任务
+    if (listGate === 'stopped' || httpGate === 'stopped') {
+      const latest =
+        trial && this.budget ? await this.budget.get(payload.runId) : null;
+      await this.runStore.completeDiscovery(payload.runId, {
+        status: 'stopped',
+        discoveredCount: discovered.size,
+        errorSummary: 'stopped_by_admin',
+        budget: latest ?? undefined,
+      });
+      return {
+        status: 'stopped',
+        discoveredCount: discovered.size,
+        downloadedCount: 0,
+        unchangedCount: 0,
+        errorSummary: 'stopped_by_admin',
+        budget: latest ?? undefined,
+        coverage: 'partial_budget',
+      };
+    }
+
+    // 预算已截断列表扫描：不能再把 0 条发现判为“公告消失/异常零结果”
+    const budgetTruncated = Boolean(
+      trial &&
+        ((trial.listPagesDeferred ?? 0) > 0 ||
+          trial.detailsDeferred > 0 ||
+          listGate === 'exhausted' ||
+          httpGate === 'exhausted'),
+    );
 
     // 人工介入优先：验证码/登录/封禁需要停止自动化，交由管理员处理
     if (intervention) {
@@ -333,7 +544,7 @@ export class SourceDiscoverService {
       const summary = errors.join('; ').slice(0, 500);
       await this.runStore.recordFailure(source.id, {
         checkedAt: now,
-        nextCheckAt: this.runStore.nextCheckAt(now, source.pollEveryMinutes),
+        // M02/F3：来源失败启用指数退避（nextCheckAt 由 store 按连续失败计算）
         reason: summary,
         countTowardsSource: true,
       });
@@ -348,12 +559,12 @@ export class SourceDiscoverService {
     // 静默 0 条告警：成功抓取（确有 200 页面被解析，非纯 304）却 0 条发现时，
     // 若该来源曾有历史发现 → 异常零结果，必须告警（计入连续失败，不得记成功）；
     // 新来源冷启动 0 条属正常，走 no_new + recordSuccess。
-    if (discovered.size === 0 && fetchedPages > 0) {
+    if (discovered.size === 0 && fetchedPages > 0 && !budgetTruncated) {
       const hasHistory = await this.runStore.hasHistoryDiscovery(source.id);
       if (shouldAlertZeroResults(hasHistory, discovered.size)) {
         await this.runStore.recordFailure(source.id, {
           checkedAt: now,
-          nextCheckAt: this.runStore.nextCheckAt(now, source.pollEveryMinutes),
+          // M02/F3：异常零结果按来源失败退避
           reason: SUSPECTED_ZERO_RESULTS,
           countTowardsSource: true,
         });
@@ -373,26 +584,95 @@ export class SourceDiscoverService {
       }
     }
 
+    // 请求总预算已耗尽：不再入队任何任务，逐条标记“预算内未覆盖”
+    if (httpGate === 'exhausted') {
+      for (const item of discovered.values()) {
+        await this.runStore.recordFetchOutcome(
+          payload.runId,
+          item.url,
+          'skipped',
+          'budget_http_exhausted',
+        );
+      }
+      const latest =
+        trial && this.budget ? await this.budget.get(payload.runId) : null;
+      await this.runStore.completeDiscovery(payload.runId, {
+        status: 'partial_budget',
+        discoveredCount: discovered.size,
+        errorSummary: 'budget_http_exhausted',
+        budget: latest ?? undefined,
+      });
+      return {
+        status: 'partial_budget',
+        discoveredCount: discovered.size,
+        downloadedCount: 0,
+        unchangedCount: 0,
+        errorSummary: 'budget_http_exhausted',
+        budget: latest ?? undefined,
+        coverage: 'partial_budget',
+      };
+    }
+
     // 栏目未变也不能推断正文或附件未变；每轮恢复已知文档检查。
-    const known = await this.documentStore.listDocuments(source.id);
-    const checks = new Map(
-      known.map((document) => [
-        document.canonicalUrl,
-        {
-          url: document.canonicalUrl,
-          kind: document.kind as DocumentFetchPayload['kind'],
-          parentDocumentId: document.parentDocumentId ?? undefined,
-        },
-      ]),
-    );
+    // 试跑只恢复历史“公告/其它文档”，历史附件由被准入的公告重新派生，
+    // 避免历史附件绕过详情/附件预算。
+    const allKnown = await this.documentStore.listDocuments(source.id);
+    const known = trial
+      ? allKnown.filter((document) => document.kind !== 'attachment')
+      : allKnown;
+    const checks = new Map<string, {
+      url: string;
+      kind: DocumentFetchPayload['kind'];
+      parentDocumentId?: string;
+    }>();
+    // 试跑优先覆盖本次列表新发现的内容，再回补历史公告；两者共用同一详情额度。
     for (const item of discovered.values())
       checks.set(item.url, {
         url: item.url,
         kind: item.kind,
         parentDocumentId: undefined,
       });
+    for (const document of known) {
+      if (checks.has(document.canonicalUrl)) continue;
+      checks.set(document.canonicalUrl, {
+        url: document.canonicalUrl,
+        kind: document.kind as DocumentFetchPayload['kind'],
+        parentDocumentId: document.parentDocumentId ?? undefined,
+      });
+    }
 
-    for (const item of checks.values()) {
+    // 历史已知文档与新发现文档共用同一详情额度：按顺序准入，超限只标记不投递。
+    const candidates = [...checks.values()];
+    let stoppedDuringAdmission = false;
+    for (let index = 0; index < candidates.length; index += 1) {
+      const item = candidates[index];
+      if (trial && this.budget) {
+        const admission = await this.budget.admitDocument(
+          payload.runId,
+          item.url,
+        );
+        if (admission === 'stopped') {
+          for (const pending of candidates.slice(index)) {
+            await this.runStore.recordFetchOutcome(
+              payload.runId,
+              pending.url,
+              'skipped',
+              'run_stopped',
+            );
+          }
+          stoppedDuringAdmission = true;
+          break;
+        }
+        if (admission === 'exhausted') {
+          await this.runStore.recordFetchOutcome(
+            payload.runId,
+            item.url,
+            'skipped',
+            'budget_deferred',
+          );
+          continue;
+        }
+      }
       await this.documentStore.upsertDocument({
         sourceId: source.id,
         canonicalUrl: item.url,
@@ -420,11 +700,44 @@ export class SourceDiscoverService {
       }
     }
 
-    const status = discovered.size > 0 ? 'succeeded' : 'no_new';
+    const latestBudget =
+      trial && this.budget ? await this.budget.get(payload.runId) : null;
+    const truncated = Boolean(
+      latestBudget &&
+        latestBudget.listPagesDeferred +
+          latestBudget.detailsDeferred +
+          latestBudget.attachmentsDeferred >
+          0,
+    );
+
+    if (stoppedDuringAdmission) {
+      if (trial && this.budget) {
+        await this.budget.stop(payload.runId, 'stopped_by_admin');
+      }
+      await this.runStore.completeDiscovery(payload.runId, {
+        status: 'stopped',
+        discoveredCount: discovered.size,
+        errorSummary: 'stopped_by_admin',
+        budget: latestBudget ?? undefined,
+      });
+      return {
+        status: 'stopped',
+        discoveredCount: discovered.size,
+        downloadedCount: 0,
+        unchangedCount: 0,
+        errorSummary: 'stopped_by_admin',
+        budget: latestBudget ?? undefined,
+        coverage: 'partial_budget',
+      };
+    }
+
+    const baseStatus = discovered.size > 0 ? 'succeeded' : 'no_new';
+    const status =
+      errors.length > 0 ? 'partial' : truncated ? 'partial_budget' : baseStatus;
     if (errors.length > 0) {
       await this.runStore.recordFailure(source.id, {
         checkedAt: now,
-        nextCheckAt: this.runStore.nextCheckAt(now, source.pollEveryMinutes),
+        // M02/F3：部分失败同样按来源失败退避
         reason: errors.join('; ').slice(0, 500),
       });
     } else {
@@ -433,19 +746,29 @@ export class SourceDiscoverService {
         nextCheckAt: this.runStore.nextCheckAt(now, source.pollEveryMinutes),
       });
     }
+    const budgetSummary = truncated
+      ? `budget_deferred:listPages=${latestBudget?.listPagesDeferred ?? 0};details=${latestBudget?.detailsDeferred ?? 0};attachments=${latestBudget?.attachmentsDeferred ?? 0}`
+      : null;
     await this.runStore.completeDiscovery(payload.runId, {
-      status: errors.length > 0 ? 'partial' : status,
+      status,
       discoveredCount: discovered.size,
-      errorSummary: errors.length > 0 ? errors.join('; ').slice(0, 500) : null,
+      errorSummary:
+        errors.length > 0
+          ? errors.join('; ').slice(0, 500)
+          : budgetSummary,
       failedCount: errors.length,
+      budget: latestBudget ?? undefined,
     });
     return {
-      status: errors.length > 0 ? 'partial' : status,
+      status,
       discoveredCount: discovered.size,
       downloadedCount: 0,
       unchangedCount: 0,
       failedCount: errors.length,
-      errorSummary: errors.length > 0 ? errors.join('; ') : undefined,
+      errorSummary:
+        errors.length > 0 ? errors.join('; ') : (budgetSummary ?? undefined),
+      budget: latestBudget ?? undefined,
+      coverage: truncated ? 'partial_budget' : 'full',
     };
   }
 

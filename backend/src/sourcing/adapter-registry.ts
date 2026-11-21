@@ -17,6 +17,24 @@ import { SuzhouEducationAdapter } from './adapters/suzhou-education.adapter.js';
 import { ChangzhouEducationAdapter } from './adapters/changzhou-education.adapter.js';
 import { BengbuEducationAdapter } from './adapters/bengbu-education.adapter.js';
 import { XiaoshanEducationAdapter } from './adapters/xiaoshan-education.adapter.js';
+import { AnhuiEducationPolicyAdapter } from './adapters/anhui-education-policy.adapter.js';
+import { HuzhouEducationAdapter } from './adapters/huzhou-education.adapter.js';
+import { TaizhouEducationAdapter } from './adapters/taizhou-education.adapter.js';
+import { BozhouEducationAdapter } from './adapters/bozhou-education.adapter.js';
+import { FuyangEducationAdapter } from './adapters/fuyang-education.adapter.js';
+import { JinanEducationAdapter } from './adapters/jinan-education.adapter.js';
+import { YantaiEducationAdapter } from './adapters/yantai-education.adapter.js';
+import { TaianEducationAdapter } from './adapters/taian-education.adapter.js';
+import { WeifangEducationAdapter } from './adapters/weifang-education.adapter.js';
+import { NanchangEducationAdapter } from './adapters/nanchang-education.adapter.js';
+import { TaiyuanEducationAdapter } from './adapters/taiyuan-education.adapter.js';
+import { ZhengzhouEducationAdapter } from './adapters/zhengzhou-education.adapter.js';
+import { FuzhouEducationAdapter } from './adapters/fuzhou-education.adapter.js';
+import { GuangzhouEducationAdapter } from './adapters/guangzhou-education.adapter.js';
+import { ShijiazhuangEducationAdapter } from './adapters/shijiazhuang-education.adapter.js';
+import { WuhanEducationAdapter } from './adapters/wuhan-education.adapter.js';
+import { ChangshaEducationAdapter } from './adapters/changsha-education.adapter.js';
+import { GuiyangEducationAdapter } from './adapters/guiyang-education.adapter.js';
 
 /** 过滤掉未注入的可选适配器（保持类型收窄） */
 function defined<T>(value: T | undefined): value is T {
@@ -41,6 +59,24 @@ export class AdapterRegistry {
     // 既有测试按位置传前 9 个适配器，新增参数不能让它们变成 undefined。
     bengbu?: BengbuEducationAdapter,
     xiaoshan?: XiaoshanEducationAdapter,
+    anhuiPolicy?: AnhuiEducationPolicyAdapter,
+    huzhou?: HuzhouEducationAdapter,
+    taizhou?: TaizhouEducationAdapter,
+    bozhou?: BozhouEducationAdapter,
+    fuyang?: FuyangEducationAdapter,
+    jinan?: JinanEducationAdapter,
+    yantai?: YantaiEducationAdapter,
+    taian?: TaianEducationAdapter,
+    weifang?: WeifangEducationAdapter,
+    nanchang?: NanchangEducationAdapter,
+    taiyuan?: TaiyuanEducationAdapter,
+    zhengzhou?: ZhengzhouEducationAdapter,
+    fuzhou?: FuzhouEducationAdapter,
+    guangzhou?: GuangzhouEducationAdapter,
+    shijiazhuang?: ShijiazhuangEducationAdapter,
+    wuhan?: WuhanEducationAdapter,
+    changsha?: ChangshaEducationAdapter,
+    guiyang?: GuiyangEducationAdapter,
   ) {
     const adapters: OfficialSiteAdapter[] = [
       hangzhou,
@@ -54,6 +90,24 @@ export class AdapterRegistry {
       lishui,
       bengbu,
       xiaoshan,
+      anhuiPolicy,
+      huzhou,
+      taizhou,
+      bozhou,
+      fuyang,
+      jinan,
+      yantai,
+      taian,
+      weifang,
+      nanchang,
+      taiyuan,
+      zhengzhou,
+      fuzhou,
+      guangzhou,
+      shijiazhuang,
+      wuhan,
+      changsha,
+      guiyang,
     ].filter(defined);
     this.byKey = new Map(adapters.map((adapter) => [adapter.key, adapter]));
   }

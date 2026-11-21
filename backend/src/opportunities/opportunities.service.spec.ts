@@ -1,19 +1,25 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   MAJOR_ALIAS_VERSION,
   MATCH_RULE_VERSION,
+  isUserVisibleInCatalog,
 } from '../matching/engine.js';
 import { CATALOG_VERSION } from '../matching/catalog.js';
+import { COVERAGE_PROJECTION_VERSION } from './coverage-projection.js';
 import {
   REAL_ANNOUNCEMENT_IDS,
   REAL_CATALOG_VERSION,
 } from '../matching/real-catalog.js';
-import type { UserRecruitmentProfile } from '../matching/types.js';
+import type {
+  RecruitmentAnnouncement,
+  UserRecruitmentProfile,
+} from '../matching/types.js';
 import { OpportunitiesService } from './opportunities.service.js';
 import { buildGoals, type CatalogSnapshot } from './view.js';
 import type { FollowRecord } from './follow.domain.js';
@@ -146,6 +152,7 @@ function createFakePrisma() {
         reviewNote: null,
         reviewerId: null,
         reviewedAt: null,
+        resolvedVersionId: null,
         createdAt: new Date(),
         ...data,
       };
@@ -158,12 +165,95 @@ function createFakePrisma() {
       where,
       take,
     }: {
-      where?: { userId?: string; status?: string };
+      where?: {
+        userId?: string;
+        status?: string;
+        createdAt?: { gte?: Date };
+      };
       take?: number;
     }) => {
       let list = [...corrections];
       if (where?.userId) list = list.filter((r) => r.userId === where.userId);
       if (where?.status) list = list.filter((r) => r.status === where.status);
+      if (where?.createdAt?.gte) {
+        list = list.filter(
+          (r) => (r.createdAt as Date).getTime() >= where.createdAt!.gte!.getTime(),
+        );
+      }
+      list.sort(
+        (a: { createdAt: Date }, b: { createdAt: Date }) =>
+          b.createdAt.getTime() - a.createdAt.getTime(),
+      );
+      return typeof take === 'number' ? list.slice(0, take) : list;
+    },
+    /** 分页总数（我的纠错列表） */
+    count: async ({ where }: { where: { userId: string } }) =>
+      corrections.filter((r) => r.userId === where.userId).length,
+    update: async ({
+      where,
+      data,
+    }: {
+      where: { id: string };
+      data: Record<string, unknown>;
+    }) => {
+      const row = corrections.find((r) => r.id === where.id);
+      if (!row) throw new Error('not found');
+      Object.assign(row, data);
+      return row;
+    },
+    /** R05：条件更新（where 带 status）用于并发处理时的状态抢占 */
+    updateMany: async ({
+      where,
+      data,
+    }: {
+      where: { id: string; status?: string };
+      data: Record<string, unknown>;
+    }) => {
+      let count = 0;
+      for (const row of corrections) {
+        if (row.id !== where.id) continue;
+        if (where.status !== undefined && row.status !== where.status) continue;
+        Object.assign(row, data);
+        count += 1;
+      }
+      return { count };
+    },
+  };
+
+  // D08：公告补录（内存版）
+  const submissions: Array<Record<string, unknown>> = [];
+  const announcementSubmission = {
+    create: async ({ data }: { data: Record<string, unknown> }) => {
+      const row = {
+        id: `sub-${++seq}`,
+        status: 'submitted',
+        reviewNote: null,
+        reviewerId: null,
+        reviewedAt: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        ...data,
+      };
+      submissions.push(row);
+      return row;
+    },
+    findUnique: async ({ where }: { where: { id: string } }) =>
+      submissions.find((r) => r.id === where.id) ?? null,
+    findMany: async ({
+      where,
+      take,
+    }: {
+      where?: {
+        userId?: string;
+        status?: string;
+        urlHash?: string;
+      };
+      take?: number;
+    }) => {
+      let list = [...submissions];
+      if (where?.userId) list = list.filter((r) => r.userId === where.userId);
+      if (where?.status) list = list.filter((r) => r.status === where.status);
+      if (where?.urlHash) list = list.filter((r) => r.urlHash === where.urlHash);
       list.sort(
         (a: { createdAt: Date }, b: { createdAt: Date }) =>
           b.createdAt.getTime() - a.createdAt.getTime(),
@@ -177,11 +267,38 @@ function createFakePrisma() {
       where: { id: string };
       data: Record<string, unknown>;
     }) => {
-      const row = corrections.find((r) => r.id === where.id);
+      const row = submissions.find((r) => r.id === where.id);
       if (!row) throw new Error('not found');
       Object.assign(row, data);
       return row;
     },
+    /** 分页总数（我的补录列表） */
+    count: async ({ where }: { where: { userId: string } }) =>
+      submissions.filter((r) => r.userId === where.userId).length,
+    /** 条件更新（where 带 status）用于结案并发保护 */
+    updateMany: async ({
+      where,
+      data,
+    }: {
+      where: { id: string; status?: string };
+      data: Record<string, unknown>;
+    }) => {
+      let count = 0;
+      for (const row of submissions) {
+        if (row.id !== where.id) continue;
+        if (where.status !== undefined && row.status !== where.status) continue;
+        Object.assign(row, data);
+        count += 1;
+      }
+      return { count };
+    },
+  };
+
+  // 「已收录」结案门禁：已发布版本（测试逐个注入）
+  const publishedVersions: Array<Record<string, unknown>> = [];
+  const publishedAnnouncementVersion = {
+    findUnique: async ({ where }: { where: { id: string } }) =>
+      publishedVersions.find((v) => v.id === where.id) ?? null,
   };
 
   const users = new Map<string, { id: string; email: string; name: string | null }>([
@@ -251,21 +368,121 @@ function createFakePrisma() {
     },
   };
 
+  // D07：单位关注（内存版）
+  const orgFollows: Array<Record<string, unknown>> = [];
+  const followedOrganization = {
+    findMany: async ({
+      where,
+      orderBy,
+    }: {
+      where: { userId: string };
+      orderBy?: { followedAt: 'asc' | 'desc' };
+    }) => {
+      const list = orgFollows.filter((r) => r.userId === where.userId);
+      if (orderBy?.followedAt === 'asc') {
+        list.sort(
+          (a, b) =>
+            (a.followedAt as Date).getTime() - (b.followedAt as Date).getTime(),
+        );
+      }
+      return list;
+    },
+    upsert: async ({
+      where,
+      create,
+      update,
+    }: {
+      where: { userId_identityKey: { userId: string; identityKey: string } };
+      create: Record<string, unknown>;
+      update: Record<string, unknown>;
+    }) => {
+      const { userId, identityKey } = where.userId_identityKey;
+      const existing = orgFollows.find(
+        (r) => r.userId === userId && r.identityKey === identityKey,
+      );
+      if (existing) {
+        Object.assign(existing, update);
+        return existing;
+      }
+      const row = {
+        id: `org-${++seq}`,
+        followedAt: new Date(),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        ...create,
+      };
+      orgFollows.push(row);
+      return row;
+    },
+    deleteMany: async ({
+      where,
+    }: {
+      where: { userId: string; identityKey: string };
+    }) => {
+      let count = 0;
+      for (let i = orgFollows.length - 1; i >= 0; i -= 1) {
+        const r = orgFollows[i]!;
+        if (r.userId === where.userId && r.identityKey === where.identityKey) {
+          orgFollows.splice(i, 1);
+          count += 1;
+        }
+      }
+      return { count };
+    },
+    updateMany: async ({
+      where,
+      data,
+    }: {
+      where: { userId: string; baselineSyncedAt: null };
+      data: Record<string, unknown>;
+    }) => {
+      let count = 0;
+      for (const r of orgFollows) {
+        if (r.userId !== where.userId) continue;
+        if (where.baselineSyncedAt === null && r.baselineSyncedAt != null) continue;
+        Object.assign(r, data);
+        count += 1;
+      }
+      return { count };
+    },
+  };
+
   return {
     prisma: {
       followedOpportunity,
       opportunityCorrection,
+      announcementSubmission,
       notificationRecord,
       opportunitySubscription,
       opportunityNoticeLog,
+      followedOrganization,
       user,
-      $transaction: async (ops: Array<Promise<unknown>>) => Promise.all(ops),
+      publishedAnnouncementVersion,
+      $transaction: async (
+        arg: Array<Promise<unknown>> | ((tx: unknown) => Promise<unknown>),
+      ) =>
+        typeof arg === 'function'
+          ? arg({
+              followedOpportunity,
+              opportunityCorrection,
+              announcementSubmission,
+              notificationRecord,
+              opportunitySubscription,
+              opportunityNoticeLog,
+              followedOrganization,
+              user,
+              publishedAnnouncementVersion,
+            })
+          : Promise.all(arg),
     } as never,
     rows,
     corrections,
+    submissions,
+    publishedVersions,
     notifications,
     subscriptions,
     noticeLogs,
+    orgFollows,
   };
 }
 
@@ -289,9 +506,13 @@ describe('OpportunitiesService：匹配响应', () => {
     expect(response.meta.catalogVersion).toBe(CATALOG_VERSION);
     expect(response.meta.realCatalogVersion).toBe(REAL_CATALOG_VERSION);
     expect(response.meta.evaluatedAt).toBeTruthy();
-    // 真实监测覆盖随响应返回：0 在报、最近核对时间可展示
+    // M01/F2 统一覆盖投影随响应返回：0 在报、口径字段齐备（静态回退口径）
+    expect(response.coverage.version).toBe(COVERAGE_PROJECTION_VERSION);
     expect(response.coverage.openOpportunityCount).toBe(0);
-    expect(response.coverage.lastCheckedAt).toMatch(/^2026-10-06/);
+    // 台账最近核对时间为 ISO 日期时间；静态模式下显式标注非实时回退
+    expect(response.coverage.lastCheckedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(response.coverage.caliber.isFallback).toBe(true);
+    expect(response.coverage.caliber.fallbackNote).toContain('非实时');
 
     const all = [
       ...response.groups.preliminary,
@@ -843,7 +1064,7 @@ describe('OpportunitiesService：纠错处理闭环（P0-F / 模块 8）', () =>
     return { service, created };
   }
 
-  it('submitted → reviewing → resolved：记录处理人/时间，并给提交人发一条站内通知', async () => {
+  it('数据类纠错未发布修正版本时不能以「已修正」结案，也不会发「已更正」通知（R05）', async () => {
     const fake = createFakePrisma();
     const { service, created } = await seedCorrection(fake);
 
@@ -855,16 +1076,39 @@ describe('OpportunitiesService：纠错处理闭环（P0-F / 模块 8）', () =>
     expect(reviewing.reviewedAt).toBeTruthy();
     expect(fake.notifications).toHaveLength(0); // 核对中不通知
 
+    // 修正版本还没发布：不能结案，保持处理中
+    await expect(
+      service.reviewCorrection(REVIEWER, created.id, {
+        status: 'resolved',
+        reviewNote: '已按补充公告修正为 12 人',
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(fake.notifications).toHaveLength(0);
+    expect((await service.listMyCorrections('user-1')).items[0]?.status).toBe(
+      'reviewing',
+    );
+  });
+
+  it('数据类纠错登记已发布的后续版本后结案：通知包含真实版本号与说明', async () => {
+    const fake = createFakePrisma();
+    const { service, created } = await seedCorrection(fake);
+    // 纠错提交时是 v1，之后发布了 v2（补充公告）
+    fake.corrections.find((row) => row.id === created.id)!.versionId =
+      'ann-hefei-v1';
+
     const resolved = await service.reviewCorrection(REVIEWER, created.id, {
       status: 'resolved',
       reviewNote: '已按补充公告修正为 12 人',
+      resolvedVersionId: 'ann-hefei-v2',
     });
     expect(resolved.status).toBe('resolved');
     expect(resolved.reviewNote).toBe('已按补充公告修正为 12 人');
+    expect(resolved.resolvedVersionId).toBe('ann-hefei-v2');
     expect(fake.notifications).toHaveLength(1);
     const notice = fake.notifications[0] as Record<string, unknown>;
     expect(notice.userId).toBe('user-1');
-    expect(String(notice.title)).toContain('已采纳并修正');
+    expect(String(notice.title)).toContain('已处理完成');
+    expect(String(notice.body)).toContain('第 2 版');
     expect(String(notice.body)).toContain('已按补充公告修正为 12 人');
   });
 
@@ -889,9 +1133,17 @@ describe('OpportunitiesService：纠错处理闭环（P0-F / 模块 8）', () =>
     expect(fake.notifications).toHaveLength(1); // 被拒绝的推进不产生新通知
   });
 
-  it('允许 submitted 直接 resolved/rejected；非法状态值拒绝', async () => {
+  it('非数据类纠错可直接结案：必须写明实际处理结果，通知不声称发了新版本（R05）', async () => {
     const fake = createFakePrisma();
-    const { service, created } = await seedCorrection(fake);
+    const service = new OpportunitiesService(
+      fake.prisma,
+      fakeProfileService,
+      fakeScheduleService,
+    );
+    const created = await service.submitCorrection('user-1', 'unit-hefei-01-v2', {
+      fieldPath: 'matching',
+      content: '系统判断与官方条件不一致，请看原始公告',
+    });
 
     await expect(
       service.reviewCorrection(REVIEWER, created.id, { status: 'submitted' }),
@@ -899,11 +1151,66 @@ describe('OpportunitiesService：纠错处理闭环（P0-F / 模块 8）', () =>
     await expect(
       service.reviewCorrection(REVIEWER, created.id, { status: 'unknown' }),
     ).rejects.toBeInstanceOf(ConflictException);
+    // 结案必须有真实处理说明
+    await expect(
+      service.reviewCorrection(REVIEWER, created.id, { status: 'resolved' }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    // 非数据类问题不允许挂版本号
+    await expect(
+      service.reviewCorrection(REVIEWER, created.id, {
+        status: 'resolved',
+        reviewNote: '已复核匹配规则并复测',
+        resolvedVersionId: 'ann-hefei-v2',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
 
     const done = await service.reviewCorrection(REVIEWER, created.id, {
       status: 'resolved',
+      reviewNote: '已复核匹配规则并复测，结论已订正',
     });
     expect(done.status).toBe('resolved');
+    expect(done.resolvedVersionId).toBeNull();
+    const notice = fake.notifications[0] as Record<string, unknown>;
+    expect(String(notice.body)).not.toContain('更正版本');
+    expect(String(notice.body)).toContain('已复核匹配规则并复测');
+  });
+
+  it('终态重复提交同一结论按幂等返回，不重复通知（R05）', async () => {
+    const fake = createFakePrisma();
+    const service = new OpportunitiesService(
+      fake.prisma,
+      fakeProfileService,
+      fakeScheduleService,
+    );
+    const created = await service.submitCorrection('user-1', 'unit-hefei-01-v2', {
+      fieldPath: 'other',
+      content: '其他问题的足够长说明文字',
+    });
+    const rejected = await service.reviewCorrection(REVIEWER, created.id, {
+      status: 'rejected',
+      reviewNote: '经核对官方原文，该反馈不成立',
+    });
+    expect(rejected.status).toBe('rejected');
+    expect(fake.notifications).toHaveLength(1);
+
+    const retry = await service.reviewCorrection(REVIEWER, created.id, {
+      status: 'rejected',
+      reviewNote: '经核对官方原文，该反馈不成立',
+    });
+    expect(retry.status).toBe('rejected');
+    expect(fake.notifications).toHaveLength(1);
+  });
+
+  it('无处理权限的角色不能处理纠错（服务层权限审计）（R05）', async () => {
+    const fake = createFakePrisma();
+    const { service, created } = await seedCorrection(fake);
+    await expect(
+      service.reviewCorrection(
+        { id: 'staff-2', role: 'resource_reviewer' },
+        created.id,
+        { status: 'reviewing' },
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('处理不存在的纠错返回 404', async () => {
@@ -919,11 +1226,11 @@ describe('OpportunitiesService：纠错处理闭环（P0-F / 模块 8）', () =>
     const { service, created } = await seedCorrection(fake);
 
     const mine = await service.listMyCorrections('user-1');
-    expect(mine).toHaveLength(1);
-    expect(mine[0]?.id).toBe(created.id);
-    expect(mine[0]?.fieldLabel).toBe('招聘人数 / 岗位信息');
-    expect(mine[0]?.unitName).toBeTruthy();
-    expect(await service.listMyCorrections('user-other')).toHaveLength(0);
+    expect(mine.items).toHaveLength(1);
+    expect(mine.items[0]?.id).toBe(created.id);
+    expect(mine.items[0]?.fieldLabel).toBe('招聘人数 / 岗位信息');
+    expect(mine.items[0]?.unitName).toBeTruthy();
+    expect((await service.listMyCorrections('user-other')).items).toHaveLength(0);
   });
 
   it('员工队列支持按状态过滤并附带提交人账号信息；非法状态值 400', async () => {
@@ -940,6 +1247,369 @@ describe('OpportunitiesService：纠错处理闭环（P0-F / 模块 8）', () =>
     await expect(
       service.listCorrectionsForStaff('not-a-status'),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('D08：need_supplement 必须附说明，用户可见理由并可回到核对中', async () => {
+    const fake = createFakePrisma();
+    const { service, created } = await seedCorrection(fake);
+
+    await expect(
+      service.reviewCorrection(REVIEWER, created.id, { status: 'need_supplement' }),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    const need = await service.reviewCorrection(REVIEWER, created.id, {
+      status: 'need_supplement',
+      reviewNote: '请补充公告原文中该岗位人数所在段落或截图入口',
+    });
+    expect(need.status).toBe('need_supplement');
+    expect(fake.notifications).toHaveLength(1);
+    expect(String((fake.notifications[0] as Record<string, unknown>).title)).toContain(
+      '需要补充信息',
+    );
+
+    // 用户侧可查处理说明（需补充理由可查）
+    const mine = await service.listMyCorrections('user-1');
+    expect(mine.items[0]?.reviewNote).toContain('请补充公告原文');
+    expect(mine.items[0]?.supplementRequest).toContain('请补充公告原文');
+    // 通知给出可执行路径：在原工单补充，编号与原文不变
+    const needNotice = fake.notifications[0] as Record<string, unknown>;
+    expect(String(needNotice.body)).toContain('原工单');
+    expect(String(needNotice.body)).toContain('受理编号');
+    expect(String((needNotice as Record<string, unknown>).linkPath)).toContain(
+      '/me?ticket=correction:',
+    );
+
+    // 补充后可继续推进：need_supplement → reviewing → resolved（登记 v2 修正版本）
+    fake.corrections.find((row) => row.id === created.id)!.versionId =
+      'ann-hefei-v1';
+    await service.reviewCorrection(REVIEWER, created.id, { status: 'reviewing' });
+    const resolved = await service.reviewCorrection(REVIEWER, created.id, {
+      status: 'resolved',
+      reviewNote: '已按补充材料修正',
+      resolvedVersionId: 'ann-hefei-v2',
+    });
+    expect(resolved.status).toBe('resolved');
+    expect(resolved.resolvedVersionId).toBe('ann-hefei-v2');
+    // 需补充 1 条 + 已修正 1 条（reviewing 不通知）
+    expect(fake.notifications).toHaveLength(2);
+  });
+
+  it('D08/R05：版本落点必须属于该公告版本链、未取代且晚于提交版本', async () => {
+    const fake = createFakePrisma();
+    const { service, created } = await seedCorrection(fake);
+
+    await expect(
+      service.reviewCorrection(REVIEWER, created.id, {
+        status: 'resolved',
+        resolvedVersionId: 'ann-unknown-version',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    // 已取代的旧版本不能作为修正落点
+    await expect(
+      service.reviewCorrection(REVIEWER, created.id, {
+        status: 'resolved',
+        reviewNote: '已修正',
+        resolvedVersionId: 'ann-hefei-v1',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    // 提交版本晚于登记版本（顺序不成立）同样拒绝
+    fake.corrections.find((row) => row.id === created.id)!.versionId =
+      'ann-hefei-v2';
+    await expect(
+      service.reviewCorrection(REVIEWER, created.id, {
+        status: 'resolved',
+        reviewNote: '已修正',
+        resolvedVersionId: 'ann-hefei-v1',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    fake.corrections.find((row) => row.id === created.id)!.versionId =
+      'ann-hefei-v1';
+    const resolved = await service.reviewCorrection(REVIEWER, created.id, {
+      status: 'resolved',
+      reviewNote: '已修正岗位人数为 12 人',
+      resolvedVersionId: 'ann-hefei-v2',
+    });
+    expect(resolved.resolvedVersionId).toBe('ann-hefei-v2');
+    const notice = fake.notifications[0] as Record<string, unknown>;
+    expect(String(notice.body)).toContain('第 2 版');
+
+    const mine = await service.listMyCorrections('user-1');
+    expect(mine.items[0]?.resolvedVersionId).toBe('ann-hefei-v2');
+  });
+
+  it('D08：24 小时内同单元同字段同内容重复提交 409；限流达到上限拒绝', async () => {
+    const fake = createFakePrisma();
+    const service = new OpportunitiesService(fake.prisma, fakeProfileService, fakeScheduleService);
+    const input = { fieldPath: 'major', content: '专业目录少列了一个专业名称' };
+    await service.submitCorrection('user-1', 'unit-hefei-01-v2', input);
+    await expect(
+      service.submitCorrection('user-1', 'unit-hefei-01-v2', input),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    // 不同内容不受去重影响，但达到限流上限（20）后拒绝
+    for (let i = 0; i < 19; i += 1) {
+      await service.submitCorrection('user-1', 'unit-hefei-01-v2', {
+        fieldPath: 'other',
+        content: `第 ${i} 条足够长的其他问题说明`,
+      });
+    }
+    await expect(
+      service.submitCorrection('user-1', 'unit-hefei-01-v2', {
+        fieldPath: 'other',
+        content: '再提交一条足够长的其他问题说明',
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    // 其他用户不受该用户限流影响
+    await expect(
+      service.submitCorrection('user-2', 'unit-hefei-01-v2', input),
+    ).resolves.toBeTruthy();
+  });
+});
+
+describe('OpportunitiesService：公告补录（D08 / PRD 11.9 U08）', () => {
+  const REVIEWER = { id: 'staff-1', role: 'admin' };
+  const VALID_INPUT = {
+    officialUrl: 'https://example.gov.cn/2026/recruit-notice',
+    publisherName: '某市人力资源和社会保障局',
+    regionCode: '330100',
+    note: '该公告已发布但站内未收录',
+  };
+
+  /** 「已收录」必须关联真实、正式发布、未撤回的版本（B01/B02 门禁） */
+  const RESOLVE_INPUT = {
+    status: 'resolved',
+    expectedAnnouncementId: 'ann-valid',
+    expectedVersionId: 'ver-valid',
+  };
+
+  function seedPublishedVersion(fake: ReturnType<typeof createFakePrisma>) {
+    fake.publishedVersions.push({
+      id: 'ver-valid',
+      announcementId: 'ann-valid',
+      status: 'published',
+      supersededAt: null,
+      withdrawnAt: null,
+      versionNumber: 1,
+      payload: {
+        dataset: 'real',
+        announcement: {
+          id: 'ann-valid',
+          officialUrl: VALID_INPUT.officialUrl,
+          lifecycle: 'active',
+        },
+        version: { units: [{ unitId: 'unit-x' }] },
+      },
+    });
+  }
+
+  it('合法提交入库（存规范化链接与哈希），本人可查、他人不可见', async () => {
+    const fake = createFakePrisma();
+    const service = new OpportunitiesService(fake.prisma, fakeProfileService, fakeScheduleService);
+
+    const created = await service.submitAnnouncementSubmission('user-1', VALID_INPUT);
+    expect(created.status).toBe('submitted');
+    expect(created.ticketNo).toMatch(/^BK/);
+
+    const mine = await service.listMyAnnouncementSubmissions('user-1');
+    expect(mine.items).toHaveLength(1);
+    expect(mine.total).toBe(1);
+    expect(mine.items[0]?.officialUrl).toBe('https://example.gov.cn/2026/recruit-notice');
+    expect(mine.items[0]?.publisherName).toBe('某市人力资源和社会保障局');
+    // 他人视角看不到
+    expect((await service.listMyAnnouncementSubmissions('user-2')).items).toHaveLength(0);
+  });
+
+  it('非法与内网链接被拒：javascript:/ftp:/localhost/127.x/192.168.x/凭据 URL', async () => {
+    const fake = createFakePrisma();
+    const service = new OpportunitiesService(fake.prisma, fakeProfileService, fakeScheduleService);
+
+    for (const officialUrl of [
+      'javascript:alert(1)',
+      'ftp://example.gov.cn/a',
+      'http://localhost:3000/notice',
+      'http://127.0.0.1/notice',
+      'http://192.168.1.10/notice',
+      'http://10.0.0.5/notice',
+      'http://172.16.0.9/notice',
+      'http://[::1]/notice',
+      'https://user:pass@example.gov.cn/notice',
+      'not-a-url',
+    ]) {
+      await expect(
+        service.submitAnnouncementSubmission('user-1', { ...VALID_INPUT, officialUrl }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    }
+    expect(fake.submissions).toHaveLength(0);
+  });
+
+  it('缺单位、缺地区码、说明超长均 400', async () => {
+    const fake = createFakePrisma();
+    const service = new OpportunitiesService(fake.prisma, fakeProfileService, fakeScheduleService);
+
+    await expect(
+      service.submitAnnouncementSubmission('user-1', { ...VALID_INPUT, publisherName: ' ' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.submitAnnouncementSubmission('user-1', { ...VALID_INPUT, regionCode: '33' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.submitAnnouncementSubmission('user-1', { ...VALID_INPUT, note: '超'.repeat(501) }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('重复提交可识别：本人同链接 409；已收录链接任何人提交 409；24h 限流', async () => {
+    const fake = createFakePrisma();
+    const service = new OpportunitiesService(fake.prisma, fakeProfileService, fakeScheduleService);
+
+    const first = await service.submitAnnouncementSubmission('user-1', VALID_INPUT);
+    await expect(
+      service.submitAnnouncementSubmission('user-1', {
+        ...VALID_INPUT,
+        // 规范化后相同（默认端口/结尾斜杠/hash 差异不产生新提交）
+        officialUrl: 'https://example.gov.cn:443/2026/recruit-notice/#top',
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    // 管理员标记已收录后，任何用户再提交同链接都被识别
+    seedPublishedVersion(fake);
+    await service.reviewAnnouncementSubmission(REVIEWER, first.id, RESOLVE_INPUT);
+    await expect(
+      service.submitAnnouncementSubmission('user-2', VALID_INPUT),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    // 限流：user-3 连续 10 条后拒绝
+    for (let i = 0; i < 10; i += 1) {
+      await service.submitAnnouncementSubmission('user-3', {
+        ...VALID_INPUT,
+        officialUrl: `https://example.gov.cn/notice-${i}`,
+      });
+    }
+    await expect(
+      service.submitAnnouncementSubmission('user-3', {
+        ...VALID_INPUT,
+        officialUrl: 'https://example.gov.cn/notice-overflow',
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('员工处理补录：need_supplement/rejected 须附说明并通知；resolved 通知已收录', async () => {
+    const fake = createFakePrisma();
+    const service = new OpportunitiesService(fake.prisma, fakeProfileService, fakeScheduleService);
+
+    const created = await service.submitAnnouncementSubmission('user-1', VALID_INPUT);
+
+    const need = await service.reviewAnnouncementSubmission(REVIEWER, created.id, {
+      status: 'need_supplement',
+      reviewNote: '请补充公告标题或发文文号',
+    });
+    expect(need.status).toBe('need_supplement');
+    const mineAfterNeed = await service.listMyAnnouncementSubmissions('user-1');
+    expect(mineAfterNeed.items[0]?.reviewNote).toContain('请补充公告标题');
+
+    const rejected = await service.reviewAnnouncementSubmission(REVIEWER, created.id, {
+      status: 'rejected',
+    });
+    expect(rejected.status).toBe('rejected'); // need_supplement → rejected 允许（说明已在）
+    await expect(
+      service.reviewAnnouncementSubmission(REVIEWER, created.id, { status: 'resolved' }),
+    ).rejects.toBeInstanceOf(ConflictException); // 终态不可改
+
+    const second = await service.submitAnnouncementSubmission('user-2', VALID_INPUT);
+    seedPublishedVersion(fake);
+    const resolved = await service.reviewAnnouncementSubmission(REVIEWER, second.id, RESOLVE_INPUT);
+    expect(resolved.status).toBe('resolved');
+    expect(resolved.resolvedVersionId).toBe('ver-valid');
+
+    const titles = fake.notifications.map((n) => String((n as Record<string, unknown>).title));
+    expect(titles.some((t) => t.includes('需要补充信息'))).toBe(true);
+    expect(titles.some((t) => t.includes('暂未采纳'))).toBe(true);
+    expect(titles.some((t) => t.includes('已收录'))).toBe(true);
+  });
+
+  it('发布关联门禁：无关联、草稿/撤回/演示公告均拒绝，历史待核验不伪造入口', async () => {
+    const fake = createFakePrisma();
+    const service = new OpportunitiesService(fake.prisma, fakeProfileService, fakeScheduleService);
+    const created = await service.submitAnnouncementSubmission('user-1', VALID_INPUT);
+
+    // 缺关联：后端拒绝结案，状态保持
+    await expect(
+      service.reviewAnnouncementSubmission(REVIEWER, created.id, { status: 'resolved' }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(fake.submissions[0]!.status).toBe('submitted');
+
+    // 演示数据集拒绝
+    fake.publishedVersions.push({
+      id: 'ver-demo',
+      announcementId: 'ann-demo',
+      status: 'published',
+      supersededAt: null,
+      withdrawnAt: null,
+      versionNumber: 1,
+      payload: {
+        dataset: 'demo',
+        announcement: { id: 'ann-demo', officialUrl: VALID_INPUT.officialUrl, lifecycle: 'active' },
+        version: { units: [{ unitId: 'unit-x' }] },
+      },
+    });
+    await expect(
+      service.reviewAnnouncementSubmission(REVIEWER, created.id, {
+        status: 'resolved',
+        expectedAnnouncementId: 'ann-demo',
+        expectedVersionId: 'ver-demo',
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    // 版本已撤回拒绝
+    seedPublishedVersion(fake);
+    const validVersion = fake.publishedVersions.find((v) => v.id === 'ver-valid')!;
+    validVersion.withdrawnAt = new Date();
+    await expect(
+      service.reviewAnnouncementSubmission(REVIEWER, created.id, RESOLVE_INPUT),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    // 历史已收录但缺发布关联：标记待核验，不展示查看公告
+    fake.submissions.push({
+      id: 'sub-legacy',
+      userId: 'user-1',
+      officialUrl: VALID_INPUT.officialUrl,
+      publisherName: VALID_INPUT.publisherName,
+      regionCode: VALID_INPUT.regionCode,
+      note: null,
+      status: 'resolved',
+      reviewNote: '历史结案',
+      reviewerId: null,
+      reviewedAt: new Date(),
+      resolvedAnnouncementId: null,
+      resolvedVersionId: null,
+      resolutionBasis: null,
+      historyPendingVerification: true,
+      relatedTicketNo: null,
+      createdAt: new Date(),
+    });
+    const mine = await service.listMyAnnouncementSubmissions('user-1');
+    const legacy = mine.items.find((item) => item.id === 'sub-legacy');
+    expect(legacy?.historyPendingVerification).toBe(true);
+    expect(legacy?.resolvedAnnouncementId).toBeNull();
+  });
+
+  it('员工队列支持状态过滤并附带提交人；非法状态 400；处理不存在记录 404', async () => {
+    const fake = createFakePrisma();
+    const service = new OpportunitiesService(fake.prisma, fakeProfileService, fakeScheduleService);
+
+    await service.submitAnnouncementSubmission('user-1', VALID_INPUT);
+    const queue = await service.listAnnouncementSubmissionsForStaff('submitted');
+    expect(queue).toHaveLength(1);
+    expect(queue[0]?.submitter.email).toBe('u1@example.com');
+    await expect(
+      service.listAnnouncementSubmissionsForStaff('not-a-status'),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.reviewAnnouncementSubmission(REVIEWER, 'sub-missing', { status: 'reviewing' }),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 });
 
@@ -1040,5 +1710,161 @@ describe('OpportunitiesService：新机会订阅（v7.1 M6）', () => {
     // B 的回填不产生通知，A 的状态未被影响
     expect(fake.notifications).toHaveLength(0);
     expect(fake.noticeLogs.filter((r) => r.userId === 'user-2')).toHaveLength(aLogs);
+  });
+});
+
+describe('OpportunitiesService：单位关注（D07 / PRD 11.8 U07）', () => {
+  let fake: ReturnType<typeof createFakePrisma>;
+  let service: OpportunitiesService;
+
+  beforeEach(() => {
+    fake = createFakePrisma();
+    service = new OpportunitiesService(fake.prisma, fakeProfileService, fakeScheduleService);
+  });
+
+  it('关注/列表/取消：身份键精确匹配，重复关注幂等，取消费等', async () => {
+    const created = await service.followOrganization('user-1', {
+      publisherName: '杭州市教育局',
+      regionCode: '330000',
+    });
+    expect(created.identityKey).toBe('杭州市教育局@330000');
+
+    // 首尾空白不影响身份键（NFKC + 折叠空白）
+    const again = await service.followOrganization('user-1', {
+      publisherName: '  杭州市教育局  ',
+      regionCode: '330000',
+    });
+    expect(again.id).toBe(created.id);
+    expect(again.followedAt).toBe(created.followedAt);
+    expect(fake.orgFollows).toHaveLength(1);
+
+    const list = await service.listOrganizationFollows('user-1');
+    expect(list).toHaveLength(1);
+    expect(list[0]?.publisherName).toBe('杭州市教育局');
+
+    await service.unfollowOrganization('user-1', created.identityKey);
+    expect(await service.listOrganizationFollows('user-1')).toHaveLength(0);
+    // 重复取消幂等
+    await expect(
+      service.unfollowOrganization('user-1', created.identityKey),
+    ).resolves.toEqual({ ok: true });
+  });
+
+  it('参数校验：缺发布主体、地区码非法、空身份键均 400', async () => {
+    await expect(
+      service.followOrganization('user-1', { publisherName: '', regionCode: '330000' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.followOrganization('user-1', { publisherName: 'x', regionCode: '330' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.unfollowOrganization('user-1', ''),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('首次同步基线回填不通知；重复同步幂等；无订阅也能同步单位关注', async () => {
+    await service.followOrganization('user-1', {
+      publisherName: '杭州市教育局',
+      regionCode: '330000',
+    });
+    const first = await service.syncSubscription('user-1');
+    expect(first.subscribed).toBe(false); // 未开启订阅
+    expect(first.orgBackfilled).toBeGreaterThan(0);
+    expect(first.orgNewNotices).toBe(0);
+    expect(fake.notifications).toHaveLength(0);
+    expect(
+      fake.noticeLogs.filter(
+        (r) => r.userId === 'user-1' && String(r.dedupKey).startsWith('org:'),
+      ).length,
+    ).toBe(first.orgBackfilled);
+
+    const again = await service.syncSubscription('user-1');
+    expect(again.orgBackfilled).toBe(0);
+    expect(again.orgNewNotices).toBe(0);
+    expect(fake.notifications).toHaveLength(0);
+    // 首次同步写入持久化水位，不再依赖「历史键是否为空」判断
+    expect(fake.orgFollows[0]?.baselineSyncedAt).toBeInstanceOf(Date);
+  });
+
+  it('关注时没有匹配公告：首次同步仍写入基线水位（R04 漏报回归）', async () => {
+    await service.followOrganization('user-1', {
+      publisherName: '不存在的单位',
+      regionCode: '330000',
+    });
+    const first = await service.syncSubscription('user-1');
+    expect(first.orgNewNotices).toBe(0);
+    expect(first.orgBackfilled).toBe(0);
+    expect(fake.orgFollows[0]?.baselineSyncedAt).toBeInstanceOf(Date);
+  });
+
+  it('首次同步遇到关注后才发布的公告：产生提醒而非静默回填', async () => {
+    const loadCatalog = (
+      service as unknown as {
+        loadCatalog: () => Promise<RecruitmentAnnouncement[]>;
+      }
+    ).loadCatalog.bind(service);
+    const catalog = await loadCatalog();
+    const today = new Date().toISOString().slice(0, 10);
+    const target = catalog.find((a) => {
+      const version = a.versions[a.versions.length - 1]!;
+      return (
+        a.lifecycle === 'active' &&
+        isUserVisibleInCatalog(a) &&
+        a.officialUrl.startsWith('https://') &&
+        a.sourceHealth?.ok !== false &&
+        version.officialSource.state === 'official' &&
+        (version.timeline.registrationEnd ?? '') >= today
+      );
+    });
+    expect(target).toBeTruthy();
+    const followed = await service.followOrganization('user-1', {
+      publisherName: target!.publisher,
+      regionCode: target!.region.code,
+    });
+    // 模拟：关注发生在公告发布之前，且首次同步尚未完成
+    const row = fake.orgFollows.find(
+      (r) => r.identityKey === followed.identityKey,
+    )!;
+    row.followedAt = new Date('2020-01-01T00:00:00Z');
+    row.baselineSyncedAt = null;
+
+    const result = await service.syncSubscription('user-1');
+    expect(result.orgNewNotices).toBeGreaterThan(0);
+    expect(fake.notifications.length).toBeGreaterThan(0);
+    // 提醒后水位写入，重复同步不重复提醒
+    const repeat = await service.syncSubscription('user-1');
+    expect(repeat.orgNewNotices).toBe(0);
+    expect(fake.notifications.length).toBe(result.orgNewNotices);
+  });
+
+  it('订阅关闭只停订阅提醒，单位关注同步照常回填', async () => {
+    await service.upsertSubscription('user-1', {
+      regions: [{ code: '330000', province: '浙江省' }],
+      enabled: false,
+    });
+    await service.followOrganization('user-1', {
+      publisherName: '杭州市教育局',
+      regionCode: '330000',
+    });
+    const result = await service.syncSubscription('user-1');
+    expect(result.enabled).toBe(false);
+    expect(result.backfilled).toBe(0);
+    expect(result.orgBackfilled).toBeGreaterThan(0);
+  });
+
+  it('账号隔离：同名单位不同用户各自独立回填', async () => {
+    await service.followOrganization('user-1', {
+      publisherName: '杭州市教育局',
+      regionCode: '330000',
+    });
+    await service.followOrganization('user-2', {
+      publisherName: '杭州市教育局',
+      regionCode: '330000',
+    });
+    const a = await service.syncSubscription('user-1');
+    expect(a.orgBackfilled).toBeGreaterThan(0);
+    const b = await service.syncSubscription('user-2');
+    expect(b.orgBackfilled).toBe(a.orgBackfilled);
+    expect(fake.notifications).toHaveLength(0);
   });
 });

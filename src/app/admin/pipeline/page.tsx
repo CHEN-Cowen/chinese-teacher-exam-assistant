@@ -15,6 +15,7 @@ import {
 } from "@/lib/announcements-pipeline/api";
 import { ReviewWorkbench } from "./review-workbench";
 import { ExportSection } from "./export-section";
+import { PipelineSummaryCard } from "@/components/admin/PipelineSummaryCard";
 
 // ==================== 状态映射 ====================
 
@@ -167,6 +168,9 @@ export default function AdminPipelinePage() {
           提交官方公告 → 机器提取候选 → 人工审核 → 发布不可变版本。高影响字段必须有证据锚点才能通过。
         </p>
       </div>
+
+      {/* 跨阶段汇总（D09 / U10）：来源→快照→解析→提取→发布各阶段真实计数 */}
+      <PipelineSummaryCard />
 
       {/* 提交区 */}
       <Card>

@@ -9,6 +9,8 @@ function setup() {
     {} as never,
     {} as never,
     {} as never,
+    {} as never, // CrawlHealthService（M02/F3 health 聚合，本用例不触达）
+    {} as never, // SourcingAlertService
   );
   return { controller, upsertSource };
 }
@@ -17,7 +19,7 @@ describe('S5 来源目录接口', () => {
   it('目录返回候选和可登记配置，读取不写入数据库', () => {
     const { controller, upsertSource } = setup();
     const result = controller.catalog();
-    expect(result.entries).toHaveLength(15);
+    expect(result.entries).toHaveLength(32);
     expect(result.validationErrors).toEqual([]);
     expect(upsertSource).not.toHaveBeenCalled();
   });
@@ -29,19 +31,21 @@ describe('S5 来源目录接口', () => {
       expect(entry.monitoring).toBeTruthy();
       expect(entry.monitoring.sourceKey).toBe(entry.sourceKey);
     }
-    // 11 个 ready 来源都已完成两次真实检查（第二次为 no_new 或 succeeded），
-    // 连续成功达到阈值，状态为 monitoring；candidate/blocked 仍是 unverified。
+    // 22 个 ready 来源已完成两次真实检查，连续成功达到阈值，状态为 monitoring；
+    // 郑州、福州、广州、石家庄、武汉、长沙、贵阳为 N3 新增，只有 1 次首次采样成功，处于 verifying（一次成功未达阈值）；
+    // candidate/blocked 仍为 unverified。
     const states = result.entries.map((entry) => entry.monitoring.state);
-    expect(states.filter((state) => state === 'monitoring')).toHaveLength(11);
-    expect(states.filter((state) => state === 'verifying')).toHaveLength(0);
-    expect(states.filter((state) => state === 'unverified')).toHaveLength(4);
+    expect(states.filter((state) => state === 'monitoring')).toHaveLength(22);
+    expect(states.filter((state) => state === 'verifying')).toHaveLength(7);
+    // candidate 2 + blocked 1 = 3
+    expect(states.filter((state) => state === 'unverified')).toHaveLength(3);
   });
 
   it('seed 只投入已核验来源，不含候选与 blocked 项', async () => {
     const { controller, upsertSource } = setup();
     const result = await controller.seed();
-    expect(result.count).toBe(11);
-    expect(upsertSource).toHaveBeenCalledTimes(11);
+    expect(result.count).toBe(29);
+    expect(upsertSource).toHaveBeenCalledTimes(29);
     const seeded = upsertSource.mock.calls.map(
       (call) => call[0] as { adapterKey: string },
     );
@@ -53,10 +57,28 @@ describe('S5 来源目录接口', () => {
       'shaoxing-education',
       'jiaxing-education',
       'suzhou-education',
+      'huzhou-education',
+      'taizhou-education',
+      'bozhou-education',
+      'fuyang-education',
+      'jinan-education',
+      'yantai-education',
+      'taian-education',
+      'weifang-education',
+      'nanchang-education',
+      'taiyuan-education',
+      'zhengzhou-education',
+      'fuzhou-education',
+      'guangzhou-education',
+      'shijiazhuang-education',
+      'wuhan-education',
+      'changsha-education',
+      'guiyang-education',
       'changzhou-education',
       'lishui-education',
       'bengbu-education',
       'xiaoshan-education',
+      'anhui-education-policy',
     ]);
     expect(
       seeded.some((entry) => entry.adapterKey === 'wuxi-education-candidate'),

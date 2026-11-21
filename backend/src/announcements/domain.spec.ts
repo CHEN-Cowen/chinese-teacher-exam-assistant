@@ -761,5 +761,47 @@ describe('WB4 字段级审核决策（adopt/edit/reject/pending）', () => {
     ]);
     expect(errs.some((e) => e.includes('缺少原因'))).toBe(true);
   });
+
+  it('R02：major 结构化值在审核阶段校验，非法结构立即报错', () => {
+    const invalid = validateFieldDecisions([
+      {
+        identity: 'job:job:3301A01:major',
+        field: 'major',
+        action: 'edit',
+        afterValue: '{"names":["汉语言文学"],"stages":["bachelor","master"]}',
+        reason: '分阶段口径',
+      },
+    ]);
+    expect(invalid.some((e) => e.includes('stageMode'))).toBe(true);
+
+    const badStage = validateFieldDecisions([
+      {
+        identity: 'job:job:3301A01:major',
+        field: 'major',
+        action: 'edit',
+        afterValue: '{"names":["汉语言文学"],"stages":["undergraduate"]}',
+        reason: '分阶段口径',
+      },
+    ]);
+    expect(badStage.some((e) => e.includes('stages 取值非法'))).toBe(true);
+
+    const valid = validateFieldDecisions([
+      {
+        identity: 'job:job:3301A01:major',
+        field: 'major',
+        action: 'edit',
+        afterValue: '{"names":["汉语言文学"],"stages":["bachelor","master"],"stageMode":"any"}',
+        reason: '分阶段口径',
+      },
+      {
+        identity: 'job:job:3301A01:degree',
+        field: 'degree',
+        action: 'edit',
+        afterValue: '学士及以上',
+        reason: '与原文一致',
+      },
+    ]);
+    expect(valid).toEqual([]);
+  });
 });
 

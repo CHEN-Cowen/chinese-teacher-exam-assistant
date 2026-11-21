@@ -210,6 +210,24 @@ describe('资格匹配引擎：画像修改后即时重算', () => {
     );
     expect(after.value).toBe('PASS');
   });
+
+  it('资格事实改变会重算学历结论；仅修改地区偏好不改变学历结论', () => {
+    const educationOf = (profile: UserRecruitmentProfile) =>
+      matchOf(candidatesFor(profile), SCENARIO_IDS.educationFail).dimensions.find(
+        (d) => d.dimension === 'education',
+      )!;
+    expect(educationOf(BASE_PROFILE).value).toBe('FAIL');
+    expect(
+      educationOf({ ...BASE_PROFILE, educationLevel: 'master', degree: 'master' })
+        .value,
+    ).toBe('PASS');
+    expect(
+      educationOf({
+        ...BASE_PROFILE,
+        regions: [{ code: '110000', province: '北京市', level: 'required' }],
+      }).value,
+    ).toBe('FAIL');
+  });
 });
 
 describe('资格匹配引擎：专业匹配只有精确名称/已审核别名/人工确认', () => {
@@ -233,14 +251,56 @@ describe('资格匹配引擎：专业匹配只有精确名称/已审核别名/�
     expect(major?.value).toBe('PASS');
   });
 
-  it('不使用任何相似度：未列明专业在非歧义公告中直接 FAIL', () => {
+  it('不使用任何相似度：公告未明确阶段时未列明专业进入官方确认，而不是按最高学历判 FAIL', () => {
     const profile: UserRecruitmentProfile = {
       ...BASE_PROFILE,
       majorFullName: '中文教育',
     };
     const match = matchOf(candidatesFor(profile), SCENARIO_IDS.eligible);
     const major = match.dimensions.find((d) => d.dimension === 'major');
-    expect(major?.value).toBe('FAIL');
+    expect(major?.value).toBe('MANUAL_REVIEW');
+    expect(major?.reason).toContain('未明确');
+  });
+
+  it('公告指定阶段且专业不在列明范围时直接 FAIL', () => {
+    const profile: UserRecruitmentProfile = {
+      ...BASE_PROFILE,
+      majorFullName: '中文教育',
+      educationExperiences: [
+        {
+          id: 'edu-bachelor',
+          stage: 'bachelor',
+          majorFullName: '中文教育',
+          status: 'graduated',
+          degree: 'bachelor',
+          degreeStatus: 'obtained',
+          source: 'user',
+          majorConfirmed: true,
+          teacherTraining: 'yes',
+        },
+      ],
+    };
+    const staged: Requirement = {
+      id: 'hz-major-staged',
+      dimension: 'major',
+      description: '专业要求：汉语言文学（限本科阶段）',
+      hard: true,
+      criterion: { kind: 'major', majorNames: ['汉语言文学'], stages: ['bachelor'] },
+      evidence: {
+        id: 'ev-hz-major',
+        locator: { kind: 'url', url: 'https://example.gov.cn/a' },
+        state: 'official',
+        checkedAt: NOW,
+      },
+    };
+    expect(evaluateRequirement(staged, profile, NOW).value).toBe('FAIL');
+    expect(
+      evaluateRequirement(
+        { ...staged, criterion: { kind: 'major', majorNames: ['汉语言文学'] } },
+        profile,
+        NOW,
+      ).value,
+    ).toBe('MANUAL_REVIEW');
   });
 
   it('歧义公告中未列明专业进入 MANUAL_REVIEW 而不是 FAIL', () => {
@@ -251,6 +311,228 @@ describe('资格匹配引擎：专业匹配只有精确名称/已审核别名/�
     const match = matchOf(candidatesFor(profile), SCENARIO_IDS.majorAmbiguous);
     const major = match.dimensions.find((d) => d.dimension === 'major');
     expect(major?.value).toBe('MANUAL_REVIEW');
+  });
+
+  it('公告指定本科阶段专业时，采用本科经历并说明阶段', () => {
+    const profile: UserRecruitmentProfile = {
+      ...BASE_PROFILE,
+      majorFullName: undefined,
+      educationLevel: undefined,
+      degree: undefined,
+      educationExperiences: [
+        {
+          id: 'bachelor-1',
+          stage: 'bachelor',
+          majorFullName: '汉语言文学',
+          teacherTraining: 'yes',
+          majorConfirmed: true,
+          source: 'user',
+        },
+        {
+          id: 'master-1',
+          stage: 'master',
+          majorFullName: '学科教学（语文）',
+          degree: 'master',
+          teacherTraining: 'no',
+          majorConfirmed: true,
+          source: 'user',
+        },
+      ],
+    };
+    const req: Requirement = {
+      id: 'major-bachelor',
+      dimension: 'major',
+      description: '本科专业须为汉语言文学',
+      hard: true,
+      criterion: {
+        kind: 'major',
+        majorNames: ['汉语言文学'],
+        stages: ['bachelor'],
+      },
+      evidence: {
+        id: 'ev-major-bachelor',
+        locator: { kind: 'url', url: 'https://example.gov.cn/a' },
+        state: 'official',
+        checkedAt: NOW,
+      },
+    };
+    const major = evaluateRequirement(req, profile, NOW);
+    expect(major.value).toBe('PASS');
+    expect(major.reason).toContain('本科');
+    expect(major.adoptedEducation?.[0]?.experienceId).toBe('bachelor-1');
+    expect(major.userFact).toContain('本科');
+  });
+
+  it('公告要求本硕同时满足时，任一阶段不中就 FAIL（stageMode=all）', () => {
+    const req: Requirement = {
+      id: 'major-all',
+      dimension: 'major',
+      description: '本科与硕士专业均须为汉语言文学',
+      hard: true,
+      criterion: {
+        kind: 'major',
+        majorNames: ['汉语言文学'],
+        stages: ['bachelor', 'master'],
+        stageMode: 'all',
+      },
+      evidence: {
+        id: 'ev-major-all',
+        locator: { kind: 'url', url: 'https://example.gov.cn/a' },
+        state: 'official',
+        checkedAt: NOW,
+      },
+    };
+    const profile: UserRecruitmentProfile = {
+      ...BASE_PROFILE,
+      majorFullName: undefined,
+      educationExperiences: [
+        { id: 'b', stage: 'bachelor', majorFullName: '汉语言文学', teacherTraining: 'yes', majorConfirmed: true, source: 'user' },
+        { id: 'm', stage: 'master', majorFullName: '学科教学（语文）', teacherTraining: 'no', majorConfirmed: true, source: 'user' },
+      ],
+    };
+    const major = evaluateRequirement(req, profile, NOW);
+    expect(major.value).toBe('FAIL');
+    expect(major.reason).toContain('硕士研究生');
+  });
+
+  it('公告要求某阶段专业但用户缺该阶段经历时返回 UNKNOWN', () => {
+    const req: Requirement = {
+      id: 'major-master',
+      dimension: 'major',
+      description: '硕士专业须为中国语言文学类',
+      hard: true,
+      criterion: {
+        kind: 'major',
+        majorNames: ['中国语言文学'],
+        stages: ['master'],
+      },
+      evidence: {
+        id: 'ev-major-master',
+        locator: { kind: 'url', url: 'https://example.gov.cn/a' },
+        state: 'official',
+        checkedAt: NOW,
+      },
+    };
+    const profile: UserRecruitmentProfile = {
+      ...BASE_PROFILE,
+      majorFullName: undefined,
+      educationExperiences: [
+        { id: 'b', stage: 'bachelor', majorFullName: '汉语言文学', teacherTraining: 'yes', majorConfirmed: true, source: 'user' },
+      ],
+    };
+    expect(evaluateRequirement(req, profile, NOW).value).toBe('UNKNOWN');
+  });
+
+  it('每个维度都带下一步动作', () => {
+    const match = matchOf(candidatesFor(BASE_PROFILE), SCENARIO_IDS.eligible);
+    expect(match.dimensions.every((d) => typeof d.nextStep === 'string' && d.nextStep.length > 0)).toBe(true);
+  });
+
+  it('地区偏好范围外：资格仍初步符合，标记 preferenceOutOfScope 且不计有效机会', () => {
+    const profile: UserRecruitmentProfile = {
+      ...BASE_PROFILE,
+      regions: [{ code: '340000', province: '安徽省', level: 'required' }],
+    };
+    const match = matchOf(candidatesFor(profile), SCENARIO_IDS.eligible);
+    const region = match.dimensions.find((d) => d.dimension === 'region');
+    expect(region?.value).toBe('FAIL');
+    expect(region?.hard).toBe(false);
+    expect(match.overall).toBe('preliminary_eligible');
+    expect(match.preferenceOutOfScope).toBe(true);
+    expect(isValidOpportunity(match)).toBe(false);
+  });
+
+  it('只有“优先/可考虑”地区时不排除岗位', () => {
+    const profile: UserRecruitmentProfile = {
+      ...BASE_PROFILE,
+      regions: [{ code: '340000', province: '安徽省', level: 'preferred' }],
+    };
+    const match = matchOf(candidatesFor(profile), SCENARIO_IDS.eligible);
+    const region = match.dimensions.find((d) => d.dimension === 'region');
+    expect(region?.value).toBe('PASS');
+    expect(match.preferenceOutOfScope).toBeUndefined();
+    expect(isValidOpportunity(match)).toBe(true);
+  });
+
+  it('公告明确允许高学段教资报低学段岗位时才放宽', () => {
+    const highCert: UserRecruitmentProfile = {
+      ...BASE_PROFILE,
+      teacherCert: { status: 'obtained', subject: 'chinese', stage: 'high' },
+    };
+    const strict: Requirement = {
+      id: 'cert-middle',
+      dimension: 'teacher_cert',
+      description: '初中及以上语文教师资格',
+      hard: true,
+      criterion: {
+        kind: 'teacher_cert',
+        subject: 'chinese',
+        stage: 'middle',
+        acceptInProgress: false,
+      },
+      evidence: {
+        id: 'ev-cert-middle',
+        locator: { kind: 'url', url: 'https://example.gov.cn/a' },
+        state: 'official',
+        checkedAt: NOW,
+      },
+    };
+    expect(evaluateRequirement(strict, highCert, NOW).value).toBe('FAIL');
+    const relaxed: Requirement = {
+      ...strict,
+      criterion: {
+        kind: 'teacher_cert',
+        subject: 'chinese',
+        stage: 'middle',
+        acceptInProgress: false,
+        acceptHigherStage: true,
+      },
+    };
+    expect(evaluateRequirement(relaxed, highCert, NOW).value).toBe('PASS');
+  });
+
+  it('旧资料迁移后阶段未确认且专业不命中时，不误判 FAIL', () => {
+    const profile: UserRecruitmentProfile = {
+      ...BASE_PROFILE,
+      majorFullName: undefined,
+      educationExperiences: [
+        {
+          id: 'legacy-education',
+          stage: 'master',
+          majorFullName: '中文教育',
+          teacherTraining: 'unknown',
+          majorConfirmed: false,
+          source: 'legacy',
+          stageNeedsConfirmation: true,
+        },
+      ],
+    };
+    const match = matchOf(candidatesFor(profile), SCENARIO_IDS.eligible);
+    const major = match.dimensions.find((d) => d.dimension === 'major');
+    expect(major?.value).toBe('UNKNOWN');
+    expect(major?.reason).toContain('尚未确认');
+  });
+
+  it('阶段待确认的迁移记录名称恰好匹配时，不直接 PASS', () => {
+    const profile: UserRecruitmentProfile = {
+      ...BASE_PROFILE,
+      majorFullName: undefined,
+      educationExperiences: [
+        {
+          id: 'legacy-education',
+          stage: 'bachelor',
+          majorFullName: '汉语言文学',
+          teacherTraining: 'unknown',
+          majorConfirmed: false,
+          source: 'legacy',
+          stageNeedsConfirmation: true,
+        },
+      ],
+    };
+    const match = matchOf(candidatesFor(profile), SCENARIO_IDS.eligible);
+    const major = match.dimensions.find((d) => d.dimension === 'major');
+    expect(major?.value).toBe('UNKNOWN');
+    expect(major?.reason).toContain('尚未确认');
   });
 });
 

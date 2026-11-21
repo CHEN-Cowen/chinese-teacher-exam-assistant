@@ -67,6 +67,11 @@ function makeSource(overrides: Record<string, unknown>) {
     latestRun: makeRun(),
     parserVersion: "parser-v3",
     pendingReviewCount: 0,
+    regionCode: "330100",
+    contactInfo: "抓取值班：ops@example.gov.cn",
+    pollEveryMinutes: 60,
+    snapshotCount: 12,
+    publishedVersionCount: 3,
     ...overrides,
   };
 }
@@ -242,6 +247,12 @@ describe("来源管理页：列表渲染", () => {
 
     // 队列积压摘要
     expect(html()).toContain("抓取队列积压");
+
+    // 来源台账（M08）：地区、负责人/处理入口、调度周期、材料与发布状态
+    expect(html()).toContain("地区：330100");
+    expect(html()).toContain("负责人：抓取值班：ops@example.gov.cn");
+    expect(html()).toContain("（每 60 分钟）");
+    expect(html()).toContain("材料：12 · 已发布：3");
 
     // null 时间显示占位
     expect(html()).toContain("—");

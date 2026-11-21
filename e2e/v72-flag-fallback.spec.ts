@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 /**
- * v7.2 开关关闭回退态浏览器 E2E（跑在 3000，仅 NEXT_PUBLIC_FF_POST_SAVE_NEXT=true）。
+ * v7.2 开关关闭回退态浏览器 E2E（跑在 3001，仅 NEXT_PUBLIC_FF_POST_SAVE_NEXT=true）。
  *
  * 覆盖（PRD 8.4 回退策略）：
  * - `/opportunities` 无 [role=tablist]：走 StackedResultSections 旧式堆叠分组；
@@ -58,7 +58,7 @@ async function seedGuestProfile(page: Page) {
 async function demoLogin(page: Page) {
   await page.goto("/login");
   await page.waitForLoadState("networkidle");
-  await page.getByLabel("账号").fill("student@demo.app");
+  await page.getByLabel("邮箱").fill("student@demo.app");
   await page.getByLabel("密码").fill("demo1234");
   await page.getByRole("button", { name: "登录", exact: true }).click();
   await page.waitForURL(/\/opportunities$/);

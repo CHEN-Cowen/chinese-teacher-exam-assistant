@@ -97,7 +97,7 @@ export function DesktopNav() {
                       设置
                     </Link>
                     <Link role="menuitem" href="/materials" onClick={() => setMenuOpen(false)} className="block px-3 py-2 text-sm text-ink hover:bg-surface-2">
-                      我的资料
+                      学习资料
                     </Link>
                     <button role="menuitem" type="button" onClick={() => { setMenuOpen(false); logout(); }} className="w-full px-3 py-2 text-left text-sm text-ink hover:bg-surface-2">
                       退出登录

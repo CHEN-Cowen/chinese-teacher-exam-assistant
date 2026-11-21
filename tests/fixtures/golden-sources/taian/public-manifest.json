@@ -1,0 +1,20 @@
+{
+  "capturedAt": "2026-11-06T01:50:03.678Z",
+  "sourceKind": "official-live-snapshot",
+  "scope": "list-and-article-and-attachment-links",
+  "stableMonitoringVerified": false,
+  "files": [
+    {
+      "name": "public-shell.html",
+      "url": "https://jyj.taian.gov.cn/col/col45480/index.html",
+      "sha256": "671be7050b646c45e68c2b32033377de4b8a49a64b0ff8a89a1716ef107bd559"
+    },
+    {
+      "name": "public-page4.xml",
+      "url": "https://jyj.taian.gov.cn/module/web/jpage/dataproxy.jsp?startrecord=46&endrecord=60&perpage=15&unitid=146938&webid=323&path=https%3A%2F%2Fjyj.taian.gov.cn%2F&webname=%25E6%25B3%25B0%25E5%25AE%2589%25E5%25B8%2582%25E6%2595%2599%25E8%2582%25B2%25E5%25B1%2580&col=1&columnid=45480&sourceContentType=1&permissiontype=0",
+      "method": "POST",
+      "requestBody": "col=1&sourceContentType=1&webid=323&path=https%3A%2F%2Fjyj.taian.gov.cn%2F&columnid=45480&unitid=146938&webname=%E6%B3%B0%E5%AE%89%E5%B8%82%E6%95%99%E8%82%B2%E5%B1%80&permissiontype=0",
+      "sha256": "f3fa3f8e0673cd15d860d1e725da4312ef004732ffac0325ecefad18ab23515b"
+    }
+  ]
+}

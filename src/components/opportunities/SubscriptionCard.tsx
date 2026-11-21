@@ -10,6 +10,7 @@ import type {
   SubscriptionUpdateInput,
 } from "@/lib/opportunities/api-types";
 import { stageLabel, subjectLabel } from "@/lib/ia/labels";
+import { SUBJECT_OPTIONS, subjectLabels } from "@/lib/subjects/catalog";
 import type { UserRecruitmentProfile } from "@/lib/profile/types";
 import { useCurrentUser } from "@/lib/auth";
 import { track } from "@/lib/analytics/eventService";
@@ -83,6 +84,7 @@ export function SubscriptionCard({
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [draftRegions, setDraftRegions] = useState<SubscriptionRegionDTO[]>([]);
+  const [draftSubjects, setDraftSubjects] = useState<string[]>([]);
   const [draftNature, setDraftNature] = useState<NaturePreference>("undecided");
   // v7.1 M8：登录后继续订阅动作
   const [pendingSubscribe] = useState(() => {
@@ -156,9 +158,16 @@ export function SubscriptionCard({
     return opportunitiesApi.upsertSubscription(input);
   }
 
+  /** 未订阅时按画像意向学科展示默认条件；不把资格证学科当作意向。 */
+  const defaultSubjects = useMemo(
+    () => (profile.intendedSubjects ?? []).filter(Boolean),
+    [profile.intendedSubjects],
+  );
+
   function startEditing(): void {
     if (!sub) return;
     setDraftRegions(sub.regions);
+    setDraftSubjects(sub.subjects?.length ? sub.subjects : [sub.subject]);
     setDraftNature(sub.naturePreference);
     setEditing(true);
   }
@@ -168,6 +177,14 @@ export function SubscriptionCard({
       current.some((r) => r.code === region.code)
         ? current.filter((r) => r.code !== region.code)
         : [...current, region],
+    );
+  }
+
+  function toggleDraftSubject(code: string): void {
+    setDraftSubjects((current) =>
+      current.includes(code)
+        ? current.filter((item) => item !== code)
+        : [...current, code],
     );
   }
 
@@ -194,7 +211,12 @@ export function SubscriptionCard({
               · 报考地区：
               {defaultRegionLabels ?? "你在报考信息中填写的地区"}
             </li>
-            <li>· 学科：语文（当前唯一开放学科）</li>
+            <li>
+              · 学科：
+              {defaultSubjects.length > 0
+                ? defaultSubjects.map(subjectLabel).join("、")
+                : "未设置（可在订阅修改中添加）"}
+            </li>
             <li>· 用工偏好：{NATURE_PREFERENCE_LABELS[deriveDefaultNature(profile)]}</li>
             <li>· 资格条件：以你保存的学历、毕业时间与教师资格为必要条件</li>
           </ul>
@@ -241,7 +263,13 @@ export function SubscriptionCard({
                     ? sub.regions.map(regionDtoLabel).join("、")
                     : "未设置"}
                 </li>
-                <li>· 学科：{subjectLabel("chinese")}</li>
+                <li>
+                  · 学科：
+                  {subjectLabels({
+                    subjects: sub.subjects,
+                    subject: sub.subject,
+                  }).join("、")}
+                </li>
                 <li>· 用工偏好：{NATURE_PREFERENCE_LABELS[sub.naturePreference]}</li>
                 {sub.qualification && (
                   <li>
@@ -328,6 +356,36 @@ export function SubscriptionCard({
 
               <fieldset>
                 <legend className="text-xs font-semibold text-ink">
+                  关注学科（可多选）
+                </legend>
+                <div className="mt-1.5 flex flex-wrap gap-2">
+                  {SUBJECT_OPTIONS.map((option) => {
+                    const checked = draftSubjects.includes(option.value);
+                    return (
+                      <label
+                        key={option.value}
+                        className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-line bg-canvas px-3 py-1 text-xs text-ink has-checked:border-brand has-checked:bg-brand-soft"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleDraftSubject(option.value)}
+                          className="h-3.5 w-3.5 accent-brand"
+                        />
+                        {option.label}
+                      </label>
+                    );
+                  })}
+                </div>
+                {draftSubjects.length === 0 && (
+                  <p className="mt-1.5 text-xs text-warn">
+                    至少保留一个学科，否则保存时会保留原有选择。
+                  </p>
+                )}
+              </fieldset>
+
+              <fieldset>
+                <legend className="text-xs font-semibold text-ink">
                   用工偏好
                 </legend>
                 <div className="mt-1.5 space-y-1.5">
@@ -360,6 +418,7 @@ export function SubscriptionCard({
                       () =>
                         upsert({
                           regions: draftRegions,
+                          subjects: draftSubjects,
                           naturePreference: draftNature,
                         }),
                       "modified",

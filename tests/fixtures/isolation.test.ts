@@ -35,7 +35,9 @@ function collectSourceFiles(dir: string): string[] {
 }
 
 describe("测试样本与生产代码隔离", () => {
-  it("src/ 与 backend/src/ 中没有任何文件引用 tests/fixtures", () => {
+  // 递归读全量源码文件，单跑已接近默认 5s 超时；并发全量跑时 IO 竞争会超限，
+  // 显式放宽到 20s（只放时间窗口，不断言/skip 任何检查）。
+  it("src/ 与 backend/src/ 中没有任何文件引用 tests/fixtures", { timeout: 20000 }, () => {
     const violations: string[] = [];
     for (const tree of PRODUCTION_TREES) {
       for (const file of collectSourceFiles(tree)) {

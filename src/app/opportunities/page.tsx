@@ -15,9 +15,10 @@ import {
   formatEvaluatedAt,
   listCardNextStepLabel,
 } from "@/lib/opportunities/list-view";
-import { buildNoResultState } from "@/lib/opportunities/no-result";
+import { buildNoResultPanel } from "@/lib/opportunities/no-result";
 import { opportunitiesApi } from "@/lib/opportunities/api";
 import { OpportunityListItem } from "@/components/opportunities/OpportunityListItem";
+import { PreferencePreviewCard } from "@/components/opportunities/PreferencePreviewCard";
 import { MigrationConflictBanner } from "@/components/opportunities/MigrationConflictBanner";
 import type { SupplementFacts } from "@/lib/profile/activeProfile";
 import { WorkbenchTabs } from "@/components/opportunities/WorkbenchTabs";
@@ -31,6 +32,8 @@ import { SubscriptionCard } from "@/components/opportunities/SubscriptionCard";
 import { StatusMessage, StatusMessageRegion } from "@/components/ui/StatusMessage";
 import { Callout } from "@/components/ui/Callout";
 import { useOnlineStatus } from "@/lib/useOnlineStatus";
+import { correctionTicketCode } from "@/lib/opportunities/correction-code";
+import { AnnouncementSubmissionModal } from "@/components/opportunities/AnnouncementSubmissionModal";
 import { ResultConditionSummary } from "@/components/results/ResultConditionSummary";
 import { buildEditConditionsHref } from "@/lib/results/condition-summary";
 import type { ConditionSource } from "@/lib/results/condition-summary";
@@ -89,6 +92,31 @@ export default function OpportunitiesPage() {
   } = useOpportunities();
   const online = useOnlineStatus();
 
+  // D08：公告补录弹窗（报告未收录的官方公告）
+  const [submissionOpen, setSubmissionOpen] = useState(false);
+  const [submissionSubmitting, setSubmissionSubmitting] = useState(false);
+  const [submissionDone, setSubmissionDone] = useState<string | null>(null);
+  const [submissionError, setSubmissionError] = useState<string | null>(null);
+
+  const handleSubmission = async (input: {
+    officialUrl: string;
+    publisherName: string;
+    regionCode: string;
+    note?: string;
+  }) => {
+    setSubmissionSubmitting(true);
+    setSubmissionError(null);
+    try {
+      const receipt = await opportunitiesApi.submitAnnouncementSubmission(input);
+      setSubmissionOpen(false);
+      setSubmissionDone(correctionTicketCode(receipt.id));
+    } catch (e) {
+      setSubmissionError(e instanceof Error ? e.message : "补录提交失败");
+    } finally {
+      setSubmissionSubmitting(false);
+    }
+  };
+
   // v7.1 M6：进入机会页即幂等同步订阅（fire-and-forget）；有新提醒时给页面提示条
   const [newNotices, setNewNotices] = useState(0);
   useEffect(() => {
@@ -107,6 +135,17 @@ export default function OpportunitiesPage() {
       cancelled = true;
     };
   }, []);
+
+  // D05 列表位置保留（PRD 11.6）：从定向补充页保存返回时 URL 带 #unit-<id> 锚点，
+  // 数据就绪后滚动定位到原岗位卡片（锚点元素由 ResultsWorkbench 渲染）。
+  useEffect(() => {
+    if (state.status !== "ready") return;
+    const hash = window.location.hash;
+    if (!hash.startsWith("#unit-")) return;
+    document
+      .getElementById(hash.slice(1))
+      ?.scrollIntoView({ block: "center" });
+  }, [state.status]);
 
   if (state.status === "loading") return <LoadingPage />;
 
@@ -139,7 +178,8 @@ export default function OpportunitiesPage() {
   }
 
   const view = buildListViewModel(state.data, state.profile);
-  const noResult = buildNoResultState(view);
+  // D04：多原因无结果面板（含当前筛选/统计范围/分阶段数量/检查时间）
+  const noResult = buildNoResultPanel(view, state.profile);
   const evaluatedAt = view.meta.evaluatedAt;
   const suggested =
     view.priority ??
@@ -201,7 +241,7 @@ export default function OpportunitiesPage() {
   );
 
   return (
-    <div className="mx-auto max-w-[1280px] space-y-7 px-4 pb-2 sm:px-5 lg:px-6">
+    <div className="mx-auto max-w-[1440px] space-y-7 px-4 pb-2 sm:px-5 lg:px-6">
       {actionFeedback && (
         <StatusMessageRegion>
           <StatusMessage
@@ -276,8 +316,32 @@ export default function OpportunitiesPage() {
         }
       />
 
-      <CoverageBanner coverage={view.coverage} />
+      <CoverageBanner
+        coverage={view.coverage}
+        onOpenSubmission={() => {
+          setSubmissionDone(null);
+          setSubmissionOpen(true);
+        }}
+      />
       <DatasetScopeNotice hasDemo={hasDemo} />
+      {/* D06：往年参考入口（历史已截止公告，只读、不计入当前可报） */}
+      <div className="flex items-center justify-between gap-3 rounded-xl border border-line bg-surface px-4 py-3">
+        <p className="text-xs leading-5 text-ink-muted">
+          想提前准备？可以查看往年已截止公告的条件与时间（仅供参考，本年度以新公告为准）。
+        </p>
+        <Link
+          href="/history"
+          className="shrink-0 text-sm font-medium text-brand underline underline-offset-2"
+        >
+          往年参考
+        </Link>
+      </div>
+      {/* D04：偏好调整影响预览（只读预览 → 确认保存 → 可撤销），有结果/无结果都可用 */}
+      <PreferencePreviewCard
+        profile={state.profile}
+        response={state.data}
+        onApplied={() => reload()}
+      />
       {/* v7.2：当前条件摘要 + 修改入口（与 /preview 同一组件，ff 开时展示） */}
       {FLAGS.ff_new_results && state.profile && (
         <Suspense fallback={null}>
@@ -303,7 +367,7 @@ export default function OpportunitiesPage() {
             {view.uncoveredRegions.map((region) => (
               <span
                 key={region.code}
-                className="inline-flex items-center rounded-full bg-surface px-2 py-0.5 font-medium text-ink-muted ring-1 ring-line"
+                className="inline-flex h-6 items-center rounded bg-surface px-2 font-medium text-ink-muted ring-1 ring-line"
               >
                 {region.label}
               </span>
@@ -323,7 +387,14 @@ export default function OpportunitiesPage() {
       )}
 
       {noResult && (
-        <NoResultFeedback state={noResult} coverage={view.coverage} />
+        <NoResultFeedback
+          panel={noResult}
+          coverage={view.coverage}
+          onOpenSubmission={() => {
+            setSubmissionDone(null);
+            setSubmissionOpen(true);
+          }}
+        />
       )}
       {noResult && <SubscriptionCard profile={state.profile} />}
 
@@ -332,6 +403,27 @@ export default function OpportunitiesPage() {
           {actionError}
         </Callout>
       )}
+
+      {submissionError && (
+        <Callout variant="no" title="补录提交未完成">
+          {submissionError}
+        </Callout>
+      )}
+      {submissionDone && (
+        <StatusMessage
+          tone="success"
+          duration={0}
+          message={`补录已提交，受理编号 ${submissionDone}。我们核对官方来源后会纳入监测，处理结果可在「我的资料」页查看。`}
+        />
+      )}
+
+      {/* D08：公告补录弹窗（列表页与无结果面板共用） */}
+      <AnnouncementSubmissionModal
+        isOpen={submissionOpen}
+        onClose={() => setSubmissionOpen(false)}
+        submitting={submissionSubmitting}
+        onSubmit={(input) => void handleSubmission(input)}
+      />
 
       {/* v7.2 结果区：ff_new_results 开 → 工作台三标签；关（回退）→ 旧式堆叠分组。
           FLAGS 是构建期快照，顶层条件渲染在服务端与客户端一致，无 hydration 风险。

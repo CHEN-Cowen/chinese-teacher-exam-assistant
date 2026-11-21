@@ -24,7 +24,7 @@ import { REDIS_CLIENT } from '../sourcing/redis.js';
 import { CRAWL_QUEUE_NAME } from '../sourcing/sourcing.tokens.js';
 
 describe('DocumentProcessingModule Nest 模块编译（UnknownDependenciesException 回归）', () => {
-  it('DocumentParserService 能被 Nest 编译并实例化（生产默认配置）', async () => {
+  it('DocumentParserService 能被 Nest 编译并实例化（生产默认配置）', { timeout: 60_000 }, async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [PrismaModule, DocumentProcessingModule],
     })

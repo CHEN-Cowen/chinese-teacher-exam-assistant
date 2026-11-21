@@ -11,17 +11,16 @@
  */
 
 /**
- * 学科编码。当前只开放语文（chinese），但类型不把语文写成长期唯一枚举：
- * `(string & {})` 让后续学科可以在不改既有代码的情况下进入模型，
- * 而 OPEN_SUBJECTS 才是“当前已开放”的运行时白名单（匹配闸门使用）。
+ * 学科编码。W1 起为全学科稳定代码（与 backend/subjects/subject-catalog 同源）：
+ * `(string & {})` 保留未知/长尾学科的存放空间，不把任何单一学科写死。
  */
 export type SubjectCode = "chinese" | (string & {});
 
 /** 学段编码（与 v5.2 EducationLevel 取值保持一致，便于后续兼容层映射） */
 export type StageCode = "primary" | "middle" | "high" | (string & {});
 
-/** 当前产品已开放的学科白名单；后续开放其他学科时在此追加 */
-export const OPEN_SUBJECTS = ["chinese"] as const;
+/** 当前开放匹配的学科白名单（由展示字典统一导出，禁止在此手写单值） */
+export { OPEN_SUBJECTS } from "@/lib/subjects/catalog";
 
 /** 用工性质编码（官方名称另存，展示时优先用 officialName） */
 export type EmploymentNatureCode =
@@ -141,7 +140,17 @@ export type DegreeCode = "none" | "bachelor" | "master" | "doctorate";
  */
 export type RequirementCriterion =
   | { kind: "education"; minLevel: CredentialLevel }
-  | { kind: "degree"; requiredDegree: Exclude<DegreeCode, "none"> }
+  | {
+      kind: "degree";
+      requiredDegree: Exclude<DegreeCode, "none">;
+      /**
+       * 公告原文明确允许在报名/入职前取得学位时置 true（R03）。
+       * 缺省=false：未取得（在读）不能当作已取得。
+       */
+      acceptInProgress?: boolean;
+      /** 公告明确给出的取得期限（ISO 日期）；未给出则不能自行假设 */
+      obtainBy?: string;
+    }
   | {
       kind: "major";
       /** 公告列出的可接受专业全称（归一化后精确匹配） */
@@ -153,6 +162,13 @@ export type RequirementCriterion =
        * 精确匹配不中时不得自动判定，转人工确认。
        */
       ambiguous?: boolean;
+      /**
+       * 公告明确指定的教育阶段（D03/R03）。
+       * 缺省：公告未明确阶段，不得自行按最高学历判不符合；
+       * 多阶段可要求任一命中（any）或同时命中（all）。
+       */
+      stages?: CredentialLevel[];
+      stageMode?: "any" | "all";
     }
   | { kind: "graduate_status"; requireFresh: boolean }
   | {
@@ -161,6 +177,8 @@ export type RequirementCriterion =
       stage: StageCode;
       /** 是否接受“已通过考试、领证中”的在途状态 */
       acceptInProgress: boolean;
+      /** 公告原文明确允许高学段教师资格报考低学段岗位（D03） */
+      acceptHigherStage?: boolean;
     }
   | { kind: "age"; maxAgeYears: number; referenceDate?: string }
   | { kind: "hukou"; allowedRegionCodes: string[]; label: string }
@@ -200,7 +218,12 @@ export interface ApplicationUnit {
   region: RegionRef;
   /** 大致任教范围（录取后调配时用于说明，不等于最终学校） */
   teachingScope?: string;
+  /** 兼容旧单值；W1 读取时与 subjects 合并 */
   subject: SubjectCode;
+  /** W1：岗位可报/任教学科集合（复数优先） */
+  subjects?: SubjectCode[];
+  /** 官方岗位表原文的学科表述（保留原文，便于追溯） */
+  subjectOriginal?: string;
   stage: StageCode;
   headcount: number;
   organizationType: OrganizationType;

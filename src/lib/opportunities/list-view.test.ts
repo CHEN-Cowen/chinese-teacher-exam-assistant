@@ -3,6 +3,7 @@ import type { MatchResponse, UnitMatchDTO } from "./api-types";
 import type { UserRecruitmentProfile } from "@/lib/profile/types";
 import {
   buildListViewModel,
+  dimensionImpactCounts,
   formatEvaluatedAt,
   listCardNextStepLabel,
 } from "./list-view";
@@ -34,6 +35,7 @@ function makeUnit(
       publisher: "教育局",
       organizationType: "government_unified",
       officialUrl: "https://example.gov.cn/a",
+      region: { code: "330100", province: "浙江省", city: "杭州市" },
       dataset: "demo",
       reviewStatus: "human_reviewed",
       reviewedBy: null,
@@ -83,7 +85,7 @@ function makeResponse(
       evaluatedAt: "2026-10-05T10:00:00+08:00",
     },
     coverage: {
-      version: "kb-monitoring-coverage-1.1.0",
+      version: "coverage-projection-2.0.0",
       subject: "chinese",
       subjectLabel: "语文",
       status: "monitoring_no_open",
@@ -113,9 +115,11 @@ function makeResponse(
               id: "src-hz",
               name: "杭州教育网招聘栏目",
               url: "https://edu.hangzhou.gov.cn/x",
+              regionCode: "330100",
+              authorityLevel: "city",
+              state: "recently_healthy",
               lastCheckedAt: "2026-10-06T11:30:00+08:00",
-              ok: true,
-              failReason: null,
+              note: "检查正常",
             },
           ],
         },
@@ -128,17 +132,54 @@ function makeResponse(
               id: "src-nb",
               name: "宁波教育局招聘栏目",
               url: "http://jyj.ningbo.gov.cn/x",
+              regionCode: "330200",
+              authorityLevel: "city",
+              state: "recently_healthy",
               lastCheckedAt: "2026-10-06T11:30:00+08:00",
-              ok: true,
-              failReason: null,
+              note: "检查正常",
             },
           ],
+        },
+      ],
+      sources: [
+        {
+          id: "src-hz",
+          name: "杭州教育网招聘栏目",
+          url: "https://edu.hangzhou.gov.cn/x",
+          regionCode: "330100",
+          authorityLevel: "city",
+          state: "recently_healthy",
+          lastCheckedAt: "2026-10-06T11:30:00+08:00",
+          note: "检查正常",
+        },
+        {
+          id: "src-nb",
+          name: "宁波教育局招聘栏目",
+          url: "http://jyj.ningbo.gov.cn/x",
+          regionCode: "330200",
+          authorityLevel: "city",
+          state: "recently_healthy",
+          lastCheckedAt: "2026-10-06T11:30:00+08:00",
+          note: "检查正常",
         },
       ],
       lastCheckedAt: "2026-10-06T11:30:00+08:00",
       openOpportunityCount: 0,
       nextWindowNote: "",
       scopeNote: "暂未收录不代表当地无招聘。",
+      caliber: {
+        generatedAt: "2026-10-06T11:30:00+08:00",
+        version: "coverage-projection-2.0.0",
+        registeredSources: 2,
+        verifiedSources: 0,
+        recentlyHealthySources: 2,
+        failedSources: 0,
+        pausedSources: 0,
+        blockedSources: 0,
+        publishedOpenUnits: 0,
+        isFallback: false,
+        fallbackNote: null,
+      },
     },
     primaryTargetUnitId,
     groups: {
@@ -287,6 +328,7 @@ describe("buildListViewModel：四类结果的列表叙事", () => {
         publisher: "宁波市鄞州区教育局",
         organizationType: "government_unified",
         officialUrl: "https://www.nbyz.gov.cn/x",
+        region: { code: "330200", province: "浙江省", city: "宁波市" },
         dataset: "real",
         reviewStatus: "ai_reviewed_pending",
         reviewedBy: null,
@@ -499,6 +541,7 @@ describe("buildListViewModel：模块 5 异常态与地区分流", () => {
         publisher: "宁波市鄞州区教育局",
         organizationType: "government_unified",
         officialUrl: "https://www.nbyz.gov.cn/x",
+        region: { code: "330200", province: "浙江省", city: "宁波市" },
         dataset: "real",
         reviewStatus: "ai_reviewed_pending",
         reviewedBy: null,
@@ -562,6 +605,7 @@ describe("buildListViewModel：模块 5 异常态与地区分流", () => {
         publisher: "杭州市教育局",
         organizationType: "institution_unified",
         officialUrl: "https://edu.hangzhou.gov.cn/art/x.html",
+        region: { code: "330100", province: "浙江省", city: "杭州市" },
         dataset: "real",
         reviewStatus: "human_reviewed",
         reviewedBy: "reviewer-chen",
@@ -667,6 +711,34 @@ describe("buildListViewModel：模块 5 异常态与地区分流", () => {
       ],
     });
     expect(listCardNextStepLabel(closed)).toContain("公告");
+  });
+});
+
+describe("dimensionImpactCounts（D05：补充提示的「影响岗位」计数）", () => {
+  it("按维度聚合可行动的待补单元；与结果页 needInfoGroups 同口径", () => {
+    const response = makeResponse({
+      yinzhou: makeUnit("unit-yinzhou-01", "need_more_info"),
+    });
+    const impact = dimensionImpactCounts(response);
+    expect(impact.hukou).toBe(1);
+    expect(impact.age).toBeUndefined();
+  });
+
+  it("闸门失败/不可行动的单元不计入；空分组返回空对象", () => {
+    const closedNeedInfo = makeUnit("unit-closed-needinfo", "need_more_info", {
+      gates: [
+        { code: "subject_not_open", passed: true, reason: "" },
+        { code: "registration_closed", passed: false, reason: "已截止" },
+        { code: "out_of_scope_nature", passed: true, reason: "" },
+        { code: "announcement_withdrawn", passed: true, reason: "" },
+        { code: "no_official_source", passed: true, reason: "" },
+      ],
+    });
+    const response = makeResponse({ yinzhou: closedNeedInfo });
+    expect(dimensionImpactCounts(response)).toEqual({});
+
+    const empty = makeResponse({});
+    expect(dimensionImpactCounts(empty)).toEqual({});
   });
 });
 
@@ -808,6 +880,7 @@ describe("buildListViewModel：v7.2 工作台三标签分桶", () => {
         publisher: "教育局",
         organizationType: "government_unified",
         officialUrl: "https://example.gov.cn/a",
+        region: { code: "330100", province: "浙江省", city: "杭州市" },
         dataset: "real",
         reviewStatus: "ai_reviewed_pending",
         reviewedBy: null,

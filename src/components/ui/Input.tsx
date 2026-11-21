@@ -22,7 +22,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
         {label && (
           <label
             htmlFor={inputId}
-            className="block text-sm font-medium text-ink mb-1.5"
+            className="mb-2 block text-sm font-semibold text-ink"
           >
             {label}
           </label>
@@ -31,18 +31,18 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           ref={ref}
           id={inputId}
           className={cn(
-            "h-12 w-full rounded-xl border border-line bg-surface px-3.5 text-sm text-ink placeholder:text-ink-muted/60 transition-colors",
+            "h-11 w-full rounded-lg border border-[#BFC9D9] bg-surface px-3 text-sm text-ink placeholder:text-ink-muted/60 transition-colors",
             "hover:border-brand/30 focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/10",
-            "disabled:bg-canvas disabled:text-ink-muted disabled:cursor-not-allowed",
+            "disabled:bg-[#E9EDF5] disabled:text-ink-muted disabled:cursor-not-allowed",
             error && "border-danger focus:ring-danger",
             className
           )}
           aria-invalid={error ? true : undefined}
           {...props}
         />
-        {error && <p className="mt-1 text-sm text-danger">{error}</p>}
+        {error && <p className="mt-1.5 text-sm text-danger">{error}</p>}
         {hint && !error && (
-          <p className="mt-1 text-sm text-ink-muted">{hint}</p>
+          <p className="mt-1.5 text-[13px] text-ink-muted">{hint}</p>
         )}
       </div>
     );
@@ -67,7 +67,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
         {label && (
           <label
             htmlFor={selectId}
-            className="block text-sm font-medium text-ink mb-1.5"
+            className="mb-2 block text-sm font-semibold text-ink"
           >
             {label}
           </label>
@@ -76,9 +76,9 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
           ref={ref}
           id={selectId}
           className={cn(
-            "h-12 w-full rounded-xl border border-line bg-surface px-3.5 text-sm text-ink transition-colors",
+            "h-11 w-full rounded-lg border border-[#BFC9D9] bg-surface px-3 text-sm text-ink transition-colors",
             "hover:border-brand/30 focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/10",
-            "disabled:bg-canvas disabled:text-ink-muted disabled:cursor-not-allowed",
+            "disabled:bg-[#E9EDF5] disabled:text-ink-muted disabled:cursor-not-allowed",
             error && "border-danger focus:ring-danger",
             className
           )}
@@ -96,7 +96,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
             </option>
           ))}
         </select>
-        {error && <p className="mt-1 text-sm text-danger">{error}</p>}
+        {error && <p className="mt-1.5 text-sm text-danger">{error}</p>}
       </div>
     );
   }
@@ -118,7 +118,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
         {label && (
           <label
             htmlFor={areaId}
-            className="block text-sm font-medium text-ink mb-1.5"
+            className="mb-2 block text-sm font-semibold text-ink"
           >
             {label}
           </label>
@@ -127,16 +127,16 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
           ref={ref}
           id={areaId}
           className={cn(
-            "min-h-[100px] w-full rounded-xl border border-line bg-surface px-3.5 py-3 text-sm text-ink placeholder:text-ink-muted/60 transition-colors",
+            "min-h-[112px] w-full rounded-lg border border-[#BFC9D9] bg-surface px-3 py-3 text-sm leading-[22px] text-ink placeholder:text-ink-muted/60 transition-colors",
             "hover:border-brand/30 focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/10",
-            "disabled:bg-canvas disabled:text-ink-muted disabled:cursor-not-allowed",
+            "disabled:bg-[#E9EDF5] disabled:text-ink-muted disabled:cursor-not-allowed",
             error && "border-danger focus:ring-danger",
             className
           )}
           aria-invalid={error ? true : undefined}
           {...props}
         />
-        {error && <p className="mt-1 text-sm text-danger">{error}</p>}
+        {error && <p className="mt-1.5 text-sm text-danger">{error}</p>}
       </div>
     );
   }

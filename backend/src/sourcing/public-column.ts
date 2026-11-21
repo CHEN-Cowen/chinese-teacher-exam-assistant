@@ -50,7 +50,11 @@ export function extractArticlePathDate(text: string, url: string): string {
  * - jiaxing：li，日期在 div.time（短格式，年份取自官方文章路径）；
  * - hangzhou：li，日期在 span.suffixContent[origintime]（毫秒时间戳）；
  * - lishui：li，日期在同级 span（方括号包裹的 YYYY-MM-DD）；
- * - xiaoshan：li，日期在同级 span.info-time（YYYY-MM-DD）。
+ * - xiaoshan：li，日期在同级 span.info-time（YYYY-MM-DD）；
+ * - huzhou：表格行（.page-content tr），日期在 td.yd_no，形如 [YYYY-MM-DD]；
+ * - taizhou：li，标题在链接文本（title 属性为模板占位符），日期在同级 span（YYYY-MM-DD）；
+ * - jinan：table 行（.page-content tr），日期在 td.bt_time 内 span（YYYY-MM-DD）；
+ * - yantai：li.cf，a[title] + 同级 span.fr（YYYY-MM-DD），列表混有直接指向 PDF 的条目。
  */
 export type PublicColumnKind =
   | 'ningbo'
@@ -59,7 +63,11 @@ export type PublicColumnKind =
   | 'jiaxing'
   | 'hangzhou'
   | 'lishui'
-  | 'xiaoshan';
+  | 'xiaoshan'
+  | 'huzhou'
+  | 'taizhou'
+  | 'jinan'
+  | 'yantai';
 
 /** 只读取官网声明的同源公开列表接口，不执行脚本，不接受任意跨域地址。 */
 export function publicColumnRequest(
@@ -179,6 +187,21 @@ function readPublicColumnPaging(
   return { count, size, page };
 }
 
+/**
+ * 单来源分页窗口：官方栏目总页数远超通用预算（20 页）时，按来源显式登记
+ * 「只监测最新 N 页」，而不是让整个来源在首轮就因超预算失败。
+ *
+ * 这不是静默截断：窗口值、官方总量与原因同时登记在来源目录 coverageNote
+ * 与 `docs/nationwide-recruitment-source-ledger.md`，测试也会锁定页数。
+ * 未登记的来源超过通用预算仍然显式失败。
+ */
+export const PUBLIC_COLUMN_PAGE_WINDOWS: Readonly<Record<string, number>> = {
+  // 烟台市教育局「通知公告」为混合栏目：官方分量 1365 条 / 91 页（每页 15 条）。
+  // 全量抓取会让单来源每轮入队上千条历史文档，因此只监测最新 6 页（90 条），
+  // 覆盖最近约数月的新公告。
+  'jyj.yantai.gov.cn': 6,
+};
+
 /** 按官网 pageNew.js 的 paramJson 协议安排后续页，超过预算显式失败。 */
 export function publicColumnPages(
   baseUrl: string,
@@ -191,11 +214,13 @@ export function publicColumnPages(
   if (!paging) return [];
   const { count, size, page } = paging;
   const total = Math.ceil(count / size);
-  if (total > maxPages)
+  const sourceWindow = PUBLIC_COLUMN_PAGE_WINDOWS[new URL(baseUrl).hostname];
+  if (total > maxPages && sourceWindow === undefined)
     throw new AdapterParseError(
       'DOM_MISMATCH',
       '公开栏目分页超出预算，需调整检查范围',
     );
+  const lastPage = Math.min(total, sourceWindow ?? maxPages);
   const requested = new URL(baseUrl).searchParams.get('paramJson');
   if (requested) {
     let requestedPage: unknown;
@@ -214,7 +239,7 @@ export function publicColumnPages(
   if (page !== 1)
     throw new AdapterParseError('DOM_MISMATCH', '公开栏目初始页码不是第一页');
   const urls: string[] = [];
-  for (let next = 2; next <= total; next += 1) {
+  for (let next = 2; next <= lastPage; next += 1) {
     const url = new URL(baseUrl);
     url.searchParams.set(
       'paramJson',
@@ -246,6 +271,47 @@ export function publicColumnHtml(content: string): string {
   }
 }
 
+/**
+ * 附件名解析：锚点文本 → title/aria-label → 下载地址的 fileName/filename/name 参数
+ * → 带扩展名的 URL 末段。官方正文偶有空锚点（常州 2026-11-20 实测
+ * `<a href="…xlsx"></a>`），直接抛错会让整篇公告连同其余附件一起失败；
+ * 只有全部来源都取不到名称时才失败，不静默丢弃附件。
+ */
+export function attachmentNameFromLink(
+  $: CheerioAPI,
+  element: unknown,
+  target: string,
+): string {
+  const node = $(element as never);
+  const text = node
+    .text()
+    .replace(/\u00a0/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (text) return text;
+  const label = (node.attr('title') ?? node.attr('aria-label') ?? '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (label) return label;
+  try {
+    const url = new URL(target);
+    for (const key of ['fileName', 'filename', 'name']) {
+      const value = url.searchParams.get(key)?.trim();
+      if (value) return decodeURIComponent(value).trim();
+    }
+    const base = decodeURIComponent(
+      url.pathname.split('/').filter(Boolean).pop() ?? '',
+    ).trim();
+    if (/\.[a-z0-9]{2,5}$/i.test(base)) return base;
+  } catch {
+    // 非法 URL 落到统一失败分支
+  }
+  throw new AdapterParseError(
+    'DOM_MISMATCH',
+    '公开正文附件缺少名称，且无法从下载地址推导',
+  );
+}
+
 /** 实测宁波/鄞州正文共用 #zoom 与官方元数据，缺项不回退全页抓取。 */
 export function locatePublicArticle(
   url: string,
@@ -263,14 +329,12 @@ export function locatePublicArticle(
     const href = $(e).attr('href')!;
     const target = resolveUrl(url, href);
     if (
-      !/\/front\/document\/download\?|\.(pdf|xlsx?|docx?|zip)(?:[?#]|$)/i.test(
+      !/\/front\/document\/download\?|\/download\?|\.(pdf|xlsx?|docx?|zip)(?:[?#]|$)/i.test(
         target,
       )
     )
       return;
-    const name = $(e).text().trim();
-    if (!name)
-      throw new AdapterParseError('DOM_MISMATCH', '公开正文附件缺少名称');
+    const name = attachmentNameFromLink($, e, target);
     attachments.set(target, { name, url: target });
   });
   return {
@@ -282,7 +346,7 @@ export function locatePublicArticle(
   };
 }
 
-/** 正文容器候选顺序：#zoom 为主，实测嘉兴/绍兴亦同，苏州为 .article-content，常州为 .NewsText，蚌埠为 .j-fontContent。 */
+/** 正文容器候选顺序：#zoom 为主，实测嘉兴/绍兴亦同，苏州为 .article-content，常州为 .NewsText，蚌埠为 .j-fontContent，泰州为 .content。 */
 const ARTICLE_BODY_SELECTORS = [
   '#zoom',
   '.article-content',
@@ -290,6 +354,7 @@ const ARTICLE_BODY_SELECTORS = [
   '.bt_content',
   '.art_con',
   '.j-fontContent',
+  '.content',
 ] as const;
 
 /**
@@ -319,20 +384,27 @@ export function locateOfficialArticle(
   if (!title || !date || !body.text().trim())
     throw new AdapterParseError('DOM_MISMATCH', '公开正文缺少标题、日期或正文');
   const attachments = new Map<string, { name: string; url: string }>();
-  body.find('a[href]').each((_i, e) => {
+  // 部分官方站点把「文件下载」区块放在正文容器之外（亳州 .m-filbox、
+  // 阜阳 .m-dtdownload），仍需按附件链接规则一并收集，否则会漏掉岗位表/报名表。
+  const anchors = body.find('a[href]').toArray();
+  $('.m-filbox a[href], .m-file-download a[href], .m-dtdownload a[href]').each(
+    (_i, e) => {
+      anchors.push(e);
+    },
+  );
+  for (const anchor of anchors) {
+    const e = anchor as never;
     const href = $(e).attr('href')!;
     const target = resolveUrl(url, href);
     if (
-      !/\/front\/document\/download\?|\.(pdf|xlsx?|docx?|zip)(?:[?#]|$)/i.test(
+      !/\/front\/document\/download\?|\/download\?|\.(pdf|xlsx?|docx?|zip)(?:[?#]|$)/i.test(
         target,
       )
     )
-      return;
-    const name = $(e).text().trim();
-    if (!name)
-      throw new AdapterParseError('DOM_MISMATCH', '公开正文附件缺少名称');
+      continue;
+    const name = attachmentNameFromLink($, e, target);
     attachments.set(target, { name, url: target });
-  });
+  }
   return {
     canonicalUrl: normalizeUrl(url),
     title,
@@ -402,17 +474,25 @@ export function discoverPublicColumn(
   const rows =
     kind === 'ningbo'
       ? $('.page-content tr').has('td.car_tl a[href]')
-      : kind === 'lishui'
+      : kind === 'lishui' || kind === 'huzhou' || kind === 'jinan'
         ? $('.page-content tr').has('a[href]')
         : $('.page-content li').has('a[href]');
   const items: DiscoveredDocument[] = [];
   rows.each((_i, e) => {
     const link = $(e).find('a[href]').first();
-    const title = (link.attr('title') ?? link.text()).trim();
+    const rawTitle = link.attr('title');
+    // 泰州列表的 title 属性是模板占位符（如 {item.title1}），真实标题在链接文本。
+    const title =
+      kind === 'taizhou' && (!rawTitle || /\{\s*[\w.]+\s*\}/.test(rawTitle))
+        ? link.text().trim()
+        : (rawTitle ?? link.text()).trim();
     if (!title) throw new AdapterParseError('DOM_MISMATCH', '公开栏目缺少标题');
     const href = link.attr('href');
     if (!href) throw new AdapterParseError('DOM_MISMATCH', '公开栏目缺少链接');
     const url = resolveUrl(baseUrl, href);
+    // 烟台「通知公告」列表混有直接指向 PDF/附件的条目（年度报表、教辅目录等），
+    // 这些不是可解析的公告正文页；只保留官方文章路径，避免把 PDF 当正文抓取。
+    if (kind === 'yantai' && !/\/art\/\d{4}\/\S+\.html$/i.test(url)) return;
     let publishedAt: string;
     if (kind === 'hangzhou') {
       // 杭州条目日期是 li 的同级 <span>YYYY-MM-DD</span>；
@@ -430,6 +510,30 @@ export function discoverPublicColumn(
       publishedAt = extractDate(
         $(e).find('span.info-time').first().text(),
         '萧山公开栏目日期',
+      );
+    } else if (kind === 'huzhou') {
+      // 湖州表格行日期在独立单元格 td.yd_no，形如 [2026-11-04]。
+      publishedAt = extractDate(
+        $(e).find('td.yd_no').first().text(),
+        '湖州公开栏目日期',
+      );
+    } else if (kind === 'taizhou') {
+      // 泰州条目日期在同级 span（YYYY-MM-DD）。
+      publishedAt = extractDate(
+        $(e).find('span').first().text(),
+        '泰州公开栏目日期',
+      );
+    } else if (kind === 'jinan') {
+      // 济南表格行日期在 td.bt_time 内 span（YYYY-MM-DD）。
+      publishedAt = extractDate(
+        $(e).find('td.bt_time').text() || $(e).find('span').first().text(),
+        '济南公开栏目日期',
+      );
+    } else if (kind === 'yantai') {
+      // 烟台 li.cf 条目日期在同级 span.fr（YYYY-MM-DD）。
+      publishedAt = extractDate(
+        $(e).find('span.fr').first().text(),
+        '烟台公开栏目日期',
       );
     } else {
       const date =
@@ -664,6 +768,256 @@ export function serverRenderedListPages(
   return urls;
 }
 
+/**
+ * 政府信息公开栏目静态列表（亳州 section.m-tglist / 阜阳 div.m-cglist.m-liststyle1）：
+ * li 内 a[href][title] + 同级 span（YYYY-MM-DD）；日期与链接先后顺序不固定。
+ * 详情路径由调用方传入的 detailPathPattern 限制，跨站条目直接跳过。
+ */
+export function discoverGovInfoList(
+  baseUrl: string,
+  content: string,
+  detailPathPattern: RegExp,
+): DiscoveredDocument[] {
+  const $ = load(content);
+  const rows = $('section.m-tglist li, div.m-cglist.m-liststyle1 li').has(
+    'a[href]',
+  );
+  if (!rows.length)
+    throw new AdapterParseError(
+      'DOM_MISMATCH',
+      '政府信息公开列表未找到 section.m-tglist / div.m-cglist.m-liststyle1 li > a[href] 结构',
+    );
+  const items: DiscoveredDocument[] = [];
+  const seen = new Set<string>();
+  rows.each((_i, e) => {
+    const link = $(e).find('a[href]').first();
+    const href = link.attr('href');
+    const title = (link.attr('title') ?? link.text()).trim();
+    if (!href || !title)
+      throw new AdapterParseError('DOM_MISMATCH', '政府信息公开列表条目缺少链接或标题');
+    const url = resolveUrl(baseUrl, href);
+    if (!detailPathPattern.test(url)) return;
+    if (seen.has(url)) return;
+    const date = $(e).find('span').first().text().trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      throw new AdapterParseError(
+        'DOM_MISMATCH',
+        `政府信息公开列表条目缺少发布日期（YYYY-MM-DD）: ${title}`,
+      );
+    }
+    seen.add(url);
+    items.push({
+      title,
+      publishedAt: extractDate(date, '政府信息公开列表日期'),
+      url: normalizeUrl(url),
+      kind: classifyDocumentKind(title),
+    });
+  });
+  if (!items.length)
+    throw new AdapterParseError(
+      'DOM_MISMATCH',
+      '政府信息公开列表无任何条目（静默 0 条视为故障）',
+    );
+  return items;
+}
+
+/**
+ * 亳州官方分页：<pagination currentpage pagesize pagecount total>，
+ * 后续页为同路径的 page_<n>.html（首屏 page_1.html）。
+ * 已在后续页（currentpage > 1）时返回空数组，避免循环安排分页。
+ */
+export function govInfoListPages(
+  baseUrl: string,
+  content: string,
+  maxPages = 20,
+): string[] {
+  const $ = load(content);
+  const node = $('pagination').first();
+  if (!node.length) return [];
+  const current = Number(node.attr('currentpage'));
+  const size = Number(node.attr('pagesize'));
+  const total = Number(node.attr('pagecount'));
+  if (
+    !Number.isSafeInteger(current) ||
+    current < 1 ||
+    !Number.isSafeInteger(size) ||
+    size < 1 ||
+    !Number.isSafeInteger(total) ||
+    total < 1
+  ) {
+    throw new AdapterParseError('DOM_MISMATCH', '政府信息公开分页参数无效');
+  }
+  if (total > maxPages)
+    throw new AdapterParseError(
+      'DOM_MISMATCH',
+      '政府信息公开分页超出预算，需调整检查范围',
+    );
+  // 已经是后续页：不再重复安排，交给列表去重。
+  if (current > 1) return [];
+  const url = new URL(baseUrl);
+  if (!/page_\d+\.html/.test(url.pathname))
+    throw new AdapterParseError(
+      'DOM_MISMATCH',
+      '政府信息公开分页路径不是 page_<n>.html 形态',
+    );
+  const urls: string[] = [];
+  for (let next = 2; next <= total; next += 1) {
+    const page = new URL(url.href);
+    page.pathname = url.pathname.replace(/page_\d+\.html/, `page_${next}.html`);
+    urls.push(page.href);
+  }
+  return urls;
+}
+
+/**
+ * 南昌市教育局「教师科」栏目（/ncjyj/jskfw/nav_list.shtml）静态列表：
+ * ul.item li > a[href][title] + 同级 <span>YYYY-MM-DD</span>（span 无 class）。
+ * 详情路径由调用方传入的 detailPathPattern 限制；
+ * 列表偶尔跨栏目链接（如 /ncjyj/jszgrd/ 教师资格专栏），只要命中详情路径即收录。
+ */
+export function discoverStaticAnchorList(
+  baseUrl: string,
+  content: string,
+  detailPathPattern: RegExp,
+  listSelector = 'ul.item li',
+): DiscoveredDocument[] {
+  const $ = load(content);
+  const rows = $(listSelector).has('a[href]');
+  if (!rows.length)
+    throw new AdapterParseError(
+      'DOM_MISMATCH',
+      `静态锚点列表未找到 ${listSelector} > a[href] 结构`,
+    );
+  const items: DiscoveredDocument[] = [];
+  const seen = new Set<string>();
+  rows.each((_i, e) => {
+    const link = $(e).find('a[href]').first();
+    const href = link.attr('href');
+    const title = (link.attr('title') ?? link.text()).trim();
+    if (!href || !title)
+      throw new AdapterParseError(
+        'DOM_MISMATCH',
+        '静态锚点列表条目缺少链接或标题',
+      );
+    const url = resolveUrl(baseUrl, href);
+    if (!detailPathPattern.test(url)) return;
+    if (seen.has(url)) return;
+    // NFCMS 政务站点日期带方括号（`[2026-11-06]`），剥掉首尾括号后统一校验；
+    // 南昌等既有来源的裸 `YYYY-MM-DD` 不受影响。
+    const date = $(e)
+      .find('span')
+      .first()
+      .text()
+      .trim()
+      .replace(/^\[\s*|\s*\]$/g, '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      throw new AdapterParseError(
+        'DOM_MISMATCH',
+        `静态锚点列表条目缺少发布日期（YYYY-MM-DD）: ${title}`,
+      );
+    }
+    seen.add(url);
+    items.push({
+      title,
+      publishedAt: extractDate(date, '静态锚点列表日期'),
+      url: normalizeUrl(url),
+      kind: classifyDocumentKind(title),
+    });
+  });
+  if (!items.length)
+    throw new AdapterParseError(
+      'DOM_MISMATCH',
+      '静态锚点列表无任何条目（静默 0 条视为故障）',
+    );
+  return items;
+}
+
+/**
+ * JS 跳转式静态分页（太原通知公告）：页码锚点为 `href="#"` +
+ * `onclick="location.href='tzgg_2.html'"`，无 createPageHTML 声明。
+ * 只接受同源、路径为「基名 + _<n>.html」且 n ≥ 2 的后续页；
+ * 页码超出预算时显式失败，不静默截断。
+ */
+export function jsPaginationPages(
+  baseUrl: string,
+  content: string,
+  maxPages = 20,
+): string[] {
+  const $ = load(content);
+  const url = new URL(baseUrl);
+  const stem = url.pathname.replace(/\.html?$/i, '');
+  const prefix = `${stem}_`;
+  const pages = new Map<number, string>();
+  $('a[onclick]').each((_i, e) => {
+    const onclick = $(e).attr('onclick') ?? '';
+    const match = onclick.match(/location\.href\s*=\s*['"]([^'"]+)['"]/i);
+    if (!match) return;
+    let target: URL;
+    try {
+      target = new URL(match[1], url);
+    } catch {
+      return;
+    }
+    if (target.origin !== url.origin) return;
+    if (!target.pathname.startsWith(prefix)) return;
+    const suffix = target.pathname.slice(prefix.length).match(/^(\d+)\.html?$/i);
+    if (!suffix) return;
+    const index = Number(suffix[1]);
+    if (!Number.isSafeInteger(index) || index < 2) return;
+    if (!pages.has(index)) pages.set(index, target.href);
+  });
+  if (!pages.size) return [];
+  const indexes = [...pages.keys()].sort((a, b) => a - b);
+  if (indexes[indexes.length - 1] > maxPages)
+    throw new AdapterParseError(
+      'DOM_MISMATCH',
+      'JS 分页超出预算，需调整检查范围',
+    );
+  return indexes.map((index) => pages.get(index)!);
+}
+
+/**
+ * 河南政务 .jhtml 静态分页：列表页以 index_2.jhtml、index_3.jhtml 数字锚点声明后续页
+ * （郑州市教育局 2026-11-20 实测）。只派生同目录 index_N.jhtml，首页为 index.jhtml。
+ * 已是 index_N.jhtml 分页页时返回 []，避免把分页页当新首屏反复派生。
+ */
+export function jhtmlIndexPages(
+  baseUrl: string,
+  content: string,
+  maxPages = 20,
+): string[] {
+  let base: URL;
+  try {
+    base = new URL(baseUrl);
+  } catch {
+    return [];
+  }
+  if (/\/index_\d+\.jhtml$/.test(base.pathname)) return [];
+  const $ = load(content);
+  let total = 1;
+  $('a[href]').each((_i, e) => {
+    const href = $(e).attr('href') ?? '';
+    const match = href.match(/index_(\d+)\.jhtml(?:[?#]|$)/i);
+    if (!match) return;
+    const index = Number(match[1]);
+    if (Number.isSafeInteger(index) && index > total) total = index;
+  });
+  if (total <= 1) return [];
+  if (total > maxPages)
+    throw new AdapterParseError(
+      'DOM_MISMATCH',
+      `jhtml 分页超出预算（${total} > ${maxPages}），需核验后调整窗口`,
+    );
+  const dirPath = base.pathname.replace(/index(?:_\d+)?\.jhtml$/, '');
+  const urls: string[] = [];
+  for (let index = 2; index <= total; index += 1) {
+    const page = new URL(base.href);
+    page.pathname = `${dirPath}index_${index}.jhtml`;
+    urls.push(page.href);
+  }
+  return urls;
+}
+
 /** 静态列表分页 URL：保持域与路径，替换 _<n> 序号；其余不变。 */
 export function staticListPages(
   baseUrl: string,
@@ -687,11 +1041,16 @@ export function staticListPages(
       'DOM_MISMATCH',
       '静态列表分页超出预算，需调整检查范围',
     );
+  const current = Number(calls[2]);
+  // 当前页可能已是 nav_list_2.shtml：先剥掉 _<n> 再拼下一序号，
+  // 否则会生成 nav_list_2_2.shtml 这类不存在的地址（N3 南昌链路实测暴露）。
+  const from = Number.isSafeInteger(current) && current >= 1 ? current : 1;
   const url = new URL(baseUrl);
+  const basePath = url.pathname.replace(/_\d+(?=\.shtml$)/, '');
   const urls: string[] = [];
-  for (let next = 2; next <= total; next += 1) {
+  for (let next = from + 1; next <= total; next += 1) {
     const page = new URL(url.href);
-    page.pathname = url.pathname.replace(/(\.shtml)?$/, `_${next}.shtml`);
+    page.pathname = basePath.replace(/(\.shtml)?$/, `_${next}.shtml`);
     urls.push(page.href);
   }
   return urls;

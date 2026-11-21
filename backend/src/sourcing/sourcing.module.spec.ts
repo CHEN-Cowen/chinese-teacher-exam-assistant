@@ -54,27 +54,30 @@ async function compileApp() {
 }
 
 describe('SourcingModule Nest 模块编译（UnknownExportException 回归）', () => {
-  it('SourcingModule 能被 Nest 成功编译', async () => {
+  // 全部 compileApp() 内部都做一次 Nest 模块真实编译，Windows 上并发易超时
+  const opts = { timeout: 60_000 } as const;
+
+  it('SourcingModule 能被 Nest 成功编译', opts, async () => {
     const moduleRef = await compileApp();
     expect(moduleRef).toBeDefined();
     await moduleRef.close();
   });
 
-  it('上层模块经 SourcingModule 获得 CrawlHealthService', async () => {
+  it('上层模块经 SourcingModule 获得 CrawlHealthService', opts, async () => {
     const moduleRef = await compileApp();
     const health = moduleRef.get(CrawlHealthService, { strict: false });
     expect(health).toBeInstanceOf(CrawlHealthService);
     await moduleRef.close();
   });
 
-  it('CrawlOrchestrator 仍正常导出', async () => {
+  it('CrawlOrchestrator 仍正常导出', opts, async () => {
     const moduleRef = await compileApp();
     const orchestrator = moduleRef.get(CrawlOrchestrator, { strict: false });
     expect(orchestrator).toBeInstanceOf(CrawlOrchestrator);
     await moduleRef.close();
   });
 
-  it('CrawlHealthService 在整个容器中是单例（不重复注册/连接）', async () => {
+  it('CrawlHealthService 在整个容器中是单例（不重复注册/连接）', opts, async () => {
     const moduleRef = await compileApp();
     const a = moduleRef.get(CrawlHealthService, { strict: false });
     const b = moduleRef.get(CrawlHealthService, { strict: false });

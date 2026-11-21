@@ -6,6 +6,17 @@ import { authService } from "@/lib/auth";
 import { currentVersion } from "@/lib/announcements/domain";
 import type { RecruitmentAnnouncement } from "@/lib/announcements/types";
 import { GUEST_COVERAGE } from "@/lib/guest/coverage";
+import { identityScopedKey } from "@/lib/storageIdentity";
+import {
+  collectHistoricalUnits,
+  filterHistoricalUnits,
+  availableBatchYears,
+  availableHistoryFilters,
+  historySampleNote,
+  paginate,
+} from "@/lib/history/domain";
+import { availableHistoryRegions, toHistoryUnitDTO } from "@/lib/history/dto";
+import { getDemoHistoryAnnouncements } from "@/lib/seed/v61-history";
 import {
   buildCandidates,
   groupByMissingDimension,
@@ -15,28 +26,60 @@ import {
 import type { UserRecruitmentProfile } from "@/lib/profile/types";
 import { getRollingDemoAnnouncements } from "@/lib/seed/demoTimeline";
 import { loadFromStorage, saveToStorageStrict } from "@/lib/storage";
+import type { NotificationDTO } from "@/lib/schedule/types";
+import {
+  organizationIdentityKey,
+  planOrganizationNotices,
+} from "./organization-follow";
 import type {
   FollowDTO,
   FollowStatus,
   GoalsResponse,
+  HistoryDetailResponse,
+  HistoryFilters,
+  HistoryListResponse,
   MatchResponse,
   MaterialStatus,
   OpportunityCorrectionDTO,
+  OpportunityCorrectionDetailDTO,
+  OrganizationFollowDTO,
   StudyTargetRole,
   SubscriptionDTO,
   SubscriptionSyncDTO,
   SubscriptionUpdateInput,
+  TicketPageResult,
+  TicketSupplementDTO,
+  TicketTimelineEventDTO,
   UnitDetailResponse,
   UnitMatchDTO,
+  AnnouncementSubmissionDTO,
+  AnnouncementSubmissionDetailDTO,
 } from "./api-types";
+import { checkOfficialUrl } from "./announcement-submission";
 
 interface DemoFollow extends FollowDTO {
   remindersMuted: boolean;
 }
 
+/** 演示通道的工单补充（localStorage 内按用户隔离） */
+interface DemoSupplement extends TicketSupplementDTO {
+  ticketType: "correction" | "announcement_submission";
+  ticketId: string;
+}
+
 interface DemoData {
   follows: DemoFollow[];
   corrections: OpportunityCorrectionDTO[];
+  /** D08：公告补录提交（localStorage 按用户隔离） */
+  submissions: AnnouncementSubmissionDTO[];
+  /** 工单补充与公开时间线（演示通道同样保留历史，不覆盖原文） */
+  supplements: DemoSupplement[];
+  /** D07：单位关注（按身份键精确匹配） */
+  orgFollows: OrganizationFollowDTO[];
+  /** D07：单位关注已记录的幂等键（org:{identityKey}:{announcementId}:{versionId}） */
+  orgNoticeKeys: string[];
+  /** D07：单位关注新公告产生的站内通知 */
+  notifications: NotificationDTO[];
 }
 
 function currentUserId(): string {
@@ -49,13 +92,33 @@ function storageKey(): string {
   return `kb_demo_opportunities_v1_${currentUserId()}`;
 }
 
+function emptyDemoData(): DemoData {
+  return {
+    follows: [],
+    corrections: [],
+    submissions: [],
+    supplements: [],
+    orgFollows: [],
+    orgNoticeKeys: [],
+    notifications: [],
+  };
+}
+
 function load(): DemoData {
   // v7.2：访客在 /preview/supplement 按需补问时需要只读访问演示详情；
   // 无会话时返回空数据（不写本机），写操作仍由 persist→currentUserId 抛错守住。
   if (!authService.getSession()?.userId) {
-    return { follows: [], corrections: [] };
+    return emptyDemoData();
   }
-  return loadFromStorage<DemoData>(storageKey(), { follows: [], corrections: [] });
+  // 旧版本地数据可能缺少 D07/D08 新增字段，读取时补齐默认值（应用层迁移）
+  const stored = loadFromStorage<Partial<DemoData>>(storageKey(), {});
+  const merged = { ...emptyDemoData(), ...stored };
+  // D08：旧纠错记录补 resolvedVersionId 默认值
+  merged.corrections = merged.corrections.map((row) => ({
+    ...row,
+    resolvedVersionId: row.resolvedVersionId ?? null,
+  }));
+  return merged;
 }
 
 function persist(data: DemoData): void {
@@ -124,6 +187,7 @@ function toUnit(candidate: OpportunityCandidate, data: DemoData): UnitMatchDTO {
       publisher: announcement.publisher,
       organizationType: announcement.organizationType,
       officialUrl: announcement.officialUrl,
+      region: announcement.region,
       dataset: "demo",
       reviewStatus: "human_reviewed",
       reviewedBy: null,
@@ -168,8 +232,15 @@ function candidates(profile: UserRecruitmentProfile, now: string): OpportunityCa
 
 const DEMO_SUBSCRIPTION_KEY = "kb_demo_subscription";
 
+/** R01：演示订阅按当前本机身份作用域读写，切换账号不串用订阅偏好 */
+function demoSubscriptionStorageKey(): string {
+  return identityScopedKey(DEMO_SUBSCRIPTION_KEY);
+}
+
 interface DemoSubscriptionRow {
   regions: SubscriptionDTO["regions"];
+  /** W1：多学科关注；旧本地数据可能没有该字段 */
+  subjects?: string[];
   naturePreference: SubscriptionDTO["naturePreference"];
   enabled: boolean;
   createdAt: string;
@@ -199,6 +270,11 @@ function deriveDemoDefault(profile: UserRecruitmentProfile): DemoSubscriptionRow
       ...(r.city ? { city: r.city } : {}),
       ...(r.district ? { district: r.district } : {}),
     })),
+    // 意向学科来自用户显式选择；旧画像按历史默认 chinese，避免扩大学科范围。
+    subjects:
+      profile.intendedSubjects && profile.intendedSubjects.length > 0
+        ? [...new Set(profile.intendedSubjects)]
+        : ["chinese"],
     naturePreference,
     enabled: true,
     createdAt: now,
@@ -208,13 +284,15 @@ function deriveDemoDefault(profile: UserRecruitmentProfile): DemoSubscriptionRow
 
 function loadDemoSubscription(profile: UserRecruitmentProfile): SubscriptionDTO {
   try {
-    const raw = window.localStorage.getItem(DEMO_SUBSCRIPTION_KEY);
+    const raw = window.localStorage.getItem(demoSubscriptionStorageKey());
     const row: DemoSubscriptionRow = raw
       ? (JSON.parse(raw) as DemoSubscriptionRow)
       : deriveDemoDefault(profile);
+    const subjects = row.subjects?.length ? row.subjects : ["chinese"];
     return {
       regions: row.regions,
-      subject: "chinese",
+      subject: subjects[0] ?? "chinese",
+      subjects,
       naturePreference: row.naturePreference,
       qualification: {
         degree: profile.degree,
@@ -231,7 +309,8 @@ function loadDemoSubscription(profile: UserRecruitmentProfile): SubscriptionDTO 
     const fallback = deriveDemoDefault(profile);
     return {
       regions: fallback.regions,
-      subject: "chinese",
+      subject: (fallback.subjects ?? ["chinese"])[0] ?? "chinese",
+      subjects: fallback.subjects ?? ["chinese"],
       naturePreference: fallback.naturePreference,
       qualification: null,
       enabled: fallback.enabled,
@@ -241,11 +320,112 @@ function loadDemoSubscription(profile: UserRecruitmentProfile): SubscriptionDTO 
   }
 }
 
+function paginateTickets<T>(all: T[], page = 1, pageSize = 10): TicketPageResult<T> {
+  const safePage = Math.max(1, Math.floor(page) || 1);
+  const safeSize = Math.min(50, Math.max(1, Math.floor(pageSize) || 10));
+  const start = (safePage - 1) * safeSize;
+  return {
+    items: all.slice(start, start + safeSize),
+    total: all.length,
+    page: safePage,
+    pageSize: safeSize,
+  };
+}
+
+/** 演示通道公开时间线：仅由当前状态与补充记录派生，不编造员工动作 */
+function demoTimeline(
+  status: string,
+  createdAt: string,
+  reviewNote: string | null,
+  supplements: DemoSupplement[],
+  resolvedLabel = "已办结",
+): TicketTimelineEventDTO[] {
+  const events: TicketTimelineEventDTO[] = [
+    {
+      action: "submitted",
+      label: "已提交",
+      message: null,
+      actorRole: "user",
+      createdAt,
+    },
+  ];
+  for (const item of supplements) {
+    events.push({
+      action: "user_supplement",
+      label: "你已提交补充信息",
+      message: item.body,
+      actorRole: "user",
+      createdAt: item.createdAt,
+    });
+  }
+  if (status === "need_supplement" && reviewNote) {
+    events.push({
+      action: "request_supplement",
+      label: "工作人员请求补充信息",
+      message: reviewNote,
+      actorRole: "staff",
+      createdAt,
+    });
+  }
+  if (status === "resolved" || status === "rejected") {
+    events.push({
+      action: status,
+      label: status === "resolved" ? resolvedLabel : "已完成核对（未采纳）",
+      message: reviewNote,
+      actorRole: "staff",
+      createdAt,
+    });
+  }
+  return events;
+}
+
+/** 演示通道补充输入校验：与后端 1—2000 字、最多 5 条 http/https 链接一致 */
+function validateDemoSupplement(input: { body?: string; links?: string[] }) {
+  const body = (input.body ?? "").trim();
+  if (body.length < 1 || body.length > 2000) {
+    throw new Error("补充说明需要 1—2000 字");
+  }
+  const links = (input.links ?? []).filter((link) => link.trim().length > 0);
+  if (links.length > 5) throw new Error("最多添加 5 个链接");
+  for (const link of links) {
+    const check = checkOfficialUrl(link.trim());
+    if (!check.ok || !check.normalized) {
+      throw new Error(check.message ?? "链接不合法");
+    }
+  }
+  return { body, links: links.map((link) => link.trim()) };
+}
+
+function supplementTicket(
+  data: DemoData,
+  ticketType: DemoSupplement["ticketType"],
+  ticketId: string,
+  input: { body?: string; links?: string[]; dedupeKey?: string },
+) {
+  const { body, links } = validateDemoSupplement(input);
+  const duplicates = data.supplements.filter(
+    (item) => item.ticketType === ticketType && item.ticketId === ticketId,
+  );
+  if (input.dedupeKey && duplicates.some((item) => item.id.endsWith(input.dedupeKey!))) {
+    return duplicates[duplicates.length - 1]!;
+  }
+  const created: DemoSupplement = {
+    id: `demo-supplement-${Date.now()}-${input.dedupeKey ?? duplicates.length}`,
+    ticketType,
+    ticketId,
+    body,
+    links,
+    createdAt: new Date().toISOString(),
+  };
+  data.supplements.push(created);
+  return created;
+}
+
 export const demoOpportunitiesApi = {
   /** 演示环境订阅：localStorage 持久化；未开启过返回 null（与后端口径一致） */
   async getSubscription(): Promise<SubscriptionDTO | null> {
     try {
-      if (!window.localStorage.getItem(DEMO_SUBSCRIPTION_KEY)) return null;
+      if (!window.localStorage.getItem(demoSubscriptionStorageKey())) return null;
     } catch {
       return null;
     }
@@ -259,29 +439,85 @@ export const demoOpportunitiesApi = {
     const current = loadDemoSubscription(V61_SEED_PROFILE);
     const row: DemoSubscriptionRow = {
       regions: input.regions ?? current.regions,
+      subjects:
+        input.subjects && input.subjects.length > 0
+          ? input.subjects
+          : current.subjects,
       naturePreference: input.naturePreference ?? current.naturePreference,
       enabled: input.enabled ?? current.enabled,
       createdAt: current.createdAt,
       updatedAt: new Date().toISOString(),
     };
     try {
-      window.localStorage.setItem(DEMO_SUBSCRIPTION_KEY, JSON.stringify(row));
+      window.localStorage.setItem(demoSubscriptionStorageKey(), JSON.stringify(row));
     } catch {
       // 持久化失败不阻塞：本次会话内仍生效
     }
     return loadDemoSubscription(V61_SEED_PROFILE);
   },
 
-  /** 演示环境无真实公告流入，同步恒为幂等空操作 */
+  /**
+   * 演示环境同步：订阅无真实公告流入恒为空操作；
+   * 单位关注（D07）按演示目录精确匹配——首次同步基线回填不通知，
+   * 之后出现新公告版本才产生站内通知（幂等键存本机）。
+   */
   async syncSubscription(): Promise<SubscriptionSyncDTO> {
     const { V61_SEED_PROFILE } = await import("@/lib/seed/v61-opportunities");
     const subscription = loadDemoSubscription(V61_SEED_PROFILE);
+    const org = syncDemoOrganizationFollows();
     return {
       enabled: subscription.enabled,
       subscribed: true,
       newNotices: 0,
       backfilled: 0,
+      orgNewNotices: org.newNotices,
+      orgBackfilled: org.backfilled,
     };
+  },
+
+  // ==================== 单位关注（D07 / PRD 11.8 U07） ====================
+
+  /** 当前演示账号的单位关注列表（本机持久化） */
+  async listOrganizationFollows(): Promise<OrganizationFollowDTO[]> {
+    return load().orgFollows;
+  },
+
+  /**
+   * 关注一个单位：身份键 = 规范化发布主体名 + 地区码（仅精确匹配，
+   * 不做更名/合并的模糊推断）。重复关注幂等返回已有记录，followedAt 不变。
+   */
+  async followOrganization(input: {
+    publisherName: string;
+    regionCode: string;
+  }): Promise<OrganizationFollowDTO> {
+    const publisherName = input.publisherName.trim();
+    const regionCode = input.regionCode.trim();
+    if (!publisherName) throw new Error("缺少发布主体名称");
+    if (!/^\d{6}$/.test(regionCode)) throw new Error("地区码格式不正确");
+    const identityKey = organizationIdentityKey({ publisherName, regionCode });
+    const data = load();
+    const existing = data.orgFollows.find((f) => f.identityKey === identityKey);
+    if (existing) return existing;
+    const row: OrganizationFollowDTO = {
+      id: `demo-org-${currentUserId()}-${Date.now()}`,
+      identityKey,
+      publisherName,
+      regionCode,
+      followedAt: new Date().toISOString(),
+    };
+    data.orgFollows.push(row);
+    persist(data);
+    return row;
+  },
+
+  /** 取消单位关注（按身份键；幂等，本就不存在也返回 ok） */
+  async unfollowOrganization(identityKey: string): Promise<{ ok: true }> {
+    const data = load();
+    data.orgFollows = data.orgFollows.filter(
+      (f) => f.identityKey !== identityKey,
+    );
+    persist(data);
+    return { ok: true };
   },
 
   async match(profile: UserRecruitmentProfile): Promise<MatchResponse> {
@@ -491,7 +727,21 @@ export const demoOpportunitiesApi = {
   },
 
   async submitCorrection(unitId: string, input: { fieldPath: string; content: string; contact?: string }): Promise<{ id: string; status: string }> {
-    const { announcement, version, unit } = findUnit(unitId);
+    // D06：往年参考详情也保留纠错入口；历史单元不在当前滚动目录时回退到历史示例查找
+    let announcement: RecruitmentAnnouncement;
+    let version: RecruitmentAnnouncement["versions"][number];
+    let unit: RecruitmentAnnouncement["versions"][number]["units"][number];
+    try {
+      ({ announcement, version, unit } = findUnit(unitId));
+    } catch {
+      const record = collectHistoricalUnits(getDemoHistoryAnnouncements(), new Date()).find(
+        (item) => item.unit.id === unitId,
+      );
+      if (!record) throw new Error("未找到这个演示机会");
+      announcement = record.announcement;
+      version = record.version;
+      unit = record.unit;
+    }
     const data = load();
     const id = `demo-correction-${Date.now()}`;
     data.corrections.push({
@@ -509,14 +759,274 @@ export const demoOpportunitiesApi = {
       reviewNote: null,
       reviewerId: null,
       reviewedAt: null,
+      resolvedVersionId: null,
       createdAt: new Date().toISOString(),
     });
     persist(data);
     return { id, status: "submitted" };
   },
 
-  async listMyCorrections(): Promise<OpportunityCorrectionDTO[]> {
-    return load().corrections;
+  async listMyCorrections(
+    page = 1,
+    pageSize = 10,
+  ): Promise<TicketPageResult<OpportunityCorrectionDTO>> {
+    return paginateTickets(load().corrections, page, pageSize);
+  },
+
+  async getMyCorrection(id: string): Promise<OpportunityCorrectionDetailDTO> {
+    const data = load();
+    const row = data.corrections.find((item) => item.id === id);
+    if (!row) throw new Error("未找到该纠错记录，或你无权访问");
+    const supplements = data.supplements.filter(
+      (item) => item.ticketType === "correction" && item.ticketId === id,
+    );
+    return {
+      ...row,
+      ticketNo: row.ticketNo ?? `JC${id.slice(-6)}`,
+      timeline: demoTimeline(row.status, row.createdAt, row.reviewNote, supplements),
+      supplements: supplements.map((item) => ({
+        id: item.id,
+        body: item.body,
+        links: item.links,
+        createdAt: item.createdAt,
+      })),
+    };
+  },
+
+  async supplementCorrection(
+    id: string,
+    input: { body: string; links?: string[]; dedupeKey?: string },
+  ) {
+    const data = load();
+    const row = data.corrections.find((item) => item.id === id);
+    if (!row) throw new Error("未找到该纠错记录，或你无权访问");
+    if (row.status !== "need_supplement") {
+      const error = new Error("当前状态不接受补充，请刷新后重试") as Error & {
+        status?: number;
+      };
+      error.status = 409;
+      throw error;
+    }
+    const created = supplementTicket(data, "correction", id, input);
+    row.status = "pending_review";
+    persist(data);
+    return {
+      id: created.id,
+      taskId: `demo-task-${id}`,
+      ticketNo: row.ticketNo ?? `JC${id.slice(-6)}`,
+      status: "pending_review",
+      statusLabel: "待复核",
+      createdAt: created.createdAt,
+    };
+  },
+
+  // ==================== 公告补录（D08 / PRD 11.9 U08） ====================
+
+  async submitAnnouncementSubmission(input: {
+    officialUrl: string;
+    publisherName: string;
+    regionCode: string;
+    note?: string;
+  }): Promise<{ id: string; status: string }> {
+    // 前端校验只做即时反馈（安全边界在服务端）；演示通道同样拒绝内网/凭据链接
+    const urlCheck = checkOfficialUrl(input.officialUrl);
+    if (!urlCheck.ok || !urlCheck.normalized) {
+      throw new Error(urlCheck.message ?? "官方链接不合法");
+    }
+    const data = load();
+    // 重复提交可识别：同一规范化链接只保留一条
+    const existing = data.submissions.find(
+      (row) => row.officialUrl === urlCheck.normalized,
+    );
+    if (existing) {
+      const error = new Error(
+        "这条链接你已经提交过补录，可在「我的资料」页查看处理进度",
+      ) as Error & { status?: number };
+      error.status = 409;
+      throw error;
+    }
+    const id = `demo-submission-${Date.now()}`;
+    data.submissions.push({
+      id,
+      officialUrl: urlCheck.normalized,
+      publisherName: input.publisherName.trim(),
+      regionCode: input.regionCode,
+      note: input.note?.trim() || null,
+      status: "submitted",
+      reviewNote: null,
+      reviewerId: null,
+      reviewedAt: null,
+      createdAt: new Date().toISOString(),
+    });
+    persist(data);
+    return { id, status: "submitted" };
+  },
+
+  async listMyAnnouncementSubmissions(
+    page = 1,
+    pageSize = 10,
+  ): Promise<TicketPageResult<AnnouncementSubmissionDTO>> {
+    return paginateTickets(load().submissions, page, pageSize);
+  },
+
+  async getMyAnnouncementSubmission(
+    id: string,
+  ): Promise<AnnouncementSubmissionDetailDTO> {
+    const data = load();
+    const row = data.submissions.find((item) => item.id === id);
+    if (!row) throw new Error("未找到该补录记录，或你无权访问");
+    const supplements = data.supplements.filter(
+      (item) => item.ticketType === "announcement_submission" && item.ticketId === id,
+    );
+    return {
+      ...row,
+      ticketNo: row.ticketNo ?? `BK${id.slice(-6)}`,
+      timeline: demoTimeline(
+        row.status,
+        row.createdAt,
+        row.reviewNote,
+        supplements,
+        "已收录",
+      ),
+      supplements: supplements.map((item) => ({
+        id: item.id,
+        body: item.body,
+        links: item.links,
+        createdAt: item.createdAt,
+      })),
+    };
+  },
+
+  async supplementAnnouncementSubmission(
+    id: string,
+    input: { body: string; links?: string[]; dedupeKey?: string },
+  ) {
+    const data = load();
+    const row = data.submissions.find((item) => item.id === id);
+    if (!row) throw new Error("未找到该补录记录，或你无权访问");
+    if (row.status !== "need_supplement") {
+      const error = new Error("当前状态不接受补充，请刷新后重试") as Error & {
+        status?: number;
+      };
+      error.status = 409;
+      throw error;
+    }
+    const created = supplementTicket(data, "announcement_submission", id, input);
+    row.status = "pending_review";
+    persist(data);
+    return {
+      id: created.id,
+      taskId: `demo-task-${id}`,
+      ticketNo: row.ticketNo ?? `BK${id.slice(-6)}`,
+      status: "pending_review",
+      statusLabel: "待复核",
+      createdAt: created.createdAt,
+    };
+  },
+
+  // ==================== 往年参考（D06 / PRD 11.7 U06） ====================
+
+  /** 往年参考列表：浏览器本地固定日期的示例历史公告，只读、不滚动 */
+  async listHistory(filters: HistoryFilters = {}): Promise<HistoryListResponse> {
+    const now = new Date();
+    const all = collectHistoricalUnits(getDemoHistoryAnnouncements(), now);
+    const filtered = filterHistoricalUnits(all, filters);
+    const page = paginate(
+      filtered.map(toHistoryUnitDTO),
+      filters.page ?? 1,
+      filters.pageSize ?? 20,
+    );
+    const years = availableBatchYears(all);
+    const options = availableHistoryFilters(all);
+    return {
+      meta: {
+        ruleVersion: "demo-frontend-matching-1",
+        majorAliasVersion: "demo-1",
+        catalogVersion: "demo-history-1",
+        realCatalogVersion: GUEST_COVERAGE.version,
+        evaluatedAt: now.toISOString(),
+      },
+      sampleNote: historySampleNote(years, all.length),
+      years,
+      availableRegions: availableHistoryRegions(all),
+      educationLevels: options.educationLevels,
+      availableMajors: options.majors,
+      availableSubjects: options.subjects,
+      total: page.total,
+      page: page.page,
+      pageSize: page.pageSize,
+      items: page.items,
+    };
+  },
+
+  /**
+   * 往年参考详情：历史事实 + 版本链 + 用当前资料对照当年条件。
+   * 无画像时 comparison 为 null（页面引导先填资料，不编造对照）。
+   */
+  async historyDetail(
+    unitId: string,
+    profile?: UserRecruitmentProfile,
+  ): Promise<HistoryDetailResponse> {
+    const now = new Date();
+    const records = collectHistoricalUnits(getDemoHistoryAnnouncements(), now);
+    const record = records.find((item) => item.unit.id === unitId);
+    if (!record) throw new Error("未找到这个往年公告，它可能不在已收录范围内");
+    const { announcement, version, unit } = record;
+
+    let comparison: HistoryDetailResponse["comparison"] = null;
+    if (profile) {
+      const candidate = buildCandidates([announcement], profile, now.toISOString()).find(
+        (item) => item.unit.id === unitId,
+      );
+      if (candidate) {
+        comparison = {
+          computedAt: now.toISOString(),
+          overall: candidate.match.overall,
+          summary: candidate.match.summary,
+          dimensions: candidate.match.dimensions.map((dimension) => {
+            const requirement = unit.requirements.find(
+              (item) => item.id === dimension.requirementId,
+            );
+            return {
+              ...dimension,
+              requirementDescription:
+                requirement?.description ?? "岗位地区需在你填写的可接受范围内",
+              evidence: requirement?.evidence,
+            };
+          }),
+        };
+      }
+    }
+
+    return {
+      meta: {
+        ruleVersion: "demo-frontend-matching-1",
+        majorAliasVersion: "demo-1",
+        catalogVersion: "demo-history-1",
+        realCatalogVersion: GUEST_COVERAGE.version,
+        evaluatedAt: now.toISOString(),
+      },
+      item: toHistoryUnitDTO(record),
+      requirements: unit.requirements.map((requirement) => ({
+        id: requirement.id,
+        dimension: requirement.dimension,
+        description: requirement.description,
+        hard: requirement.hard,
+        evidence: requirement.evidence,
+      })),
+      materials: unit.materials ?? [],
+      previousVersions: announcement.versions
+        .filter((item) => item.id !== version.id)
+        .map((item) => ({
+          id: item.id,
+          versionNumber: item.versionNumber,
+          sourceKind: item.sourceKind,
+          publishedAt: item.publishedAt,
+          supersededAt: item.supersededAt,
+          changeNote: item.changeNote,
+        })),
+      comparison,
+    };
   },
 };
 
@@ -526,4 +1036,74 @@ export function demoFollowRecords(): DemoFollow[] {
 
 export function demoFollowedUnit(unitId: string): ReturnType<typeof findUnit> {
   return findUnit(unitId);
+}
+
+// ==================== D07 演示单位关注同步与站内通知 ====================
+
+/**
+ * 演示环境单位关注同步（幂等）：被关注单位在演示目录中出现新公告版本时
+ * 产生站内通知；首次同步基线回填不通知。无会话/无单位关注时为空操作。
+ */
+export function syncDemoOrganizationFollows(): {
+  newNotices: number;
+  backfilled: number;
+} {
+  const data = load();
+  if (data.orgFollows.length === 0) return { newNotices: 0, backfilled: 0 };
+  const now = new Date();
+  const plan = planOrganizationNotices({
+    announcements: getRollingDemoAnnouncements(),
+    follows: data.orgFollows,
+    existingKeys: new Set(data.orgNoticeKeys),
+    now,
+  });
+  if (plan.keys.length === 0) return { newNotices: 0, backfilled: 0 };
+  const createdAt = now.toISOString();
+  for (const notice of plan.notices) {
+    data.notifications.unshift({
+      id: `demo-org-notice-${notice.announcementId}-${notice.versionId}`,
+      severity: "info",
+      title: `关注单位新公告：${notice.publisher}`,
+      body: [
+        `${notice.regionLabel}《${notice.announcementTitle}》`,
+        `含 ${notice.unitCount} 个岗位，报名截止 ${notice.registrationEnd}`,
+        "来自你关注的单位（演示数据，不代表真实招聘信息）。",
+      ].join("；"),
+      relatedUnitId: notice.unitId,
+      readAt: null,
+      createdAt,
+    });
+  }
+  data.orgNoticeKeys = [
+    ...data.orgNoticeKeys,
+    ...plan.keys.map((k) => k.dedupKey),
+  ];
+  persist(data);
+  return { newNotices: plan.notices.length, backfilled: plan.backfillCount };
+}
+
+/** 演示站内通知（按创建时间倒序已由 unshift 保证；无会话返回空） */
+export function demoListNotifications(): NotificationDTO[] {
+  return load().notifications;
+}
+
+export function demoMarkNotificationRead(id: string): void {
+  const data = load();
+  const target = data.notifications.find((n) => n.id === id);
+  if (!target || target.readAt) return;
+  target.readAt = new Date().toISOString();
+  persist(data);
+}
+
+export function demoMarkAllNotificationsRead(): void {
+  const data = load();
+  const now = new Date().toISOString();
+  let changed = false;
+  for (const notification of data.notifications) {
+    if (!notification.readAt) {
+      notification.readAt = now;
+      changed = true;
+    }
+  }
+  if (changed) persist(data);
 }

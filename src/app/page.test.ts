@@ -110,29 +110,27 @@ describe("首页单一入口（v7.1 M1）", () => {
     expect(html).not.toContain("hero-question-start");
   });
 
-  it("次级文字入口「先看结果示例」锚向结果示例卡", async () => {
+  it("结果示例卡有锚点标识，提供查看示例入口", async () => {
     const page = await renderHome();
     cleanup = page.unmount;
     const html = page.html();
-    expect(html).toContain("先看结果示例");
-    expect(html).toContain('href="#result-example"');
     expect(html).toContain('id="result-example"');
-    // 旧的 /preview 直链文案不再出现（新访客访问 /preview 会被弹回表单，属于误导入口）
-    expect(html).not.toContain("先看看匹配示例");
+    expect(html).toContain('aria-label="结果示例，非真实岗位"');
+    // 提供查看示例的入口
+    expect(html).toContain("查看示例");
   });
 
-  it("结果示例卡明确标注，并展示五要素", async () => {
+  it("结果示例卡明确标注，并展示关键条件节选", async () => {
     const page = await renderHome();
     cleanup = page.unmount;
     const html = page.html();
     // 明确标注，不能被误认为真实岗位
     expect(html).toContain("结果示例 · 非真实岗位");
-    // 五要素：匹配状态 / 主要依据 / 待确认事项 / 官方来源 / 最后核对时间
-    expect(html).toContain("初步符合");
-    expect(html).toContain("主要依据");
-    expect(html).toContain("待确认事项");
-    expect(html).toContain("官方来源");
-    expect(html).toContain("最后核对时间");
+    // 关键条件节选：学历、专业、教师资格均标为已满足
+    expect(html).toContain("已满足");
+    expect(html).toContain("学历");
+    expect(html).toContain("专业");
+    expect(html).toContain("教师资格");
     // 可访问性：示例卡有文字化 aria-label，标注不只靠颜色
     expect(html).toContain('aria-label="结果示例，非真实岗位"');
   });
@@ -209,16 +207,17 @@ describe("v7.2 结果先行首页：内容与结构", () => {
     mockNewHome = true;
   });
 
-  it("主标题为「哪些教师岗位，你现在就能报？」且只有一个高强调 CTA「开始匹配岗位」", async () => {
+  it("主标题为「哪些教师岗，你能报？」且只有一个高强调 CTA「开始资格预筛」", async () => {
     const page = await renderHome();
     cleanup = page.unmount;
     const html = page.html();
-    expect(html).toContain("哪些教师岗位，你现在就能报？");
-    expect(html).toContain("开始匹配岗位");
+    expect(html).toContain("哪些教师岗");
+    expect(html).toContain("你能报？");
+    expect(html).toContain("开始资格预筛");
     // 唯一高强调 CTA：只有一个 start-onboarding 按钮
     expect((html.match(/data-testid="start-onboarding"/g) ?? []).length).toBe(1);
-    // 旧首页主按钮文案不再出现
-    expect(html).not.toContain("开始资格预筛");
+    // 渲染的是新首页而非旧首页：result-example-card 是旧首页独有的结构标记
+    expect(html).not.toContain('data-testid="result-example-card"');
   });
 
   it("CTA 点击进入 /onboarding 并记录埋点", async () => {
@@ -430,6 +429,9 @@ describe("v7.2 Feature Flag 回退：ff_new_home 关闭时旧首页可回退", (
     expect(html).toContain("开始资格预筛");
     expect(html).not.toContain("开始匹配岗位");
     expect(html).not.toContain("哪些教师岗位，你现在就能报？");
+    // 旧首页结构标记在场，新首页结果预览不在场（回退方向的结构守卫）
+    expect(html).toContain('data-testid="result-example-card"');
+    expect(html).not.toContain('data-testid="result-preview"');
   });
 
   it("Flag 关闭时旧首页主按钮仍进入 /onboarding", async () => {

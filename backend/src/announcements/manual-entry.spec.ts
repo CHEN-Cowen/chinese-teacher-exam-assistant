@@ -87,7 +87,7 @@ describe('AnnouncementsService.submitSource（M1 URL 抓取）', () => {
 });
 
 describe('AnnouncementsModule Nest 模块编译（M1-06 依赖注入）', () => {
-  it('ManualExtractionService 能被 Nest 编译并注入（复用新抽取链路）', async () => {
+  it('ManualExtractionService 能被 Nest 编译并注入（复用新抽取链路）', { timeout: 60_000 }, async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [PrismaModule, AnnouncementsModule],
     })

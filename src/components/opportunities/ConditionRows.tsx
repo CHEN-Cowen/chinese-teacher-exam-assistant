@@ -16,10 +16,13 @@ import { DIMENSION_VALUE_META } from "@/lib/opportunities/detail-view";
 export function ConditionRows({
   dimensions,
   showDescription = false,
+  /** D08：携带条件维度打开纠错弹窗（预选问题位置）；不传则不显示逐行纠错入口 */
+  onCorrectCondition,
 }: {
   dimensions: DimensionDTO[];
   /** 详情页展示公告原文栏；列表卡片展开态可只展示短判断 */
   showDescription?: boolean;
+  onCorrectCondition?: (fieldPath: string) => void;
 }) {
   return (
     <ul className="divide-y divide-line">
@@ -37,14 +40,25 @@ export function ConditionRows({
                   ? "就业地区"
                   : dimensionLabel(dim.dimension)}
               </span>
-              <span
-                className={cn(
-                  "inline-flex shrink-0 items-center gap-1 rounded-full bg-canvas px-2 py-0.5 text-xs font-medium",
-                  meta.className,
+              <span className="flex shrink-0 items-center gap-2">
+                {onCorrectCondition && dim.dimension !== "region" && (
+                  <button
+                    type="button"
+                    onClick={() => onCorrectCondition("matching")}
+                    className="text-xs text-ink-muted underline-offset-2 hover:text-brand hover:underline"
+                  >
+                    判断有误？
+                  </button>
                 )}
-              >
-                <span aria-hidden="true">{meta.symbol}</span>
-                {meta.text}
+                <span
+                  className={cn(
+                    "inline-flex h-6 shrink-0 items-center gap-1 rounded bg-canvas px-2 text-xs font-medium",
+                    meta.className,
+                  )}
+                >
+                  <span aria-hidden="true">{meta.symbol}</span>
+                  {meta.text}
+                </span>
               </span>
             </div>
 
@@ -54,7 +68,11 @@ export function ConditionRows({
                   <span className="block font-medium text-ink-muted">
                     公告怎么写（官方事实）
                   </span>
-                  {dim.requirementDescription ? (
+                  {dim.dimension === "region" ? (
+                    <span className="text-ink-muted">
+                      地区意向是你设置的浏览偏好，不是公告条件；不在范围内不等于不符合
+                    </span>
+                  ) : dim.requirementDescription ? (
                     dim.requirementDescription
                   ) : (
                     <span className="text-ink-muted">
@@ -66,10 +84,29 @@ export function ConditionRows({
                   <span className="block font-medium text-ink-muted">
                     根据你填写的报考信息判断
                   </span>
+                  {dim.userFact ? (
+                    <span className="mb-1 block text-ink">
+                      你的情况：{dim.userFact}
+                    </span>
+                  ) : null}
+                  {dim.adoptedEducation && dim.adoptedEducation.length > 0 ? (
+                    <span className="mb-1 block text-ink-muted">
+                      采用经历：
+                      {dim.adoptedEducation
+                        .map((item) => item.majorFullName)
+                        .join("、")}
+                    </span>
+                  ) : null}
                   {dim.reason}
                 </p>
               </div>
             )}
+
+            {showDescription && dim.nextStep ? (
+              <p className="mt-1.5 text-xs leading-5 text-ink-muted">
+                下一步：{dim.nextStep}
+              </p>
+            ) : null}
           </li>
         );
       })}

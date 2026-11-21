@@ -53,6 +53,7 @@ function makeUnit(overrides: Partial<UnitMatchDTO> = {}): UnitMatchDTO {
       publisher: "杭州市教育局",
       organizationType: "government_unified",
       officialUrl: "https://example.gov.cn/a",
+      region: { code: "330100", province: "浙江省", city: "杭州市" },
       dataset: "demo",
       reviewStatus: "human_reviewed",
       reviewedBy: null,

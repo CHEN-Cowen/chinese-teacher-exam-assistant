@@ -44,6 +44,15 @@ async function proxy(
     const value = request.headers.get(name);
     if (value) headers.set(name, value);
   }
+  // M03/F5：把可信代理链的转发头传给后端，让 trust proxy 解析出真实
+  // 协议与客户端 IP（req.secure → 会话 cookie 的 Secure 标志）。
+  // 到达这里的 x-forwarded-* 已由 Caddy 重写（proto 覆写、for 追加），
+  // 浏览器伪造值不会存活；后端 trust proxy=1 只信任 Next.js 这一跳。
+  // 缺省（如本地明文直跑）则不转发，后端按非安全链路拒绝正式登录。
+  for (const name of ['x-forwarded-proto', 'x-forwarded-for']) {
+    const value = request.headers.get(name);
+    if (value) headers.set(name, value);
+  }
   headers.set('x-internal-token', INTERNAL_TOKEN);
 
   const method = request.method.toUpperCase() as ForwardMethod;

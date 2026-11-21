@@ -13,7 +13,12 @@
 export type SubjectCode = string;
 export type StageCode = 'primary' | 'middle' | 'high' | (string & {});
 
-export const OPEN_SUBJECTS = ['chinese'] as const;
+/**
+ * 当前开放匹配的学科（W1 起为全学科字典启用的全部代码）。
+ * 运行时闸门请使用 subjects/subject-catalog.ts 的 unitHasOpenSubject，
+ * 本常量仅保留为兼容既有调用方（与字典同源，不再手写单值）。
+ */
+export { OPEN_SUBJECT_CODES as OPEN_SUBJECTS } from '../subjects/subject-catalog.js';
 
 export type EmploymentNatureCode =
   | 'public_institution_staff'
@@ -114,11 +119,31 @@ export type DegreeCode = 'none' | 'bachelor' | 'master' | 'doctorate';
 
 export type RequirementCriterion =
   | { kind: 'education'; minLevel: CredentialLevel }
-  | { kind: 'degree'; requiredDegree: Exclude<DegreeCode, 'none'> }
+  | {
+      kind: 'degree';
+      requiredDegree: Exclude<DegreeCode, 'none'>;
+      /**
+       * 公告原文明确允许在报名/入职前取得学位时置 true（D03/R03）。
+       * 缺省=false：未取得（在读）不能当作已取得。
+       */
+      acceptInProgress?: boolean;
+      /** 公告明确给出的取得期限（ISO 日期）；未给出则不能自行假设 */
+      obtainBy?: string;
+    }
   | {
       kind: 'major';
       majorNames: string[];
       catalogGroups?: string[];
+      /**
+       * 公告明确指定的教育阶段（D03/R03）。
+       * - 缺省：公告未明确阶段——不得自行按最高学历判不符合，
+       *   命中任一阶段即 PASS，均不命中时转人工确认；
+       * - 单阶段：只比对该阶段专业；
+       * - 多阶段 + stageMode=any：任一阶段命中即可（另一阶段缺资料不判 UNKNOWN）；
+       * - 多阶段 + stageMode=all：列出的阶段必须同时命中。
+       */
+      stages?: CredentialLevel[];
+      stageMode?: 'any' | 'all';
       /** 目录表述存在解释空间（“相关专业”等），精确不中时转人工确认 */
       ambiguous?: boolean;
     }
@@ -128,6 +153,8 @@ export type RequirementCriterion =
       subject: SubjectCode;
       stage: StageCode;
       acceptInProgress: boolean;
+      /** 公告原文明确允许高学段教师资格报考低学段岗位（D03） */
+      acceptHigherStage?: boolean;
     }
   | { kind: 'age'; maxAgeYears: number; referenceDate?: string }
   | { kind: 'hukou'; allowedRegionCodes: string[]; label: string }
@@ -158,7 +185,12 @@ export interface ApplicationUnit {
   versionId: string;
   region: RegionRef;
   teachingScope?: string;
+  /** 兼容旧数据的单值学科（W1 起读取时与 subjects 合并，不再作为唯一口径） */
   subject: SubjectCode;
+  /** W1：岗位可报/任教学科集合（复数优先；缺省回退 subject） */
+  subjects?: SubjectCode[];
+  /** 官方岗位表原文的学科表述（保留原名，便于追溯与歧义审核） */
+  subjectOriginal?: string;
   stage: StageCode;
   headcount: number;
   organizationType: OrganizationType;
@@ -331,13 +363,58 @@ export type EmploymentNaturePreference =
   | 'official_open'
   | 'undecided';
 
+/**
+ * 分阶段教育经历（D01）。
+ * 与前端 lib/profile/types 同结构；缺省时按旧单一字段兼容。
+ */
+export type EducationStatus = 'in_progress' | 'graduated';
+export type EducationDegreeStatus = 'none' | 'in_progress' | 'obtained';
+export type EducationStudyMode = 'full_time' | 'part_time' | 'other';
+export type TeacherTraining = 'yes' | 'no' | 'unknown';
+
+export interface EducationExperience {
+  id: string;
+  stage?: CredentialLevel;
+  schoolName?: string;
+  majorFullName: string;
+  majorCode?: string;
+  majorCatalogVersion?: string;
+  status?: EducationStatus;
+  graduationDate?: string;
+  degree?: DegreeCode;
+  degreeStatus?: EducationDegreeStatus;
+  studyMode?: EducationStudyMode;
+  teacherTraining: TeacherTraining;
+  teacherTrainingNote?: string;
+  majorConfirmed: boolean;
+  source: 'user' | 'legacy';
+  stageNeedsConfirmation?: boolean;
+}
+
+/** 旧单一字段迁移后的确认状态；旧原值始终保留 */
+export interface LegacyEducationConfirmation {
+  confirmed: boolean;
+  confirmedAt?: string;
+}
+
 /** 匹配接口入参：五组基础画像 + 按需补充的条件事实（未提供即 UNKNOWN） */
 export interface UserRecruitmentProfile {
   regions: RegionPreference[];
+  /**
+   * W1：意向报考学科（与教师资格证学科分开存储）。
+   * 空数组表示未填写；不得由教师资格证学科自动推断为意向。
+   */
+  intendedSubjects?: SubjectCode[];
+  /** W1：意向学段（与学科分开筛选；空数组表示不限） */
+  preferredStages?: StageCode[];
   educationLevel?: CredentialLevel;
   degree?: DegreeCode;
   majorFullName?: string;
   graduationDate?: string;
+  /** 分阶段教育经历（D01）；缺省时按旧单一字段兼容 */
+  educationExperiences?: EducationExperience[];
+  /** 旧单一字段的确认状态；不改变旧原值 */
+  legacyEducation?: LegacyEducationConfirmation;
   employmentStatus?: EmploymentStatus;
   teacherCert?: TeacherCertInfo;
   acceptedEmploymentNatures: EmploymentNatureCode[];
@@ -364,12 +441,24 @@ export type OpportunityMatchStatus =
   | 'manual_review'
   | 'not_eligible';
 
+export interface AdoptedEducationRef {
+  experienceId: string;
+  stage?: CredentialLevel;
+  majorFullName: string;
+}
+
 export interface MatchDimensionResult {
   requirementId: string;
   dimension: RequirementDimension;
   value: MatchValue;
   reason: string;
   hard: boolean;
+  /** 用户事实摘要（不收集证件内容），用于解释“采用了哪条资料” */
+  userFact?: string;
+  /** 专业条件实际采用的教育经历（可多段） */
+  adoptedEducation?: AdoptedEducationRef[];
+  /** 该条件下一步动作（补充/确认/无需操作） */
+  nextStep?: string;
 }
 
 export type GateCode =
@@ -396,6 +485,11 @@ export interface OpportunityMatchResult {
   gates: GateResult[];
   dimensions: MatchDimensionResult[];
   overall: OpportunityMatchStatus;
+  /**
+   * 资格初步符合，但岗位不在“必须接受”的地区范围内（D03）。
+   * 这是偏好范围外，不是资格不符合；不进入有效机会计数。
+   */
+  preferenceOutOfScope?: boolean;
   summary: string;
 }
 

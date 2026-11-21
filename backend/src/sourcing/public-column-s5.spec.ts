@@ -6,9 +6,13 @@ import { AdapterParseError } from './official-site-adapter.js';
 import {
   columnTablePages,
   discoverColumnTable,
+  discoverGovInfoList,
   discoverPublicColumn,
   discoverServerRenderedList,
+  discoverStaticAnchorList,
   discoverStaticList,
+  govInfoListPages,
+  jsPaginationPages,
   locateOfficialArticle,
   publicColumnPages,
   publicColumnRequest,
@@ -23,6 +27,14 @@ import { BengbuEducationAdapter } from './adapters/bengbu-education.adapter.js';
 import { XiaoshanEducationAdapter } from './adapters/xiaoshan-education.adapter.js';
 import { HangzhouEducationAdapter } from './adapters/hangzhou-education.adapter.js';
 import { LishuiEducationAdapter } from './adapters/lishui-education.adapter.js';
+import { HuzhouEducationAdapter } from './adapters/huzhou-education.adapter.js';
+import { TaizhouEducationAdapter } from './adapters/taizhou-education.adapter.js';
+import { BozhouEducationAdapter } from './adapters/bozhou-education.adapter.js';
+import { FuyangEducationAdapter } from './adapters/fuyang-education.adapter.js';
+import { JinanEducationAdapter } from './adapters/jinan-education.adapter.js';
+import { YantaiEducationAdapter } from './adapters/yantai-education.adapter.js';
+import { NanchangEducationAdapter } from './adapters/nanchang-education.adapter.js';
+import { TaiyuanEducationAdapter } from './adapters/taiyuan-education.adapter.js';
 
 function fixtureDir(key: string): string {
   return path.resolve(process.cwd(), '../tests/fixtures/golden-sources', key);
@@ -739,6 +751,12 @@ const MANIFEST_SOURCES = [
   'lishui',
   'bengbu',
   'xiaoshan',
+  'huzhou',
+  'taizhou',
+  'bozhou',
+  'fuyang',
+  'jinan',
+  'yantai',
 ] as const;
 
 describe('S5 真实快照 manifest schema 统一', () => {
@@ -811,3 +829,872 @@ describe('S5 真实快照 manifest schema 统一', () => {
 
 const SHAOXING_LIST =
   'https://jyj.sx.gov.cn/api-gateway/jpaas-publish-server/front/page/build/unit';
+
+/**
+ * N1 首批跨省扩源（2026-11-05）：浙江湖州、江苏泰州、安徽亳州。
+ *
+ * 三个来源覆盖三种此前未接入的形态：
+ * - 湖州：jpaas 表格行 + td.yd_no 日期 + initJpage 内联分页；
+ * - 泰州：jpaas li + span 日期，title 为模板占位符 `{item.title1}`；
+ * - 亳州：服务端渲染 section.m-tglist + <pagination> pagecount 分页。
+ */
+describe('N1 跨省首批来源真实样本回放', () => {
+  it('湖州公示公告：外壳接口、列表、分页与正文附件一致', () => {
+    const manifest = readManifest('huzhou', 'public-manifest.json');
+    const shellFile = manifest.files.find(
+      (file) => file.name === 'public-shell.html',
+    )!;
+    const shell = readFixture('huzhou', 'public-shell.html');
+    expect(createHash('sha256').update(shell).digest('hex')).toBe(
+      shellFile.sha256,
+    );
+    const listUrl = publicColumnRequest(shellFile.url, shell);
+    const listFile = manifest.files.find(
+      (file) => file.name === 'public-list.json',
+    )!;
+    expect(listUrl).toBe(listFile.url);
+    expect(listUrl).toContain('pageId=1229210603');
+    expect(listUrl).toContain('tagId=');
+
+    const list = readFixture('huzhou', 'public-list.json');
+    expect(createHash('sha256').update(list).digest('hex')).toBe(
+      listFile.sha256,
+    );
+    const items = discoverPublicColumn(listFile.url, list, 'huzhou');
+    expect(items.length).toBeGreaterThan(8);
+    expect(
+      items.every((item) => /^\d{4}-\d{2}-\d{2}$/.test(item.publishedAt)),
+    ).toBe(true);
+    expect(items.some((item) => item.title.includes('引进'))).toBe(true);
+    // 条目必须落在官方文章路径 /col/col1229210603/art/YYYY/ 下
+    expect(
+      items.every((item) =>
+        /^https:\/\/huedu\.huzhou\.gov\.cn\/col\/col1229210603\/art\/\d{4}\/art_[\da-f]+\.html$/.test(
+          item.url,
+        ),
+      ),
+    ).toBe(true);
+
+    // 官方 initJpage：rows=15 / count=41 → 共 3 页，后续 2 页
+    const pages = publicColumnPages(listFile.url, list);
+    expect(pages).toHaveLength(2);
+    expect(
+      JSON.parse(new URL(pages[0]).searchParams.get('paramJson')!),
+    ).toEqual({ pageNo: 2, pageSize: '15' });
+    const page2 = discoverPublicColumn(
+      pages[0],
+      readFixture('huzhou', 'public-page2.json'),
+      'huzhou',
+    );
+    expect(page2.length).toBeGreaterThan(5);
+    const firstUrls = new Set(items.map((item) => item.url));
+    expect(page2.every((item) => !firstUrls.has(item.url))).toBe(true);
+
+    const detail = readManifest('huzhou', 'public-detail-manifest.json');
+    const detailFile = detail.files[0];
+    const detailBytes = readFileSync(
+      path.join(fixtureDir('huzhou'), detailFile.name),
+    );
+    expect(createHash('sha256').update(detailBytes).digest('hex')).toBe(
+      detailFile.sha256,
+    );
+    const article = locateOfficialArticle(
+      detailFile.url,
+      detailBytes.toString('utf8'),
+    );
+    expect(article.title).toContain('引进');
+    expect(article.publishedAt).toBe('2026-11-04');
+    expect(article.bodyText.length).toBeGreaterThan(100);
+    expect(article.attachments).toHaveLength(1);
+    expect(article.attachments[0].url).toContain(
+      '/api-gateway/jpaas-web-server/front/document/download?',
+    );
+    expect(article.attachments[0].name).toContain('.xlsx');
+  });
+
+  it('泰州最新文件：模板占位标题回退、分页与正文附件一致', () => {
+    const manifest = readManifest('taizhou', 'public-manifest.json');
+    const shellFile = manifest.files.find(
+      (file) => file.name === 'public-shell.html',
+    )!;
+    const listFile = manifest.files.find(
+      (file) => file.name === 'public-list.json',
+    )!;
+    expect(createHash('sha256').update(readFixture('taizhou', 'public-shell.html')).digest('hex')).toBe(shellFile.sha256);
+    expect(publicColumnRequest(shellFile.url, readFixture('taizhou', 'public-shell.html'))).toBe(listFile.url);
+
+    const list = readFixture('taizhou', 'public-list.json');
+    expect(createHash('sha256').update(list).digest('hex')).toBe(
+      listFile.sha256,
+    );
+    const items = discoverPublicColumn(listFile.url, list, 'taizhou');
+    expect(items.length).toBeGreaterThan(8);
+    expect(
+      items.every((item) => /^\d{4}-\d{2}-\d{2}$/.test(item.publishedAt)),
+    ).toBe(true);
+    // title 属性是 {item.title1} 占位符，标题必须回退到链接文本
+    expect(items.every((item) => !item.title.includes('{'))).toBe(true);
+    expect(items.some((item) => item.title.includes('教师资格'))).toBe(true);
+    expect(
+      items.every((item) =>
+        /^https:\/\/jyj\.taizhou\.gov\.cn\/zxwj\/art\/\d{4}\/art_[\da-f]+\.html$/.test(
+          item.url,
+        ),
+      ),
+    ).toBe(true);
+
+    // 官方 DOM 属性：rows=15 / count=30 → 共 2 页，后续 1 页
+    const pages = publicColumnPages(listFile.url, list);
+    expect(pages).toHaveLength(1);
+    expect(
+      JSON.parse(new URL(pages[0]).searchParams.get('paramJson')!),
+    ).toEqual({ pageNo: 2, pageSize: '15' });
+    const page2 = discoverPublicColumn(
+      pages[0],
+      readFixture('taizhou', 'public-page2.json'),
+      'taizhou',
+    );
+    expect(page2.length).toBeGreaterThan(3);
+
+    const detail = readManifest('taizhou', 'public-detail-manifest.json');
+    const detailFile = detail.files[0];
+    const detailBytes = readFileSync(
+      path.join(fixtureDir('taizhou'), detailFile.name),
+    );
+    expect(createHash('sha256').update(detailBytes).digest('hex')).toBe(
+      detailFile.sha256,
+    );
+    const article = locateOfficialArticle(
+      detailFile.url,
+      detailBytes.toString('utf8'),
+    );
+    expect(article.title).toContain('公开招聘教师');
+    expect(article.publishedAt).toBe('2026-08-20');
+    expect(article.bodyText.length).toBeGreaterThan(100);
+    expect(article.attachments).toHaveLength(1);
+    expect(article.attachments[0].url).toContain(
+      '/api-gateway/jpaas-web-server/front/document/download?',
+    );
+    expect(article.attachments[0].name).toContain('.xls');
+  });
+
+  it('亳州教师管理：静态列表、pagination 分页与正文附件一致', () => {
+    const manifest = readManifest('bozhou', 'public-manifest.json');
+    const shellFile = manifest.files.find(
+      (file) => file.name === 'public-shell.html',
+    )!;
+    const shell = readFixture('bozhou', 'public-shell.html');
+    expect(createHash('sha256').update(shell).digest('hex')).toBe(
+      shellFile.sha256,
+    );
+    const items = discoverGovInfoList(
+      shellFile.url,
+      shell,
+      /\/OpennessContent\/show\/\d+\.html(?:[?#]|$)/,
+    );
+    expect(items.length).toBeGreaterThan(8);
+    expect(
+      items.every((item) => /^\d{4}-\d{2}-\d{2}$/.test(item.publishedAt)),
+    ).toBe(true);
+    expect(
+      items.some(
+        (item) => item.title.includes('公开招聘') || item.title.includes('招募'),
+      ),
+    ).toBe(true);
+    expect(
+      items.every((item) =>
+        item.url.startsWith('https://www.bozhou.gov.cn/OpennessContent/show/'),
+      ),
+    ).toBe(true);
+
+    // 官方 pagination：pagecount=13 → 后续 12 页（page_2..page_13.html）
+    const pages = govInfoListPages(shellFile.url, shell);
+    expect(pages).toHaveLength(12);
+    expect(pages[0]).toBe(
+      'https://www.bozhou.gov.cn/XxgkContent/showList/295/65767/page_2.html',
+    );
+    const page2 = discoverGovInfoList(
+      pages[0],
+      readFixture('bozhou', 'public-page2.html'),
+      /\/OpennessContent\/show\/\d+\.html(?:[?#]|$)/,
+    );
+    expect(page2.length).toBeGreaterThan(8);
+    const firstUrls = new Set(items.map((item) => item.url));
+    expect(page2.every((item) => !firstUrls.has(item.url))).toBe(true);
+    // 已在后续页时不再重复安排分页
+    expect(govInfoListPages(pages[0], readFixture('bozhou', 'public-page2.html'))).toEqual([]);
+
+    const detail = readManifest('bozhou', 'public-detail-manifest.json');
+    const detailFile = detail.files[0];
+    const detailBytes = readFileSync(
+      path.join(fixtureDir('bozhou'), detailFile.name),
+    );
+    expect(createHash('sha256').update(detailBytes).digest('hex')).toBe(
+      detailFile.sha256,
+    );
+    const article = locateOfficialArticle(
+      detailFile.url,
+      detailBytes.toString('utf8'),
+    );
+    expect(article.title).toContain('招募');
+    expect(article.publishedAt).toBe('2026-09-01');
+    expect(article.bodyText.length).toBeGreaterThan(100);
+    // 官方附件走 /upload_bz/download?siteId=1&id=...（.doc/.et）
+    expect(article.attachments).toHaveLength(3);
+    expect(
+      article.attachments.every(
+        (attachment) =>
+          attachment.url.includes('/upload_bz/download?') &&
+          /\.(doc|et)【/i.test(attachment.name),
+      ),
+    ).toBe(true);
+  });
+
+  it('三个 N1 适配器在真实样本上不抛 DOM 失配', () => {
+    const huzhou = new HuzhouEducationAdapter();
+    const huzhouList = readManifest('huzhou', 'public-manifest.json').files.find(
+      (file) => file.name === 'public-list.json',
+    )!;
+    expect(
+      huzhou.discover({
+        url: huzhouList.url,
+        mimeType: 'application/json',
+        content: readFixture('huzhou', 'public-list.json'),
+        fetchedAt: '2026-11-05T00:00:00.000Z',
+      }).length,
+    ).toBeGreaterThan(8);
+    expect(() =>
+      huzhou.discover({
+        url: 'https://huedu.huzhou.gov.cn/col/col1229210603/index.html',
+        mimeType: 'text/html',
+        content: readFixture('huzhou', 'public-shell.html'),
+        fetchedAt: '2026-11-05T00:00:00.000Z',
+      }),
+    ).toThrow(AdapterParseError);
+
+    const taizhou = new TaizhouEducationAdapter();
+    const taizhouList = readManifest(
+      'taizhou',
+      'public-manifest.json',
+    ).files.find((file) => file.name === 'public-list.json')!;
+    expect(
+      taizhou.discover({
+        url: taizhouList.url,
+        mimeType: 'application/json',
+        content: readFixture('taizhou', 'public-list.json'),
+        fetchedAt: '2026-11-05T00:00:00.000Z',
+      }).length,
+    ).toBeGreaterThan(8);
+
+    const bozhou = new BozhouEducationAdapter();
+    const bozhouShell = readFixture('bozhou', 'public-shell.html');
+    expect(
+      bozhou.discover({
+        url: 'https://www.bozhou.gov.cn/XxgkContent/showList/295/65767/page_1.html',
+        mimeType: 'text/html',
+        content: bozhouShell,
+        fetchedAt: '2026-11-05T00:00:00.000Z',
+      }).length,
+    ).toBeGreaterThan(8);
+    expect(bozhou.paginationListings(
+      'https://www.bozhou.gov.cn/XxgkContent/showList/295/65767/page_1.html',
+      bozhouShell,
+    )).toHaveLength(12);
+    expect(() =>
+      bozhou.discover({
+        url: 'https://www.bozhou.gov.cn/XxgkContent/showList/295/65767/page_1.html',
+        mimeType: 'application/json',
+        content: '{"success":true,"data":{"html":"<ul></ul>"}}',
+        fetchedAt: '2026-11-05T00:00:00.000Z',
+      }),
+    ).toThrow(/静态列表/);
+  });
+
+  it('阜阳师资建设：CMS 静态列表、跨站过滤、pagination 与正文附件一致', () => {
+    const manifest = readManifest('fuyang', 'public-manifest.json');
+    const shellFile = manifest.files.find(
+      (file) => file.name === 'public-shell.html',
+    )!;
+    const shell = readFixture('fuyang', 'public-shell.html');
+    expect(createHash('sha256').update(shell).digest('hex')).toBe(
+      shellFile.sha256,
+    );
+    const items = discoverGovInfoList(
+      shellFile.url,
+      shell,
+      /\/Content\/show\/\d+\.html(?:[?#]|$)/,
+    );
+    // 首屏 15 行中 5 条为省厅/教育部跨站转载，只保留本域 10 条
+    expect(items).toHaveLength(10);
+    expect(
+      items.every((item) => /^\d{4}-\d{2}-\d{2}$/.test(item.publishedAt)),
+    ).toBe(true);
+    expect(
+      items.every((item) =>
+        item.url.startsWith('https://edu.fy.gov.cn/Content/show/'),
+      ),
+    ).toBe(true);
+    expect(
+      items.some(
+        (item) =>
+          item.title.includes('公开招聘') || item.title.includes('选聘教师'),
+      ),
+    ).toBe(true);
+
+    // 官方 pagination：pagecount=12 → 后续 11 页（page_2..page_12.html）
+    const pages = govInfoListPages(shellFile.url, shell);
+    expect(pages).toHaveLength(11);
+    expect(pages[0]).toBe(
+      'https://edu.fy.gov.cn/Content/showList/843/page_2.html',
+    );
+    const page2 = discoverGovInfoList(
+      pages[0],
+      readFixture('fuyang', 'public-page2.html'),
+      /\/Content\/show\/\d+\.html(?:[?#]|$)/,
+    );
+    expect(page2.length).toBeGreaterThan(5);
+    const firstUrls = new Set(items.map((item) => item.url));
+    expect(page2.every((item) => !firstUrls.has(item.url))).toBe(true);
+
+    const detail = readManifest('fuyang', 'public-detail-manifest.json');
+    const detailFile = detail.files[0];
+    const detailBytes = readFileSync(
+      path.join(fixtureDir('fuyang'), detailFile.name),
+    );
+    expect(createHash('sha256').update(detailBytes).digest('hex')).toBe(
+      detailFile.sha256,
+    );
+    const article = locateOfficialArticle(
+      detailFile.url,
+      detailBytes.toString('utf8'),
+    );
+    expect(article.title).toContain('新任教师公开招聘');
+    expect(article.publishedAt).toBe('2026-07-15');
+    expect(article.bodyText.length).toBeGreaterThan(100);
+    expect(article.attachments).toHaveLength(1);
+    expect(article.attachments[0].url).toContain('/download?siteId=28&id=');
+    expect(article.attachments[0].name).toContain('.xlsx');
+  });
+
+  it('阜阳适配器在真实样本上不抛 DOM 失配', () => {
+    const adapter = new FuyangEducationAdapter();
+    const shell = readFixture('fuyang', 'public-shell.html');
+    const base =
+      'https://edu.fy.gov.cn/Content/showList/843/page_1.html';
+    expect(
+      adapter.discover({
+        url: base,
+        mimeType: 'text/html',
+        content: shell,
+        fetchedAt: '2026-11-05T00:00:00.000Z',
+      }),
+    ).toHaveLength(10);
+    expect(adapter.paginationListings(base, shell)).toHaveLength(11);
+    expect(() =>
+      adapter.discover({
+        url: base,
+        mimeType: 'application/json',
+        content: '{"success":true,"data":{"html":"<ul></ul>"}}',
+        fetchedAt: '2026-11-05T00:00:00.000Z',
+      }),
+    ).toThrow(/静态列表/);
+  });
+});
+
+/**
+ * N2 公开接口族跨省扩源（2026-11-05）：济南市教育局「教师招聘专栏」。
+ *
+ * 与既有 jpaas 来源共用外壳 → 公开接口协议，但列表单元与分页形态不同：
+ * 表格行 + td.bt_time 日期 + DOM 属性分页（rows=15 / count=79）。
+ */
+describe('N2 公开接口族来源真实样本回放', () => {
+  it('济南教师招聘专栏：外壳接口、列表、分页与正文附件一致', () => {
+    const manifest = readManifest('jinan', 'public-manifest.json');
+    const shellFile = manifest.files.find(
+      (file) => file.name === 'public-shell.html',
+    )!;
+    const shell = readFixture('jinan', 'public-shell.html');
+    expect(createHash('sha256').update(shell).digest('hex')).toBe(
+      shellFile.sha256,
+    );
+    const listUrl = publicColumnRequest(shellFile.url, shell);
+    const listFile = manifest.files.find(
+      (file) => file.name === 'public-list.json',
+    )!;
+    expect(listUrl).toBe(listFile.url);
+    expect(listUrl).toContain('pageId=19032');
+
+    const list = readFixture('jinan', 'public-list.json');
+    expect(createHash('sha256').update(list).digest('hex')).toBe(
+      listFile.sha256,
+    );
+    const items = discoverPublicColumn(listFile.url, list, 'jinan');
+    expect(items).toHaveLength(15);
+    expect(
+      items.every((item) => /^\d{4}-\d{2}-\d{2}$/.test(item.publishedAt)),
+    ).toBe(true);
+    expect(items.some((item) => item.title.includes('公开招聘'))).toBe(true);
+    expect(
+      items.every((item) =>
+        // 官网部分历史条目仍给 http 绝对链接，只校验同域与官方文章路径。
+        /^http:\/\/jnedu\.jinan\.gov\.cn\/col\/col\d+\/art\/\d{4}\/art_[\da-f]+\.html$/.test(
+          item.url,
+        ) ||
+        /^https:\/\/jnedu\.jinan\.gov\.cn\/col\/col\d+\/art\/\d{4}\/art_[\da-f]+\.html$/.test(
+          item.url,
+        ),
+      ),
+    ).toBe(true);
+
+    // 官方 DOM 属性：rows=15 / count=79 → 共 6 页，后续 5 页
+    const pages = publicColumnPages(listFile.url, list);
+    expect(pages).toHaveLength(5);
+    expect(
+      JSON.parse(new URL(pages[0]).searchParams.get('paramJson')!),
+    ).toEqual({ pageNo: 2, pageSize: '15' });
+    const page2 = discoverPublicColumn(
+      pages[0],
+      readFixture('jinan', 'public-page2.json'),
+      'jinan',
+    );
+    expect(page2.length).toBeGreaterThan(5);
+    const firstUrls = new Set(items.map((item) => item.url));
+    expect(page2.every((item) => !firstUrls.has(item.url))).toBe(true);
+
+    const detail = readManifest('jinan', 'public-detail-manifest.json');
+    const detailFile = detail.files[0];
+    const detailBytes = readFileSync(
+      path.join(fixtureDir('jinan'), detailFile.name),
+    );
+    expect(createHash('sha256').update(detailBytes).digest('hex')).toBe(
+      detailFile.sha256,
+    );
+    const article = locateOfficialArticle(
+      detailFile.url,
+      detailBytes.toString('utf8'),
+    );
+    expect(article.title).toContain('公开招聘人员公告');
+    expect(article.publishedAt).toBe('2026-04-16');
+    expect(article.bodyText.length).toBeGreaterThan(100);
+    // 官方 4 个附件（岗位汇总表 PDF、应聘须知 PDF、同意报考证明 doc、身份认定表 docx）
+    expect(article.attachments).toHaveLength(4);
+    expect(
+      article.attachments.every((attachment) =>
+        attachment.url.includes(
+          '/api-gateway/jpaas-web-server/front/document/download?',
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  it('济南适配器在真实样本上不抛 DOM 失配，外壳页显式失败', () => {
+    const adapter = new JinanEducationAdapter();
+    const listFile = readManifest('jinan', 'public-manifest.json').files.find(
+      (file) => file.name === 'public-list.json',
+    )!;
+    expect(
+      adapter.discover({
+        url: listFile.url,
+        mimeType: 'application/json',
+        content: readFixture('jinan', 'public-list.json'),
+        fetchedAt: '2026-11-05T00:00:00.000Z',
+      }),
+    ).toHaveLength(15);
+    expect(
+      adapter.pages({
+        url: listFile.url,
+        mimeType: 'application/json',
+        content: readFixture('jinan', 'public-list.json'),
+        fetchedAt: '2026-11-05T00:00:00.000Z',
+      }),
+    ).toHaveLength(5);
+    expect(() =>
+      adapter.discover({
+        url: 'https://jnedu.jinan.gov.cn/col/col19032/index.html',
+        mimeType: 'text/html',
+        content: readFixture('jinan', 'public-shell.html'),
+        fetchedAt: '2026-11-05T00:00:00.000Z',
+      }),
+    ).toThrow(AdapterParseError);
+    expect(() =>
+      adapter.discover({
+        url: listFile.url,
+        mimeType: 'application/json',
+        content: '{"success":true,"data":{"html":"<div></div>"}}',
+        fetchedAt: '2026-11-05T00:00:00.000Z',
+      }),
+    ).toThrow(/空列表|结构变化/);
+  });
+
+  it('烟台通知公告：外壳接口、列表、分页窗口与正文附件一致', () => {
+    const manifest = readManifest('yantai', 'public-manifest.json');
+    const shellFile = manifest.files.find(
+      (file) => file.name === 'public-shell.html',
+    )!;
+    const shell = readFixture('yantai', 'public-shell.html');
+    expect(createHash('sha256').update(shell).digest('hex')).toBe(
+      shellFile.sha256,
+    );
+    const listUrl = publicColumnRequest(shellFile.url, shell);
+    const listFile = manifest.files.find(
+      (file) => file.name === 'public-list.json',
+    )!;
+    expect(listUrl).toBe(listFile.url);
+    expect(listUrl).toContain('pageId=17078');
+
+    const list = readFixture('yantai', 'public-list.json');
+    expect(createHash('sha256').update(list).digest('hex')).toBe(
+      listFile.sha256,
+    );
+    const items = discoverPublicColumn(listFile.url, list, 'yantai');
+    // 首屏 15 行中有 3 条直接指向 PDF（年度报表、职称通知、教辅目录），
+    // 只保留 12 条官方文章页；历史条目 /art/YYYY/ 与新版 /col/.../art/YYYY/ 都可识别。
+    expect(items).toHaveLength(12);
+    expect(
+      items.every((item) => /^\d{4}-\d{2}-\d{2}$/.test(item.publishedAt)),
+    ).toBe(true);
+    expect(items.some((item) => item.title.includes('公开招聘'))).toBe(true);
+    expect(
+      items.every((item) =>
+        /^https:\/\/jyj\.yantai\.gov\.cn\/(?:col\/col17078\/)?art\/\d{4}\/\S+\.html$/.test(
+          item.url,
+        ),
+      ),
+    ).toBe(true);
+
+    // 官方分量 1365 条 / 91 页，远超通用预算；按来源窗口只安排最新 6 页中的后续 5 页。
+    const pages = publicColumnPages(listFile.url, list);
+    expect(pages).toHaveLength(5);
+    expect(
+      JSON.parse(new URL(pages[0]).searchParams.get('paramJson')!),
+    ).toEqual({ pageNo: 2, pageSize: '15' });
+    expect(
+      JSON.parse(new URL(pages[4]).searchParams.get('paramJson')!),
+    ).toEqual({ pageNo: 6, pageSize: '15' });
+    const page2 = discoverPublicColumn(
+      pages[0],
+      readFixture('yantai', 'public-page2.json'),
+      'yantai',
+    );
+    expect(page2).toHaveLength(15);
+    const firstUrls = new Set(items.map((item) => item.url));
+    expect(page2.every((item) => !firstUrls.has(item.url))).toBe(true);
+
+    const detail = readManifest('yantai', 'public-detail-manifest.json');
+    const detailFile = detail.files[0];
+    const detailBytes = readFileSync(
+      path.join(fixtureDir('yantai'), detailFile.name),
+    );
+    expect(createHash('sha256').update(detailBytes).digest('hex')).toBe(
+      detailFile.sha256,
+    );
+    const article = locateOfficialArticle(
+      detailFile.url,
+      detailBytes.toString('utf8'),
+    );
+    expect(article.title).toContain('公开招聘');
+    expect(article.publishedAt).toBe('2026-10-30');
+    expect(article.bodyText).toContain('拟聘用人员');
+    expect(article.attachments).toHaveLength(1);
+    expect(article.attachments[0].url).toContain(
+      '/api-gateway/jpaas-web-server/front/document/download?',
+    );
+    expect(article.attachments[0].name).toContain('.xls');
+  });
+
+  it('烟台适配器在真实样本上不抛 DOM 失配，外壳页显式失败', () => {
+    const adapter = new YantaiEducationAdapter();
+    const listFile = readManifest('yantai', 'public-manifest.json').files.find(
+      (file) => file.name === 'public-list.json',
+    )!;
+    expect(
+      adapter.discover({
+        url: listFile.url,
+        mimeType: 'application/json',
+        content: readFixture('yantai', 'public-list.json'),
+        fetchedAt: '2026-11-06T00:00:00.000Z',
+      }),
+    ).toHaveLength(12);
+    expect(
+      adapter.pages({
+        url: listFile.url,
+        mimeType: 'application/json',
+        content: readFixture('yantai', 'public-list.json'),
+        fetchedAt: '2026-11-06T00:00:00.000Z',
+      }),
+    ).toHaveLength(5);
+    expect(() =>
+      adapter.discover({
+        url: 'https://jyj.yantai.gov.cn/col/col17078/index.html',
+        mimeType: 'text/html',
+        content: readFixture('yantai', 'public-shell.html'),
+        fetchedAt: '2026-11-06T00:00:00.000Z',
+      }),
+    ).toThrow(AdapterParseError);
+  });
+
+  it('南昌教师科：静态锚点列表、createPageHTML 分页与正文附件一致', () => {
+    const manifest = readManifest('nanchang', 'public-manifest.json');
+    const list1File = manifest.files.find(
+      (file) => file.name === 'public-list-1.html',
+    )!;
+    const list1 = readFixture('nanchang', 'public-list-1.html');
+    expect(createHash('sha256').update(list1).digest('hex')).toBe(
+      list1File.sha256,
+    );
+    const detailPattern = /\/ncjyj\/[a-z]+\/\d{6}\/[a-f0-9]{32}\.shtml(?:[?#]|$)/;
+    const items = discoverStaticAnchorList(list1File.url, list1, detailPattern);
+    // 官方声明首屏 25 条（含 1 条跨栏目 /ncjyj/jszgrd/ 链接）
+    expect(items).toHaveLength(25);
+    expect(
+      items.every((item) => /^\d{4}-\d{2}-\d{2}$/.test(item.publishedAt)),
+    ).toBe(true);
+    expect(
+      items.every((item) => item.url.startsWith('https://edu.nc.gov.cn/ncjyj/')),
+    ).toBe(true);
+    // 教师招聘相关条目（混合栏目按标题判定）
+    expect(
+      items.some((item) => item.title.includes('中小学教师招聘面试公告')),
+    ).toBe(true);
+    expect(
+      items.some((item) => item.title.includes('引进急需紧缺人才')),
+    ).toBe(true);
+
+    // 官方 createPageHTML 分页：2 页 → 后续页 nav_list_2.shtml
+    const pages = staticListPages(list1File.url, list1);
+    expect(pages).toEqual([
+      'https://edu.nc.gov.cn/ncjyj/jskfw/nav_list_2.shtml',
+    ]);
+    const list2File = manifest.files.find(
+      (file) => file.name === 'public-list-2.html',
+    )!;
+    const list2 = readFixture('nanchang', 'public-list-2.html');
+    expect(createHash('sha256').update(list2).digest('hex')).toBe(
+      list2File.sha256,
+    );
+    // 末页不应再生成 nav_list_2_2.shtml（N3 运行时链路回归）
+    expect(staticListPages(list2File.url, list2)).toEqual([]);
+    const page2 = discoverStaticAnchorList(list2File.url, list2, detailPattern);
+    expect(page2).toHaveLength(9);
+    const firstUrls = new Set(items.map((item) => item.url));
+    expect(page2.every((item) => !firstUrls.has(item.url))).toBe(true);
+
+    // 正文：官方 meta + #zoom；附件为相对路径 <文章ID>/files/ 下 xlsx/pdf
+    const detail = readManifest('nanchang', 'public-detail-manifest.json');
+    const detailFile = detail.files.find(
+      (file) => file.name === 'public-detail.html',
+    )!;
+    const detailBytes = readFileSync(
+      path.join(fixtureDir('nanchang'), detailFile.name),
+    );
+    expect(createHash('sha256').update(detailBytes).digest('hex')).toBe(
+      detailFile.sha256,
+    );
+    const article = locateOfficialArticle(
+      detailFile.url,
+      detailBytes.toString('utf8'),
+    );
+    expect(article.title).toContain('中小学教师招聘面试公告');
+    expect(article.publishedAt).toBe('2026-07-21');
+    expect(article.bodyText.length).toBeGreaterThan(100);
+    expect(article.attachments).toHaveLength(3);
+    expect(
+      article.attachments.every((attachment) =>
+        attachment.url.startsWith(
+          'https://edu.nc.gov.cn/ncjyj/jskfw/202607/433e3b358909465ea328d1e7d1827895/files/',
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      article.attachments.filter((attachment) =>
+        /\.xlsx$/i.test(attachment.url),
+      ),
+    ).toHaveLength(2);
+
+    // 跨栏目详情（/ncjyj/jszgrd/ 教师资格专栏）：同样按官方 meta + #zoom 解析
+    const crossFile = detail.files.find(
+      (file) => file.name === 'public-detail-cross.html',
+    )!;
+    const crossBytes = readFileSync(
+      path.join(fixtureDir('nanchang'), crossFile.name),
+    );
+    expect(createHash('sha256').update(crossBytes).digest('hex')).toBe(
+      crossFile.sha256,
+    );
+    const cross = locateOfficialArticle(
+      crossFile.url,
+      crossBytes.toString('utf8'),
+    );
+    expect(cross.title).toContain('引进急需紧缺人才');
+    expect(cross.publishedAt).toBe('2026-05-25');
+    expect(cross.attachments).toHaveLength(1);
+    expect(cross.attachments[0].url).toContain('/ncjyj/jszgrd/202605/');
+    expect(cross.attachments[0].url).toMatch(/\.doc$/i);
+  });
+
+  it('南昌适配器在真实样本上不抛 DOM 失配，JSON 输入显式拒绝', () => {
+    const adapter = new NanchangEducationAdapter();
+    const list1File = readManifest('nanchang', 'public-manifest.json').files.find(
+      (file) => file.name === 'public-list-1.html',
+    )!;
+    expect(
+      adapter.discover({
+        url: list1File.url,
+        mimeType: 'text/html',
+        content: readFixture('nanchang', 'public-list-1.html'),
+        fetchedAt: '2026-11-06T00:00:00.000Z',
+      }),
+    ).toHaveLength(25);
+    expect(() =>
+      adapter.discover({
+        url: list1File.url,
+        mimeType: 'application/json',
+        content: '{"success":true,"data":{"html":"<ul></ul>"}}',
+        fetchedAt: '2026-11-06T00:00:00.000Z',
+      }),
+    ).toThrow(/静态列表/);
+    const detailFile = readManifest(
+      'nanchang',
+      'public-detail-manifest.json',
+    ).files.find((file) => file.name === 'public-detail.html')!;
+    const article = adapter.locateArticle({
+      url: detailFile.url,
+      mimeType: 'text/html',
+      content: readFixture('nanchang', 'public-detail.html'),
+      fetchedAt: '2026-11-06T00:00:00.000Z',
+    });
+    expect(article.title).toContain('中小学教师招聘面试公告');
+    expect(article.attachments).toHaveLength(3);
+  });
+
+  it('太原通知公告：JS 跳转分页、列表锚点与正文附件一致', () => {
+    const manifest = readManifest('taiyuan', 'public-manifest.json');
+    const list1File = manifest.files.find(
+      (file) => file.name === 'public-list-1.html',
+    )!;
+    const list1 = readFixture('taiyuan', 'public-list-1.html');
+    expect(createHash('sha256').update(list1).digest('hex')).toBe(
+      list1File.sha256,
+    );
+    const detailPattern = /\/tzgg\/\d{8}\/\d+\.html(?:[?#]|$)/;
+    const items = discoverStaticAnchorList(
+      list1File.url,
+      list1,
+      detailPattern,
+      'ul.List_list li',
+    );
+    expect(items).toHaveLength(20);
+    expect(
+      items.every((item) => /^\d{4}-\d{2}-\d{2}$/.test(item.publishedAt)),
+    ).toBe(true);
+    expect(
+      items.every((item) => item.url.startsWith('https://jyj.taiyuan.gov.cn/tzgg/')),
+    ).toBe(true);
+    expect(
+      items.some((item) => item.title.includes('公开招聘博士研究生')),
+    ).toBe(true);
+
+    // 官方 JS 跳转分页：共 93 条 / 5 页，页码由 onclick location.href 声明
+    const pages = jsPaginationPages(list1File.url, list1);
+    expect(pages).toEqual([
+      'https://jyj.taiyuan.gov.cn/tzgg_2.html',
+      'https://jyj.taiyuan.gov.cn/tzgg_3.html',
+      'https://jyj.taiyuan.gov.cn/tzgg_4.html',
+      'https://jyj.taiyuan.gov.cn/tzgg_5.html',
+    ]);
+    // 第 1 页链接（tzgg.html）不是“后续页”，不得混入
+    expect(pages).not.toContain('https://jyj.taiyuan.gov.cn/tzgg.html');
+    const list2File = manifest.files.find(
+      (file) => file.name === 'public-list-2.html',
+    )!;
+    const list2 = readFixture('taiyuan', 'public-list-2.html');
+    expect(createHash('sha256').update(list2).digest('hex')).toBe(
+      list2File.sha256,
+    );
+    const page2 = discoverStaticAnchorList(
+      list2File.url,
+      list2,
+      detailPattern,
+      'ul.List_list li',
+    );
+    expect(page2).toHaveLength(20);
+    const firstUrls = new Set(items.map((item) => item.url));
+    expect(page2.every((item) => !firstUrls.has(item.url))).toBe(true);
+
+    // 正文：官方 meta + #zoom；附件为 /u/cms/site28/ 下 xlsx
+    const detail = readManifest('taiyuan', 'public-detail-manifest.json');
+    const detailFile = detail.files.find(
+      (file) => file.name === 'public-detail.html',
+    )!;
+    const detailBytes = readFileSync(
+      path.join(fixtureDir('taiyuan'), detailFile.name),
+    );
+    expect(createHash('sha256').update(detailBytes).digest('hex')).toBe(
+      detailFile.sha256,
+    );
+    const article = locateOfficialArticle(
+      detailFile.url,
+      detailBytes.toString('utf8'),
+    );
+    expect(article.title).toContain('公开招聘博士研究生拟聘用人员公示');
+    expect(article.publishedAt).toBe('2026-09-16');
+    expect(article.bodyText.length).toBeGreaterThan(100);
+    expect(article.attachments).toHaveLength(1);
+    expect(article.attachments[0].url).toBe(
+      'https://jyj.taiyuan.gov.cn/u/cms/site28/202609/16091734m19f.xlsx',
+    );
+
+    // 同构正文的零附件条目：不得因无附件而失败
+    const second = detail.files.find(
+      (file) => file.name === 'public-detail-2.html',
+    )!;
+    const secondBytes = readFileSync(
+      path.join(fixtureDir('taiyuan'), second.name),
+    );
+    expect(createHash('sha256').update(secondBytes).digest('hex')).toBe(
+      second.sha256,
+    );
+    const secondArticle = locateOfficialArticle(
+      second.url,
+      secondBytes.toString('utf8'),
+    );
+    expect(secondArticle.title).toContain('职称评审工作');
+    expect(secondArticle.publishedAt).toBe('2026-09-11');
+    expect(secondArticle.attachments).toHaveLength(0);
+  });
+
+  it('太原适配器在真实样本上不抛 DOM 失配，JSON 输入显式拒绝', () => {
+    const adapter = new TaiyuanEducationAdapter();
+    const list1File = readManifest('taiyuan', 'public-manifest.json').files.find(
+      (file) => file.name === 'public-list-1.html',
+    )!;
+    expect(
+      adapter.discover({
+        url: list1File.url,
+        mimeType: 'text/html',
+        content: readFixture('taiyuan', 'public-list-1.html'),
+        fetchedAt: '2026-11-06T00:00:00.000Z',
+      }),
+    ).toHaveLength(20);
+    expect(() =>
+      adapter.discover({
+        url: list1File.url,
+        mimeType: 'application/json',
+        content: '{"success":true,"data":{"html":"<ul></ul>"}}',
+        fetchedAt: '2026-11-06T00:00:00.000Z',
+      }),
+    ).toThrow(/静态列表/);
+    const detailFile = readManifest(
+      'taiyuan',
+      'public-detail-manifest.json',
+    ).files.find((file) => file.name === 'public-detail.html')!;
+    const article = adapter.locateArticle({
+      url: detailFile.url,
+      mimeType: 'text/html',
+      content: readFixture('taiyuan', 'public-detail.html'),
+      fetchedAt: '2026-11-06T00:00:00.000Z',
+    });
+    expect(article.title).toContain('公开招聘博士研究生拟聘用人员公示');
+    expect(article.attachments).toHaveLength(1);
+  });
+});

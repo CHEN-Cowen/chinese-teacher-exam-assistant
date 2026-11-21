@@ -1,0 +1,20 @@
+{
+  "source": "nanchang-education",
+  "capturedAt": "2026-11-06T04:00:09Z",
+  "scope": "public-detail",
+  "site": "https://edu.nc.gov.cn/",
+  "files": [
+    {
+      "name": "public-detail.html",
+      "url": "https://edu.nc.gov.cn/ncjyj/jskfw/202607/433e3b358909465ea328d1e7d1827895.shtml",
+      "sha256": "e80de480524e84292bcf39b7bd8a38fcf59c0334bfdea2a6a4cb4896872b4c4b",
+      "note": "南昌市2026年中小学教师招聘面试公告；附件为相对路径 <文章ID>/files/ 下 2 个 xlsx（入闱面试名单、教材版本）与 1 个 pdf（公告原文）"
+    },
+    {
+      "name": "public-detail-cross.html",
+      "url": "https://edu.nc.gov.cn/ncjyj/jszgrd/202605/bcaf6f2aa14540db9722aa448bbf03c8.shtml",
+      "sha256": "7b3e49e5866c2de0510f23d73eec6482bb56417bd6c7b23ec14249afc6395680",
+      "note": "南昌市第二中学2026年引进急需紧缺人才资格审查及有关事项的公告；从教师科列表跨栏目（/ncjyj/jszgrd/）链接进入；附件 1 个 doc（资格审查授权委托书）"
+    }
+  ]
+}

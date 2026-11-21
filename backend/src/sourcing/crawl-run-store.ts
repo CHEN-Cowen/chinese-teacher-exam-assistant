@@ -6,8 +6,11 @@
  * 本表（CrawlRun）才是业务审计事实。
  */
 import { Injectable, Optional } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service.js';
+import type { TrialBudgetSnapshot } from './crawl-budget.js';
 import { SourcingMetrics } from './observability.js';
+import { ALERT_TYPES, SourcingAlertService } from './sourcing-alert.service.js';
 
 export type SourceHealthStatus =
   'healthy' | 'degraded' | 'structure_changed' | 'blocked' | 'paused';
@@ -56,6 +59,8 @@ export interface CrawlRunPatch {
   failedCount?: number;
   errorSummary?: string | null;
   adapterVersion?: string;
+  /** 试跑预算快照（仅试跑写入审计，便于事后核对已用/剩余） */
+  budget?: TrialBudgetSnapshot;
 }
 
 export interface CrawlRunCounters {
@@ -92,6 +97,15 @@ export interface SourceHealthSummary {
   lastSuccessAt: Date | null;
   nextCheckAt: Date | null;
   lastFailReason: string | null;
+  /** 来源台账（M08）：地区与负责人/处理入口 */
+  regionCode: string | null;
+  contactInfo: string | null;
+  /** 来源台账（M08）：调度周期（分钟） */
+  pollEveryMinutes: number;
+  /** 来源台账（M08）：材料（快照）累计数量 */
+  snapshotCount: number;
+  /** 来源台账（M08）：当前 status='published' 的公告版本数量 */
+  publishedVersionCount: number;
   /** 最近一次运行（按 startedAt desc）；无运行时为 null */
   latestRun: CrawlRunSummary | null;
   /** 该来源最新一条 DocumentParseRun 的 parserVersion；无则 null */
@@ -149,6 +163,8 @@ export class CrawlRunStore {
     private readonly prisma: PrismaService,
     // 可选指标出口：测试缺省不传则完全不产生日志，行为与此前一致
     @Optional() private readonly metrics?: SourcingMetrics,
+    // M02/F3：可选告警出口（持久化 sourcing_alerts）；不注入则只更新健康字段
+    @Optional() private readonly alerts?: SourcingAlertService,
   ) {}
 
   async getSource(sourceId: string): Promise<SourceRecord | null> {
@@ -276,6 +292,49 @@ export class CrawlRunStore {
         failed: patch.failedCount ?? 0,
         error: patch.errorSummary ?? null,
       };
+      if (patch.budget) audit.budget = patch.budget;
+    });
+  }
+
+  /**
+   * 按 runId 停止：运行标记 stopped，尚未执行的 URL 账本改为 skipped。
+   *
+   * 只改本条运行，不动队列里的其它任务；已排队任务被 Worker 取到时会因预算
+   * 状态为 stopped 而直接跳过（不发 HTTP、不再派生附件/解析）。
+   */
+  async markRunStopped(runId: string, reason: string): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      const run = await tx.crawlRun.update({
+        where: { id: runId },
+        data: { updatedAt: new Date() },
+      });
+      const audit = (run.fetchAudit ?? { urls: {} }) as {
+        urls: Record<string, { status: string; error?: string }>;
+        discovery?: {
+          status: string;
+          count: number;
+          failed: number;
+          error: string | null;
+        };
+        budget?: TrialBudgetSnapshot;
+      };
+      for (const [url, entry] of Object.entries(audit.urls)) {
+        if (['queued', 'retrying'].includes(entry.status)) {
+          audit.urls[url] = { status: 'skipped', error: 'run_stopped' };
+        }
+      }
+      if (audit.discovery?.status === 'running') {
+        audit.discovery.status = 'stopped';
+      }
+      await tx.crawlRun.update({
+        where: { id: runId },
+        data: {
+          status: 'stopped',
+          finishedAt: run.finishedAt ?? new Date(),
+          errorSummary: reason.slice(0, 500),
+          fetchAudit: audit as unknown as Prisma.InputJsonValue,
+        },
+      });
     });
   }
 
@@ -289,6 +348,7 @@ export class CrawlRunStore {
         failed: number;
         error: string | null;
       };
+      budget?: TrialBudgetSnapshot;
     }) => void,
   ): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
@@ -305,8 +365,11 @@ export class CrawlRunStore {
           failed: number;
           error: string | null;
         };
+        budget?: TrialBudgetSnapshot;
       };
       mutate(audit);
+      const stopped =
+        run.status === 'stopped' || audit.budget?.status === 'stopped';
       const results = Object.values(audit.urls);
       const pending = results.some((item) =>
         ['queued', 'retrying'].includes(item.status),
@@ -329,9 +392,13 @@ export class CrawlRunStore {
       await tx.crawlRun.update({
         where: { id: runId },
         data: {
-          fetchAudit: audit,
-          status: complete ? terminal : 'running',
-          finishedAt: complete ? new Date() : null,
+          fetchAudit: audit as unknown as Prisma.InputJsonValue,
+          status: stopped ? 'stopped' : complete ? terminal : 'running',
+          finishedAt: stopped
+            ? (run.finishedAt ?? new Date())
+            : complete
+              ? new Date()
+              : null,
           discoveredCount: audit.discovery?.count ?? run.discoveredCount,
           downloadedCount: results.filter(
             (item) => item.status === 'downloaded',
@@ -413,14 +480,29 @@ export class CrawlRunStore {
         consecutiveFailures: 0,
       },
     });
+    // M02/F3：检查成功即解除该来源全部活跃告警（连续失败/结构变化/超期）
+    if (this.alerts) {
+      try {
+        await this.alerts.resolveForSource(sourceId, input.checkedAt);
+      } catch {
+        // 告警解除失败不影响健康记录主流程
+      }
+    }
   }
 
-  /** 失败：累计连续失败；达到阈值降级或按错误类型标注健康状态 */
+  /**
+   * 失败：累计连续失败；达到阈值降级或按错误类型标注健康状态。
+   *
+   * M02/F3 退避：计入来源的失败按「周期 × 2^(连续失败-1)，封顶 8 倍」推迟
+   * 下次检查（1 次→1x、2 次→2x、3 次→4x、4 次以上→8x），避免对故障来源
+   * 每个周期都重击；不计入来源的基础设施失败（countTowardsSource=false）
+   * 沿用调用方给定的常规周期。达到降级阈值时落一条持久化告警。
+   */
   async recordFailure(
     sourceId: string,
     input: {
       checkedAt: Date;
-      nextCheckAt: Date;
+      nextCheckAt?: Date;
       reason: string;
       healthStatus?: SourceHealthStatus;
       /** 不可用基础设施（如 Redis）不应计入来源连续失败 */
@@ -429,24 +511,61 @@ export class CrawlRunStore {
   ): Promise<void> {
     const source = await this.getSource(sourceId);
     const prev = source?.consecutiveFailures ?? 0;
-    const next = (input.countTowardsSource ?? true) ? prev + 1 : prev;
+    const countsTowards = input.countTowardsSource ?? true;
+    const next = countsTowards ? prev + 1 : prev;
     const health =
       input.healthStatus ??
       (next >= CONSECUTIVE_FAILURE_THRESHOLD ? 'degraded' : undefined);
+    const pollEveryMinutes = Math.max(1, source?.pollEveryMinutes ?? 60);
+    // 调用方显式给定的 nextCheckAt 优先（如基础设施失败沿用常规周期）；
+    // 否则计入来源的失败按指数退避，不计入的失败按常规周期。
+    const nextCheckAt =
+      input.nextCheckAt ??
+      (countsTowards
+        ? this.nextRetryCheckAt(input.checkedAt, pollEveryMinutes, next)
+        : this.nextCheckAt(input.checkedAt, pollEveryMinutes));
     await this.prisma.source.update({
       where: { id: sourceId },
       data: {
         lastCheckedAt: input.checkedAt,
-        nextCheckAt: input.nextCheckAt,
+        nextCheckAt,
         lastFailReason: input.reason,
         consecutiveFailures: next,
         ...(health ? { healthStatus: health } : {}),
       },
     });
     // 连续失败增长是告警信号；基础设施不可用（countTowardsSource=false）不重复上报
-    if ((input.countTowardsSource ?? true) && next >= 1) {
+    if (countsTowards && next >= 1) {
       this.metrics?.consecutiveFailures({ sourceId, count: next });
     }
+    // M02/F3：达到降级阈值 → 持久化告警（重启不丢，成功后自动解除）
+    if (countsTowards && next >= CONSECUTIVE_FAILURE_THRESHOLD && this.alerts) {
+      try {
+        await this.alerts.raise({
+          type: ALERT_TYPES.consecutiveFailures,
+          sourceId,
+          severity: 'critical',
+          message: `来源「${source?.publisher ?? sourceId}」连续失败 ${next} 次（最近原因：${input.reason}），已降级待人工关注。`,
+          now: input.checkedAt,
+        });
+      } catch {
+        // 告警写入失败不影响健康记录主流程
+      }
+    }
+  }
+
+  /**
+   * M02/F3：失败退避的下一次检查时间。
+   * 延迟 = 周期 × min(2^(连续失败-1), 8)，下限 1 分钟。
+   */
+  nextRetryCheckAt(
+    now: Date,
+    pollEveryMinutes: number,
+    consecutiveFailures: number,
+  ): Date {
+    const multiplier = Math.min(Math.pow(2, Math.max(1, consecutiveFailures) - 1), 8);
+    const delayMs = Math.max(1, pollEveryMinutes) * multiplier * 60_000;
+    return new Date(now.getTime() + delayMs);
   }
 
   /** 结构变化（DOM 失配）与人工暂停等显式健康状态 */
@@ -455,10 +574,30 @@ export class CrawlRunStore {
     healthStatus: SourceHealthStatus,
     reason: string,
   ): Promise<void> {
+    const source = await this.getSource(sourceId);
     await this.prisma.source.update({
       where: { id: sourceId },
       data: { healthStatus, lastFailReason: reason },
     });
+    // M02/F3：结构变化与转人工都需要人工介入 → 持久化告警
+    if (
+      this.alerts &&
+      (healthStatus === 'structure_changed' || healthStatus === 'blocked')
+    ) {
+      try {
+        await this.alerts.raise({
+          type:
+            healthStatus === 'structure_changed'
+              ? ALERT_TYPES.structureChanged
+              : ALERT_TYPES.blocked,
+          sourceId,
+          severity: 'critical',
+          message: `来源「${source?.publisher ?? sourceId}」${healthStatus === 'structure_changed' ? '页面结构变化，适配器失配' : '被反爬阻断（验证码/登录/封禁），已转人工'}：${reason}`,
+        });
+      } catch {
+        // 告警写入失败不影响健康记录主流程
+      }
+    }
   }
 
   /** 写入栏目页的条件请求缓存（ETag / Last-Modified），供下一轮 304 判断 */
@@ -539,11 +678,20 @@ export class CrawlRunStore {
         lastSuccessAt: true,
         nextCheckAt: true,
         lastFailReason: true,
+        regionCode: true,
+        contactInfo: true,
+        pollEveryMinutes: true,
       },
     });
     return Promise.all(
       sources.map(async (source) => {
-        const [latestRun, latestParse, pendingReviewCount] = await Promise.all([
+        const [
+          latestRun,
+          latestParse,
+          pendingReviewCount,
+          snapshotCount,
+          publishedVersionCount,
+        ] = await Promise.all([
           this.prisma.crawlRun.findFirst({
             where: { sourceId: source.id },
             orderBy: { startedAt: 'desc' },
@@ -573,12 +721,24 @@ export class CrawlRunStore {
               snapshot: { sourceId: source.id },
             },
           }),
+          // 来源台账（M08）：材料累计与当前有效发布版本
+          this.prisma.sourceSnapshot.count({
+            where: { sourceId: source.id },
+          }),
+          this.prisma.publishedAnnouncementVersion.count({
+            where: {
+              status: 'published',
+              run: { snapshot: { sourceId: source.id } },
+            },
+          }),
         ]);
         return {
           ...source,
           latestRun,
           parserVersion: latestParse?.parserVersion ?? null,
           pendingReviewCount,
+          snapshotCount,
+          publishedVersionCount,
         };
       }),
     );

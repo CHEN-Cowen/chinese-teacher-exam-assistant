@@ -145,3 +145,121 @@ describe("migrateGuestProfileIfNeeded", () => {
     expect(outcome.guestFacts?.birthDate).toBe("1995-06-15");
   });
 });
+
+describe("R01 登录迁移涵盖分阶段教育经历", () => {
+  const EDUCATION_KEY = "kb_profile_education_v1";
+  const bachelor = {
+    id: "bachelor-1",
+    stage: "bachelor",
+    majorFullName: "汉语言文学（师范）",
+    teacherTraining: "yes",
+    majorConfirmed: true,
+    source: "user",
+  };
+
+  function seedLocalEducation() {
+    localStorage.setItem(EDUCATION_KEY, JSON.stringify([bachelor]));
+  }
+
+  beforeEach(() => {
+    localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  it("服务端无画像：迁移请求包含本机分阶段经历", async () => {
+    seedGuestSession();
+    seedLocalEducation();
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const outcome = await profileApi.migrateGuestProfileIfNeeded();
+    expect(outcome.kind).toBe("migrated");
+    expect(outcome.educationImported).toBe(true);
+    const putCall = fetchMock.mock.calls.find(
+      ([, init]) => (init as RequestInit)?.method === "PUT",
+    );
+    expect(putCall).toBeDefined();
+    const body = JSON.parse((putCall![1] as RequestInit).body as string);
+    expect(body.profile.educationExperiences).toEqual([bachelor]);
+  });
+
+  it("服务端已有画像但没有经历：不静默写入，返回 pendingEducationImport", async () => {
+    seedGuestSession();
+    seedLocalEducation();
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      jsonResponse({
+        profile: { regions: [], educationLevel: "bachelor" },
+        updatedAt: "2026-10-01T00:00:00.000Z",
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const outcome = await profileApi.migrateGuestProfileIfNeeded();
+    expect(outcome.kind).toBe("server_kept");
+    expect(outcome.pendingEducationImport).toBe(true);
+    // 不带教育经历：必须由用户在页面上明确确认后才导入
+    expect(
+      fetchMock.mock.calls.some(
+        ([, init]) => (init as RequestInit)?.method === "PATCH" || (init as RequestInit)?.method === "PUT",
+      ),
+    ).toBe(false);
+  });
+
+  it("双方都有经历：服务端优先、不覆盖，标记待确认导入", async () => {
+    seedGuestSession();
+    seedLocalEducation();
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      jsonResponse({
+        profile: {
+          regions: [],
+          educationExperiences: [
+            { ...bachelor, id: "server-1", majorFullName: "小学教育" },
+          ],
+        },
+        updatedAt: "2026-10-01T00:00:00.000Z",
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const outcome = await profileApi.migrateGuestProfileIfNeeded();
+    expect(outcome.kind).toBe("server_kept");
+    expect(
+      fetchMock.mock.calls.every(
+        ([, init]) =>
+          (init as RequestInit)?.method !== "PATCH" &&
+          (init as RequestInit)?.method !== "PUT",
+      ),
+    ).toBe(true);
+  });
+});
+
+describe("R01 读取失败不伪装成无画像", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  it("getProfile 读取失败抛错（带状态），不返回 null", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(jsonResponse({}, { ok: false, status: 500 })),
+    );
+    await expect(profileApi.getProfile()).rejects.toMatchObject({ status: 500 });
+  });
+
+  it("读取失败时迁移绝不 PUT 覆盖服务端", async () => {
+    seedGuestSession();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({}, { ok: false, status: 503 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(profileApi.migrateGuestProfileIfNeeded()).rejects.toBeTruthy();
+    expect(
+      fetchMock.mock.calls.every(
+        ([, init]) =>
+          (init as RequestInit)?.method !== "PUT" &&
+          (init as RequestInit)?.method !== "PATCH",
+      ),
+    ).toBe(true);
+  });
+});

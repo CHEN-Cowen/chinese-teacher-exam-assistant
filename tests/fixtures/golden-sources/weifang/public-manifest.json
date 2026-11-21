@@ -1,0 +1,25 @@
+{
+  "source": "weifang-education",
+  "capturedAt": "2026-11-06T02:50:29Z",
+  "scope": "public-list",
+  "site": "https://jyj.weifang.gov.cn/",
+  "column": "公告公示（trs1308521，混合栏目）",
+  "files": [
+    {
+      "name": "public-page1.json",
+      "url": "https://jyj.weifang.gov.cn/els-service/article/1/20?catas=trs1308521&dwid=55332&dq=162",
+      "sha256": "6367e333f378e3f358334a96e6b25be43cbdb17ed2dddea538cac81d61eb9b56",
+      "method": "POST",
+      "contentType": "application/json;charset=utf-8",
+      "requestBody": "{\"dq\":\"162\",\"dwid\":\"55332\",\"catas\":[\"trs1308521\"]}"
+    },
+    {
+      "name": "public-page3.json",
+      "url": "https://jyj.weifang.gov.cn/els-service/article/3/20?catas=trs1308521&dwid=55332&dq=162",
+      "sha256": "9989d972e97fc90603901329f8169dfea663e7236ffbb0bb7368d66e3b8e9ae9",
+      "method": "POST",
+      "contentType": "application/json;charset=utf-8",
+      "requestBody": "{\"dq\":\"162\",\"dwid\":\"55332\",\"catas\":[\"trs1308521\"]}"
+    }
+  ]
+}

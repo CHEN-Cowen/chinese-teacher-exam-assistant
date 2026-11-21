@@ -2,7 +2,7 @@
  * v7.2 附件解析：解析安全防护测试（超大文件/空文件/压缩炸弹预算/截断）。
  */
 import { describe, expect, it } from 'vitest';
-import { Budget, GuardError, assertWithinLimits, clampText, readParseLimits } from './parse-guard.js';
+import { Budget, GuardError, ParseDeadline, assertWithinLimits, clampText, readParseLimits } from './parse-guard.js';
 
 const limits = readParseLimits({
   DOC_PARSE_MAX_BYTES: '1000',
@@ -76,5 +76,35 @@ describe('readParseLimits（环境变量）', () => {
   it('非法取值回退默认值', () => {
     const fallback = readParseLimits({ DOC_PARSE_MAX_BYTES: 'not-a-number' });
     expect(fallback.maxBytes).toBe(20 * 1024 * 1024);
+  });
+});
+
+
+/**
+ * M04/F6：解析墙钟时长守卫（真实终止解析循环，不是 Promise 假超时）。
+ */
+describe('ParseDeadline（M04/F6）', () => {
+  it('超时后 check() 抛 PARSE_TIMEOUT', async () => {
+    const deadline = new ParseDeadline(0);
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    try {
+      deadline.check();
+      expect.unreachable('应当抛错');
+    } catch (error) {
+      expect((error as GuardError).code).toBe('PARSE_TIMEOUT');
+    }
+  });
+
+  it('未超时时 check() 不抛错（节拍检查开销可忽略）', () => {
+    const deadline = new ParseDeadline(60_000);
+    expect(() => deadline.check()).not.toThrow();
+    deadline.check();
+    deadline.check();
+  });
+
+  it('默认时长上限可经 DOC_PARSE_TIMEOUT_MS 配置', () => {
+    const custom = readParseLimits({ DOC_PARSE_TIMEOUT_MS: '1500' });
+    expect(custom.timeoutMs).toBe(1500);
+    expect(readParseLimits({}).timeoutMs).toBe(30_000);
   });
 });

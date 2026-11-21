@@ -1,0 +1,23 @@
+{
+  "source": "wuhan-education",
+  "capturedAt": "2026-11-06T00:00:00Z",
+  "scope": "public-list",
+  "site": "https://jyj.wuhan.gov.cn/",
+  "column": "通知公告（/zwdt/tsgg/，混合栏目，含教师招聘/资格认定/职称评审/收费公示等）",
+  "files": [
+    {
+      "name": "list-page1.html",
+      "url": "https://jyj.wuhan.gov.cn/zwdt/tsgg/",
+      "sha256": "955125e432ede5d4e61c51719f3455e8af2d7a254efc1c604099d3beccb058d6",
+      "method": "GET",
+      "note": "通知公告首屏 10 条（li.box-sizing > a.item-li-a > h2.text-ellipsis 标题 + div.other 时间：YYYY-MM-DD）；div#navbox 静态锚点分页 index_N.shtml，pagenav_tail 尾页 index_49.shtml，官方 50 页 / 每页 10 条"
+    },
+    {
+      "name": "list-page2.html",
+      "url": "https://jyj.wuhan.gov.cn/zwdt/tsgg/index_1.shtml",
+      "sha256": "6f2cf98426e55853bc465f56fde57ffffba1d84d363a12df832b017c5c316859",
+      "method": "GET",
+      "note": "静态锚点分页第 2 页 10 条；与首屏无重叠"
+    }
+  ]
+}

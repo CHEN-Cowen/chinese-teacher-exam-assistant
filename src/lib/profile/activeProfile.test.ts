@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { STORAGE_KEYS } from "@/lib/mock-data";
 import type { GuestProfileSession } from "@/lib/guest/guestSession";
+import type { UserRecruitmentProfile } from "@/lib/profile/types";
 import {
   buildActiveProfile,
   normalizeSupplementFacts,
+  profileToSupplementFacts,
   supplementFactsService,
 } from "./activeProfile";
 
@@ -58,14 +60,20 @@ describe("buildActiveProfile", () => {
     if (!result.ready) expect(result.reason).toBe("incomplete");
   });
 
-  it("非开放学科草稿不参与匹配（subject_not_open）", () => {
+  it("无法识别的学科不参与匹配（subject_not_open），全学科已知代码不受限", () => {
     localStorage.setItem(
       STORAGE_KEYS.GUEST_PROFILE_V61,
-      JSON.stringify(completeSession({ intendedSubject: "math" })),
+      JSON.stringify(completeSession({ intendedSubject: "天文观测" })),
     );
     const result = buildActiveProfile();
     expect(result.ready).toBe(false);
     if (!result.ready) expect(result.reason).toBe("subject_not_open");
+
+    localStorage.setItem(
+      STORAGE_KEYS.GUEST_PROFILE_V61,
+      JSON.stringify(completeSession({ intendedSubject: "math" })),
+    );
+    expect(buildActiveProfile().ready).toBe(true);
   });
 
   it("完整草稿：条件画像字段缺省为 undefined（缺信息绝不判不符合）", () => {
@@ -127,5 +135,54 @@ describe("normalizeSupplementFacts：脏数据不进匹配", () => {
   it("数字字符串月数可被规整为数字", () => {
     const facts = normalizeSupplementFacts({ socialSecurityMonths: "12" });
     expect(facts.socialSecurityMonths).toBe(12);
+  });
+});
+
+describe("profileToSupplementFacts（D05：登录账号的补充表单初始值来自服务端画像）", () => {
+  const baseProfile = (): UserRecruitmentProfile => ({
+    regions: [{ code: "330100", province: "浙江省", city: "杭州市", level: "required" }],
+    educationLevel: "bachelor",
+    degree: "bachelor",
+    majorFullName: "汉语言文学（师范）",
+    graduationDate: "2026-06-30",
+    employmentStatus: "fresh_unemployed",
+    teacherCert: { status: "obtained", subject: "chinese", stage: "middle" },
+    acceptedEmploymentNatures: ["public_institution_staff"],
+  });
+
+  it("空画像返回空事实（不预填任何值）", () => {
+    expect(profileToSupplementFacts(null)).toEqual({});
+    expect(profileToSupplementFacts(undefined)).toEqual({});
+    expect(profileToSupplementFacts(baseProfile())).toEqual({});
+  });
+
+  it("市级户籍码还原为省+市；省级码只还原省", () => {
+    const cityFacts = profileToSupplementFacts({
+      ...baseProfile(),
+      hukouRegionCode: "330200",
+    });
+    expect(cityFacts.hukouProvinceCode).toBe("330000");
+    expect(cityFacts.hukouCityCode).toBe("330200");
+
+    const provinceFacts = profileToSupplementFacts({
+      ...baseProfile(),
+      hukouRegionCode: "330000",
+    });
+    expect(provinceFacts.hukouProvinceCode).toBe("330000");
+    expect(provinceFacts.hukouCityCode).toBeUndefined();
+  });
+
+  it("出生日期、月数（含 0）与公告特有答复按原值派生", () => {
+    const facts = profileToSupplementFacts({
+      ...baseProfile(),
+      birthDate: "1998-01-01",
+      socialSecurityMonths: 0,
+      workExperienceMonths: 24,
+      extraAnswers: { "req-1": "已取得普通话二甲" },
+    });
+    expect(facts.birthDate).toBe("1998-01-01");
+    expect(facts.socialSecurityMonths).toBe(0);
+    expect(facts.workExperienceMonths).toBe(24);
+    expect(facts.extraAnswers).toEqual({ "req-1": "已取得普通话二甲" });
   });
 });

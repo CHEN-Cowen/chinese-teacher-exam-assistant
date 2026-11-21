@@ -77,6 +77,7 @@ function makeUnit(
       publisher: "教育局",
       organizationType: "government_unified",
       officialUrl: "https://example.gov.cn/a",
+      region: { code: "330100", province: "浙江省", city: "杭州市" },
       dataset: "demo",
       reviewStatus: "human_reviewed",
       reviewedBy: null,

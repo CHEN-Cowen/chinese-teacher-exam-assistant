@@ -8,17 +8,26 @@ import { AUTH_MODE } from "@/lib/auth";
 import type { UserRecruitmentProfile } from "@/lib/profile/types";
 import { demoOpportunitiesApi } from "./demoApi";
 import type {
+  AnnouncementSubmissionDTO,
+  AnnouncementSubmissionDetailDTO,
   FollowDTO,
   FollowStatus,
   GoalsResponse,
+  HistoryDetailResponse,
+  HistoryFilters,
+  HistoryListResponse,
   MatchResponse,
   MaterialStatus,
   OpportunityCorrectionDTO,
+  OpportunityCorrectionDetailDTO,
+  OrganizationFollowDTO,
+  StaffAnnouncementSubmissionDTO,
   StaffOpportunityCorrectionDTO,
   StudyTargetRole,
   SubscriptionDTO,
   SubscriptionSyncDTO,
   SubscriptionUpdateInput,
+  TicketPageResult,
   UnitDetailResponse,
 } from "./api-types";
 
@@ -63,6 +72,40 @@ export const opportunitiesApi = {
   syncSubscription(): Promise<SubscriptionSyncDTO> {
     if (AUTH_MODE === "demo") return demoOpportunitiesApi.syncSubscription();
     return request<SubscriptionSyncDTO>("/subscription/sync", { method: "POST" });
+  },
+
+  // ==================== 单位关注（D07 / PRD 11.8 U07） ====================
+
+  /** 当前用户的单位关注列表 */
+  listOrganizationFollows(): Promise<OrganizationFollowDTO[]> {
+    if (AUTH_MODE === "demo") return demoOpportunitiesApi.listOrganizationFollows();
+    return request<OrganizationFollowDTO[]>("/organization-follows");
+  },
+
+  /**
+   * 关注单位：身份键 = 规范化发布主体名 + 公告级地区码（仅精确匹配，
+   * 同名不同地区不串联，更名/合并不做模糊推断）。重复关注幂等。
+   */
+  followOrganization(input: {
+    publisherName: string;
+    regionCode: string;
+  }): Promise<OrganizationFollowDTO> {
+    if (AUTH_MODE === "demo")
+      return demoOpportunitiesApi.followOrganization(input);
+    return request<OrganizationFollowDTO>("/organization-follows", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+
+  /** 取消单位关注（按身份键；幂等） */
+  unfollowOrganization(identityKey: string): Promise<{ ok: true }> {
+    if (AUTH_MODE === "demo")
+      return demoOpportunitiesApi.unfollowOrganization(identityKey);
+    return request<{ ok: true }>(
+      `/organization-follows/${encodeURIComponent(identityKey)}`,
+      { method: "DELETE" },
+    );
   },
 
   /** 机会列表（按当前画像即时计算，四档分组 + 关注状态 + 版本信息）。
@@ -220,10 +263,129 @@ export const opportunitiesApi = {
     );
   },
 
-  /** 我提交过的纠错与员工处理状态（我的页） */
-  listMyCorrections(): Promise<OpportunityCorrectionDTO[]> {
-    if (AUTH_MODE === "demo") return demoOpportunitiesApi.listMyCorrections();
-    return request<OpportunityCorrectionDTO[]>("/corrections/mine");
+  /** 我提交过的纠错与员工处理状态（我的页；分页，全部记录可访问） */
+  listMyCorrections(
+    page = 1,
+    pageSize = 10,
+  ): Promise<TicketPageResult<OpportunityCorrectionDTO>> {
+    if (AUTH_MODE === "demo")
+      return demoOpportunitiesApi.listMyCorrections(page, pageSize);
+    return request<TicketPageResult<OpportunityCorrectionDTO>>(
+      `/corrections/mine?page=${page}&pageSize=${pageSize}`,
+    );
+  },
+
+  /** 我的纠错详情（公开时间线 + 历次补充；服务端校验本人） */
+  getMyCorrection(id: string): Promise<OpportunityCorrectionDetailDTO> {
+    if (AUTH_MODE === "demo") return demoOpportunitiesApi.getMyCorrection(id);
+    return request<OpportunityCorrectionDetailDTO>(
+      `/corrections/${encodeURIComponent(id)}`,
+    );
+  },
+
+  /** 在原纠错工单追加补充（编号与原文不变，状态进入待复核） */
+  supplementCorrection(
+    id: string,
+    input: { body: string; links?: string[]; dedupeKey?: string },
+  ): Promise<{ id: string; taskId: string; ticketNo: string; status: string; statusLabel: string; createdAt: string }> {
+    if (AUTH_MODE === "demo")
+      return demoOpportunitiesApi.supplementCorrection(id, input);
+    return request(
+      `/corrections/${encodeURIComponent(id)}/supplements`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  },
+
+  // ==================== 公告补录（D08 / PRD 11.9 U08） ====================
+
+  /** 补录未收录官方公告：只进运营待办队列，不直接发布 */
+  submitAnnouncementSubmission(input: {
+    officialUrl: string;
+    publisherName: string;
+    regionCode: string;
+    note?: string;
+  }): Promise<{ id: string; status: string }> {
+    if (AUTH_MODE === "demo")
+      return demoOpportunitiesApi.submitAnnouncementSubmission(input);
+    return request<{ id: string; status: string }>(
+      "/announcement-submissions",
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  },
+
+  /** 我提交过的补录与处理状态（我的页；分页，全部记录可访问） */
+  listMyAnnouncementSubmissions(
+    page = 1,
+    pageSize = 10,
+  ): Promise<TicketPageResult<AnnouncementSubmissionDTO>> {
+    if (AUTH_MODE === "demo")
+      return demoOpportunitiesApi.listMyAnnouncementSubmissions(page, pageSize);
+    return request<TicketPageResult<AnnouncementSubmissionDTO>>(
+      `/announcement-submissions/mine?page=${page}&pageSize=${pageSize}`,
+    );
+  },
+
+  /** 我的补录详情（公开时间线 + 历次补充；服务端校验本人） */
+  getMyAnnouncementSubmission(
+    id: string,
+  ): Promise<AnnouncementSubmissionDetailDTO> {
+    if (AUTH_MODE === "demo")
+      return demoOpportunitiesApi.getMyAnnouncementSubmission(id);
+    return request<AnnouncementSubmissionDetailDTO>(
+      `/announcement-submissions/${encodeURIComponent(id)}`,
+    );
+  },
+
+  /** 在原补录工单追加补充（编号与原文不变，状态进入待复核） */
+  supplementAnnouncementSubmission(
+    id: string,
+    input: { body: string; links?: string[]; dedupeKey?: string },
+  ): Promise<{ id: string; taskId: string; ticketNo: string; status: string; statusLabel: string; createdAt: string }> {
+    if (AUTH_MODE === "demo")
+      return demoOpportunitiesApi.supplementAnnouncementSubmission(id, input);
+    return request(
+      `/announcement-submissions/${encodeURIComponent(id)}/supplements`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  },
+
+  // ==================== 往年参考（D06 / PRD 11.7 U06） ====================
+
+  /** 往年参考列表（只读；公开可访问，无需画像） */
+  listHistory(filters: HistoryFilters = {}): Promise<HistoryListResponse> {
+    if (AUTH_MODE === "demo") return demoOpportunitiesApi.listHistory(filters);
+    const params = new URLSearchParams();
+    if (filters.year !== undefined) params.set("year", String(filters.year));
+    if (filters.regionCode) params.set("regionCode", filters.regionCode);
+    if (filters.stage) params.set("stage", filters.stage);
+    if (filters.nature) params.set("nature", filters.nature);
+    if (filters.keyword) params.set("keyword", filters.keyword);
+    if (filters.educationLevel) params.set("educationLevel", filters.educationLevel);
+    if (filters.major) params.set("major", filters.major);
+    if (filters.page !== undefined) params.set("page", String(filters.page));
+    if (filters.pageSize !== undefined) params.set("pageSize", String(filters.pageSize));
+    const qs = params.toString();
+    return request<HistoryListResponse>(`/history${qs ? `?${qs}` : ""}`);
+  },
+
+  /**
+   * 往年参考详情（公开可访问）。携带画像时返回「当年条件 × 当前资料」对照；
+   * 受邀模式默认不发送画像（后端读已持久化画像，无画像则对照为 null）。
+   */
+  historyDetail(
+    unitId: string,
+    profile?: UserRecruitmentProfile,
+    options?: { sendProfile?: boolean },
+  ): Promise<HistoryDetailResponse> {
+    if (AUTH_MODE === "demo") return demoOpportunitiesApi.historyDetail(unitId, profile);
+    const sendProfile = options?.sendProfile ?? (AUTH_MODE !== "invited" && !!profile);
+    return request<HistoryDetailResponse>(
+      `/history/${encodeURIComponent(unitId)}/detail`,
+      {
+        method: "POST",
+        body: JSON.stringify(sendProfile && profile ? { profile } : {}),
+      },
+    );
   },
 
   /** 员工跨用户纠错队列（STAFF_ROLES；status 省略时返回全部） */
@@ -234,13 +396,46 @@ export const opportunitiesApi = {
     return request<StaffOpportunityCorrectionDTO[]>(`/admin/corrections${qs}`);
   },
 
-  /** 员工处理纠错：reviewing / resolved / rejected（rejected 必填 reviewNote） */
+  /**
+   * 员工处理纠错：reviewing / need_supplement / resolved / rejected
+   * （need_supplement、rejected 必填 reviewNote；resolved 可带 resolvedVersionId）
+   */
   adminReviewCorrection(
     correctionId: string,
-    input: { status: "reviewing" | "resolved" | "rejected"; reviewNote?: string },
+    input: {
+      status: "reviewing" | "need_supplement" | "resolved" | "rejected";
+      reviewNote?: string;
+      resolvedVersionId?: string;
+    },
   ): Promise<OpportunityCorrectionDTO> {
     return request<OpportunityCorrectionDTO>(
       `/admin/corrections/${encodeURIComponent(correctionId)}`,
+      { method: "PATCH", body: JSON.stringify(input) },
+    );
+  },
+
+  // ==================== 公告补录（D08 / PRD 11.9 U08） ====================
+
+  /** 员工补录队列（STAFF_ROLES；status 省略时返回全部） */
+  adminListAnnouncementSubmissions(
+    status?: string,
+  ): Promise<StaffAnnouncementSubmissionDTO[]> {
+    const qs = status ? `?status=${encodeURIComponent(status)}` : "";
+    return request<StaffAnnouncementSubmissionDTO[]>(
+      `/admin/announcement-submissions${qs}`,
+    );
+  },
+
+  /** 员工处理补录：reviewing / need_supplement / resolved / rejected */
+  adminReviewAnnouncementSubmission(
+    submissionId: string,
+    input: {
+      status: "reviewing" | "need_supplement" | "resolved" | "rejected";
+      reviewNote?: string;
+    },
+  ): Promise<AnnouncementSubmissionDTO> {
+    return request<AnnouncementSubmissionDTO>(
+      `/admin/announcement-submissions/${encodeURIComponent(submissionId)}`,
       { method: "PATCH", body: JSON.stringify(input) },
     );
   },

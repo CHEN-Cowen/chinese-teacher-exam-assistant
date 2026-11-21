@@ -23,9 +23,12 @@ import { OBJECT_STORE } from '../storage/storage.tokens.js';
 import { SafeFetcherFactory } from '../fetch/safe-fetcher-factory.js';
 import {
   SafeFetchError,
+  RequestBlockedError,
   type ExtraRequestHeaders,
 } from '../fetch/safe-fetcher.js';
-import { detectFormat } from '../../document-processing/format-detector.js';
+import type { TrialBudgetSnapshot } from '../crawl-budget.js';
+import { PrismaCrawlBudgetStore } from '../crawl-budget.store.js';
+import { detectFormat, extensionOf } from '../../document-processing/format-detector.js';
 import {
   interventionFromBody,
   interventionFromError,
@@ -44,7 +47,12 @@ export const DOCUMENT_PARSER_VERSION = 'wp4-v1';
 
 export interface FetchOutcome {
   status:
-    'downloaded' | 'unchanged' | 'structure_changed' | 'blocked' | 'failed';
+    | 'downloaded'
+    | 'unchanged'
+    | 'structure_changed'
+    | 'blocked'
+    | 'failed'
+    | 'skipped';
   snapshotId?: string;
   contentHash?: string;
   errorSummary?: string;
@@ -55,6 +63,21 @@ const ARTICLE_KINDS = new Set([
   'supplement',
   'delay',
   'cancel',
+]);
+
+/** 应返回二进制原件的附件扩展名（用于识别“200 但实际是限流/验证 HTML”）。 */
+const BINARY_ATTACHMENT_EXTENSIONS = new Set([
+  'pdf',
+  'xls',
+  'xlsx',
+  'xlsb',
+  'et',
+  'doc',
+  'docx',
+  'wps',
+  'zip',
+  'rar',
+  '7z',
 ]);
 
 @Injectable()
@@ -68,6 +91,8 @@ export class DocumentFetchService {
     @Inject(CRAWL_TASK_QUEUE) private readonly queue: CrawlTaskQueue,
     // 可选指标出口：测试缺省不传则完全不产生日志
     @Optional() private readonly metrics?: SourcingMetrics,
+    // 可选试跑预算：常规运行不注入预算行，行为与之前一致
+    @Optional() private readonly budget?: PrismaCrawlBudgetStore,
   ) {}
 
   async handle(
@@ -113,6 +138,48 @@ export class DocumentFetchService {
       return { status: 'failed', errorSummary: 'adapter_not_configured' };
     }
 
+    // 试跑预算：先看运行是否已停止/额度是否用尽，再复核准入，
+    // 防止直接投递、旧任务重放或重试绕过入队时的预算校验。
+    let trial: TrialBudgetSnapshot | null = null;
+    if (this.budget) {
+      trial = await this.budget.get(payload.runId);
+      if (trial) {
+        if (trial.status === 'stopped') {
+          return { status: 'skipped', errorSummary: 'run_stopped' };
+        }
+        if (trial.status === 'exhausted') {
+          return { status: 'skipped', errorSummary: 'budget_exhausted' };
+        }
+        const kind = payload.kind === 'attachment' ? 'attachment' : 'document';
+        let admitted = await this.budget.isAdmitted(
+          payload.runId,
+          kind,
+          payload.canonicalUrl,
+        );
+        if (admitted === false && payload.kind === 'attachment') {
+          // 列表级附件链接在发现阶段可能按详情准入；两种准入都算数
+          admitted = await this.budget.isAdmitted(
+            payload.runId,
+            'document',
+            payload.canonicalUrl,
+          );
+        }
+        if (admitted === false) {
+          return { status: 'skipped', errorSummary: 'budget_not_admitted' };
+        }
+      }
+    }
+    const requestGuard =
+      trial && this.budget
+        ? {
+            beforeRequest: async () => {
+              const gate = await this.budget!.consumeHttpAttempt(payload.runId);
+              if (gate === 'ok' || gate === 'unbudgeted') return;
+              throw new RequestBlockedError(gate);
+            },
+          }
+        : undefined;
+
     const fetcher =
       payload.kind === 'attachment'
         ? this.fetcherFactory.createForAttachment(source)
@@ -139,6 +206,8 @@ export class DocumentFetchService {
           ifModifiedSince: cache?.lastModified ?? undefined,
         },
         extraHeaders,
+        {},
+        requestGuard,
       );
       if (result.status === 304) {
         if (!cache) throw new Error('not_modified_without_snapshot');
@@ -158,6 +227,16 @@ export class DocumentFetchService {
         };
       }
     } catch (error) {
+      // 预算闸门在发请求前拦截：不发 HTTP；预算耗尽记 skipped 且不再重试
+      if (error instanceof RequestBlockedError) {
+        return {
+          status: 'skipped',
+          errorSummary:
+            error.reason === 'stopped'
+              ? 'run_stopped'
+              : 'budget_http_exhausted',
+        };
+      }
       // 验证码 / 登录 / 封禁：转人工并暂停自动化，不计入普通失败
       const signal = interventionFromError(error);
       if (signal) {
@@ -167,6 +246,17 @@ export class DocumentFetchService {
           `人工介入（${signal}）`,
         );
         return { status: 'blocked', errorSummary: signal };
+      }
+      // 已知官方反爬端点（如宁波 jpaas document/download）：允许 host 但路径命中 denylist，
+      // 非基础设施故障，也不是解析结构问题；跳过，不计入失败、不触发重试、不降级来源健康。
+      if (
+        error instanceof SafeFetchError &&
+        error.code === 'BLOCKED_ENDPOINT'
+      ) {
+        return {
+          status: 'skipped',
+          errorSummary: `blocked_endpoint:${error.message.slice(0, 200)}`,
+        };
       }
       const summary =
         error instanceof SafeFetchError
@@ -199,6 +289,17 @@ export class DocumentFetchService {
     let mimeType = result.mimeType;
     if (isAttachment) {
       const detected = detectFormat(result.bodyBytes);
+      // 部分官网在限流/人机校验时仍返回 HTTP 200 + HTML（如“访问过于频繁，请稍后再试”）。
+      // 若附件 URL 本应是二进制原件却拿到 HTML，绝不能当作成功快照入库，否则岗位表会被静默替换为错误页。
+      if (
+        detected.format === 'html' &&
+        BINARY_ATTACHMENT_EXTENSIONS.has(extensionOf(payload.canonicalUrl))
+      ) {
+        return {
+          status: 'failed',
+          errorSummary: 'ATTACHMENT_HTML:rate_limited_or_antibot',
+        };
+      }
       mimeType =
         detected.detectedBy === 'magic-bytes'
           ? detected.mime
@@ -273,7 +374,37 @@ export class DocumentFetchService {
         }
         throw error;
       }
-      for (const attachment of located.attachments) {
+      const attachments = located.attachments;
+      for (let index = 0; index < attachments.length; index += 1) {
+        const attachment = attachments[index];
+        if (trial && this.budget) {
+          // 附件同时受“每篇上限”和“整轮上限”约束；重复派生按 URL 幂等
+          const admission = await this.budget.admitAttachment(
+            payload.runId,
+            document.id,
+            attachment.url,
+          );
+          if (admission === 'stopped') {
+            for (const pending of attachments.slice(index)) {
+              await this.runStore.recordFetchOutcome(
+                payload.runId,
+                pending.url,
+                'skipped',
+                'run_stopped',
+              );
+            }
+            break;
+          }
+          if (admission === 'exhausted') {
+            await this.runStore.recordFetchOutcome(
+              payload.runId,
+              attachment.url,
+              'skipped',
+              'budget_deferred',
+            );
+            continue;
+          }
+        }
         await this.documentStore.upsertDocument({
           sourceId: source.id,
           canonicalUrl: attachment.url,
@@ -309,16 +440,23 @@ export class DocumentFetchService {
       }
     }
 
+    // 已停止的运行不再派生解析任务；已入队任务由解析器入口的停止检查兜底
+    const stoppedNow =
+      trial && this.budget ? await this.budget.isStopped(payload.runId) : false;
+
     // 投递解析任务（独立解析器版本，幂等键 snapshotId + version）
-    await this.queue.enqueue(
-      'document.parse',
-      {
-        snapshotId: snapshot.id,
-        documentId: document.id,
-        documentParserVersion: DOCUMENT_PARSER_VERSION,
-      },
-      { jobId: parseJobId(snapshot.id, DOCUMENT_PARSER_VERSION) },
-    );
+    if (!stoppedNow) {
+      await this.queue.enqueue(
+        'document.parse',
+        {
+          snapshotId: snapshot.id,
+          documentId: document.id,
+          documentParserVersion: DOCUMENT_PARSER_VERSION,
+          runId: payload.runId,
+        },
+        { jobId: parseJobId(snapshot.id, DOCUMENT_PARSER_VERSION) },
+      );
+    }
 
     return {
       status: result.status === 304 || !created ? 'unchanged' : 'downloaded',

@@ -1,0 +1,23 @@
+{
+  "source": "guangzhou-education",
+  "capturedAt": "2026-11-06T10:26:00Z",
+  "scope": "public-list",
+  "site": "https://jyj.gz.gov.cn/",
+  "column": "网上公示（/yw/wsgs/，含公开招聘教师、拟聘用人员公示、优才计划等）",
+  "files": [
+    {
+      "name": "wsgs-index.html",
+      "url": "https://jyj.gz.gov.cn/yw/wsgs/index.html",
+      "sha256": "6c4762a828c44acc6c0bad82023927d3ac2e5c37afb5ad79c7ba4b0458540dc2",
+      "method": "GET",
+      "note": "首屏 20 条；方括号日期 [YYYY-MM-DD]；静态锚点分页 a.last -> index_20.html（官方 20 页 / 每页 20 条）；页内 createPageHTML 声明已被注释失效"
+    },
+    {
+      "name": "wsgs-index-2.html",
+      "url": "https://jyj.gz.gov.cn/yw/wsgs/index_2.html",
+      "sha256": "0f067b58553cf3953272d680651ba397674a90ee2465e9e3ee740c600fa02bc4",
+      "method": "GET",
+      "note": "第 2 页 20 条；与首屏无重叠，招聘相关 14/20"
+    }
+  ]
+}

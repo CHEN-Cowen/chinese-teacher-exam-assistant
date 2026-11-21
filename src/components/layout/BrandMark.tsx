@@ -34,7 +34,7 @@ export function BrandMark({
     <span className={cn("inline-flex items-center gap-2", className)}>
       <BrandGlyph className={markSizes[size]} aria-hidden="true" />
       {withText && (
-        <span className={cn("font-semibold text-ink", textSizes[size])}>
+        <span className={cn("font-bold text-brand", textSizes[size])}>
           教招有据
         </span>
       )}

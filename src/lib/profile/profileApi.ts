@@ -7,9 +7,26 @@ import type { SupplementFacts } from "@/lib/profile/activeProfile";
 export interface MigrationOutcome {
   kind: "migrated" | "server_kept" | "conflict" | "nothing_to_migrate";
   guestFacts?: SupplementFacts;
+  /** R01：本机分阶段教育经历已随首次画像迁入 */
+  educationImported?: boolean;
+  /**
+   * R01：服务端已有画像但没有教育经历，本机存在访客经历。
+   * 不静默写入，由教育经历页展示明确的导入确认入口。
+   */
+  pendingEducationImport?: boolean;
 }
 
 const API_BASE = "/api/profile";
+
+/** 带 HTTP 状态的错误，调用方据此区分 409/401/网络失败 */
+function httpError(res: Response, fallback: string): Error {
+  const err = new Error(fallback) as Error & {
+    status?: number;
+    body?: unknown;
+  };
+  err.status = res.status;
+  return err;
+}
 
 /**
  * 用户画像 API（模块 8 + v7.2 PATCH）。
@@ -23,21 +40,27 @@ const API_BASE = "/api/profile";
 export const profileApi = {
   async getProfile(): Promise<UserRecruitmentProfile | null> {
     const res = await fetch(API_BASE, { credentials: "include" });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      // R01：读取失败必须抛出，不能伪装成“没有画像”，否则调用方会继续覆盖保存
+      throw httpError(res, "读取报考信息失败");
+    }
     const data = (await res.json()) as { profile?: UserRecruitmentProfile | null };
     return data.profile ?? null;
   },
 
   /**
    * 读取画像含 updatedAt（v7.2 乐观锁用）。
-   * 返回 null 画像和可能存在的 updatedAt。
+   * R01：HTTP 失败抛错（带 status），不返回空画像；
+   * 只有服务端明确返回 profile:null 才表示“尚未保存过画像”。
    */
   async getProfileWithMeta(): Promise<{
     profile: UserRecruitmentProfile | null;
     updatedAt?: string;
   }> {
     const res = await fetch(API_BASE, { credentials: "include" });
-    if (!res.ok) return { profile: null };
+    if (!res.ok) {
+      throw httpError(res, "读取报考信息失败");
+    }
     const data = (await res.json()) as {
       profile?: UserRecruitmentProfile | null;
       updatedAt?: string;
@@ -91,10 +114,13 @@ export const profileApi = {
   },
 
   /**
-   * 登录后迁移访客画像到服务端（v7.2 增强版）。
+   * 登录后迁移访客画像到服务端（v7.2 增强版 + R01 分阶段经历）。
    * - 服务端非空优先：已有服务端画像时不覆盖；
-   * - 服务端缺失而访客已补充则迁入：用 PATCH 把补充事实合并进服务端；
-   * - 两边冲突要求用户确认：服务端已有补充事实且与访客不同时返回 conflict；
+   * - 服务端无画像：把完整的访客画像（基础 + 补充事实 + 分阶段教育经历）迁入；
+   * - 服务端有画像但缺补充事实：用 PATCH 合并补充事实；
+   * - 服务端有画像但没有教育经历、本机有经历：不静默写入，
+   *   返回 pendingEducationImport，由教育经历页让用户明确确认导入或放弃；
+   * - 两边补充事实冲突：返回 conflict；
    * - 不静默覆盖：绝不直接用访客画像覆盖服务端已有画像。
    *
    * 返回迁移结果（conflict 时携带 guestFacts），调用方据此决定是否需要引导用户确认。
@@ -102,19 +128,50 @@ export const profileApi = {
   async migrateGuestProfileIfNeeded(): Promise<MigrationOutcome> {
     const session = guestSessionService.load();
     if (!session) return { kind: "nothing_to_migrate" };
-    const profile = draftToProfile(session.draft);
-    if (!profile) return { kind: "nothing_to_migrate" };
+    const base = draftToProfile(session.draft);
+    if (!base) return { kind: "nothing_to_migrate" };
+
+    const { supplementFactsService } = await import("@/lib/profile/activeProfile");
+    const { educationExperiencesService } = await import(
+      "@/lib/profile/educationStore"
+    );
+    const guestFacts = supplementFactsService.load();
+    const localExperiences = educationExperiencesService.load();
+    const hasLocalEducation =
+      educationExperiencesService.hasStored() && localExperiences.length > 0;
+
+    const guestProfile: UserRecruitmentProfile = {
+      ...base,
+      birthDate: guestFacts.birthDate,
+      hukouRegionCode: guestFacts.hukouCityCode ?? guestFacts.hukouProvinceCode,
+      socialSecurityMonths: guestFacts.socialSecurityMonths,
+      workExperienceMonths: guestFacts.workExperienceMonths,
+      extraAnswers: guestFacts.extraAnswers,
+      ...(hasLocalEducation
+        ? {
+            educationExperiences: localExperiences,
+            legacyEducation: {
+              confirmed: !localExperiences.some(
+                (item) => item.stageNeedsConfirmation === true,
+              ),
+            },
+          }
+        : {}),
+    };
 
     const existing = await this.getProfileWithMeta();
-    // 情况1：服务端无画像 → 迁入
+    // 情况1：服务端无画像 → 迁入完整访客画像（含分阶段经历）
     if (!existing.profile) {
-      await this.saveProfile(profile);
-      return { kind: "migrated" };
+      await this.saveProfile(guestProfile);
+      return { kind: "migrated", educationImported: hasLocalEducation };
     }
 
+    const serverProfile = existing.profile;
+    const serverHasEducation =
+      (serverProfile.educationExperiences?.length ?? 0) > 0;
+    const pendingEducationImport = hasLocalEducation && !serverHasEducation;
+
     // 情况2：服务端有画像 → 检查访客是否有补充事实需要合并
-    const { supplementFactsService } = await import("@/lib/profile/activeProfile");
-    const guestFacts = supplementFactsService.load();
     const hasGuestFacts =
       guestFacts.birthDate !== undefined ||
       guestFacts.hukouProvinceCode !== undefined ||
@@ -125,11 +182,10 @@ export const profileApi = {
         Object.keys(guestFacts.extraAnswers).length > 0);
 
     if (!hasGuestFacts) {
-      return { kind: "server_kept" };
+      return { kind: "server_kept", pendingEducationImport };
     }
 
     // 检查服务端是否已有补充事实
-    const serverProfile = existing.profile;
     const serverHasFacts =
       serverProfile.birthDate !== undefined ||
       serverProfile.hukouRegionCode !== undefined ||
@@ -139,7 +195,7 @@ export const profileApi = {
         Object.keys(serverProfile.extraAnswers).length > 0);
 
     if (!serverHasFacts) {
-      // 服务端有基础画像但缺补充事实 → PATCH 合并
+      // 服务端有基础画像但缺补充事实 → PATCH 合并（不带教育经历：需用户明确确认）
       const patch: ProfilePatch = {};
       if (guestFacts.birthDate !== undefined)
         patch.birthDate = guestFacts.birthDate;
@@ -156,14 +212,14 @@ export const profileApi = {
 
       try {
         await this.patchProfile(patch, existing.updatedAt);
-        return { kind: "migrated" };
+        return { kind: "migrated", pendingEducationImport };
       } catch {
         // PATCH 失败（可能是冲突）→ 返回冲突让用户确认
-        return { kind: "conflict", guestFacts };
+        return { kind: "conflict", guestFacts, pendingEducationImport };
       }
     }
 
     // 两边都有补充事实 → 冲突
-    return { kind: "conflict", guestFacts };
+    return { kind: "conflict", guestFacts, pendingEducationImport };
   },
 };

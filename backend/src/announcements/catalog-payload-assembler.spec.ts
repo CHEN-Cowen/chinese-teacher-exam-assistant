@@ -107,6 +107,29 @@ describe('S2 正式发布与岗位完善', () => {
       makeMetadata({ dataset: 'real' }), makeCtx())).toThrow(/复核/);
   });
 
+  it('报名时间只有一个明确日期时按上下文分类：截止语义记为 registrationEnd，不臆造开始日', () => {
+    const fields = [
+      ...twoJobsFields().filter((f) => f.field !== 'registration_time'),
+      // 宁波 2026 实例：官方正文只写「自公告发布之日至2026年7月16日」
+      anchoredAnn('registration_time', '自公告发布之日至2026年7月16日'),
+    ];
+    const timeline = buildCatalogPayload(makeCandidate(fields), makeMetadata(), makeCtx())
+      .version.timeline;
+    expect(timeline.registrationEnd).toBe('2026-07-16');
+    expect(timeline.registrationStart).toBeUndefined();
+    // 对照：无截止语义的单日期仍是开始日
+    const startOnly = buildCatalogPayload(
+      makeCandidate([
+        ...twoJobsFields().filter((f) => f.field !== 'registration_time'),
+        anchoredAnn('registration_time', '2026年7月13日开始'),
+      ]),
+      makeMetadata(),
+      makeCtx(),
+    ).version.timeline;
+    expect(startOnly.registrationStart).toBe('2026-07-13');
+    expect(startOnly.registrationEnd).toBeUndefined();
+  });
+
   it('公共资格继承、岗位资格覆盖且各项保留证据，复杂条件人工确认', () => {
     const fields = twoJobsFields().filter((f) => f.field !== 'education');
     fields.push(anchoredAnn('education', '本科及以上'),
@@ -316,5 +339,164 @@ describe('buildCatalogPayload：unknown/conflict/pending/未确认不得进入',
     expect(() =>
       buildCatalogPayload(makeCandidate(fields), makeMetadata(), makeCtx()),
     ).toThrow(CatalogPayloadError);
+  });
+});
+
+// ==================== R02：分阶段专业规则 ====================
+
+/** 替换岗位 A 的 major 候选值，其余保持最小合法集合 */
+function withMajorA(value: string): CandidateField[] {
+  return twoJobsFields().map((f) =>
+    f.field === 'major' && f.scope === 'job' && f.jobScope?.key === 'job-A-3301A01'
+      ? { ...f, value }
+      : f,
+  );
+}
+
+function majorCriterionOf(payload: ReturnType<typeof buildCatalogPayload>) {
+  const unitA = payload.version.units.find((unit) => unit.code === '3301A01');
+  const requirement = unitA?.requirements.find((req) => req.dimension === 'major');
+  if (!requirement || requirement.criterion.kind !== 'major') {
+    throw new Error('岗位 A 缺少专业条件');
+  }
+  return requirement;
+}
+
+describe('R02：真实发布链路中的分阶段专业规则', () => {
+  it('只要求本科：结构化值写入 stages，不默认最高学历', () => {
+    const payload = buildCatalogPayload(
+      makeCandidate(withMajorA('{"names":["汉语言文学"],"stages":["bachelor"]}')),
+      makeMetadata(),
+      makeCtx(),
+    );
+    const requirement = majorCriterionOf(payload);
+    expect(requirement.criterion).toEqual({
+      kind: 'major',
+      majorNames: ['汉语言文学'],
+      stages: ['bachelor'],
+    });
+    expect(requirement.description).toBe('汉语言文学（限本科阶段）');
+  });
+
+  it('只要求研究生：stages 为 master，描述与证据齐全', () => {
+    const payload = buildCatalogPayload(
+      makeCandidate(withMajorA('{"names":["学科教学（语文）"],"stages":["master"]}')),
+      makeMetadata(),
+      makeCtx(),
+    );
+    const requirement = majorCriterionOf(payload);
+    expect(requirement.criterion).toMatchObject({ stages: ['master'] });
+    expect(requirement.description).toBe('学科教学（语文）（限硕士研究生阶段）');
+    expect(requirement.evidence.state).toBe('official');
+  });
+
+  it('本科或研究生任一：stageMode=any 完整进入发布版本', () => {
+    const payload = buildCatalogPayload(
+      makeCandidate(withMajorA('{"names":["汉语言文学","学科教学（语文）"],"stages":["bachelor","master"],"stageMode":"any"}')),
+      makeMetadata(),
+      makeCtx(),
+    );
+    const requirement = majorCriterionOf(payload);
+    expect(requirement.criterion).toMatchObject({
+      majorNames: ['汉语言文学', '学科教学（语文）'],
+      stages: ['bachelor', 'master'],
+      stageMode: 'any',
+    });
+    expect(requirement.description).toBe('汉语言文学、学科教学（语文）（本科、硕士研究生阶段任一符合）');
+  });
+
+  it('本科和研究生同时满足：stageMode=all 完整进入发布版本', () => {
+    const payload = buildCatalogPayload(
+      makeCandidate(withMajorA('{"names":["汉语言文学"],"stages":["bachelor","master"],"stageMode":"all"}')),
+      makeMetadata(),
+      makeCtx(),
+    );
+    expect(majorCriterionOf(payload).criterion).toMatchObject({
+      stages: ['bachelor', 'master'],
+      stageMode: 'all',
+    });
+  });
+
+  it('未明确阶段：普通文本发布后不带 stages，系统不自动推断', () => {
+    const payload = buildCatalogPayload(
+      makeCandidate(withMajorA('汉语言文学（师范）')),
+      makeMetadata(),
+      makeCtx(),
+    );
+    const requirement = majorCriterionOf(payload);
+    expect(requirement.criterion).toEqual({
+      kind: 'major',
+      majorNames: ['汉语言文学（师范）'],
+    });
+    expect(requirement.description).toBe('汉语言文学（师范）');
+  });
+
+  it('多阶段缺 stageMode 直接失败（不默认 any）', () => {
+    expect(() =>
+      buildCatalogPayload(
+        makeCandidate(withMajorA('{"names":["汉语言文学"],"stages":["bachelor","master"]}')),
+        makeMetadata(),
+        makeCtx(),
+      ),
+    ).toThrow(/stageMode/);
+  });
+
+  it('非法阶段编码失败，不落成猜测值', () => {
+    expect(() =>
+      buildCatalogPayload(
+        makeCandidate(withMajorA('{"names":["汉语言文学"],"stages":["undergraduate"]}')),
+        makeMetadata(),
+        makeCtx(),
+      ),
+    ).toThrow(CatalogPayloadError);
+  });
+
+  it('非法 JSON 开头的大括号值失败，不回退为普通文本', () => {
+    expect(() =>
+      buildCatalogPayload(
+        makeCandidate(withMajorA('{names:汉语言文学}')),
+        makeMetadata(),
+        makeCtx(),
+      ),
+    ).toThrow(/合法 JSON/);
+  });
+
+  it('保留 ambiguous 标记与专业不限的旧行为', () => {
+    const ambiguous = buildCatalogPayload(
+      makeCandidate(withMajorA('{"names":["汉语言文学"],"ambiguous":true}')),
+      makeMetadata(),
+      makeCtx(),
+    );
+    expect(majorCriterionOf(ambiguous).criterion).toMatchObject({ ambiguous: true });
+
+    const unlimited = buildCatalogPayload(
+      makeCandidate(withMajorA('专业不限')),
+      makeMetadata(),
+      makeCtx(),
+    );
+    expect(majorCriterionOf(unlimited)).toMatchObject({
+      hard: false,
+      criterion: { kind: 'major', majorNames: [] },
+    });
+  });
+
+  it('projector 拒绝多阶段缺 stageMode 的坏目录行（不进入匹配）', () => {
+    const payload = buildCatalogPayload(
+      makeCandidate(withMajorA('{"names":["汉语言文学"],"stages":["bachelor","master"],"stageMode":"any"}')),
+      makeMetadata(),
+      makeCtx(),
+    );
+    // 模拟历史坏数据：删除 stageMode 后 projector 必须报结构错误
+    const broken = JSON.parse(JSON.stringify(payload));
+    const unitA = broken.version.units.find((unit: any) => unit.code === '3301A01');
+    const major = unitA.requirements.find((req: any) => req.dimension === 'major');
+    delete major.criterion.stageMode;
+    expect(() => projectCatalogVersion({
+      id: 'ann-1-v1',
+      announcementId: 'ann-1',
+      versionNumber: 1,
+      status: 'published',
+      payload: broken,
+    }, new Date())).toThrow(/stageMode/);
   });
 });

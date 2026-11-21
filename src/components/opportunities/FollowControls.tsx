@@ -34,6 +34,7 @@ const NEXT_BUTTONS: Array<{
   // considering 区的唯一主按钮是 SavedNextActionPanel 的主动作；流转只用次按钮
   { status: "preparing", variant: "outline" },
   { status: "registered", variant: "secondary" },
+  { status: "waiting_exam", variant: "outline" },
   { status: "considering", variant: "outline" },
   { status: "abandoned", variant: "ghost" },
   { status: "closed", variant: "ghost" },
@@ -121,13 +122,13 @@ export function FollowControls({
     <section className="space-y-3 rounded-xl border border-line bg-surface p-4">
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm font-semibold text-ink">我的跟进</span>
-        <span className="inline-flex items-center rounded-full bg-canvas px-2.5 py-0.5 text-xs font-medium text-ink-muted">
+        <span className="inline-flex h-6 items-center rounded bg-canvas px-2.5 text-xs font-medium text-ink-muted">
           {FOLLOW_STATUS_LABELS[follow.status]}
         </span>
         {follow.role && (
           <span
             className={cn(
-              "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
+              "inline-flex h-6 items-center rounded px-2.5 text-xs font-medium",
               follow.role === "primary"
                 ? "bg-brand-soft text-brand"
                 : "bg-canvas text-ink-muted",
@@ -164,11 +165,13 @@ export function FollowControls({
                 ? "标记为准备报名"
                 : status === "registered"
                   ? "我已完成报名"
-                  : status === "considering"
-                    ? "移回考虑中"
-                    : status === "closed"
-                      ? "标记为已结束"
-                      : "放弃这个机会"}
+                  : status === "waiting_exam"
+                    ? "报名已通过，等待考试"
+                    : status === "considering"
+                      ? "移回考虑中"
+                      : status === "closed"
+                        ? "标记为已结束"
+                        : "放弃这个机会"}
             </Button>
           ))}
         </div>

@@ -1,0 +1,18 @@
+{
+  "capturedAt": "2026-11-05T15:54:03.976Z",
+  "sourceKind": "official-live-snapshot",
+  "scope": "first-page-discovery-only",
+  "stableMonitoringVerified": false,
+  "files": [
+    {
+      "name": "public-shell.html",
+      "url": "https://edu.fy.gov.cn/Content/showList/843/page_1.html",
+      "sha256": "0f42179221913a92c7d1ca6ba1b8e5432ff1c196b38f4e563fe1bdb680482673"
+    },
+    {
+      "name": "public-page2.html",
+      "url": "https://edu.fy.gov.cn/Content/showList/843/page_2.html",
+      "sha256": "2ca11ead295beae775a8e2c83b2786638656e697e517908e2b664c49ea7b5a2b"
+    }
+  ]
+}

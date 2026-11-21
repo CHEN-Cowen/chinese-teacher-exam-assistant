@@ -1,5 +1,7 @@
 # 部署说明
 
+> 当前版本核对（2026-10-29）：下方 2026-10-11 等内容是历史记录。用户最后确认的阿里云部署为 standalone 项目 `jiaozhao-standalone`，目录 `/home/admin/chinese-teacher-exam-assistant/deploy`，配置 `docker-compose.standalone.yml` + `deploy-release.yml`；数据库容器 `jiaozhao-standalone-db-1`。不要套用旧 `kaobian-postgres` 复用命令。最后确认的运行版本为 `6ffbef8e`（21 项迁移），当前开发版为 `623f501b`（24 项迁移）。更新前重新确认实际容器、镜像和备份，不能把文档视为已部署。最新风险见 [升级验收](docs/recruitment-upgrade-acceptance.md)。
+
 本项目存在两种部署形态，**必须严格区分**：
 
 | 形态 | 环境标识 | 数据去向 | 网络定位 | 当前状态 |
@@ -151,7 +153,7 @@ npx vercel --prod
 2. 不以 Vercel 或其他境外平台作为必要运行依赖；字体、图标、脚本、样式、关键图片随应用部署或来自明确允许的境内地址。
 3. 浏览器只调用同源 `/api/*`；后端再访问数据库、文件存储和 AI/OCR 等第三方服务，密钥不进入前端。
 4. AI/OCR 仅通过后端适配器接入在境内可稳定访问的服务；供应商不可用时回退为人工录入/审核，核心页面不得白屏。
-5. 不引入 Kubernetes、微服务、Redis/BullMQ 等本轮不需要的基础设施（产品边界见[迁移计划](./docs/v6.1-migration-plan.md)）。
+5. 当前部署包含 API、Worker、PostgreSQL 与 Redis/BullMQ；不引入额外的 Kubernetes 或微服务拆分。产品边界见 [PRD](./PRD.md)。
 
 ## 12. 前置事项与当前完成情况（2026-10-11）
 
@@ -264,7 +266,7 @@ server {
 
 ## 16. 从演示走向真实能力的替换顺序
 
-按依赖顺序，与[迁移计划](./docs/v6.1-migration-plan.md)的模块编号对应：
+以下为历史替换记录，不能作为当前部署版本判断；当前状态见 [升级验收](./docs/recruitment-upgrade-acceptance.md)，架构见 [README](./README.md)：
 
 1. **国内网络基线（模块 0A，代码侧已完成，环境已落地）**：已移除 `next/font/google`，字体改用跨平台系统字体栈，收紧 CSP（去掉 `img-src https:` 通配），交付 `scripts/check-external-deps.mjs` 扫描与 Vitest 守卫，后端支持 `HOST`/`TRUST_PROXY`。模块 9 增补运行时断跨源 Playwright 回归。域名与境内 ECS 已于 2026-10-11 落地（[kbzs.al.qich.top](https://kbzs.al.qich.top) HTTPS 可访问）；剩余未完成项是 ICP 备案核实与上线后的家庭/蜂窝真实网络冒烟记录。
 2. **领域模型与公告流水线（模块 1、2，代码已完成）**：后端 18 个模型/9 个迁移、公告版本、证据锚点、审核记录、确定性解析器均已落地并在线上库执行；原件目前写本地卷，对象存储未接，真实 AI/OCR 未接。
@@ -279,7 +281,7 @@ server {
 
 ## 17. Feature Flag 与发布阶段预设（v7.2）
 
-开关实现见 `src/lib/flags/index.ts`（前端）与 `backend/src/catalog/feature-flag.ts`（后端目录开关）；逐开关的消费者与回退规则见 [`docs/v7.2-implementation-tracking.md`](./docs/v7.2-implementation-tracking.md) 第 5 节。
+开关实现见 `src/lib/flags/index.ts`（前端）与 `backend/src/catalog/feature-flag.ts`（后端目录开关）；开关配置见下表，实际消费者与回退规则以这两个文件及其测试为准。
 
 ### 17.1 Feature Flag 环境变量表
 

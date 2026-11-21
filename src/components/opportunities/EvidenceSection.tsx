@@ -157,7 +157,8 @@ export function VerificationSection({
   onOpenCorrection,
 }: {
   detail: UnitDetailResponse;
-  onOpenCorrection: () => void;
+  /** D08：可携带预选的问题位置（从逐条件解释行进入时由调用方传入） */
+  onOpenCorrection: (fieldPath?: string) => void;
 }) {
   const { unit, previousVersions, meta } = detail;
   const source = unit.version.officialSource;
@@ -170,7 +171,11 @@ export function VerificationSection({
           <h3 className="text-sm font-semibold text-ink">
             核对时间与变化
           </h3>
-          <Button size="sm" variant="outline" onClick={onOpenCorrection}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => onOpenCorrection()}
+          >
             提交纠错
           </Button>
         </div>

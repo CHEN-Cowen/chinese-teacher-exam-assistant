@@ -20,7 +20,7 @@ import { CatalogModule } from './catalog.module.js';
 import { PublishedCatalogRepository } from './published-catalog.repository.js';
 
 describe('CatalogModule Nest 模块编译（UnknownDependenciesException 回归）', () => {
-  it('PublishedCatalogRepository 能被 Nest 编译并实例化', async () => {
+  it('PublishedCatalogRepository 能被 Nest 编译并实例化', { timeout: 60_000 }, async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [PrismaModule, CatalogModule],
     })

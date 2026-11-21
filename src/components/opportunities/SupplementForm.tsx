@@ -17,6 +17,11 @@ interface SupplementFormProps {
   initial: SupplementFacts;
   saving: boolean;
   onSave: (facts: SupplementFacts) => void;
+  /**
+   * D05「影响岗位」：各待补维度影响的机会数（含本岗位，后端分组计数）。
+   * null/缺省时只显示公告要求，不显示数量（请求失败不编造）。
+   */
+  impact?: Partial<Record<DimensionDTO["dimension"], number>> | null;
 }
 
 interface FormState {
@@ -55,6 +60,7 @@ export function SupplementForm({
   initial,
   saving,
   onSave,
+  impact,
 }: SupplementFormProps) {
   const [form, setForm] = useState<FormState>(() => toFormState(initial));
 
@@ -63,6 +69,22 @@ export function SupplementForm({
   const has = (kind: DimensionDTO["dimension"]) =>
     unknownDims.some((d) => d.dimension === kind);
   const otherDims = unknownDims.filter((d) => d.dimension === "other");
+
+  /** D05：该项条件的公告要求原文 + 影响岗位数（PRD 11.6 补充提示三要素中的两项） */
+  const requirementNote = (kind: DimensionDTO["dimension"]) => {
+    const d = unknownDims.find((item) => item.dimension === kind);
+    if (!d) return null;
+    const requirement = d.requirementDescription ?? d.reason;
+    const affected = impact?.[kind];
+    return (
+      <p className="mb-1.5 text-[11px] leading-4 text-ink-muted">
+        {requirement ? `公告要求：${requirement}` : null}
+        {affected
+          ? `${requirement ? " · " : ""}补充这项会影响 ${affected} 个机会的判断（含本岗位）`
+          : ""}
+      </p>
+    );
+  };
 
   const cities = form.hukouProvinceCode
     ? (CITY_OPTIONS[form.hukouProvinceCode] ?? [])
@@ -122,67 +144,79 @@ export function SupplementForm({
       )}
 
       {has("age") && (
-        <Input
-          type="date"
-          label="出生日期"
-          value={form.birthDate}
-          onChange={(e) => set("birthDate", e.target.value)}
-        />
-      )}
-
-      {has("hukou") && (
-        <div className="grid grid-cols-2 gap-3">
-          <Select
-            label="户籍所在省"
-            placeholder="选择省份"
-            options={PROVINCE_OPTIONS.map((p) => ({
-              value: p.code,
-              label: p.name,
-            }))}
-            value={form.hukouProvinceCode}
-            onChange={(e) => {
-              // 切省后清空不匹配的市
-              setForm((prev) => ({
-                ...prev,
-                hukouProvinceCode: e.target.value,
-                hukouCityCode: "",
-              }));
-            }}
-          />
-          <Select
-            label="户籍所在市（有市选市，判定更精确）"
-            placeholder={cities.length > 0 ? "选择城市或选全省" : "该省请选全省均可"}
-            options={[
-              ...cities.map((c) => ({ value: c.code, label: c.name })),
-            ]}
-            value={form.hukouCityCode}
-            onChange={(e) => set("hukouCityCode", e.target.value)}
-            disabled={cities.length === 0}
+        <div>
+          {requirementNote("age")}
+          <Input
+            type="date"
+            label="出生日期"
+            value={form.birthDate}
+            onChange={(e) => set("birthDate", e.target.value)}
           />
         </div>
       )}
 
+      {has("hukou") && (
+        <div>
+          {requirementNote("hukou")}
+          <div className="grid grid-cols-2 gap-3">
+            <Select
+              label="户籍所在省"
+              placeholder="选择省份"
+              options={PROVINCE_OPTIONS.map((p) => ({
+                value: p.code,
+                label: p.name,
+              }))}
+              value={form.hukouProvinceCode}
+              onChange={(e) => {
+                // 切省后清空不匹配的市
+                setForm((prev) => ({
+                  ...prev,
+                  hukouProvinceCode: e.target.value,
+                  hukouCityCode: "",
+                }));
+              }}
+            />
+            <Select
+              label="户籍所在市（有市选市，判定更精确）"
+              placeholder={cities.length > 0 ? "选择城市或选全省" : "该省请选全省均可"}
+              options={[
+                ...cities.map((c) => ({ value: c.code, label: c.name })),
+              ]}
+              value={form.hukouCityCode}
+              onChange={(e) => set("hukouCityCode", e.target.value)}
+              disabled={cities.length === 0}
+            />
+          </div>
+        </div>
+      )}
+
       {has("social_security") && (
-        <Input
-          type="number"
-          min={0}
-          step={1}
-          label="社保累计缴纳月数"
-          hint="没有社保记录请填 0；不确定可留空，保持待确认。"
-          value={form.socialSecurityMonths}
-          onChange={(e) => set("socialSecurityMonths", e.target.value)}
-        />
+        <div>
+          {requirementNote("social_security")}
+          <Input
+            type="number"
+            min={0}
+            step={1}
+            label="社保累计缴纳月数"
+            hint="没有社保记录请填 0；不确定可留空，保持待确认。"
+            value={form.socialSecurityMonths}
+            onChange={(e) => set("socialSecurityMonths", e.target.value)}
+          />
+        </div>
       )}
 
       {has("work_experience") && (
-        <Input
-          type="number"
-          min={0}
-          step={1}
-          label="相关工作经历月数"
-          value={form.workExperienceMonths}
-          onChange={(e) => set("workExperienceMonths", e.target.value)}
-        />
+        <div>
+          {requirementNote("work_experience")}
+          <Input
+            type="number"
+            min={0}
+            step={1}
+            label="相关工作经历月数"
+            value={form.workExperienceMonths}
+            onChange={(e) => set("workExperienceMonths", e.target.value)}
+          />
+        </div>
       )}
 
       {otherDims.map((d) => (

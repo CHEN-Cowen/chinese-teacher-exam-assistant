@@ -1,5 +1,12 @@
 /** 公开演示日程：只根据本机已关注的示例机会派生，不请求服务器、不发送提醒。 */
-import { demoFollowedUnit, demoFollowRecords } from "@/lib/opportunities/demoApi";
+import {
+  demoFollowedUnit,
+  demoFollowRecords,
+  demoListNotifications,
+  demoMarkAllNotificationsRead,
+  demoMarkNotificationRead,
+  syncDemoOrganizationFollows,
+} from "@/lib/opportunities/demoApi";
 import type { NotificationDTO, ScheduleResponse, TimelineEventDTO, TimelineEventKind } from "./types";
 
 const DATE_FIELDS: { key: string; kind: TimelineEventKind; label: string }[] = [
@@ -19,6 +26,8 @@ function dateText(value: string): string {
 
 export const demoScheduleApi = {
   async getSchedule(): Promise<ScheduleResponse> {
+    // D07：访问日程时顺带做一次单位关注同步（幂等），新公告版本会产生站内通知
+    syncDemoOrganizationFollows();
     const follows = demoFollowRecords();
     const now = new Date();
     const events: TimelineEventDTO[] = [];
@@ -81,10 +90,16 @@ export const demoScheduleApi = {
     };
   },
 
+  /** D07：演示站内通知由本机单位关注同步派生（无真实公告流入时为空） */
   async getNotifications(): Promise<NotificationDTO[]> {
-    return [];
+    syncDemoOrganizationFollows();
+    return demoListNotifications();
   },
 
-  async markNotificationRead(): Promise<void> {},
-  async markAllRead(): Promise<void> {},
+  async markNotificationRead(id: string): Promise<void> {
+    demoMarkNotificationRead(id);
+  },
+  async markAllRead(): Promise<void> {
+    demoMarkAllNotificationsRead();
+  },
 };

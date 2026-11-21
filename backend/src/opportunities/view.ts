@@ -8,13 +8,7 @@
  */
 import { CATALOG_VERSION } from '../matching/catalog.js';
 import { REAL_CATALOG_VERSION } from '../matching/real-catalog.js';
-import {
-  COVERAGE_VERSION,
-  REAL_COVERAGE,
-  type MonitoredRegion,
-  type MonitoringStatus,
-  type ProvinceCoverage,
-} from '../matching/coverage.js';
+import type { UnifiedCoverageProjection } from './coverage-projection.js';
 import {
   MAJOR_ALIAS_VERSION,
   MATCH_RULE_VERSION,
@@ -29,6 +23,7 @@ import type {
   EvidenceAnchor,
   MaterialStatus,
   OpportunityCandidate,
+  RegionRef,
   RequirementDimension,
   UserRecruitmentProfile,
 } from '../matching/types.js';
@@ -47,20 +42,12 @@ export interface MetaDTO {
   evaluatedAt: string;
 }
 
-/** 真实监测覆盖说明（前台如实展示覆盖地区/核对时间/在报数量） */
-export interface CoverageDTO {
-  version: string;
-  subject: string;
-  subjectLabel: string;
-  status: MonitoringStatus;
-  /** 逐省覆盖口径：选择省时只能看到该省实际监测城市与来源 */
-  provinces: ProvinceCoverage[];
-  regions: MonitoredRegion[];
-  lastCheckedAt: string;
-  openOpportunityCount: number;
-  nextWindowNote: string;
-  scopeNote: string;
-}
+/**
+ * 真实覆盖说明（M01/F2）：直接采用统一服务端覆盖投影类型。
+ * 访客与登录用户共用同一事实来源；投影内部区分登记/核验/近期健康/已发布岗位，
+ * 并携带统计口径、生成时间与版本（见 coverage-projection.ts）。
+ */
+export type CoverageDTO = UnifiedCoverageProjection;
 
 export interface FollowDTO {
   id: string;
@@ -95,6 +82,16 @@ export interface DimensionDTO {
   /** 公告原文表述（地区维度为用户偏好约束，无公告原文） */
   requirementDescription?: string;
   evidence?: EvidenceAnchor;
+  /** 用户事实摘要：说明用了哪条资料/哪一阶段 */
+  userFact?: string;
+  /** 专业条件实际采用的教育经历 */
+  adoptedEducation?: {
+    experienceId: string;
+    stage?: string;
+    majorFullName: string;
+  }[];
+  /** 该条件下一步动作 */
+  nextStep?: string;
 }
 
 export interface UnitMatchDTO {
@@ -105,6 +102,8 @@ export interface UnitMatchDTO {
     | 'name'
     | 'region'
     | 'subject'
+    | 'subjects'
+    | 'subjectOriginal'
     | 'stage'
     | 'headcount'
     | 'organizationType'
@@ -122,6 +121,8 @@ export interface UnitMatchDTO {
     publisher: string;
     organizationType: string;
     officialUrl: string;
+    /** 公告级地区（单位关注身份键匹配用，D07） */
+    region: RegionRef;
     /** demo=演示数据；real=真实监测台账数据；test=自动化样本（不进用户端） */
     dataset: 'demo' | 'real' | 'test';
     reviewStatus: 'ai_reviewed_pending' | 'human_reviewed';
@@ -142,6 +143,8 @@ export interface UnitMatchDTO {
   gates: OpportunityCandidate['match']['gates'];
   dimensions: DimensionDTO[];
   overall: OpportunityCandidate['match']['overall'];
+  /** 资格初步符合但不在“必须接受”的地区范围内（偏好范围外，不是不符合） */
+  preferenceOutOfScope: boolean;
   summary: string;
   follow: FollowDTO | null;
   /** 需官方确认维度的咨询问题模板 */
@@ -197,34 +200,6 @@ export function buildMeta(now: Date): MetaDTO {
   };
 }
 
-export function buildCoverage(overrides: {
-  openOpportunityCount?: number;
-  lastCheckedAt?: string;
-} = {}): CoverageDTO {
-  const openOpportunityCount =
-    overrides.openOpportunityCount ?? REAL_COVERAGE.openOpportunityCount;
-  return {
-    version: COVERAGE_VERSION,
-    subject: REAL_COVERAGE.subject,
-    subjectLabel: REAL_COVERAGE.subjectLabel,
-    status: openOpportunityCount > 0 ? 'open_batch_exists' : REAL_COVERAGE.status,
-    provinces: REAL_COVERAGE.provinces.map((province) => ({
-      ...province,
-      status:
-        province.status === 'not_started'
-          ? province.status
-          : openOpportunityCount > 0
-            ? 'open_batch_exists'
-            : 'monitoring_no_open',
-    })),
-    regions: REAL_COVERAGE.regions,
-    lastCheckedAt: overrides.lastCheckedAt ?? REAL_COVERAGE.lastCheckedAt,
-    openOpportunityCount,
-    nextWindowNote: REAL_COVERAGE.nextWindowNote,
-    scopeNote: REAL_COVERAGE.scopeNote,
-  };
-}
-
 function toFollowDTO(
   follow: FollowRecord,
   currentVersionId: string,
@@ -248,7 +223,7 @@ function toFollowDTO(
 }
 
 /** 逐条件结果关联公告原文表述与证据锚点；地区维度无对应公告条件 */
-function toDimensions(candidate: OpportunityCandidate): DimensionDTO[] {
+export function toDimensions(candidate: OpportunityCandidate): DimensionDTO[] {
   const requirementsById = new Map(
     candidate.unit.requirements.map((req) => [req.id, req]),
   );
@@ -301,6 +276,8 @@ export function toUnitMatchDTO(
       name: unit.name,
       region: unit.region,
       subject: unit.subject,
+      subjects: unit.subjects,
+      subjectOriginal: unit.subjectOriginal,
       stage: unit.stage,
       headcount: unit.headcount,
       organizationType: unit.organizationType,
@@ -318,6 +295,8 @@ export function toUnitMatchDTO(
       publisher: announcement.publisher,
       organizationType: announcement.organizationType,
       officialUrl: announcement.officialUrl,
+      /** 公告级地区（单位关注身份键匹配用，D07） */
+      region: announcement.region,
       dataset: announcement.dataset ?? 'demo',
       reviewStatus: announcement.reviewStatus ?? 'human_reviewed',
       reviewedBy: announcement.reviewedBy ?? null,
@@ -336,6 +315,7 @@ export function toUnitMatchDTO(
     gates: match.gates,
     dimensions,
     overall: match.overall,
+    preferenceOutOfScope: match.preferenceOutOfScope === true,
     summary: match.summary,
     follow: follow ? toFollowDTO(follow, version.id) : null,
     consultationTemplates: buildConsultationTemplates(announcement, unit, dimensions),
@@ -378,13 +358,16 @@ function buildConsultationTemplates(
 /**
  * 列表分组：默认只展示“初步符合”；需要补充（按缺失维度分组）、
  * 建议人工确认、明确不符合与闸门失败（已截止等）分别进入二级分组。
+ *
+ * M01/F2：coverage 由调用方（服务层）传入统一投影——match 响应与公开
+ * coverage 接口共用同一事实来源，本函数不再从静态 REAL_COVERAGE 拼装。
  */
 export function buildMatchResponse(
   candidates: readonly OpportunityCandidate[],
   profile: UserRecruitmentProfile,
   follows: readonly FollowRecord[],
   now: Date,
-  coverage?: { openOpportunityCount?: number; lastCheckedAt?: string },
+  coverage: CoverageDTO,
 ): MatchResponse {
   // M5 合规过滤：普通用户端不返回 test 样本与 AI 初核待人工复核的真实记录。
   // 已人工复核（human_reviewed）的真实岗位照常进入；管理端复核走独立 API。
@@ -439,7 +422,7 @@ export function buildMatchResponse(
 
   return {
     meta: buildMeta(now),
-    coverage: buildCoverage(coverage),
+    coverage,
     primaryTargetUnitId: primary?.unitId ?? null,
     groups,
     follows: followsDTO,
@@ -553,7 +536,10 @@ export interface SubscriptionRegionDTO {
 /** 新机会订阅（每用户一条；enabled=false 关闭后停止新提醒，历史通知保留） */
 export interface SubscriptionDTO {
   regions: SubscriptionRegionDTO[];
+  /** 兼容字段：subjects[0]；旧前端仍可读取 */
   subject: string;
+  /** W1：订阅关注的全部学科 */
+  subjects: string[];
   naturePreference: 'public_only' | 'official_open' | 'undecided';
   /** 必要资格条件快照（透明展示用）：{ degree?, graduationDate?, cert? } */
   qualification: {
@@ -574,6 +560,19 @@ export interface SubscriptionSyncDTO {
   subscribed: boolean;
   newNotices: number;
   backfilled: number;
+  /** D07：本次单位关注新提醒数（无单位关注时为 0） */
+  orgNewNotices: number;
+  /** D07：本次单位关注基线回填数 */
+  orgBackfilled: number;
+}
+
+/** 单位关注（D07 / PRD 11.8 U07）：身份键仅精确匹配，展示名原样保存 */
+export interface OrganizationFollowDTO {
+  id: string;
+  identityKey: string;
+  publisherName: string;
+  regionCode: string;
+  followedAt: string;
 }
 
 /** 资格条件快照：只取必要枚举与日期，不存证件号等敏感信息 */

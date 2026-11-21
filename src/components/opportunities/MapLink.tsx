@@ -35,7 +35,7 @@ export function MapLink({
             props: { entry: from, category: entry.category },
           })
         }
-        className="inline-flex h-9 items-center gap-1 rounded-xl border border-line bg-surface px-3 text-sm font-medium text-brand transition-colors hover:border-brand/40 hover:bg-brand-soft"
+        className="inline-flex h-11 items-center gap-1 rounded-lg border border-line bg-surface px-3 text-sm font-medium text-brand transition-colors hover:border-brand/40 hover:bg-brand-soft"
       >
         {MAP_LINK_LABEL}
       </a>

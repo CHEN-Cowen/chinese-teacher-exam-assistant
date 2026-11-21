@@ -11,13 +11,14 @@
  */
 import { STORAGE_KEYS } from "@/lib/mock-data";
 import {
-  loadFromStorage,
-  saveToStorage,
-} from "@/lib/storage";
+  readIdentityScopedRaw,
+  writeIdentityScopedRaw,
+} from "@/lib/storageIdentity";
 import {
   draftToProfile,
   guestSessionService,
 } from "@/lib/guest/guestSession";
+import { mergeEducationIntoProfile } from "@/lib/profile/educationStore";
 import type { UserRecruitmentProfile } from "@/lib/profile/types";
 
 /** 条件补问事实（全部可选；空字符串/未选择视为“未提供”） */
@@ -76,18 +77,27 @@ export function normalizeSupplementFacts(input: unknown): SupplementFacts {
 }
 
 export const supplementFactsService = {
+  /** 读取身份作用域内的补充事实（R01：不同账号不共用一份补充资料） */
   load(): SupplementFacts {
-    return normalizeSupplementFacts(
-      loadFromStorage<unknown>(STORAGE_KEYS.PROFILE_SUPPLEMENT_V61, {}),
-    );
+    const raw = readIdentityScopedRaw(STORAGE_KEYS.PROFILE_SUPPLEMENT_V61);
+    if (!raw) return {};
+    try {
+      return normalizeSupplementFacts(JSON.parse(raw));
+    } catch {
+      return {};
+    }
   },
   save(facts: SupplementFacts): SupplementFacts {
     const cleaned = normalizeSupplementFacts(facts);
-    saveToStorage(STORAGE_KEYS.PROFILE_SUPPLEMENT_V61, cleaned);
+    writeIdentityScopedRaw(
+      STORAGE_KEYS.PROFILE_SUPPLEMENT_V61,
+      JSON.stringify(cleaned),
+    );
     return cleaned;
   },
   clear(): void {
-    saveToStorage(STORAGE_KEYS.PROFILE_SUPPLEMENT_V61, {});
+    // 保留空对象标记（而非删除键）：与既有语义一致，表示“本机补充事实已清空”
+    writeIdentityScopedRaw(STORAGE_KEYS.PROFILE_SUPPLEMENT_V61, "{}");
   },
 };
 
@@ -95,6 +105,41 @@ export type ActiveProfileReason =
   | "no_draft"
   | "incomplete"
   | "subject_not_open";
+
+/**
+ * 从完整画像派生补充事实（D05）。
+ *
+ * 用途：受邀登录用户的补充表单初始值来自服务端画像，而不是共享 localStorage
+ * （kb_profile_supplement_v61 是本机访客/演示草稿，跨账号共享，不能预填给登录账号）。
+ * 户籍还原口径：画像只存合并后的 hukouRegionCode（有市选市）；省级码（XX0000）只还原省，
+ * 市级码同时还原省与市，与 SupplementForm 的省/市两个选择框对应。
+ */
+export function profileToSupplementFacts(
+  profile: UserRecruitmentProfile | null | undefined,
+): SupplementFacts {
+  const facts: SupplementFacts = {};
+  if (!profile) return facts;
+  if (profile.birthDate) facts.birthDate = profile.birthDate;
+  const hukou = profile.hukouRegionCode;
+  if (hukou && /^\d{6}$/.test(hukou)) {
+    if (hukou.endsWith("0000")) {
+      facts.hukouProvinceCode = hukou;
+    } else {
+      facts.hukouProvinceCode = `${hukou.slice(0, 2)}0000`;
+      facts.hukouCityCode = hukou;
+    }
+  }
+  if (profile.socialSecurityMonths !== undefined) {
+    facts.socialSecurityMonths = profile.socialSecurityMonths;
+  }
+  if (profile.workExperienceMonths !== undefined) {
+    facts.workExperienceMonths = profile.workExperienceMonths;
+  }
+  if (profile.extraAnswers && Object.keys(profile.extraAnswers).length > 0) {
+    facts.extraAnswers = { ...profile.extraAnswers };
+  }
+  return facts;
+}
 
 export type ActiveProfile =
   | { ready: false; reason: ActiveProfileReason }
@@ -126,5 +171,6 @@ export function buildActiveProfile(
     workExperienceMonths: facts.workExperienceMonths,
     extraAnswers: facts.extraAnswers,
   };
-  return { ready: true, profile };
+  // D01：demo/访客本机补充的分阶段经历，随请求体提交后端重算
+  return { ready: true, profile: mergeEducationIntoProfile(profile) };
 }

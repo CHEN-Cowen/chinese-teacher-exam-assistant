@@ -29,7 +29,8 @@ function input(bytes: Buffer) {
 }
 
 describe('PdfDocumentParser（文本层）', () => {
-  it('提取文本行：块带页码与 bbox 定位（可回原文）', async () => {
+  // PDF.js 首次加载+解析在 Windows 高并发下可能超过默认超时
+  it('提取文本行：块带页码与 bbox 定位（可回原文）', { timeout: 60_000 }, async () => {
     const doc = await parser.parse(
       input(buildTextPdf(['Hangzhou Municipal Education Bureau 2026 open teacher recruitment announcement', 'Education requirement: Bachelor degree or above, teacher qualification certificate required.'])),
     );

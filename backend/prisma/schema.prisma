@@ -12,14 +12,19 @@ model User {
   email     String   @unique
   name      String?
   role      String   @default("user")
+  /** 账号是否启用；停用后不能登录、既有会话失效，也不能被配置为运营负责人 */
+  isActive  Boolean  @default(true) @map("is_active")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  extractionRuns ExtractionRun[]
-  reviewRecords  ReviewRecord[]
-  credential     Credential?
-  sessions       Session[]
-  profile        UserProfile?
+  extractionRuns  ExtractionRun[]
+  reviewRecords   ReviewRecord[]
+  credential      Credential?
+  sessions        Session[]
+  profile         UserProfile?
+  passwordResets  PasswordResetToken[]
+  membershipGrants MembershipGrant[]
+  paymentOrders   PaymentOrder[]
 
   @@map("users")
 }
@@ -57,6 +62,51 @@ model Session {
 
   @@index([userId])
   @@map("sessions")
+}
+
+/**
+ * 密码重置令牌（M05/F7）。
+ * 原始 token 仅在响应邮件中出现的链接里出现一次，库内只存 SHA-256 哈希；
+ * 限时（默认 30 分钟）单次使用，使用后立即撤销该用户全部会话。
+ */
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+/**
+ * 会员权益授予记录（M11 / 整体方案 11.2）。
+ * - 会员状态独立于 User.role：角色管权限，本表管限期软件权益；
+ * - 一次授予一行；同一用户可多行（续购顺延：新授予 startsAt =
+ *   max(当前时间, 现有最晚 endsAt)，不覆盖历史）；
+ * - orderId 全局唯一：支付渠道回调按订单幂等发放（M12），重复通知不重复计时；
+ * - 到期不删行：用户资料与历史成果保留，仅权益状态变为已到期；
+ * - revokedAt：全额退款成功后回收该订单对应的授予（M12 售后）；
+ *   被回收的授予不再计入会员状态与续购顺延基数。部分退款不开放，
+ *   不存在"按比例回收"的臆造算法。
+ */
+model MembershipGrant {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan      String
+  source    String
+  orderId   String?   @unique @map("order_id")
+  startsAt  DateTime  @map("starts_at")
+  endsAt    DateTime  @map("ends_at")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([userId, endsAt])
+  @@map("membership_grants")
 }
 
 /**
@@ -125,6 +175,36 @@ model FollowedOpportunity {
 }
 
 /**
+ * 单位关注（D07 / PRD 11.8 U07）：按「规范化发布主体名 + 地区码」精确身份键关注单位。
+ *
+ * - identityKey = normalizePublisherName(publisherName) + "@" + regionCode，
+ *   规范化仅 NFKC + 折叠空白，不做括号剥离与相似度推断；同名不同区不串联；
+ * - 提醒幂等键复用 OpportunityNoticeLog，dedupKey 前缀 `org:{identityKey}:`，
+ *   与岗位/订阅提醒互不干扰；首次同步基线回填不产生通知风暴。
+ */
+model FollowedOrganization {
+  id            String   @id @default(uuid())
+  userId        String   @map("user_id")
+  /** 身份键：规范化发布主体名@地区码（仅精确匹配） */
+  identityKey   String   @map("identity_key")
+  /** 关注时刻的发布主体显示名（原样保存，仅展示用；匹配只看 identityKey） */
+  publisherName String   @map("publisher_name")
+  regionCode    String   @map("region_code")
+  followedAt    DateTime @default(now()) @map("followed_at")
+  /**
+   * 首次同步基线完成时间（R04）。null=尚未完成首次同步：
+   * 首次同步只回填关注时刻（followedAt）前已发布的公告，之后的新公告才产生提醒；
+   * 即使关注时没有任何匹配公告，首次同步后也会写入，避免“历史键为空”被永久当作首次同步而漏报。
+   */
+  baselineSyncedAt DateTime? @map("baseline_synced_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId, identityKey])
+  @@map("followed_organizations")
+}
+
+/**
  * 机会详情纠错提交（v6.1 模块 5，PRD 7.10）。
  * 用户在证据层发现公告原文/字段/版本有误时提交；受邀阶段只留痕与回复状态，
  * 不做自动改判，改判必须走模块 2 审核发布新版本。
@@ -139,17 +219,61 @@ model OpportunityCorrection {
   content        String
   contact        String?
   status         String    @default("submitted")
-  /** 员工处理说明（不采纳时必填，随站内通知发给提交人） */
+  /** 员工处理说明（不采纳/需补充时必填，随站内通知发给提交人） */
   reviewNote     String?   @map("review_note")
   /** 最近一次处理人（员工账号 id） */
   reviewerId     String?   @map("reviewer_id")
   /** 最近一次处理时间（开始核对/终态均记录） */
   reviewedAt     DateTime? @map("reviewed_at")
+  /** D08：采纳修正时登记的已发布版本 id（处理人填写，供用户回详情核对） */
+  resolvedVersionId String? @map("resolved_version_id")
+  /** 终态后用户有新问题时关联的原受理编号（原记录保留，不重开） */
+  relatedTicketNo String? @map("related_ticket_no")
   createdAt      DateTime  @default(now()) @map("created_at")
 
+  @@index([userId, createdAt])
   @@index([announcementId, versionId])
   @@index([status, createdAt])
   @@map("opportunity_corrections")
+}
+
+/**
+ * 公告补录提交（D08 / PRD 11.9 U08）：用户报告未收录的官方公告。
+ * 只进入运营待办队列，绝不直接进入采集与发布；处理状态机与纠错共用
+ * corrections.domain（submitted→reviewing→resolved/rejected，含 need_supplement）。
+ * officialUrl 存规范化 https/http 原文；urlHash 为其 SHA-256（去重键）。
+ */
+model AnnouncementSubmission {
+  id            String    @id @default(uuid())
+  userId        String    @map("user_id")
+  officialUrl   String    @map("official_url")
+  urlHash       String    @map("url_hash")
+  publisherName String    @map("publisher_name")
+  regionCode    String    @map("region_code")
+  note          String?
+  status        String    @default("submitted")
+  /** 员工处理说明（不采纳/需补充时必填，随站内通知发给提交人） */
+  reviewNote    String?   @map("review_note")
+  /** 最近一次处理人（员工账号 id） */
+  reviewerId    String?   @map("reviewer_id")
+  reviewedAt    DateTime? @map("reviewed_at")
+  /** 结案时关联的正式公告 id（必填于「已收录」；历史记录为空即待核验） */
+  resolvedAnnouncementId String? @map("resolved_announcement_id")
+  /** 结案时关联的已发布版本 id */
+  resolvedVersionId String? @map("resolved_version_id")
+  /** 人工关联核验依据（不同链接关联时必须填写） */
+  resolutionBasis String? @map("resolution_basis")
+  /** 历史结案缺少发布关联：仅标记待核验，不猜测回填 */
+  historyPendingVerification Boolean @default(false) @map("history_pending_verification")
+  /** 终态后用户有新问题时关联的原受理编号（原记录保留，不重开） */
+  relatedTicketNo String? @map("related_ticket_no")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  @@index([userId, createdAt])
+  @@index([urlHash])
+  @@index([status, createdAt])
+  @@map("announcement_submissions")
 }
 
 /**
@@ -235,6 +359,7 @@ model Source {
   crawlRuns       CrawlRun[]
   sourceDocuments SourceDocument[]
   urlCaches       SourceUrlCache[]
+  alerts          SourcingAlert[]
 
   @@map("sources")
 }
@@ -269,9 +394,67 @@ model CrawlRun {
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")
 
+  budget           CrawlRunBudget?
+
   @@index([sourceId, startedAt])
   @@index([status])
   @@map("crawl_runs")
+}
+
+/**
+ * 手动试跑预算（v7.2 受控单来源试跑）。
+ *
+ * 只有带预算的手动运行才建行；常规调度不建行，行为保持原样。
+ * 计数口径：
+ * - list_pages_used：已发起的安全获取栏目页数（含 304，按实际请求页计）；
+ * - details_used / attachments_used：已准入的逻辑任务数（按 canonicalUrl 去重，
+ *   重投/重放不重复占用额度）；
+ * - http_requests_used：实际发出的 HTTP 请求次数（含重试与重定向跳转）。
+ * status：active / stopped（人工按 runId 停止）/ exhausted（额度用尽）。
+ */
+model CrawlRunBudget {
+  id                        String    @id @default(uuid())
+  runId                     String    @unique @map("run_id")
+  run                       CrawlRun  @relation(fields: [runId], references: [id], onDelete: Cascade)
+  sourceId                  String    @map("source_id")
+  maxListPages              Int       @map("max_list_pages")
+  maxDetails                Int       @map("max_details")
+  maxAttachmentsPerDocument Int       @map("max_attachments_per_document")
+  maxAttachmentsTotal       Int       @map("max_attachments_total")
+  maxHttpRequests           Int       @map("max_http_requests")
+  listPagesUsed             Int       @default(0) @map("list_pages_used")
+  detailsUsed               Int       @default(0) @map("details_used")
+  attachmentsUsed           Int       @default(0) @map("attachments_used")
+  httpRequestsUsed          Int       @default(0) @map("http_requests_used")
+  listPagesDeferred         Int       @default(0) @map("list_pages_deferred")
+  detailsDeferred           Int       @default(0) @map("details_deferred")
+  attachmentsDeferred       Int       @default(0) @map("attachments_deferred")
+  status                    String    @default("active")
+  stopReason                String?   @map("stop_reason")
+  stoppedAt                 DateTime? @map("stopped_at")
+  createdAt                 DateTime  @default(now()) @map("created_at")
+  updatedAt                 DateTime  @updatedAt @map("updated_at")
+
+  @@map("crawl_run_budgets")
+}
+
+/**
+ * 试跑准入记录：同一运行下同一 URL 只准入一次。
+ *
+ * 唯一键承担幂等：BullMQ 重投、Worker 重放、重复点击都不会重复占用详情/附件额度；
+ * kind：document（详情/公告页）/ attachment（附件）。
+ */
+model CrawlRunAdmission {
+  id               String   @id @default(uuid())
+  runId            String   @map("run_id")
+  kind             String
+  canonicalUrl     String   @map("canonical_url")
+  parentDocumentId String?  @map("parent_document_id")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@unique([runId, kind, canonicalUrl])
+  @@index([runId, kind, parentDocumentId])
+  @@map("crawl_run_admissions")
 }
 
 /** URL 级条件请求缓存：同一来源不同 URL 独立保存验证头。 */
@@ -286,6 +469,37 @@ model SourceUrlCache {
 
   @@unique([sourceId, canonicalUrl])
   @@map("source_url_caches")
+}
+
+/**
+ * 采集运行告警（M02/F3）。
+ *
+ * 告警是必须重启不丢的运行事实：Worker 停止、来源连续失败、结构变化、
+ * 检查超期都落库；Redis/日志不作为告警事实来源。
+ * type：consecutive_failures（连续失败降级）/ structure_changed（DOM 失配）/
+ *   blocked（转人工）/ source_overdue（到期未检查，Worker 可能停止）/
+ *   worker_down（心跳过期）。
+ * 活跃告警 = resolvedAt 为空；重复发生仅累加 occurrences，不新增行。
+ * sourceId 仅来源级告警使用；worker_down 为全局告警（sourceId 为空）。
+ */
+model SourcingAlert {
+  id           String    @id @default(uuid())
+  type         String
+  scope        String // source / global
+  sourceId     String?   @map("source_id")
+  source       Source?   @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  severity     String    @default("warning") // warning / critical
+  message      String
+  occurrences  Int       @default(1)
+  firstSeenAt  DateTime  @default(now()) @map("first_seen_at")
+  lastSeenAt   DateTime  @default(now()) @map("last_seen_at")
+  resolvedAt   DateTime? @map("resolved_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  @@unique([type, sourceId])
+  @@index([resolvedAt, lastSeenAt])
+  @@map("sourcing_alerts")
 }
 
 /**
@@ -604,6 +818,8 @@ model NotificationRecord {
    */
   reminderStage String?  @map("reminder_stage")
   relatedUnitId String?  @map("related_unit_id")
+  /** 站内跳转路径（服务端生成，仅站内相对路径；工单通知直达原工单详情） */
+  linkPath      String?  @map("link_path")
   readAt        DateTime? @map("read_at")
   createdAt     DateTime @default(now()) @map("created_at")
 
@@ -628,8 +844,10 @@ model OpportunitySubscription {
   userId           String   @unique @map("user_id")
   /** 订阅地区：[{code, province, city?, district?}] */
   regions          Json
-  /** 订阅学科（当前监测范围仅 chinese） */
+  /** 兼容字段：订阅主学科（等于 subjects[0]；旧数据仅此字段） */
   subject          String   @default("chinese")
+  /** W1：订阅关注的全部学科代码（空/null 时回退 subject） */
+  subjects         Json?
   /** 用工偏好：public_only / official_open / undecided */
   naturePreference String   @default("undecided") @map("nature_preference")
   /** 必要资格条件快照（透明展示用，不参与判定） */
@@ -740,4 +958,546 @@ model TaskFeedback {
   @@unique([userId, taskId])
   @@index([userId, date])
   @@map("task_feedbacks")
+}
+
+/**
+ * 支付订单（M12）。
+ * - 服务端定价：amountCents/currency/days 在创建时从 plans.ts 套餐配置快照，
+ *   客户端传入的金额一律不采信；priceVersion 标记定价配置版本便于追溯；
+ * - 状态机：created → paying → paid；created/paying → closed（用户关闭页面）；
+ *   closed → paid（超时后渠道仍成功扣款：钱已收必须履约，照常发放权益）；
+ *   paid → refunded（全额退款成功，权益回收见 MembershipGrant.revokedAt）；
+ * - grantId 回填发放结果；发放幂等由 membership_grants.order_id 唯一约束保证。
+ */
+model PaymentOrder {
+  id           String    @id @default(uuid())
+  userId       String    @map("user_id")
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan         String
+  priceVersion String    @map("price_version")
+  amountCents  Int       @map("amount_cents")
+  currency     String    @default("CNY")
+  days         Int
+  status       String    @default("created")
+  grantId      String?   @map("grant_id")
+  paidAt       DateTime? @map("paid_at")
+  closedAt     DateTime? @map("closed_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  attempts     PaymentAttempt[]
+  transactions ChannelTransaction[]
+  refunds      Refund[]
+
+  @@index([userId, status])
+  @@map("payment_orders")
+}
+
+/**
+ * 支付尝试（M12）：一次「发起支付」一行。
+ * prepayPayload 存渠道返回的预支付参数（模拟渠道为 codeUrl），不含密钥。
+ */
+model PaymentAttempt {
+  id                String       @id @default(uuid())
+  orderId           String       @map("order_id")
+  order             PaymentOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  channel           String
+  channelOutTradeNo String?      @map("channel_out_trade_no")
+  status            String       @default("created")
+  prepayPayload     Json?        @map("prepay_payload")
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @updatedAt @map("updated_at")
+
+  @@index([orderId])
+  @@map("payment_attempts")
+}
+
+/**
+ * 渠道交易（M12）：渠道侧成功扣款的权威记录，对账的本地侧依据。
+ * channelTransactionId 全局唯一：重复/乱序通知不产生第二条交易。
+ * rawPayload 存回调报文原文用于对账与争议排查。
+ */
+model ChannelTransaction {
+  id                   String       @id @default(uuid())
+  orderId              String       @map("order_id")
+  order                PaymentOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  channel              String
+  channelTransactionId String       @unique @map("channel_transaction_id")
+  amountCents          Int          @map("amount_cents")
+  currency             String
+  status               String
+  paidAt               DateTime     @map("paid_at")
+  rawPayload           Json         @map("raw_payload")
+  createdAt            DateTime     @default(now()) @map("created_at")
+
+  @@index([orderId])
+  @@index([paidAt])
+  @@map("channel_transactions")
+}
+
+/**
+ * 支付渠道回调事件（M12）。
+ * - eventId 全局唯一：重复通知幂等返回，不重复记账/发放；
+ * - status：received（已落库待处理）/ processed / rejected（业务校验失败，
+ *   rejectReason 记录原因）/ failed（内部错误，等待渠道重推或人工重放）；
+ * - 验签失败的请求不落库（报文不可信），只在日志留痕并返回 401；
+ * - 回跳（浏览器 redirect）不作为支付凭证，唯一凭证是验签后的回调与主动查单。
+ */
+model PaymentCallbackEvent {
+  id             String    @id @default(uuid())
+  channel        String
+  eventId        String    @unique @map("event_id")
+  eventType      String    @map("event_type")
+  orderId        String?   @map("order_id")
+  signatureValid Boolean   @map("signature_valid")
+  status         String    @default("received")
+  rejectReason   String?   @map("reject_reason")
+  payload        Json
+  receivedAt     DateTime  @default(now()) @map("received_at")
+  processedAt    DateTime? @map("processed_at")
+
+  @@index([orderId])
+  @@map("payment_callback_events")
+}
+
+/**
+ * 退款（M12）。
+ * - 仅支持全额退款（amountCents = 订单实付）；部分退款策略未与商业确认，
+ *   接口直接拒绝，不臆造按比例回收权益的算法；
+ * - 状态机：requested → succeeded / failed（以验签后的渠道退款回调为准，
+ *   渠道受理回执不直接等于退款成功）；
+ * - entitlementAction：全额退款成功 → revoked（回收该订单对应授予）。
+ */
+model Refund {
+  id                String       @id @default(uuid())
+  orderId           String       @map("order_id")
+  order             PaymentOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  channel           String
+  channelRefundId   String?      @map("channel_refund_id")
+  amountCents       Int          @map("amount_cents")
+  currency          String       @default("CNY")
+  status            String       @default("requested")
+  reason            String?
+  requestedBy       String       @map("requested_by")
+  entitlementAction String?      @map("entitlement_action")
+  rawPayload        Json?        @map("raw_payload")
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @updatedAt @map("updated_at")
+
+  @@index([orderId])
+  @@map("refunds")
+}
+
+/**
+ * 对账差异记录（M12）。
+ * - type：missing_local（渠道有本地无）/ missing_channel（本地有渠道无）/
+ *   amount_mismatch（金额不一致）；
+ * - dedupeKey 全局唯一（date+channel+type+交易号/订单号）：重复跑对账不产生重复差异；
+ * - 差异一律 open 进入人工处理入口，处理结果写 resolution 并记 resolvedBy/resolvedAt。
+ */
+model ReconciliationRecord {
+  id                   String    @id @default(uuid())
+  date                 String
+  channel              String
+  type                 String
+  dedupeKey            String    @unique @map("dedupe_key")
+  orderId              String?   @map("order_id")
+  channelTransactionId String?   @map("channel_transaction_id")
+  localAmountCents     Int?      @map("local_amount_cents")
+  channelAmountCents   Int?      @map("channel_amount_cents")
+  status               String    @default("open")
+  resolution           String?
+  resolvedBy           String?   @map("resolved_by")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  resolvedAt           DateTime? @map("resolved_at")
+
+  @@index([date, status])
+  @@map("reconciliation_records")
+}
+
+// ==================== W1：学科别名人工审核 ====================
+
+model SubjectAliasReview {
+  id           String    @id @default(uuid())
+  rawName      String    @map("raw_name")
+  stage        String?
+  regionCode   String?   @map("region_code")
+  source       String    @default("manual")
+  status       String    @default("pending")
+  resolvedCode String?   @map("resolved_code")
+  note         String?
+  createdBy    String?   @map("created_by")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  reviewedBy   String?   @map("reviewed_by")
+  reviewedAt   DateTime? @map("reviewed_at")
+
+  @@index([status, createdAt])
+  @@map("subject_alias_reviews")
+}
+
+// ==================== W2：官方材料知识与索引 ====================
+
+model KnowledgeDocument {
+  id                    String    @id @default(uuid())
+  title                 String
+  documentType          String    @map("document_type")
+  sourceKind            String    @map("source_kind")
+  status                String    @default("draft")
+  announcementId        String?   @map("announcement_id")
+  announcementVersionId String?   @map("announcement_version_id")
+  regionCode            String?   @map("region_code")
+  provinceCode          String?   @map("province_code")
+  year                  Int?
+  publisher             String?
+  officialUrl           String?   @map("official_url")
+  effectiveFrom         DateTime? @map("effective_from")
+  effectiveTo           DateTime? @map("effective_to")
+  /** W5：政策适用对象（如「教师公开招聘」「中小学教师」），自由文本 */
+  applicableAudience    String?   @map("applicable_audience")
+  /** W5：适用学科代码数组；空表示不限学科，不能当作已匹配具体学科 */
+  applicableSubjects    Json?     @map("applicable_subjects")
+  /** W5：适用学段标签数组；空表示不限学段 */
+  applicableStages      Json?     @map("applicable_stages")
+  currentVersionId      String?   @map("current_version_id")
+  activeIndexVersion    Int?      @map("active_index_version")
+  createdBy             String?   @map("created_by")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  versions KnowledgeDocumentVersion[]
+
+  @@index([announcementId])
+  @@index([documentType, regionCode, status])
+  @@index([documentType, regionCode, year, status])
+  @@map("knowledge_documents")
+}
+
+model KnowledgeDocumentVersion {
+  id                 String    @id @default(uuid())
+  documentId         String    @map("document_id")
+  versionNumber      Int       @map("version_number")
+  status             String    @default("draft")
+  contentHash        String    @map("content_hash")
+  parserVersion      String    @map("parser_version")
+  chunkerVersion     String    @map("chunker_version")
+  snapshotId         String?   @map("snapshot_id")
+  storageKey         String?   @map("storage_key")
+  mimeType           String?   @map("mime_type")
+  sourceUrl          String?   @map("source_url")
+  sourceCapturedAt   DateTime? @map("source_captured_at")
+  /** 岗位级材料关联（可选），索引时写入 chunk 便于按岗位隔离 */
+  unitIds            Json?     @map("unit_ids")
+  reviewNote         String?   @map("review_note")
+  reviewedBy         String?   @map("reviewed_by")
+  reviewedAt         DateTime? @map("reviewed_at")
+  publishedAt        DateTime? @map("published_at")
+  withdrawnAt        DateTime? @map("withdrawn_at")
+  withdrawReason     String?   @map("withdraw_reason")
+  activeIndexVersion Int?      @map("active_index_version")
+  createdAt          DateTime  @default(now()) @map("created_at")
+
+  document KnowledgeDocument      @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  chunks   KnowledgeChunk[]
+  jobs     KnowledgeIndexJob[]
+
+  @@unique([documentId, versionNumber])
+  @@index([contentHash])
+  @@index([status])
+  @@map("knowledge_document_versions")
+}
+
+model KnowledgeChunk {
+  id             String   @id @default(uuid())
+  documentId     String   @map("document_id")
+  versionId      String   @map("version_id")
+  indexVersion   Int      @map("index_version")
+  chunkIndex     Int      @map("chunk_index")
+  kind           String
+  content        String
+  headingPath    Json?    @map("heading_path")
+  locator        Json
+  spans          Json?
+  unitIds        Json?    @map("unit_ids")
+  charCount      Int      @map("char_count")
+  embeddingModel String?  @map("embedding_model")
+  embeddingDim   Int?     @map("embedding_dim")
+  /** Prisma 不支持可选标量列表：空数组表示尚未向量化（与 null 语义区分） */
+  embedding      Float[]  @default([])
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  version KnowledgeDocumentVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  @@unique([versionId, indexVersion, chunkIndex])
+  @@index([documentId, indexVersion])
+  @@map("knowledge_chunks")
+}
+
+model KnowledgeIndexJob {
+  id             String    @id @default(uuid())
+  documentId     String    @map("document_id")
+  versionId      String    @map("version_id")
+  idempotencyKey String    @unique @map("idempotency_key")
+  indexVersion   Int       @map("index_version")
+  status         String    @default("queued")
+  attempts       Int       @default(0)
+  errorClass     String?   @map("error_class")
+  errorMessage   String?   @map("error_message")
+  chunkCount     Int       @default(0) @map("chunk_count")
+  embeddedCount  Int       @default(0) @map("embedded_count")
+  embeddingModel String?   @map("embedding_model")
+  embeddingDim   Int?      @map("embedding_dim")
+  startedAt      DateTime? @map("started_at")
+  finishedAt     DateTime? @map("finished_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  version KnowledgeDocumentVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+  @@map("knowledge_index_jobs")
+}
+
+// ==================== W3：公告问答与反馈 ====================
+
+model QaAnswer {
+  id                    String   @id @default(uuid())
+  scopeType             String   @map("scope_type")
+  announcementId        String?  @map("announcement_id")
+  unitId                String?  @map("unit_id")
+  regionCode            String?  @map("region_code")
+  /** W5：政策问答的适用年份（公告问答为 null） */
+  year                  Int?
+  question              String
+  answer                String
+  status                String
+  citations             Json
+  needsOfficialConfirmation Boolean @default(false) @map("needs_official_confirmation")
+  model                 String?
+  mode                  String
+  promptVersion         String   @map("prompt_version")
+  indexVersions         Json?    @map("index_versions")
+  usage                 Json?
+  latencyMs             Int      @map("latency_ms")
+  userId                String?  @map("user_id")
+  ipHash                String?  @map("ip_hash")
+  createdAt             DateTime @default(now()) @map("created_at")
+
+  feedback QaFeedback[]
+
+  @@index([announcementId, createdAt])
+  @@index([userId, createdAt])
+  @@map("qa_answers")
+}
+
+model QaFeedback {
+  id        String   @id @default(uuid())
+  answerId  String   @map("answer_id")
+  userId    String?  @map("user_id")
+  type      String
+  comment   String?
+  status    String   @default("open")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  answer QaAnswer @relation(fields: [answerId], references: [id], onDelete: Cascade)
+
+  @@index([answerId])
+  @@index([status, createdAt])
+  @@map("qa_feedback")
+}
+
+// ==================== 异常转人工与人工处理闭环（2026-11-08） ====================
+//
+// 设计边界：
+// - 纠错、公告补录、扫描件待人工、来源告警保留各自业务对象与结案标准；
+// - ServiceTask 只是这些对象的「人工处理工作项」外壳，承载负责人、认领、
+//   优先级、内部时限、催办升级等待办能力，不复制公告/原件/发布版本事实；
+// - 所有状态推进、历史追加和通知写入同一事务；历史只追加不覆盖。
+
+model ServiceTask {
+  id            String   @id @default(uuid())
+  /** 稳定受理编号（仅定位，不替代权限校验） */
+  ticketNo      String   @unique @map("ticket_no")
+  /** correction / announcement_submission / parse_manual / source_alert */
+  type          String
+  /** 业务对象 id（纠错/补录/解析 run/告警） */
+  refId         String   @map("ref_id")
+  /** 派生任务幂等键：同一未恢复故障复用活动待办，调度重跑不重复建任务 */
+  refKey        String?  @unique @map("ref_key")
+  /** 与业务对象状态同步的工作项状态 */
+  status        String   @default("submitted")
+  /** 默认责任归属（创建时的日常负责人），不等于实际认领人 */
+  defaultOwnerId String? @map("default_owner_id")
+  /** 当前负责人：认领/转交后唯一确定 */
+  assigneeId    String?  @map("assignee_id")
+  claimedAt     DateTime? @map("claimed_at")
+  /** 最后处理人（与当前负责人分开记录，不混用语义） */
+  lastHandlerId String?  @map("last_handler_id")
+  /** high / medium / low */
+  priority      String   @default("medium")
+  priorityReason String? @map("priority_reason")
+  /** system / staff */
+  prioritySource String  @default("system") @map("priority_source")
+  /** user / official / null（staff=平台处理中） */
+  waitingOn     String?  @map("waiting_on")
+  /** 乐观锁版本：每次状态/负责人/优先级变更递增 */
+  statusVersion Int      @default(1) @map("status_version")
+  /** 首次有效公开响应时间（认领/查看/内部备注不算） */
+  firstResponseAt DateTime? @map("first_response_at")
+  /** 最近一次有效公开处理更新时间 */
+  lastEffectiveUpdateAt DateTime? @map("last_effective_update_at")
+  /** 首次响应到期 */
+  responseDueAt DateTime? @map("response_due_at")
+  /** 下一次有效处理更新到期 */
+  updateDueAt   DateTime? @map("update_due_at")
+  /** 升级宽限到期 */
+  escalationDueAt DateTime? @map("escalation_due_at")
+  /** 当前计时周期开始时间（用于周期级提醒去重） */
+  cycleStartedAt DateTime? @map("cycle_started_at")
+  /** 待用户补充暂停时保存的剩余额度（毫秒） */
+  pausedRemainingMs Int? @map("paused_remaining_ms")
+  pausedAt      DateTime? @map("paused_at")
+  /** 累计等待用户时长（恢复时累加，用于区分平台处理与用户等待） */
+  totalPausedMs Int      @default(0) @map("total_paused_ms")
+  /** 等待官方回复：原因、最近核对、下次跟进（暂停不解除更新要求） */
+  waitingReason String?  @map("waiting_reason")
+  lastCheckedAt DateTime? @map("last_checked_at")
+  nextFollowUpAt DateTime? @map("next_follow_up_at")
+  lastReminderAt DateTime? @map("last_reminder_at")
+  escalationCount Int    @default(0) @map("escalation_count")
+  /** 负责人/备用负责人均不可用，进入管理员未分配异常队列 */
+  routedToAdmin Boolean  @default(false) @map("routed_to_admin")
+  routeIssue    String?  @map("route_issue")
+  /** 派生任务人工结案结果：resolved / limited / rejected */
+  outcome       String?
+  resolutionNote String? @map("resolution_note")
+  resolvedBy    String?  @map("resolved_by")
+  resolvedAt    DateTime? @map("resolved_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@unique([type, refId])
+  @@index([status, priority, updateDueAt])
+  @@index([assigneeId, status])
+  @@index([defaultOwnerId, status])
+  @@index([type, status])
+  @@map("service_tasks")
+}
+
+/** 工单补充信息（追加式；首版仅文字与链接，不做附件/OCR） */
+model TicketSupplement {
+  id          String   @id @default(uuid())
+  taskId      String   @map("task_id")
+  /** correction / announcement_submission */
+  ticketType  String   @map("ticket_type")
+  ticketId    String   @map("ticket_id")
+  authorId    String   @map("author_id")
+  body        String
+  /** [{ url, label? }]，仅 http/https，最多 5 个；只保存不自动抓取 */
+  links       Json?
+  /** 幂等键：同一工单同一键只保存一次 */
+  dedupeKey   String?  @map("dedupe_key")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@unique([taskId, dedupeKey])
+  @@index([ticketType, ticketId, createdAt])
+  @@map("ticket_supplements")
+}
+
+/** 追加式处理历史：提交/补充/认领/转交/优先级/状态/公开进展/内部备注/结案 */
+model TicketEvent {
+  id          String   @id @default(uuid())
+  taskId      String   @map("task_id")
+  ticketNo    String   @map("ticket_no")
+  ticketType  String   @map("ticket_type")
+  ticketId    String   @map("ticket_id")
+  action      String
+  actorId     String?  @map("actor_id")
+  actorRole   String?  @map("actor_role")
+  /** public（用户可见）/ internal（员工可见）/ system（系统记录） */
+  visibility  String   @default("public")
+  message     String?
+  beforeValue Json?    @map("before_value")
+  afterValue  Json?    @map("after_value")
+  /** 幂等键：重发/Worker 重跑不产生重复记录 */
+  dedupeKey   String?  @map("dedupe_key")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@unique([taskId, dedupeKey])
+  @@index([ticketType, ticketId, createdAt])
+  @@index([taskId, visibility, createdAt])
+  @@map("ticket_events")
+}
+
+/** 运营负责人配置（单例；只由管理员修改并留痕） */
+model ServiceDeskConfig {
+  id            String   @id @default("default")
+  dutyOwnerId   String?  @map("duty_owner_id")
+  backupOwnerId String?  @map("backup_owner_id")
+  version       Int      @default(1)
+  updatedBy     String?  @map("updated_by")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@map("service_desk_configs")
+}
+
+/** 内部处理时限策略版本：新配置只作用于新开始的处理阶段 */
+model ServiceDeskPolicy {
+  id                  String   @id @default(uuid())
+  priority            String
+  firstResponseMinutes Int     @map("first_response_minutes")
+  updateMinutes       Int      @map("update_minutes")
+  escalationGraceMinutes Int   @map("escalation_grace_minutes")
+  version             Int
+  createdBy           String?  @map("created_by")
+  active              Boolean  @default(true)
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  @@unique([priority, version])
+  @@index([priority, active, version])
+  @@map("service_desk_policies")
+}
+
+/** 负责人/时限配置修改审计（只追加） */
+model ServiceDeskConfigAudit {
+  id        String   @id @default(uuid())
+  entity    String
+  actorId   String   @map("actor_id")
+  reason    String?
+  beforeValue Json?  @map("before_value")
+  afterValue  Json?  @map("after_value")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([entity, createdAt])
+  @@map("service_desk_config_audits")
+}
+
+/** 催办/升级去重：任务+阶段/周期+接收人+级别唯一 */
+model ServiceDeskReminder {
+  id          String   @id @default(uuid())
+  taskId      String   @map("task_id")
+  stage       String
+  level       String
+  cycleKey    String   @map("cycle_key")
+  recipientId String   @map("recipient_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@unique([taskId, stage, level, cycleKey, recipientId])
+  @@index([taskId, createdAt])
+  @@map("service_desk_reminders")
+}
+
+// ==================== W4：AI 用量预算 ====================
+
+model AiUsageDaily {
+  id        String   @id @default(uuid())
+  scope     String
+  subject   String
+  day       String
+  requests  Int      @default(0)
+  tokens    Int      @default(0)
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([scope, subject, day])
+  @@map("ai_usage_daily")
 }

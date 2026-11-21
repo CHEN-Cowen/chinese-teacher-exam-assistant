@@ -13,6 +13,7 @@ import type { ObjectStore } from '../../sourcing/storage/object-store.js';
 import { OBJECT_STORE } from '../../sourcing/storage/storage.tokens.js';
 import { CRAWL_TASK_QUEUE } from '../../sourcing/sourcing.tokens.js';
 import { SourcingMetrics } from '../../sourcing/observability.js';
+import { PrismaCrawlBudgetStore } from '../../sourcing/crawl-budget.store.js';
 import {
   extractJobId,
   type CrawlTaskQueue,
@@ -29,7 +30,7 @@ import type { DocumentParseStatus } from '../parsed-document.js';
 export const EXTRACTION_JOB_VERSION = 'rule-field-extractor@2.0.0';
 
 export interface DocumentParseOutcome {
-  status: 'parsed' | 'pending_manual' | 'unsupported_format' | 'failed' | 'already_parsed';
+  status: 'parsed' | 'pending_manual' | 'unsupported_format' | 'failed' | 'already_parsed' | 'stopped';
   parseRunId?: string;
   blockCount?: number;
   errorSummary?: string;
@@ -45,9 +46,16 @@ export class DocumentParseService {
     @Inject(CRAWL_TASK_QUEUE) private readonly queue: CrawlTaskQueue,
     // 可选指标出口（v7.2 抓取可观测性）：测试缺省不传则完全不产生日志
     @Optional() private readonly metrics?: SourcingMetrics,
+    // 可选试跑预算：按 runId 停止后跳过待执行的解析任务
+    @Optional() private readonly budget?: PrismaCrawlBudgetStore,
   ) {}
 
   async handle(payload: DocumentParsePayload): Promise<DocumentParseOutcome> {
+    // 运行已停止：解析属于本次派生链，跳过且不再投递抽取任务
+    if (payload.runId && this.budget) {
+      const stopped = await this.budget.isStopped(payload.runId);
+      if (stopped) return { status: 'stopped', errorSummary: 'run_stopped' };
+    }
     const snapshot = await this.documentStore.getSnapshot(payload.snapshotId);
     if (!snapshot) {
       return { status: 'failed', errorSummary: 'snapshot_not_found' };
@@ -118,7 +126,7 @@ export class DocumentParseService {
 
       // 成功与待人工都投递业务抽取：pending_manual 会生成诚实的"待人工"提取记录
       if (parsed.blocks.length > 0 || pendingManual) {
-        await this.enqueueExtraction(payload.documentId, snapshot.id);
+        await this.enqueueExtraction(payload.documentId, snapshot.id, payload.runId);
       }
       return {
         status,
@@ -128,12 +136,16 @@ export class DocumentParseService {
     } catch (error) {
       const summary = error instanceof Error ? error.message : String(error);
       const code = error instanceof GuardError ? error.code : 'PARSE_ERROR';
+      // M04/F6：超时与跨度超限属于「文件异常但内容可能合法」→ 转人工，
+      // 记录可理解原因；不伪装成功也不当普通失败静默丢弃。
       const status: DocumentParseStatus =
         code === 'ENCRYPTED_PDF'
           ? 'pending_manual'
-          : code === 'UNKNOWN_FORMAT'
-            ? 'unsupported_format'
-            : 'failed';
+          : code === 'PARSE_TIMEOUT' || code === 'SHEET_SPAN_EXCEEDED'
+            ? 'pending_manual'
+            : code === 'UNKNOWN_FORMAT'
+              ? 'unsupported_format'
+              : 'failed';
       await this.parseStore.completeRun(run.id, {
         status,
         format: 'unknown',
@@ -150,13 +162,17 @@ export class DocumentParseService {
       });
       // 待人工（如加密 PDF）也投递业务抽取：生成诚实的"待人工"提取记录，供人工跟进
       if (status === 'pending_manual') {
-        await this.enqueueExtraction(payload.documentId, snapshot.id);
+        await this.enqueueExtraction(payload.documentId, snapshot.id, payload.runId);
       }
       return { status, parseRunId: run.id, errorSummary: summary };
     }
   }
 
-  private async enqueueExtraction(documentId: string | undefined, snapshotId: string): Promise<void> {
+  private async enqueueExtraction(
+    documentId: string | undefined,
+    snapshotId: string,
+    runId?: string,
+  ): Promise<void> {
     const document = documentId ? await this.documentStore.getDocument(documentId) : null;
     const rootDocumentId = document?.parentDocumentId ?? document?.id ?? documentId;
     const rootSnapshotId = rootDocumentId
@@ -169,6 +185,7 @@ export class DocumentParseService {
         snapshotId: extractionSnapshotId,
         parserVersion: EXTRACTION_JOB_VERSION,
         documentId: rootDocumentId,
+        ...(runId ? { runId } : {}),
       },
       { jobId: extractJobId(extractionSnapshotId, EXTRACTION_JOB_VERSION) },
     );

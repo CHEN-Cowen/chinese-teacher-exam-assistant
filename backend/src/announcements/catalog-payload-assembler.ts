@@ -23,6 +23,12 @@ import type {
 } from '../matching/types.js';
 import { classifyEmploymentNature } from './normalization.js';
 import {
+  describeStructuredMajor,
+  MajorCriterionError,
+  parseStructuredMajor,
+  type StructuredMajorValue,
+} from './major-criterion.js';
+import {
   normalizeCandidateField,
   type CandidateField,
   type ExtractionCandidate,
@@ -269,6 +275,31 @@ function majorRequirement(
   checkedAt: string,
 ): Requirement {
   const text = field.value;
+  let structured: StructuredMajorValue | null;
+  try {
+    structured = parseStructuredMajor(text, path);
+  } catch (e) {
+    if (e instanceof MajorCriterionError) {
+      throw new CatalogPayloadError(e.path, e.message.replace(`${e.path}: `, ''));
+    }
+    throw e;
+  }
+  if (structured) {
+    return {
+      id: `${idPrefix}-major`,
+      dimension: 'major',
+      description: describeStructuredMajor(structured),
+      hard: true,
+      criterion: {
+        kind: 'major',
+        majorNames: structured.names,
+        ...(structured.stages ? { stages: structured.stages } : {}),
+        ...(structured.stageMode ? { stageMode: structured.stageMode } : {}),
+        ...(structured.ambiguous ? { ambiguous: true } : {}),
+      },
+      evidence: toEvidenceAnchor(field, path, idPrefix, checkedAt),
+    };
+  }
   if (/^(不限|专业不限|不限专业)$/.test(text)) {
     return {
       id: `${idPrefix}-major`,
@@ -599,11 +630,19 @@ function buildTimeline(
   const text = regField.value;
   // 形如「2026-10-20 至 2026-11-05 17:00」或「2026年10月20日…2026年11月5日」
   const dates = text.match(/\d{4}[-年]\d{1,2}[-月]\d{1,2}日?/g) ?? [];
-  if (dates.length >= 1) {
-    timeline.registrationStart = normalizeDateIso(dates[0]!);
-  }
   if (dates.length >= 2) {
+    timeline.registrationStart = normalizeDateIso(dates[0]!);
     timeline.registrationEnd = normalizeDateIso(dates[1]!);
+  } else if (dates.length === 1) {
+    // 只有一个明确日期时按上下文分类，不臆造另一端：
+    // 「…至2026年7月16日 / 7月16日截止」是截止日；否则视为开始日。
+    const idx = text.indexOf(dates[0]!);
+    const prev = text.slice(Math.max(0, idx - 4), idx);
+    if (/至|截止/.test(prev)) {
+      timeline.registrationEnd = normalizeDateIso(dates[0]!);
+    } else {
+      timeline.registrationStart = normalizeDateIso(dates[0]!);
+    }
   }
   return timeline;
 }

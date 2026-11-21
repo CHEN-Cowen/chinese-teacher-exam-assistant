@@ -1,23 +1,48 @@
 /**
  * 覆盖 DTO 的用户端展示派生（纯函数）。
  *
- * 关键口径：选择省时只能看到该省「实际监测」的城市与来源；
- * not_started 省份必须显示「暂未收录（待接入）」，不得列出任何城市或来源，
- * 也不得出现「当地没有招聘」类表述。
+ * M01/F1-F2：DTO 为统一服务端覆盖投影（api-types.CoverageDTO）。
+ * 关键口径：
+ * - not_started 省份必须显示「暂未收录（待接入）」，不得列出任何城市或来源，
+ *   也不得出现「当地没有招聘」类表述；
+ * - registered/verified 不代表已有在报岗位；
+ * - 来源状态文案逐字区分登记/核验/近期正常/失败/暂停/不可用；
+ * - caliber.isFallback 时必须把「非实时」说明透传给用户。
  */
 import type {
   CoverageDTO,
   CoverageRegionDTO,
+  CoverageSourceStateDTO,
   CoverageStatusDTO,
   ProvinceScopeDTO,
 } from "./api-types";
 
 export const PROVINCE_STATUS_LABELS: Record<CoverageStatusDTO, string> = {
+  not_started: "暂未收录 · 待接入",
+  registered: "已登记 · 核验中",
+  verified: "已核验 · 检查待运行",
   monitoring_no_open: "监测中 · 当前无在报批次",
   open_batch_exists: "监测中 · 存在在报批次",
   paused: "监测暂停",
-  not_started: "暂未收录 · 待接入",
 };
+
+export const SOURCE_STATE_LABELS: Record<CoverageSourceStateDTO, string> = {
+  registered: "已登记 · 待核验",
+  verified: "已核验 · 检查待运行",
+  recently_healthy: "近期检查正常",
+  check_failed: "检查失败 · 待处理",
+  paused: "已暂停",
+  blocked: "核验不可用",
+};
+
+/** 来源健康点色：recently_healthy 绿；check_failed/blocked 红；其余中性灰 */
+export function sourceStateTone(
+  state: CoverageSourceStateDTO,
+): "ok" | "bad" | "neutral" {
+  if (state === "recently_healthy") return "ok";
+  if (state === "check_failed" || state === "blocked") return "bad";
+  return "neutral";
+}
 
 export interface ProvinceScopeView extends ProvinceScopeDTO {
   statusLabel: string;
@@ -53,6 +78,11 @@ export function buildProvinceScopeViews(
       monitoredRegions,
     };
   });
+}
+
+/** 非实时回退说明：静态快照/数据库不可用时给用户的明示文案；正常为 null */
+export function coverageFallbackNote(coverage: CoverageDTO): string | null {
+  return coverage.caliber?.isFallback ? (coverage.caliber.fallbackNote ?? null) : null;
 }
 
 /**
