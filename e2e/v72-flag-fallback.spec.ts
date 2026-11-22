@@ -4,7 +4,8 @@ import { expect, test, type Page } from "@playwright/test";
  * v7.2 开关关闭回退态浏览器 E2E（跑在 3001，仅 NEXT_PUBLIC_FF_POST_SAVE_NEXT=true）。
  *
  * 覆盖（PRD 8.4 回退策略）：
- * - `/opportunities` 无 [role=tablist]：走 StackedResultSections 旧式堆叠分组；
+ * - `/opportunities?tab=mine` 无 [role=tablist]：走 StackedResultSections 旧式堆叠分组
+ *   （2026-11 起机会页默认是「按地区浏览」，登录端个性化结果固定在 ?tab=mine）；
  * - 页面不白屏：Hero 结论区与堆叠分组可见；
  * - P0 不变量：详情页「补充缺失信息」动作是内联锚点（#supplement），
  *   点击后仍停留在当前详情页，绝不进入 /onboarding，且不存在专用补充路由链接。
@@ -71,7 +72,7 @@ test.describe("v7.2 开关回退态（ff_new_results / ff_targeted_supplement �
   });
 
   test("机会列表走旧式堆叠布局：无 tablist，页面不白屏", async ({ page }) => {
-    await page.goto("/opportunities");
+    await page.goto("/opportunities?tab=mine");
     await page.waitForLoadState("networkidle");
 
     // 回退态：不存在工作台三标签
@@ -86,7 +87,7 @@ test.describe("v7.2 开关回退态（ff_new_results / ff_targeted_supplement �
   test("补充动作绝不进入 /onboarding：内联锚点，点击后仍停留详情页", async ({
     page,
   }) => {
-    await page.goto("/opportunities");
+    await page.goto("/opportunities?tab=mine");
     await page.waitForLoadState("networkidle");
 
     // 展开回退态「补充…后判断」分组，取其中一个岗位详情

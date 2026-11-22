@@ -358,9 +358,9 @@ describe("WorkbenchTabs：键盘导航", () => {
     await act(async () => {
       dispatchKey(tablist, "Home");
     });
-    // 回到 priority 会删除 tab 参数（默认值）
+    // 回到 priority 写回 ?tab=mine（登录端机会页无 tab 参数代表按地区浏览）
     const callArg = replaceMock.mock.calls[0]?.[0] as string;
-    expect(callArg).toBe("/opportunities");
+    expect(callArg).toBe("/opportunities?tab=mine");
   });
 
   it("End 跳到最后一个标签 outOfScope", async () => {
@@ -400,7 +400,7 @@ describe("WorkbenchTabs：URL ?tab= 恢复", () => {
     expect(panels[0]!.id).toBe("workbench-panel-priority");
   });
 
-  it("切换到 supplement 写回 ?tab=supplement；切回 priority 删除 tab 参数", async () => {
+  it("切换到 supplement 写回 ?tab=supplement；切回 priority 写回 ?tab=mine", async () => {
     const wb = makeWorkbench();
     const page = await renderTabs(wb);
     cleanup = page.unmount;

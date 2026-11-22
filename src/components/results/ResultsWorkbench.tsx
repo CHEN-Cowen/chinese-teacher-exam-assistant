@@ -67,6 +67,12 @@ export interface ResultsWorkbenchProps {
   tabs: Record<ResultsTabId, OpportunityCardViewModel[]>;
   /** URL 同步的页面路径：/preview 与 /opportunities 使用一致的 ?tab= 语义 */
   basePath: "/preview" | "/opportunities";
+  /**
+   * 默认标签（priority）写回的 ?tab= 参数值。缺省（/preview）删除 tab 参数；
+   * /opportunities 登录端必须传 "mine"：无 tab 参数在机会页代表「按地区浏览」，
+   * 工作台回到默认标签时若删除参数会被页面级导航语义接管（B2 回归）。
+   */
+  defaultTabParam?: string;
   /** 卡片渲染（由调用方提供 capabilities 差异；DOM 结构由 UnifiedOpportunityCard 统一） */
   renderCard: (
     vm: OpportunityCardViewModel,
@@ -87,6 +93,7 @@ export interface ResultsWorkbenchProps {
 export function ResultsWorkbench({
   tabs,
   basePath,
+  defaultTabParam,
   renderCard,
 }: ResultsWorkbenchProps) {
   const router = useRouter();
@@ -115,14 +122,18 @@ export function ResultsWorkbench({
       if (id === resolveTab(searchParams.get("tab"))) return;
       const params = new URLSearchParams(searchParams.toString());
       if (id === "priority") {
-        params.delete("tab");
+        if (defaultTabParam) {
+          params.set("tab", defaultTabParam);
+        } else {
+          params.delete("tab");
+        }
       } else {
         params.set("tab", id);
       }
       const qs = params.toString();
       router.replace(qs ? `${basePath}?${qs}` : basePath);
     },
-    [router, searchParams, activeTab, basePath],
+    [router, searchParams, activeTab, basePath, defaultTabParam],
   );
 
   const focusTab = (id: ResultsTabId) => {

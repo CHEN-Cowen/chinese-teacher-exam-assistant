@@ -4,7 +4,8 @@ import { expect, test, type Page } from "@playwright/test";
  * v7.2 机会工作台三标签浏览器 E2E（ff_new_results 开启态，跑在 3123）。
  *
  * 覆盖（PRD §7.4 / §7.7）：
- * - /opportunities 默认只渲染「优先机会」数据集（依赖 [role=tablist]）；
+ * - /opportunities?tab=mine 默认只渲染「优先机会」数据集（依赖 [role=tablist]；
+ *   2026-11 起机会页默认是「按地区浏览」，登录端工作台固定在 ?tab=mine）；
  * - 三标签严格互斥：任一时刻只有一个 tabpanel 在 DOM 中；
  * - 每个标签的数量徽标与其面板内岗位卡数量一致（页面叙事与数据同源）；
  * - 键盘 ArrowLeft/ArrowRight 切换并跟随焦点（roving tabindex）；
@@ -93,7 +94,7 @@ test.describe("v7.2 工作台三标签（ff_new_results 开）", () => {
   test("默认只显示「优先机会」，ARIA 与 roving tabindex 正确，徽标数与卡片数一致", async ({
     page,
   }) => {
-    await page.goto("/opportunities");
+    await page.goto("/opportunities?tab=mine");
     await page.waitForLoadState("networkidle");
 
     // 工作台三标签存在
@@ -143,7 +144,7 @@ test.describe("v7.2 工作台三标签（ff_new_results 开）", () => {
   test("依次切换三标签：每次只显示对应数据集，且徽标数与卡片数一致", async ({
     page,
   }) => {
-    await page.goto("/opportunities");
+    await page.goto("/opportunities?tab=mine");
     await page.waitForLoadState("networkidle");
 
     // → 补充后判断
@@ -175,7 +176,7 @@ test.describe("v7.2 工作台三标签（ff_new_results 开）", () => {
   });
 
   test("键盘 ArrowLeft/ArrowRight 切换标签并跟随焦点", async ({ page }) => {
-    await page.goto("/opportunities");
+    await page.goto("/opportunities?tab=mine");
     await page.waitForLoadState("networkidle");
 
     await page.locator("#workbench-tab-priority").focus();
@@ -205,7 +206,7 @@ test.describe("v7.2 工作台三标签（ff_new_results 开）", () => {
   test("切换写回 ?tab=，刷新保持；浏览器后退/前进按 URL 恢复标签", async ({
     page,
   }) => {
-    await page.goto("/opportunities");
+    await page.goto("/opportunities?tab=mine");
     await page.waitForLoadState("networkidle");
 
     // 点击切换到「偏好范围外」→ URL 带 ?tab=outOfScope
@@ -222,7 +223,7 @@ test.describe("v7.2 工作台三标签（ff_new_results 开）", () => {
     await expect(page.locator("#workbench-panel-outOfScope")).toBeVisible();
 
     // 浏览器后退/前进跨 URL 条目 → 标签状态随 URL 恢复
-    await page.goto("/opportunities");
+    await page.goto("/opportunities?tab=mine");
     await page.waitForLoadState("networkidle");
     await expect(page.locator("#workbench-tab-priority")).toHaveAttribute(
       "aria-selected",
@@ -236,7 +237,7 @@ test.describe("v7.2 工作台三标签（ff_new_results 开）", () => {
     );
 
     await page.goBack();
-    await expect(page).toHaveURL(/\/opportunities$/);
+    await expect(page).toHaveURL(/[?&]tab=mine/);
     await expect(page.locator("#workbench-tab-priority")).toHaveAttribute(
       "aria-selected",
       "true",

@@ -197,12 +197,27 @@ function OpportunitiesInner() {
   const searchParams = useSearchParams();
   const tab = searchParams.get("tab");
 
-  // 默认「按地区浏览」与「往年参考」都不依赖画像；只有 ?tab=mine 走个性化评估
-  if (tab !== "mine") {
+  // 「按我的条件」范围 = mine + 工作台内部三标签（ResultsWorkbench 写回
+  // ?tab=priority/supplement/outOfScope，必须留在登录端工作台，不能落回地区浏览）；
+  // 默认（无参数）与 ?tab=history 都不依赖画像。
+  const isMineScope =
+    tab === "mine" ||
+    tab === "priority" ||
+    tab === "supplement" ||
+    tab === "outOfScope";
+  if (tab !== "history" && !isMineScope) {
     return (
       <div className="mx-auto max-w-[1440px] space-y-5 px-4 pb-2 sm:px-5 lg:px-6">
-        <OpportunityTabs active={tab === "history" ? "history" : "region"} />
-        {tab === "history" ? <HistoryListView /> : <RegionNoticeBrowser />}
+        <OpportunityTabs active="region" />
+        <RegionNoticeBrowser />
+      </div>
+    );
+  }
+  if (tab === "history") {
+    return (
+      <div className="mx-auto max-w-[1440px] space-y-5 px-4 pb-2 sm:px-5 lg:px-6">
+        <OpportunityTabs active="history" />
+        <HistoryListView />
       </div>
     );
   }

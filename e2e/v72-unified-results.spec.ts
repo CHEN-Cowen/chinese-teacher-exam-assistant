@@ -257,7 +257,7 @@ test.describe("v7.2 统一结果工作台：/opportunities 登录端", () => {
   test("登录端与访客端同一套岗位卡 DOM 结构", async ({ page }) => {
     await seedGuestProfile(page);
     await demoLogin(page);
-    await page.goto("/opportunities");
+    await page.goto("/opportunities?tab=mine");
     await page.waitForLoadState("networkidle");
 
     // 三标签 + 统一岗位卡七层结构（与 /preview 同一套断言）

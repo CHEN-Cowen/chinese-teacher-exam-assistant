@@ -50,6 +50,7 @@ export function WorkbenchTabs({
     <ResultsWorkbench
       tabs={tabs}
       basePath="/opportunities"
+      defaultTabParam="mine"
       renderCard={(vm, variant) => {
         const unit = unitById.get(vm.id);
         if (!unit) return null;
