@@ -49,7 +49,7 @@ const NO_PROFILE_COPY: Record<string, { title: string; description: string }> = 
     description: "补全剩余信息后，机会列表会立即更新。",
   },
   subject_not_open: {
-    title: "当前只开放语文学科的机会匹配",
+    title: "暂无法匹配当前意向学科",
     description:
       "你的意向学科尚未开放。可以先登记意向，开放后会优先评估。",
   },
