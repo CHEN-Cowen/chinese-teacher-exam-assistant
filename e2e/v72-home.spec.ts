@@ -6,7 +6,7 @@ import { expect, test } from "@playwright/test";
  * 覆盖（2026-11 UI 大改版定稿文案）：
  * - 首屏只有一个高强调主按钮「免费查看我的机会」（唯一 data-testid=start-onboarding）；
  * - 主标题为「能报哪些教招岗位，一眼看清」，顶部「登录」保持次级入口；
- * - 右侧机会页界面截图有明确「示意内容」图注（aria-label 含「示意」）；
+ * - 右侧机会页界面预览由真实 DOM 渲染（非位图），图注标注「示意内容」（aria-label 含「示意」）；
  * - 375px 移动端 DOM 顺序：主按钮在界面预览之前；
  * - 点击主按钮进入 /onboarding 地区填写，且过程中无未捕获页面错误；
  * - 全开关构建不得意外渲染旧首页（旧结果示例卡是旧首页独有结构标记）。
@@ -45,7 +45,7 @@ test.describe("价值首页（ff_new_home 开）", () => {
     await expect(page.getByTestId("result-example-card")).toHaveCount(0);
   });
 
-  test("机会页界面截图明确标注示意内容", async ({ page }) => {
+  test("机会页界面预览明确标注示意内容", async ({ page }) => {
     await page.goto("/");
     await page.waitForLoadState("networkidle");
 
@@ -54,10 +54,16 @@ test.describe("价值首页（ff_new_home 开）", () => {
     // 文字化示意标识：aria-label 含「示意」，不只靠颜色
     await expect(preview).toHaveAttribute("aria-label", /示意/);
     await expect(preview.getByText("机会页界面预览 · 示意内容")).toBeVisible();
-    // 截图本体（本地 public 静态资源）真实加载
-    const shot = preview.locator("img");
-    await expect(shot).toBeVisible();
-    await expect(shot).toHaveAttribute("src", "/images/hero-opportunities.png");
+    // 预览由真实 DOM 渲染（不用位图，高分屏不发虚）
+    await expect(preview.locator("img")).toHaveCount(0);
+    const mock = page.getByTestId("result-preview-mock");
+    await expect(mock).toBeVisible();
+    await expect(mock).toHaveAttribute("role", "img");
+    await expect(mock).toHaveAttribute("aria-label", /机会页界面预览/);
+    // 示意数据可读：筛选、条数、报名状态
+    await expect(preview.getByText("按地区浏览")).toBeVisible();
+    await expect(preview.getByText("全部省份")).toBeVisible();
+    await expect(preview.getByText("报名中").first()).toBeVisible();
   });
 
   test("375px 移动端：主按钮在结果预览之前（DOM 顺序）", async ({ page }) => {

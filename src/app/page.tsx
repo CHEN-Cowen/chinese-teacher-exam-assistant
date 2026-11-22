@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { BrandMark } from "@/components/layout/BrandMark";
+import { HeroOpportunityPreview } from "@/components/home/HeroOpportunityPreview";
 import { LoadingPage } from "@/components/ui/Loading";
 import { useCurrentUser } from "@/lib/auth";
 import { guestSessionService } from "@/lib/guest/guestSession";
@@ -19,11 +20,11 @@ import { track } from "@/lib/analytics/eventService";
  * - 其余访客 → 价值首页（本页内容，无需登录）。
  *
  * 首页结构（与 Ardot 设计稿一致）：
- * Header / Hero（徽章 + 主张 + 双 CTA + 机会页真实界面截图）/ 三步运作 /
+ * Header / Hero（徽章 + 主张 + 双 CTA + 机会页界面预览）/ 三步运作 /
  * 官方数据信任带 / 功能网格 / FAQ / 转化带 / Footer。
- * 约束：不引入远程字体与图标（国内网络基线）；Hero 截图为机会页界面示意
- * （图中标题与日期不含年份，避免首页长期挂着失效信息），图注标注「示意内容」；
- * 页脚保留资格免责声明；首屏只有一个高强调主 CTA。
+ * 约束：不引入远程字体与图标（国内网络基线）；Hero 右侧是真实 DOM 复刻的
+ * 机会页界面预览（非截图，任意分辨率都清晰），数据为不含年份的示意内容，
+ * 图注标注「示意内容」；页脚保留资格免责声明；首屏只有一个高强调主 CTA。
  */
 
 const NAV_LINKS = [
@@ -210,12 +211,9 @@ export default function Home() {
                   type="button"
                   onClick={handleStart}
                   data-testid="start-onboarding"
-                  className="inline-flex h-13 min-w-44 items-center justify-center gap-2 rounded-[10px] bg-brand px-8 text-base font-semibold text-on-dark shadow-[0_6px_16px_rgba(66,92,199,0.30)] transition-colors hover:bg-brand-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
+                  className="inline-flex h-13 min-w-44 items-center justify-center rounded-[10px] bg-brand px-8 text-base font-semibold text-on-dark shadow-[0_6px_16px_rgba(66,92,199,0.30)] transition-colors hover:bg-brand-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
                 >
                   免费查看我的机会
-                  <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M4 10h12m-4-4 4 4-4 4" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
                 </button>
                 <Link
                   href="/opportunities"
@@ -241,23 +239,15 @@ export default function Home() {
               </ul>
             </div>
 
-            {/* 右：机会页界面截图（与设计稿 HeroVisual 一致；为免首页带时效性，
-                图中标题与日期均为不含年份的示意内容） */}
+            {/* 右：机会页界面预览（真实 DOM 复刻，非位图，任意分辨率都清晰；
+                标题与报名日期均为不含年份的示意内容，图注标注「示意内容」） */}
             <aside
               id="result-example"
               aria-label="机会页界面预览，内容为示意"
               data-testid="result-preview"
             >
-              <figure className="overflow-hidden rounded-2xl border border-line bg-surface p-2 shadow-2 md:p-2.5">
-                {/* eslint-disable-next-line @next/next/no-img-element -- 静态截图按展示尺寸导出 2x 位图；部署镜像未装 sharp，不走 next/image 运行时优化 */}
-                <img
-                  src="/images/hero-opportunities.png"
-                  alt="机会页界面预览：选择省市区后按地区浏览招聘公告，每条公告标注报名状态与报名时间"
-                  width={1228}
-                  height={1140}
-                  fetchPriority="high"
-                  className="w-full rounded-xl border border-line"
-                />
+              <figure className="rounded-2xl border border-line bg-surface p-2 shadow-2 md:p-2.5">
+                <HeroOpportunityPreview />
                 <figcaption className="px-2 pb-0.5 pt-3 text-center text-xs text-ink-muted">
                   机会页界面预览 · 示意内容
                 </figcaption>

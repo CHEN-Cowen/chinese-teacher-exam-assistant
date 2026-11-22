@@ -105,32 +105,40 @@ describe("价值首页：内容与结构", () => {
     // 首屏只有一个高强调主按钮（data-testid 唯一）
     expect((html.match(/data-testid="start-onboarding"/g) ?? []).length).toBe(1);
     expect(html).toContain("免费查看我的机会");
+    // 主 CTA 纯文字，不放箭头图标
+    const cta = page.container.querySelector('[data-testid="start-onboarding"]');
+    expect(cta?.querySelector("svg")).toBeNull();
     // 徽章不含具体覆盖数字（数字过时会失去可信度）
     expect(html).toContain("官方发布渠道同步收录 · 持续更新");
     expect(html).not.toContain("已覆盖");
   });
 
-  it("Hero 右侧为机会页界面截图，图注明确标注示意内容", async () => {
+  it("Hero 右侧为 DOM 复刻的机会页界面预览，图注标注示意内容", async () => {
     const page = await renderHome();
     cleanup = page.unmount;
     const html = page.html();
     const aside = page.container.querySelector('[data-testid="result-preview"]');
     expect(aside).not.toBeNull();
     expect(aside?.getAttribute("id")).toBe("result-example");
-    // 使用仓库内截图（public 静态资源），不引用远程图片
-    const img = aside?.querySelector("img");
-    expect(img?.getAttribute("src")).toBe("/images/hero-opportunities.png");
-    expect(img?.getAttribute("alt")).toContain("机会页界面预览");
-    // 图中岗位与日期为示意内容（不含年份，避免首页长期失效）
+
+    // 不再用位图：预览必须由真实元素渲染，避免高分屏发虚
+    expect(aside?.querySelector("img")).toBeNull();
+    const mock = aside?.querySelector('[data-testid="result-preview-mock"]');
+    expect(mock).not.toBeNull();
+    // 整块作为一张示意图对读屏可访问，内部假数据不进入可访问性树
+    expect(mock?.getAttribute("role")).toBe("img");
+    expect(mock?.getAttribute("aria-label")).toContain("机会页界面预览");
+    expect(mock?.querySelector('[aria-hidden="true"]')).not.toBeNull();
+    // 示意数据：标签页 + 筛选 + 公告条数 + 报名状态
+    expect(html).toContain("按地区浏览");
+    expect(html).toContain("全部省份");
+    expect(html).toContain("共");
+    expect(html).toContain("条公告");
+    expect(html).toContain("报名中");
+    // 图注明确标注示意，且示意数据不含年份（首页长期有效）
     expect(html).toContain("示意内容");
     expect(html).toContain("机会页界面预览");
-  });
-
-  it("Hero 截图资源随仓库提供（存在且非空）", async () => {
-    const { statSync } = await import("node:fs");
-    const path = await import("node:path");
-    const file = path.resolve(__dirname, "../../public/images/hero-opportunities.png");
-    expect(statSync(file).size).toBeGreaterThan(10_000);
+    expect(mock?.textContent ?? "").not.toMatch(/20\d{2}\s*年/);
   });
 
   it("三步运作区块完整呈现", async () => {
