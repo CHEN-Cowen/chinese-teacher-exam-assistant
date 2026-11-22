@@ -26,7 +26,7 @@ import { track } from "@/lib/analytics/eventService";
  */
 
 const NAV_LINKS = [
-  { href: "/recruitment", label: "找机会" },
+  { href: "/opportunities", label: "找机会" },
   { href: "/learn", label: "怎么运作" },
   { href: "/policy", label: "数据来源" },
 ] as const;
@@ -119,7 +119,7 @@ const FAQ_ITEMS = [
 ] as const;
 
 const FOOTER_COLUMNS = [
-  { title: "产品", links: [{ label: "找机会", href: "/recruitment" }, { label: "备考资料", href: "/study" }] },
+  { title: "产品", links: [{ label: "找机会", href: "/opportunities" }, { label: "备考资料", href: "/study" }] },
   { title: "支持", links: [{ label: "帮助中心", href: "/learn" }, { label: "公告纠错", href: "/me" }] },
   { title: "关于", links: [{ label: "数据来源说明", href: "/policy" }, { label: "隐私政策", href: "/policy" }] },
 ] as const;
@@ -217,7 +217,7 @@ export default function Home() {
                   </svg>
                 </button>
                 <Link
-                  href="/recruitment"
+                  href="/opportunities"
                   className="inline-flex h-13 items-center justify-center rounded-[10px] border border-line bg-surface px-8 text-base font-medium text-ink transition-colors hover:bg-surface-2"
                 >
                   浏览最近收录的公告
@@ -229,7 +229,7 @@ export default function Home() {
                 aria-label="信任说明"
                 data-testid="home-trust-chips"
               >
-                {["真实公告", "逐条可核对", "不确定就明确提示"].map((item) => (
+                {["支持全学科教师招聘", "真实公告", "逐条可核对", "不确定就明确提示"].map((item) => (
                   <li
                     key={item}
                     className="inline-flex h-7 items-center rounded-full border border-line bg-surface px-3 text-[13px] text-ink-muted"

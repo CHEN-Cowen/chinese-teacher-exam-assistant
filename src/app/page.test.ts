@@ -342,8 +342,13 @@ describe("价值首页：品牌保持一致", () => {
     const page = await renderHome();
     cleanup = page.unmount;
     const html = page.html();
-    // 新旧两套首页并存的结构标记都不应出现 result-example-card（旧首页独有）
+    // 新首页唯一结果卡结构标记，旧首页 result-example-card 不应出现
     expect(html).not.toContain('data-testid="result-example-card"');
     expect(html).toContain('data-testid="result-preview"');
+    // 全学科澄清与覆盖列表删除（合并自 codex 远端 88399a4 的语义守卫）
+    expect(html).toContain("支持全学科教师招聘");
+    expect(html).not.toContain("当前只开放语文学科");
+    expect(html).not.toContain("服务覆盖范围");
+    expect(html).not.toContain('href="#coverage"');
   });
 });

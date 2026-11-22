@@ -1,8 +1,10 @@
 // 快速校验郑州 fixture
+// eslint-disable-next-line @typescript-eslint/no-require-imports -- CommonJS probe.
 const fs = require('fs');
 const list = fs.readFileSync('../tests/fixtures/golden-sources/zhengzhou-education/public-list-1.html', 'utf8');
 
 // 看 ul#pageCont 里的每个 li 的第一个 span 文本
+// eslint-disable-next-line @typescript-eslint/no-require-imports -- CommonJS probe.
 const cheerio = require('cheerio');
 const $ = cheerio.load(list);
 console.log('=== li 数量 ===', $('ul#pageCont > li').length);
