@@ -19,6 +19,7 @@ import {
 } from "@/lib/payments/api";
 import { formatYuan, threeTimesMonthlyCents } from "@/lib/membership/plans";
 import { cn } from "@/lib/utils";
+import { PageHeader } from "@/components/layout/PageHeader";
 
 /**
  * 价格页（M11 / 整体方案 11.5、11.6）：付款前看清楚。
@@ -101,15 +102,7 @@ export default function PricingPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 pb-4">
-      <header>
-        <p className="text-xs font-semibold tracking-wide text-brand">价格</p>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">
-          会员套餐
-        </h1>
-        <p className="mt-1 text-sm text-ink-muted">
-          一次付费、限期使用，手动续购，不自动扣款
-        </p>
-      </header>
+      <PageHeader title="会员套餐" />
 
       {data && !data.salesOpen && (
         <Callout variant="note" title="售卖暂未开通">

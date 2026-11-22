@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { AUTH_MODE, useCurrentUser } from "@/lib/auth";
 import { buildActiveProfile } from "@/lib/profile/activeProfile";
 import { profileApi } from "@/lib/profile/profileApi";
@@ -331,21 +332,15 @@ export default function EducationPage() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl space-y-5 px-4 pb-10 pt-5 sm:px-6">
-      <div>
+    <div className="mx-auto max-w-5xl space-y-5 px-4 pb-10 pt-5 sm:px-6">
+      <div className="space-y-2">
         <Link
           href="/me"
           className="inline-flex min-h-10 items-center text-sm text-ink-muted hover:text-ink"
         >
           ‹ 返回我的
         </Link>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">
-          教育经历
-        </h1>
-        <p className="mt-1 text-sm leading-6 text-ink-muted">
-          按学历阶段分别填写毕业证专业。公告要求本科专业或要求多个阶段同时满足时，
-          系统才能说明采用了哪一段经历。
-        </p>
+        <PageHeader title="教育经历" />
       </div>
 
       {loadFailed && (
