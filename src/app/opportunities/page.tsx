@@ -19,6 +19,7 @@ import { buildNoResultPanel } from "@/lib/opportunities/no-result";
 import { opportunitiesApi } from "@/lib/opportunities/api";
 import { OpportunityListItem } from "@/components/opportunities/OpportunityListItem";
 import { HistoryListView } from "@/components/history/HistoryListView";
+import { RegionNoticeBrowser } from "@/components/opportunities/RegionNoticeBrowser";
 import { PreferencePreviewCard } from "@/components/opportunities/PreferencePreviewCard";
 import { MigrationConflictBanner } from "@/components/opportunities/MigrationConflictBanner";
 import type { SupplementFacts } from "@/lib/profile/activeProfile";
@@ -57,8 +58,9 @@ const NO_PROFILE_COPY: Record<string, { title: string; description: string }> = 
 };
 
 /**
- * 机会页（2026-11 合并「当年招聘 + 往年参考」）：
- * - 默认「正在报名」= 按画像条件评估的当年机会；
+ * 机会页（2026-11 合并「当年招聘 + 往年参考」，B2 起默认按地区浏览）：
+ * - 默认 = 按地区浏览（省→市→区县级联 + 关键词，无需画像，访客可读）；
+ * - ?tab=mine = 按我的条件（画像评估的个性化结果）；
  * - ?tab=history = 往年参考列表（与旧 /history 兜底页共用 HistoryListView）；
  * - useSearchParams 需要 Suspense 边界（生产 prerender 约束）。
  */
@@ -70,23 +72,32 @@ export default function OpportunitiesPage() {
   );
 }
 
-/** 机会页页内标签：正在报名 / 往年参考 / 浏览公告（公告广场） */
-function OpportunityTabs({ active }: { active: "current" | "history" }) {
+/** 机会页页内标签：按地区浏览（默认） / 按我的条件 / 往年参考 */
+function OpportunityTabs({
+  active,
+}: {
+  active: "region" | "mine" | "history";
+}) {
   const tabClass = "rounded-lg px-4 py-2";
   const idleClass = "border border-line text-ink hover:bg-surface";
+  const items: { key: "region" | "mine" | "history"; label: string; href: string }[] = [
+    { key: "region", label: "按地区浏览", href: "/opportunities" },
+    { key: "mine", label: "按我的条件", href: "/opportunities?tab=mine" },
+    { key: "history", label: "往年参考", href: "/opportunities?tab=history" },
+  ];
   return (
     <nav aria-label="机会浏览方式" className="flex flex-wrap gap-2 text-sm font-semibold">
-      {active === "current" ? (
-        <span aria-current="page" className={`${tabClass} bg-brand-soft text-brand`}>正在报名</span>
-      ) : (
-        <Link href="/opportunities" className={`${tabClass} ${idleClass}`}>正在报名</Link>
+      {items.map((item) =>
+        item.key === active ? (
+          <span key={item.key} aria-current="page" className={`${tabClass} bg-brand-soft text-brand`}>
+            {item.label}
+          </span>
+        ) : (
+          <Link key={item.key} href={item.href} className={`${tabClass} ${idleClass}`}>
+            {item.label}
+          </Link>
+        ),
       )}
-      {active === "history" ? (
-        <span aria-current="page" className={`${tabClass} bg-brand-soft text-brand`}>往年参考</span>
-      ) : (
-        <Link href="/opportunities?tab=history" className={`${tabClass} ${idleClass}`}>往年参考</Link>
-      )}
-      <Link href="/recruitment" className={`${tabClass} ${idleClass}`}>浏览公告</Link>
     </nav>
   );
 }
@@ -184,13 +195,14 @@ function OpportunitiesInner() {
   }, [state.status]);
 
   const searchParams = useSearchParams();
-  const isHistoryTab = searchParams.get("tab") === "history";
+  const tab = searchParams.get("tab");
 
-  if (isHistoryTab) {
+  // 默认「按地区浏览」与「往年参考」都不依赖画像；只有 ?tab=mine 走个性化评估
+  if (tab !== "mine") {
     return (
       <div className="mx-auto max-w-[1440px] space-y-5 px-4 pb-2 sm:px-5 lg:px-6">
-        <OpportunityTabs active="history" />
-        <HistoryListView />
+        <OpportunityTabs active={tab === "history" ? "history" : "region"} />
+        {tab === "history" ? <HistoryListView /> : <RegionNoticeBrowser />}
       </div>
     );
   }
@@ -207,8 +219,8 @@ function OpportunitiesInner() {
           actionLabel="填写报考信息"
           actionHref="/onboarding?from=opportunities"
         />
-        <Link href="/recruitment" className="mt-4 inline-flex text-sm font-semibold text-brand hover:underline">
-          先浏览招聘公告
+        <Link href="/opportunities" className="mt-4 inline-flex text-sm font-semibold text-brand hover:underline">
+          先按地区浏览公告
         </Link>
       </div>
     );
@@ -293,7 +305,7 @@ function OpportunitiesInner() {
 
   return (
     <div className="mx-auto max-w-[1440px] space-y-7 px-4 pb-2 sm:px-5 lg:px-6">
-      <OpportunityTabs active="current" />
+      <OpportunityTabs active="mine" />
       {actionFeedback && (
         <StatusMessageRegion>
           <StatusMessage

@@ -43,6 +43,7 @@ import type {
   OpportunityCorrectionDTO,
   OpportunityCorrectionDetailDTO,
   OrganizationFollowDTO,
+  PublicNoticeDTO,
   StudyTargetRole,
   SubscriptionDTO,
   SubscriptionSyncDTO,
@@ -422,6 +423,41 @@ function supplementTicket(
 }
 
 export const demoOpportunitiesApi = {
+  /**
+   * 演示环境公开公告摘要（B2 按地区浏览）：
+   * 用滚动时间线的种子公告派生，口径与后端 listPublicNotices 一致
+   * （active + 最新发布排序 + 上限 100 条）；报名状态以 now 为基准。
+   */
+  async listPublicNotices(): Promise<PublicNoticeDTO[]> {
+    const now = new Date();
+    const catalog = getRollingDemoAnnouncements(now);
+    return catalog
+      .filter((item) => item.lifecycle === "active")
+      .sort((a, b) => b.firstPublishedAt.localeCompare(a.firstPublishedAt))
+      .slice(0, 100)
+      .map((item) => ({
+        id: item.id,
+        title: item.title,
+        publisher: item.publisher,
+        province: item.region.province,
+        region: {
+          code: item.region.code,
+          province: item.region.province,
+          city: item.region.city ?? null,
+          district: item.region.district ?? null,
+        },
+        subjects: item.subjectScope,
+        stages: [
+          ...new Set(currentVersion(item)?.units.map((unit) => unit.stage) ?? []),
+        ],
+        checkedAt: now.toISOString(),
+        publishedAt: item.firstPublishedAt,
+        officialUrl: item.officialUrl,
+        registrationStart: currentVersion(item)?.timeline.registrationStart ?? null,
+        registrationEnd: currentVersion(item)?.timeline.registrationEnd ?? null,
+      }));
+  },
+
   /** 演示环境订阅：localStorage 持久化；未开启过返回 null（与后端口径一致） */
   async getSubscription(): Promise<SubscriptionDTO | null> {
     try {

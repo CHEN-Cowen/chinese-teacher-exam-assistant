@@ -711,3 +711,33 @@ export interface OrganizationFollowDTO {
   regionCode: string;
   followedAt: string;
 }
+
+// ==================== 公开公告摘要（B2 按地区浏览） ====================
+
+/** 公告地区（结构化省市区，供前端省→市→区县级联过滤） */
+export interface PublicNoticeRegionDTO {
+  code: string;
+  province: string;
+  city: string | null;
+  district: string | null;
+}
+
+/**
+ * 公开公告摘要：无需画像、访客可读（GET /opportunities/public-notices）。
+ * 报名状态以 checkedAt 为基准计算（demo 模式为种子快照时点）。
+ */
+export interface PublicNoticeDTO {
+  id: string;
+  title: string;
+  publisher: string;
+  /** 兼容字段，等于 region.province */
+  province: string;
+  region: PublicNoticeRegionDTO;
+  subjects: string[];
+  stages: string[];
+  checkedAt: string;
+  publishedAt: string;
+  officialUrl: string;
+  registrationStart: string | null;
+  registrationEnd: string | null;
+}

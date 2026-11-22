@@ -4,7 +4,7 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   MAJOR_ALIAS_VERSION,
   MATCH_RULE_VERSION,
@@ -13,6 +13,7 @@ import {
 import { CATALOG_VERSION } from '../matching/catalog.js';
 import { COVERAGE_PROJECTION_VERSION } from './coverage-projection.js';
 import {
+  REAL_ANNOUNCEMENTS,
   REAL_ANNOUNCEMENT_IDS,
   REAL_CATALOG_VERSION,
 } from '../matching/real-catalog.js';
@@ -496,6 +497,42 @@ const fakeScheduleService = {
 } as never;
 
 describe('OpportunitiesService：匹配响应', () => {
+  it('公开公告只返回真实且已审核的有效公告摘要', async () => {
+    const fake = createFakePrisma();
+    const approved = {
+      ...REAL_ANNOUNCEMENTS[0],
+      lifecycle: 'active',
+      dataset: 'real',
+      reviewStatus: 'human_reviewed',
+      sourceHealth: undefined,
+    } satisfies RecruitmentAnnouncement;
+    const repository = {
+      listPublished: async () => [
+        approved,
+        { ...approved, id: 'pending', reviewStatus: 'ai_reviewed_pending' },
+        { ...approved, id: 'demo', dataset: 'demo' },
+        { ...approved, id: 'withdrawn', lifecycle: 'withdrawn' },
+      ],
+    };
+    vi.stubEnv('FF_DB_CATALOG', 'true');
+    try {
+      const service = new OpportunitiesService(
+        fake.prisma, fakeProfileService, fakeScheduleService, repository as never,
+      );
+      const notices = await service.listPublicNotices();
+      expect(notices.map((notice) => notice.id)).toEqual([approved.id]);
+      expect(notices[0]).not.toHaveProperty('versions');
+      expect(notices[0]).not.toHaveProperty('reviewedBy');
+      // B2 省市区级联浏览：摘要携带结构化地区（code/province/city/district）
+      expect(notices[0].region).toBeDefined();
+      expect(notices[0].region.code).toBe(approved.region.code);
+      expect(notices[0].region.province).toBe(approved.region.province);
+      expect('city' in notices[0].region).toBe(true);
+      expect('district' in notices[0].region).toBe(true);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
   it('七场景演示数据全部出现且每条结论携带规则版本、公告版本与证据锚点', async () => {
     const fake = createFakePrisma();
     const service = new OpportunitiesService(fake.prisma, fakeProfileService, fakeScheduleService);

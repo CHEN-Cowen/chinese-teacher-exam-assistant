@@ -21,6 +21,7 @@ import type {
   OpportunityCorrectionDTO,
   OpportunityCorrectionDetailDTO,
   OrganizationFollowDTO,
+  PublicNoticeDTO,
   StaffAnnouncementSubmissionDTO,
   StaffOpportunityCorrectionDTO,
   StudyTargetRole,
@@ -53,6 +54,12 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 export const opportunitiesApi = {
+  /** 公开公告摘要（B2 按地区浏览：无需画像，访客可读） */
+  listPublicNotices(): Promise<PublicNoticeDTO[]> {
+    if (AUTH_MODE === "demo") return demoOpportunitiesApi.listPublicNotices();
+    return request<PublicNoticeDTO[]>("/public-notices");
+  },
+
   /** 当前用户的新机会订阅（v7.1 M6；未开启过返回 null） */
   getSubscription(): Promise<SubscriptionDTO | null> {
     if (AUTH_MODE === "demo") return demoOpportunitiesApi.getSubscription();
