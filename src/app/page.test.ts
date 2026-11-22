@@ -2,7 +2,7 @@
  * 价值首页（2026-11 UI 大改版）渲染与恢复跳转测试。
  *
  * 无 @testing-library 依赖（与 BottomNav.test.ts 同约定，用 createRoot + act）：
- * - 内容断言：主标题与徽章、首屏唯一主按钮、结果示例卡标注、三步/信任带/功能网格/FAQ；
+ * - 内容断言：主标题与徽章、首屏唯一主按钮、机会页真实界面截图与图注、三步/信任带/功能网格/FAQ；
  * - 恢复跳转：mock useCurrentUser / guestSessionService，断言 router.replace 不回归；
  * - 主按钮行为：模拟点击，断言埋点 home_start_match_clicked 与 /onboarding 跳转。
  */
@@ -110,22 +110,27 @@ describe("价值首页：内容与结构", () => {
     expect(html).not.toContain("已覆盖");
   });
 
-  it("结果示例卡有锚点标识，明确标注非真实岗位", async () => {
+  it("Hero 右侧为机会页界面截图，图注明确标注示意内容", async () => {
     const page = await renderHome();
     cleanup = page.unmount;
     const html = page.html();
-    expect(html).toContain('id="result-example"');
-    expect(html).toContain('aria-label="结果预览，示例非真实岗位"');
-    // 页面级示例标识只出现一次
-    expect((html.match(/结果预览 · 示例/g) ?? []).length).toBe(1);
-    // 示例卡内容：三类标签 + 一个简化岗位
-    expect(html).toContain("优先机会");
-    expect(html).toContain("补充后判断");
-    expect(html).toContain("偏好范围外");
-    expect(html).toContain("杭州某公办初中 · 语文教师");
-    expect(html).toContain("初步符合");
-    // 提供查看示例的入口
-    expect(html).toContain("查看示例");
+    const aside = page.container.querySelector('[data-testid="result-preview"]');
+    expect(aside).not.toBeNull();
+    expect(aside?.getAttribute("id")).toBe("result-example");
+    // 使用仓库内截图（public 静态资源），不引用远程图片
+    const img = aside?.querySelector("img");
+    expect(img?.getAttribute("src")).toBe("/images/hero-opportunities.png");
+    expect(img?.getAttribute("alt")).toContain("机会页界面预览");
+    // 图中岗位与日期为示意内容（不含年份，避免首页长期失效）
+    expect(html).toContain("示意内容");
+    expect(html).toContain("机会页界面预览");
+  });
+
+  it("Hero 截图资源随仓库提供（存在且非空）", async () => {
+    const { statSync } = await import("node:fs");
+    const path = await import("node:path");
+    const file = path.resolve(__dirname, "../../public/images/hero-opportunities.png");
+    expect(statSync(file).size).toBeGreaterThan(10_000);
   });
 
   it("三步运作区块完整呈现", async () => {
@@ -296,8 +301,8 @@ describe("价值首页：无障碍与依赖", () => {
     const page = await renderHome();
     cleanup = page.unmount;
     const aside = page.container.querySelector('[data-testid="result-preview"]');
-    expect(aside?.getAttribute("aria-label")).toContain("示例");
-    expect(aside?.getAttribute("aria-label")).toContain("非真实岗位");
+    expect(aside?.getAttribute("aria-label")).toContain("机会页界面预览");
+    expect(aside?.getAttribute("aria-label")).toContain("示意");
   });
 
   it("不加载远程字体和图标（HTML 中无 http(s) 外链）", async () => {
@@ -311,7 +316,7 @@ describe("价值首页：无障碍与依赖", () => {
     // 不出现 @import 或 @font-face
     expect(html).not.toMatch(/@font-face/i);
     expect(html).not.toMatch(/@import/i);
-    // SVG 使用 inline viewBox，不引用外部图片
+    // 本地截图走 public 静态资源，不引用远程图片
     expect(html).not.toMatch(/<img[^>]+src="https?:\/\//i);
   });
 

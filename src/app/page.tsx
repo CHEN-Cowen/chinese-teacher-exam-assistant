@@ -19,9 +19,10 @@ import { track } from "@/lib/analytics/eventService";
  * - 其余访客 → 价值首页（本页内容，无需登录）。
  *
  * 首页结构（与 Ardot 设计稿一致）：
- * Header / Hero（徽章 + 主张 + 双 CTA + 结果示例卡）/ 三步运作 /
+ * Header / Hero（徽章 + 主张 + 双 CTA + 机会页真实界面截图）/ 三步运作 /
  * 官方数据信任带 / 功能网格 / FAQ / 转化带 / Footer。
- * 约束：不引入远程字体与图标（国内网络基线）；示例卡必须标注「非真实岗位」；
+ * 约束：不引入远程字体与图标（国内网络基线）；Hero 截图为机会页界面示意
+ * （图中标题与日期不含年份，避免首页长期挂着失效信息），图注标注「示意内容」；
  * 页脚保留资格免责声明；首屏只有一个高强调主 CTA。
  */
 
@@ -240,57 +241,27 @@ export default function Home() {
               </ul>
             </div>
 
-            {/* 右：结果示例卡（示例数据，标注非真实岗位） */}
+            {/* 右：机会页界面截图（与设计稿 HeroVisual 一致；为免首页带时效性，
+                图中标题与日期均为不含年份的示意内容） */}
             <aside
               id="result-example"
-              aria-label="结果预览，示例非真实岗位"
+              aria-label="机会页界面预览，内容为示意"
               data-testid="result-preview"
-              className="rounded-2xl border border-line bg-surface p-5 shadow-2 md:p-6"
             >
-              <div className="flex items-center justify-between text-xs text-ink-muted">
-                <span className="font-semibold">结果预览 · 示例</span>
-                <span>刚刚核对</span>
-              </div>
-
-              <div className="mt-4 grid grid-cols-3 gap-2" role="presentation">
-                <div className="rounded-lg bg-brand-soft px-2.5 py-2 text-center text-[11px] text-brand-strong">
-                  <strong className="block text-[18px] font-medium">1</strong>
-                  优先机会
-                </div>
-                <div className="rounded-lg bg-surface-2 px-2.5 py-2 text-center text-[11px] text-ink-muted">
-                  <strong className="block text-[18px] font-medium text-ink">2</strong>
-                  补充后判断
-                </div>
-                <div className="rounded-lg bg-surface-2 px-2.5 py-2 text-center text-[11px] text-ink-muted">
-                  <strong className="block text-[18px] font-medium text-ink">3</strong>
-                  偏好范围外
-                </div>
-              </div>
-
-              <div className="mt-3 rounded-lg border border-line bg-surface p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="inline-flex h-6 items-center rounded border border-ok-line bg-ok-bg px-2.5 text-xs font-semibold text-ok-ink">
-                    初步符合
-                  </span>
-                  <span className="inline-flex h-6 items-center rounded border border-ask-line bg-ask-bg px-2.5 text-xs font-medium text-ask-ink">
-                    6 天后截止
-                  </span>
-                </div>
-                <h2 className="mt-3 text-[15px] font-bold leading-snug text-ink">
-                  杭州某公办初中 · 语文教师
-                </h2>
-                <p className="mt-1.5 text-xs text-ink-muted">杭州 · 余杭区</p>
-                <div className="mt-3 flex items-center justify-between border-t border-line pt-3 text-xs">
-                  <strong className="font-medium text-ok-ink">3 项已通过</strong>
-                  <span className="text-ink-muted">户籍待确认</span>
-                </div>
-              </div>
-
-              <div className="mt-3">
-                <Link href="/preview" className="text-[13px] font-medium text-brand hover:underline">
-                  查看示例 →
-                </Link>
-              </div>
+              <figure className="overflow-hidden rounded-2xl border border-line bg-surface p-2 shadow-2 md:p-2.5">
+                {/* eslint-disable-next-line @next/next/no-img-element -- 静态截图按展示尺寸导出 2x 位图；部署镜像未装 sharp，不走 next/image 运行时优化 */}
+                <img
+                  src="/images/hero-opportunities.png"
+                  alt="机会页界面预览：选择省市区后按地区浏览招聘公告，每条公告标注报名状态与报名时间"
+                  width={1228}
+                  height={1140}
+                  fetchPriority="high"
+                  className="w-full rounded-xl border border-line"
+                />
+                <figcaption className="px-2 pb-0.5 pt-3 text-center text-xs text-ink-muted">
+                  机会页界面预览 · 示意内容
+                </figcaption>
+              </figure>
             </aside>
           </div>
         </section>
