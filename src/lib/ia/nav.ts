@@ -24,6 +24,12 @@ export const PRIMARY_NAV: readonly PrimaryNavItem[] = [
   { id: "me", href: "/me", label: "我的资料" },
 ] as const;
 
+export const APPLICATIONS_NAV = {
+  id: "applications",
+  href: "/applications",
+  label: "报考工作台",
+} as const;
+
 /**
  * 路径命中判定：精确匹配或位于该导航分区之下。
  * 使用 `href + "/"` 前缀，避免 `/opportunities-x` 误命中 `/opportunities`。

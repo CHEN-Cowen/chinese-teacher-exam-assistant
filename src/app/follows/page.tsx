@@ -188,7 +188,7 @@ export default function FollowsPage() {
     follows.length === 0 && (orgFollows ?? []).length === 0 && !subscription;
 
   return (
-    <div className="mx-auto max-w-2xl space-y-7 pb-2">
+    <div className="space-y-6 pb-2">
       <header className="space-y-2">
         <p className="text-xs font-semibold tracking-wide text-brand">我的关注</p>
         <h1 className="text-2xl font-semibold tracking-tight text-ink">
@@ -219,182 +219,183 @@ export default function FollowsPage() {
         />
       ) : (
         <>
-          {/* ==================== 岗位动态 ==================== */}
-          <section className="space-y-3" aria-labelledby="follows-units">
-            <div>
-              <h2 id="follows-units" className="text-base font-semibold text-ink">
-                岗位动态
-              </h2>
-              <p className="mt-0.5 text-xs text-ink-muted">
-                正在跟进 {activeSorted.length} 个岗位
-                {archivedSorted.length > 0
-                  ? ` · 已归档 ${archivedSorted.length} 个（不自动删除）`
-                  : ""}
-              </p>
-            </div>
+          <div className="grid items-start gap-6 xl:grid-cols-2">
+            <section className="space-y-3" aria-labelledby="follows-units">
+              <div>
+                <h2 id="follows-units" className="text-base font-semibold text-ink">
+                  岗位动态
+                </h2>
+                <p className="mt-0.5 text-xs text-ink-muted">
+                  正在跟进 {activeSorted.length} 个岗位
+                  {archivedSorted.length > 0
+                    ? ` · 已归档 ${archivedSorted.length} 个（不自动删除）`
+                    : ""}
+                </p>
+              </div>
 
-            {activeSorted.length === 0 && (
-              <p className="rounded-xl border border-line bg-surface px-4 py-3 text-sm text-ink-muted">
-                没有正在跟进的岗位。去机会列表保存一个岗位后，会出现在这里。
-              </p>
-            )}
+              {activeSorted.length === 0 && (
+                <p className="rounded-xl border border-line bg-surface px-4 py-3 text-sm text-ink-muted">
+                  暂无跟进中的岗位。
+                </p>
+              )}
 
-            <div className="grid gap-3">
-              {activeSorted.map((follow) => (
-                <FollowRow
-                  key={follow.id}
-                  follow={follow}
-                  unit={unitById.get(follow.unitId) ?? null}
-                  nowIso={nowIso}
-                />
-              ))}
-            </div>
+              <div className="grid gap-3">
+                {activeSorted.map((follow) => (
+                  <FollowRow
+                    key={follow.id}
+                    follow={follow}
+                    unit={unitById.get(follow.unitId) ?? null}
+                    nowIso={nowIso}
+                  />
+                ))}
+              </div>
 
-            {archivedSorted.length > 0 && (
-              <details className="rounded-xl border border-line bg-surface">
-                <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium text-ink-muted [&::-webkit-details-marker]:hidden">
-                  已结束 / 不再考虑（{archivedSorted.length}）▾
-                </summary>
-                <div className="grid gap-3 border-t border-line px-4 py-3">
-                  {archivedSorted.map((follow) => (
-                    <FollowRow
-                      key={follow.id}
-                      follow={follow}
-                      unit={unitById.get(follow.unitId) ?? null}
-                      nowIso={nowIso}
-                      muted
-                    />
-                  ))}
-                </div>
-              </details>
-            )}
-          </section>
-
-          {/* ==================== 单位与地区动态 ==================== */}
-          <section className="space-y-3" aria-labelledby="follows-orgs">
-            <div>
-              <h2 id="follows-orgs" className="text-base font-semibold text-ink">
-                单位与地区动态
-              </h2>
-              <p className="mt-0.5 text-xs text-ink-muted">
-                单位关注只按「发布主体 + 地区」精确匹配；同名不同地区不串联，单位更名或合并不自动关联，需人工审核确认。
-              </p>
-            </div>
-
-            {authenticated && orgFollows === null && !orgError && (
-              <p className="text-xs text-ink-muted">单位关注加载中…</p>
-            )}
-            {!authenticated && (
-              <p className="rounded-xl border border-line bg-surface px-4 py-3 text-sm text-ink-muted">
-                登录后可以关注单位并接收新公告站内提醒。
-                <Link href="/login?next=/follows" className="text-brand hover:underline">
-                  去登录
-                </Link>
-              </p>
-            )}
-
-            {(orgFollows ?? []).map((org) => {
-              const hits = orgHits.get(org.identityKey) ?? [];
-              return (
-                <div
-                  key={org.identityKey}
-                  className="space-y-2 rounded-xl border border-line bg-surface p-4"
-                  data-testid="org-follow-row"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-ink">
-                        {org.publisherName}
-                      </p>
-                      <p className="text-xs text-ink-muted">
-                        {regionLabelByCode.get(org.regionCode) ?? org.regionCode}
-                        　关注于 {formatIsoDate(org.followedAt)}
-                      </p>
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={busyKey === org.identityKey}
-                      onClick={() => void unfollowOrg(org.identityKey)}
-                    >
-                      取消关注
-                    </Button>
+              {archivedSorted.length > 0 && (
+                <details className="rounded-xl border border-line bg-surface">
+                  <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium text-ink-muted [&::-webkit-details-marker]:hidden">
+                    已结束 / 不再考虑（{archivedSorted.length}）▾
+                  </summary>
+                  <div className="grid gap-3 border-t border-line px-4 py-3">
+                    {archivedSorted.map((follow) => (
+                      <FollowRow
+                        key={follow.id}
+                        follow={follow}
+                        unit={unitById.get(follow.unitId) ?? null}
+                        nowIso={nowIso}
+                        muted
+                      />
+                    ))}
                   </div>
-                  {hits.length === 0 ? (
-                    <p className="text-xs text-ink-muted">
-                      该单位当前没有在报公告；有新公告经人工核对发布后在站内提醒你。
-                    </p>
-                  ) : (
-                    <ul className="space-y-1 text-xs text-ink-muted">
-                      {hits.map((hit) => (
-                        <li key={hit.announcementId}>
-                          ·{" "}
-                          <Link
-                            href={`/opportunities/${hit.unitId}`}
-                            className="text-brand hover:underline"
-                          >
-                            {hit.title}
-                          </Link>
-                          <span>（{hit.unitCount} 个在报岗位）</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              );
-            })}
+                </details>
+              )}
+            </section>
 
-            {authenticated && (orgFollows ?? []).length === 0 && !orgError && (
-              <p className="rounded-xl border border-line bg-surface px-4 py-3 text-sm text-ink-muted">
-                还没有关注单位。在岗位详情页点「关注该单位的新公告」即可添加。
-              </p>
-            )}
+            {/* ==================== 单位与地区动态 ==================== */}
+            <section className="space-y-3" aria-labelledby="follows-orgs">
+              <div>
+                <h2 id="follows-orgs" className="text-base font-semibold text-ink">
+                  单位与地区动态
+                </h2>
+                <p className="mt-0.5 text-xs text-ink-muted">
+                  单位关注只按「发布主体 + 地区」精确匹配；同名不同地区不串联，单位更名或合并不自动关联，需人工审核确认。
+                </p>
+              </div>
 
-            {/* 地区订阅摘要（管理入口在机会页订阅卡片） */}
-            <div className="space-y-2 rounded-xl border border-line bg-surface p-4">
-              <p className="text-sm font-semibold text-ink">地区订阅</p>
-              {subscription ? (
-                <p className="text-xs leading-5 text-ink-muted">
-                  {subscription.enabled ? "已开启" : "已关闭（停止新提醒，历史通知保留）"}
+              {authenticated && orgFollows === null && !orgError && (
+                <p className="text-xs text-ink-muted">单位关注加载中…</p>
+              )}
+              {!authenticated && (
+                <p className="rounded-xl border border-line bg-surface px-4 py-3 text-sm text-ink-muted">
+                  登录后可以关注单位并接收新公告站内提醒。
+                  <Link href="/login?next=/follows" className="text-brand hover:underline">
+                    去登录
+                  </Link>
+                </p>
+              )}
+
+              {(orgFollows ?? []).map((org) => {
+                const hits = orgHits.get(org.identityKey) ?? [];
+                return (
+                  <div
+                    key={org.identityKey}
+                    className="space-y-2 rounded-xl border border-line bg-surface p-4"
+                    data-testid="org-follow-row"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-ink">
+                          {org.publisherName}
+                        </p>
+                        <p className="text-xs text-ink-muted">
+                          {regionLabelByCode.get(org.regionCode) ?? org.regionCode}
+                        　关注于 {formatIsoDate(org.followedAt)}
+                        </p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={busyKey === org.identityKey}
+                        onClick={() => void unfollowOrg(org.identityKey)}
+                      >
+                        取消关注
+                      </Button>
+                    </div>
+                    {hits.length === 0 ? (
+                      <p className="text-xs text-ink-muted">
+                        该单位当前没有在报公告；有新公告经人工核对发布后在站内提醒你。
+                      </p>
+                    ) : (
+                      <ul className="space-y-1 text-xs text-ink-muted">
+                        {hits.map((hit) => (
+                          <li key={hit.announcementId}>
+                            ·{" "}
+                            <Link
+                              href={`/opportunities/${hit.unitId}`}
+                              className="text-brand hover:underline"
+                            >
+                              {hit.title}
+                            </Link>
+                            <span>（{hit.unitCount} 个在报岗位）</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                );
+              })}
+
+              {authenticated && (orgFollows ?? []).length === 0 && !orgError && (
+                <p className="rounded-xl border border-line bg-surface px-4 py-3 text-sm text-ink-muted">
+                  还没有关注单位。在岗位详情页点「关注该单位的新公告」即可添加。
+                </p>
+              )}
+
+              {/* 地区订阅摘要（管理入口在机会页订阅卡片） */}
+              <div className="space-y-2 rounded-xl border border-line bg-surface p-4">
+                <p className="text-sm font-semibold text-ink">地区订阅</p>
+                {subscription ? (
+                  <p className="text-xs leading-5 text-ink-muted">
+                    {subscription.enabled ? "已开启" : "已关闭（停止新提醒，历史通知保留）"}
                   　地区：
-                  {subscription.regions.length > 0
-                    ? subscription.regions
-                        .map((r) => r.district ?? r.city ?? r.province)
-                        .join("、")
-                    : "未设置"}
+                    {subscription.regions.length > 0
+                      ? subscription.regions
+                          .map((r) => r.district ?? r.city ?? r.province)
+                          .join("、")
+                      : "未设置"}
                   　学科：语文
-                </p>
-              ) : (
-                <p className="text-xs text-ink-muted">
-                  未开启地区订阅。开启后，符合地区与学科的新公告会在站内提醒你。
-                </p>
-              )}
-              <Link
-                href="/opportunities#subscription"
-                className="inline-flex items-center text-xs font-medium text-brand hover:underline"
-              >
-                管理订阅条件 →
-              </Link>
-            </div>
+                  </p>
+                ) : (
+                  <p className="text-xs text-ink-muted">
+                    未开启地区订阅。开启后，符合地区与学科的新公告会在站内提醒你。
+                  </p>
+                )}
+                <Link
+                  href="/opportunities#subscription"
+                  className="inline-flex items-center text-xs font-medium text-brand hover:underline"
+                >
+                  管理订阅条件 →
+                </Link>
+              </div>
 
-            {/* 监测范围与最近检查（来自统一覆盖投影，不编造实时性） */}
-            <div className="space-y-2 rounded-xl border border-line bg-surface p-4">
-              <p className="text-sm font-semibold text-ink">监测范围与检查</p>
-              <p className="text-xs leading-5 text-ink-muted">
-                {data.coverage.scopeNote}
-              </p>
-              <p className="text-xs leading-5 text-ink-muted">
-                最近成功检查：{formatIsoDateTime(data.coverage.lastCheckedAt)}
-                　统计生成：{formatIsoDateTime(data.coverage.caliber.generatedAt)}
-              </p>
-              {data.coverage.caliber.isFallback && (
+              {/* 监测范围与最近检查（来自统一覆盖投影，不编造实时性） */}
+              <div className="space-y-2 rounded-xl border border-line bg-surface p-4">
+                <p className="text-sm font-semibold text-ink">监测范围与检查</p>
                 <p className="text-xs leading-5 text-ink-muted">
-                  {data.coverage.caliber.fallbackNote ??
-                    "运行状态不可用，当前为台账静态投影（非实时）。"}
+                  {data.coverage.scopeNote}
                 </p>
-              )}
-            </div>
-          </section>
+                <p className="text-xs leading-5 text-ink-muted">
+                  最近成功检查：{formatIsoDateTime(data.coverage.lastCheckedAt)}
+                　统计生成：{formatIsoDateTime(data.coverage.caliber.generatedAt)}
+                </p>
+                {data.coverage.caliber.isFallback && (
+                  <p className="text-xs leading-5 text-ink-muted">
+                    {data.coverage.caliber.fallbackNote ??
+                      "运行状态不可用，当前为台账静态投影（非实时）。"}
+                  </p>
+                )}
+              </div>
+            </section>
+          </div>
         </>
       )}
     </div>

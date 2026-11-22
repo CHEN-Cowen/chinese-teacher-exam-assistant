@@ -583,7 +583,7 @@ export default function OpportunityDetailPage() {
   };
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6 pb-4">
+    <div className="space-y-6 pb-4">
       <nav className="text-xs text-ink-muted">
         <Link
           href="/opportunities"
@@ -754,166 +754,165 @@ export default function OpportunityDetailPage() {
         </Callout>
       )}
 
-      <details
-        id="follow"
-        className="group scroll-mt-20 rounded-2xl border border-line bg-surface"
-      >
-        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-4 [&::-webkit-details-marker]:hidden">
-          <span>
-            <span className="block text-sm font-semibold text-ink">我的跟进</span>
-            <span className="mt-0.5 block text-xs text-ink-muted">
-              {unit.follow
-                ? `已保存 · ${unit.follow.role === "primary" ? "重点准备的机会" : unit.follow.role === "backup" ? "备选机会" : "可继续推进报名状态"}`
-                : "保存后可记录报名进度并设为重点准备的机会"}
+      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(17rem,22rem)]">
+        <details
+          id="follow"
+          className="group scroll-mt-20 rounded-2xl border border-line bg-surface xl:col-start-2 xl:row-start-1"
+        >
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-4 [&::-webkit-details-marker]:hidden">
+            <span>
+              <span className="block text-sm font-semibold text-ink">我的跟进</span>
+              <span className="mt-0.5 block text-xs text-ink-muted">
+                {unit.follow
+                  ? unit.follow.role === "primary" ? "已保存 · 重点准备" : unit.follow.role === "backup" ? "已保存 · 备选" : "已保存"
+                  : "未保存"}
+              </span>
             </span>
-          </span>
-          <svg aria-hidden="true" className="h-4 w-4 shrink-0 text-ink-muted transition-transform group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m6 9 6 6 6-6" />
-          </svg>
-        </summary>
-        <div className="space-y-3 border-t border-line p-3">
-          {/* v7.2 ff_post_save_next：关（回退）时不渲染「一个下一步」面板，
-              保存成功提示仍走上方 actionNotice（StatusMessage），不回退到空反馈。 */}
-          {FLAGS.ff_post_save_next &&
-            unit.follow &&
-            unit.follow.status === "considering" && (
-            <SavedNextActionPanel
-              action={savedNextAction}
-              emphasized={justSaved}
-              syncedEventCount={syncedEventCount}
-              busy={busy}
-              onUnfollow={() =>
-                void runAction(
-                  async () => {
-                    await opportunitiesApi.unfollow(unitId);
-                    track("opportunity_unfollowed", "opportunity", {
-                      targetId: unitId,
-                    });
-                  },
-                  { redirectAfter: true },
-                )
-              }
-              onDismiss={() => setJustSaved(false)}
-              onAnchor={scrollToId}
-              onActionOpened={(next) =>
-                // 只记级别与动作类型枚举，不记岗位以外的任何正文
-                track("next_action_opened", "opportunity", {
-                  targetId: unitId,
-                  props: { tier: next.tier, kind: next.kind },
-                })
-              }
-            />
-          )}
-          <FollowControls
-            follow={unit.follow}
-            unitName={unit.unit.name}
-            busy={busy}
-            onFollow={() => void followUnit()}
-            onTransition={(status, opts) => void handleTransition(status, opts)}
-            onSetRole={(role) => void handleSetRole(role)}
-            onUnfollow={() =>
-              void runAction(async () => {
-                await opportunitiesApi.unfollow(unitId);
-                track("opportunity_unfollowed", "opportunity", { targetId: unitId });
-              }, { redirectAfter: true })
-            }
-          />
-        </div>
-      </details>
-
-      {/* 第二段：关键依据与不确定项（官方事实 vs 系统预筛判断分行展示） */}
-      <section className="space-y-4">
-        <div>
-          <h2 className="text-base font-semibold text-ink">
-            影响当前判断的条件
-          </h2>
-          <p className="mt-0.5 text-xs text-ink-muted">
-            先处理缺失、不确定或不满足项；已满足条件可按需展开。
-          </p>
-        </div>
-
-        {groups.missingInfo.length > 0 && (
-          <Disclosure
-            id="missing-info"
-            title="需要补充的信息"
-            count={groups.missingInfo.length}
-          >
-            <ConditionRows
-              dimensions={groups.missingInfo}
-              showDescription
-              onCorrectCondition={openCorrectionForField}
-            />
-          </Disclosure>
-        )}
-
-        {groups.confirmOfficial.length > 0 && (
-          <Disclosure
-            id="to-confirm"
-            title="需要向招聘单位确认"
-            count={groups.confirmOfficial.length}
-          >
-            <ConditionRows
-              dimensions={groups.confirmOfficial}
-              showDescription
-              onCorrectCondition={openCorrectionForField}
-            />
-          </Disclosure>
-        )}
-
-        {groups.unsatisfied.length > 0 && (
-          <Disclosure
-            id="unsatisfied"
-            title="明确不符合项"
-            count={groups.unsatisfied.length}
-          >
-            <ConditionRows
-              dimensions={groups.unsatisfied}
-              showDescription
-              onCorrectCondition={openCorrectionForField}
-            />
-          </Disclosure>
-        )}
-
-        {groups.satisfied.length > 0 && (
-          <Disclosure title="已满足的条件" count={groups.satisfied.length}>
-            <ConditionRows
-              dimensions={groups.satisfied}
-              showDescription
-              onCorrectCondition={openCorrectionForField}
-            />
-          </Disclosure>
-        )}
-
-        {/* 补充信息只影响当前画像，提交后即时重算；闸门失败（截止/来源失效等）时不引导补充 */}
-        {!closed && groups.missingInfo.length > 0 && (
-          <div id="supplement" className="scroll-mt-20">
-            {askableUnknown.length > 0 ? (
-              <SupplementForm
-                dimensions={groups.missingInfo}
-                initial={facts}
-                saving={savingFacts}
-                onSave={(next) => void handleSaveFacts(next)}
+            <svg aria-hidden="true" className="h-4 w-4 shrink-0 text-ink-muted transition-transform group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m6 9 6 6 6-6" />
+            </svg>
+          </summary>
+          <div className="space-y-3 border-t border-line p-3">
+            {/* v7.2 ff_post_save_next：关（回退）时不渲染「一个下一步」面板，
+                保存成功提示仍走上方 actionNotice（StatusMessage），不回退到空反馈。 */}
+            {FLAGS.ff_post_save_next &&
+              unit.follow &&
+              unit.follow.status === "considering" && (
+              <SavedNextActionPanel
+                action={savedNextAction}
+                emphasized={justSaved}
+                syncedEventCount={syncedEventCount}
+                busy={busy}
+                onUnfollow={() =>
+                  void runAction(
+                    async () => {
+                      await opportunitiesApi.unfollow(unitId);
+                      track("opportunity_unfollowed", "opportunity", {
+                        targetId: unitId,
+                      });
+                    },
+                    { redirectAfter: true },
+                  )
+                }
+                onDismiss={() => setJustSaved(false)}
+                onAnchor={scrollToId}
+                onActionOpened={(next) =>
+                  // 只记级别与动作类型枚举，不记岗位以外的任何正文
+                  track("next_action_opened", "opportunity", {
+                    targetId: unitId,
+                    props: { tier: next.tier, kind: next.kind },
+                  })
+                }
               />
-            ) : (
-              <aside className="rounded-xl border border-warn/30 bg-warn-soft/40 px-4 py-3">
-                <p className="text-sm font-semibold text-ink">
-                  这些信息在「报考信息」里补充
-                </p>
-                <p className="mt-1 text-xs leading-5 text-ink-muted">
-                  缺少的是学历、专业等报考画像信息。缺失不等于不符合：补充后回到本页会自动重新判断。
-                </p>
-                <Link
-                  href="/onboarding?from=opportunity"
-                  className="mt-3 inline-flex h-10 items-center justify-center rounded-xl bg-brand px-4 text-sm font-semibold text-white transition-colors hover:bg-brand-strong"
-                >
-                  去补充报考信息
-                </Link>
-              </aside>
             )}
+            <FollowControls
+              follow={unit.follow}
+              unitName={unit.unit.name}
+              busy={busy}
+              onFollow={() => void followUnit()}
+              onTransition={(status, opts) => void handleTransition(status, opts)}
+              onSetRole={(role) => void handleSetRole(role)}
+              onUnfollow={() =>
+                void runAction(async () => {
+                  await opportunitiesApi.unfollow(unitId);
+                  track("opportunity_unfollowed", "opportunity", { targetId: unitId });
+                }, { redirectAfter: true })
+              }
+            />
           </div>
-        )}
-      </section>
+        </details>
 
+        {/* 第二段：关键依据与不确定项（官方事实 vs 系统预筛判断分行展示） */}
+        <section className="min-w-0 space-y-4 xl:col-start-1 xl:row-start-1">
+          <div>
+            <h2 className="text-base font-semibold text-ink">
+              影响当前判断的条件
+            </h2>
+          </div>
+
+          {groups.missingInfo.length > 0 && (
+            <Disclosure
+              id="missing-info"
+              title="需要补充的信息"
+              count={groups.missingInfo.length}
+            >
+              <ConditionRows
+                dimensions={groups.missingInfo}
+                showDescription
+                onCorrectCondition={openCorrectionForField}
+              />
+            </Disclosure>
+          )}
+
+          {groups.confirmOfficial.length > 0 && (
+            <Disclosure
+              id="to-confirm"
+              title="需要向招聘单位确认"
+              count={groups.confirmOfficial.length}
+            >
+              <ConditionRows
+                dimensions={groups.confirmOfficial}
+                showDescription
+                onCorrectCondition={openCorrectionForField}
+              />
+            </Disclosure>
+          )}
+
+          {groups.unsatisfied.length > 0 && (
+            <Disclosure
+              id="unsatisfied"
+              title="明确不符合项"
+              count={groups.unsatisfied.length}
+            >
+              <ConditionRows
+                dimensions={groups.unsatisfied}
+                showDescription
+                onCorrectCondition={openCorrectionForField}
+              />
+            </Disclosure>
+          )}
+
+          {groups.satisfied.length > 0 && (
+            <Disclosure title="已满足的条件" count={groups.satisfied.length}>
+              <ConditionRows
+                dimensions={groups.satisfied}
+                showDescription
+                onCorrectCondition={openCorrectionForField}
+              />
+            </Disclosure>
+          )}
+
+          {/* 补充信息只影响当前画像，提交后即时重算；闸门失败（截止/来源失效等）时不引导补充 */}
+          {!closed && groups.missingInfo.length > 0 && (
+            <div id="supplement" className="scroll-mt-20">
+              {askableUnknown.length > 0 ? (
+                <SupplementForm
+                  dimensions={groups.missingInfo}
+                  initial={facts}
+                  saving={savingFacts}
+                  onSave={(next) => void handleSaveFacts(next)}
+                />
+              ) : (
+                <aside className="rounded-xl border border-warn/30 bg-warn-soft/40 px-4 py-3">
+                  <p className="text-sm font-semibold text-ink">
+                    这些信息在「报考信息」里补充
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-ink-muted">
+                    缺少的是学历、专业等报考画像信息。缺失不等于不符合：补充后回到本页会自动重新判断。
+                  </p>
+                  <Link
+                    href="/onboarding?from=opportunity"
+                    className="mt-3 inline-flex h-10 items-center justify-center rounded-xl bg-brand px-4 text-sm font-semibold text-white transition-colors hover:bg-brand-strong"
+                  >
+                    去补充报考信息
+                  </Link>
+                </aside>
+              )}
+            </div>
+          )}
+        </section>
+
+      </div>
       {/* 报名材料清单（关注后可标记进度；来源可追溯到官方公告） */}
       {unit.follow && unit.unit.materials && unit.unit.materials.length > 0 && (
         <section id="materials" className="scroll-mt-20 space-y-3">

@@ -254,7 +254,7 @@ function OnboardingForm() {
 
   return (
     <div className="min-h-screen bg-canvas">
-      <div className="mx-auto w-full max-w-2xl px-4 py-5 sm:px-6 sm:py-8">
+      <div className="mx-auto w-full max-w-5xl px-4 py-5 sm:px-6 sm:py-8">
         <div className="mb-5 flex items-center justify-between gap-2">
           <Link
             href="/"
@@ -390,21 +390,23 @@ function OnboardingForm() {
           )}
           {view === 2 && (
             <>
-              <StepEducation
-                educationLevel={draft.educationLevel}
-                onChange={(patch) => updateDraft(patch)}
-              />
-              <div className="mt-5 border-t border-line pt-4">
-                <StepGraduation
-                  graduationDate={draft.graduationDate ?? ""}
+              <div className="grid items-start gap-5 lg:grid-cols-2">
+                <StepEducation
+                  educationLevel={draft.educationLevel}
                   onChange={(patch) => updateDraft(patch)}
                 />
-              </div>
-              <div className="mt-5 border-t border-line pt-4">
-                <StepMajor
-                  major={draft.majorFullName ?? ""}
-                  onChange={(majorFullName) => updateDraft({ majorFullName })}
-                />
+                <div>
+                  <StepGraduation
+                    graduationDate={draft.graduationDate ?? ""}
+                    onChange={(patch) => updateDraft(patch)}
+                  />
+                </div>
+                <div className="lg:col-span-2">
+                  <StepMajor
+                    major={draft.majorFullName ?? ""}
+                    onChange={(majorFullName) => updateDraft({ majorFullName })}
+                  />
+                </div>
               </div>
               <div className="mt-5 border-t border-line pt-4">
                 <StepCert draft={draft} onChange={updateDraft} />

@@ -115,7 +115,7 @@ export default function HistoryPage() {
   const totalPages = Math.max(1, Math.ceil(data.total / data.pageSize));
 
   return (
-    <div className="mx-auto max-w-3xl space-y-5 px-4 pb-2 sm:px-5">
+    <div className="space-y-5 px-4 pb-2 sm:px-5">
       <header className="space-y-2">
         <h1 className="text-xl font-bold text-ink">往年参考</h1>
         <p className="text-sm leading-6 text-ink-muted">

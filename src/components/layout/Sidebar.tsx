@@ -8,11 +8,11 @@ import { STAFF_ROLES, USER_ROLE_LABELS } from "@/types";
 import { useCurrentUser } from "@/lib/auth";
 import { NotificationCenter } from "@/components/governance/NotificationCenter";
 import { isDemoMode } from "@/lib/demo/config";
-import { PRIMARY_NAV, isNavActive } from "@/lib/ia/nav";
+import { APPLICATIONS_NAV, PRIMARY_NAV, isNavActive } from "@/lib/ia/nav";
 import { NavIcon } from "./navIcons";
 import { BrandMark } from "./BrandMark";
 
-// U09：主导航为 当年招聘 / 往年参考 / 我的关注 / 我的资料 四个入口；
+// 主导航包含报考工作台、当年招聘、往年参考、我的关注和我的资料。
 // 侧栏下半为日程、材料、备考、设置等次级入口。
 // 桌面侧栏宽 190px，内边距左右 14px、上下 24px；主导航项 48px 高。
 
@@ -21,7 +21,7 @@ const SECONDARY_NAV = [
   { id: "materials", href: "/materials", label: "材料清单" },
   { id: "study", href: "/study", label: "辅助备考" },
   { id: "settings", href: "/settings", label: "账号设置" },
-];
+] as const;
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -52,13 +52,13 @@ export function Sidebar() {
       {/* 品牌 Logo */}
       <div className="flex h-16 items-center px-3.5">
         <Link href="/opportunities" aria-label="教招有据首页">
-          <BrandMark size="sm" />
+          <BrandMark size="lg" />
         </Link>
       </div>
 
       {/* 主导航 */}
       <nav aria-label="主导航" className="flex-1 space-y-0.5 overflow-y-auto px-2.5 py-3">
-        {PRIMARY_NAV.map((item) => {
+        {[APPLICATIONS_NAV, ...PRIMARY_NAV].map((item) => {
           const active = isNavActive(pathname, item.href);
           return (
             <Link
@@ -114,6 +114,7 @@ export function Sidebar() {
                   : "text-ink-muted hover:bg-surface-2 hover:text-ink"
               )}
             >
+              <NavIcon id={item.id} className="h-5 w-5 shrink-0" />
               <span className="truncate">{item.label}</span>
             </Link>
           );

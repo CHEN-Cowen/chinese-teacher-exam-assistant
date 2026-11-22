@@ -331,7 +331,7 @@ export default function EducationPage() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl space-y-5 px-4 pb-10 pt-5 sm:px-6">
+    <div className="mx-auto max-w-5xl space-y-5 px-4 pb-10 pt-5 sm:px-6">
       <div>
         <Link
           href="/me"

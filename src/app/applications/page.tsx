@@ -138,16 +138,11 @@ export default function ApplicationsPage() {
     return (
       <div className="mx-auto max-w-2xl space-y-6">
         <header className="space-y-2">
-          <p className="text-xs font-semibold tracking-wide text-brand">报考中心</p>
-          <h1 className="text-2xl font-semibold tracking-tight text-ink">我的报考</h1>
-          <p className="text-sm text-ink-muted">
-            从关注机会开始，材料、官方报名、审核和考试进展都会集中在这里。
-          </p>
+          <h1 className="text-2xl font-semibold tracking-tight text-ink">报考工作台</h1>
         </header>
         <EmptyState
-          title="还没有报考目标"
-          description="先从资格结果里关注一个机会，再决定是否开始准备报名。关注后，下一步会出现在这里。"
-          actionLabel="去看机会"
+          title="已保存岗位 0"
+          actionLabel="浏览招聘"
           actionHref="/opportunities"
         />
       </div>
@@ -177,13 +172,9 @@ export default function ApplicationsPage() {
   }).length;
 
   return (
-    <div className="mx-auto max-w-2xl space-y-7 pb-2">
+    <div className="space-y-6 pb-2">
       <header className="space-y-2">
-        <p className="text-xs font-semibold tracking-wide text-brand">报考中心</p>
-        <h1 className="text-2xl font-semibold tracking-tight text-ink">我的报考</h1>
-        <p className="text-sm text-ink-muted">
-          从准备材料到考试结果，每个目标只突出眼下最该做的一件事。
-        </p>
+        <h1 className="text-2xl font-semibold tracking-tight text-ink">报考工作台</h1>
       </header>
 
       {actionError && (
@@ -202,77 +193,78 @@ export default function ApplicationsPage() {
         </Callout>
       )}
 
-      {/* 主目标工作区 */}
-      <Hero
-        meta="当前主目标"
-        conclusion={primaryNextStep.title}
-        action={{
-          label: primaryNextStep.label,
-          onClick: () => void runPrimaryAction(primaryGoal),
-        }}
-      >
-        <p className="text-sm text-ink-muted">
-          {primaryGoal.unitName}｜{primaryNextStep.detail}
-        </p>
-      </Hero>
-
-      {/* metric 三联：报名截止 / 材料准备 / 笔试时间 */}
-      <section
-        aria-label="关键节点"
-        className="grid grid-cols-3 gap-3"
-      >
-        <MetricCell
-          label="报名截止"
-          value={
-            primaryGoal.version.timeline.registrationEnd
-              ? formatIsoDate(primaryGoal.version.timeline.registrationEnd)
-              : "待官方通知"
-          }
-          meta={
-            primaryGoal.version.timeline.registrationEnd
-              ? (() => {
-                  const d = daysUntil(
-                    primaryGoal.version.timeline.registrationEnd,
-                    new Date().toISOString(),
-                  );
-                  return d >= 0 ? `还剩 ${d} 天` : "已结束";
-                })()
-              : "时间未定"
-          }
-        />
-        <MetricCell
-          label="材料准备"
-          value={
-            primaryFollow?.materialStatuses
-              ? `${countDone(primaryFollow.materialStatuses)}/${countTotal(primaryFollow.materialStatuses)}`
-              : "—"
-          }
-          meta="项"
+      <div className="grid items-start gap-6 xl:grid-cols-2">
+        <Hero
+          meta="当前主目标"
+          conclusion={primaryNextStep.title}
+          action={{
+            label: primaryNextStep.label,
+            onClick: () => void runPrimaryAction(primaryGoal),
+          }}
         >
-          <Link
-            href={`/opportunities/${primaryGoal.unitId}#follow`}
-            className="text-xs text-brand hover:underline"
+          <p className="text-sm text-ink-muted">
+            {primaryGoal.unitName}｜{primaryNextStep.detail}
+          </p>
+        </Hero>
+
+        {/* metric 三联：报名截止 / 材料准备 / 笔试时间 */}
+        <section
+          aria-label="近期日程与材料"
+          className="grid grid-cols-1 gap-3 sm:grid-cols-3"
+        >
+          <MetricCell
+            label="报名截止"
+            value={
+              primaryGoal.version.timeline.registrationEnd
+                ? formatIsoDate(primaryGoal.version.timeline.registrationEnd)
+                : "待官方通知"
+            }
+            meta={
+              primaryGoal.version.timeline.registrationEnd
+                ? (() => {
+                    const d = daysUntil(
+                      primaryGoal.version.timeline.registrationEnd,
+                      new Date().toISOString(),
+                    );
+                    return d >= 0 ? `还剩 ${d} 天` : "已结束";
+                  })()
+                : "时间未定"
+            }
+          />
+          <MetricCell
+            label="材料准备"
+            value={
+              primaryFollow?.materialStatuses
+                ? `${countDone(primaryFollow.materialStatuses)}/${countTotal(primaryFollow.materialStatuses)}`
+                : "—"
+            }
+            meta="项"
           >
-            查看清单
-          </Link>
-        </MetricCell>
-        <MetricCell
-          label="笔试时间"
-          value={
-            primaryGoal.version.timeline.writtenExamDate
-              ? formatIsoDate(primaryGoal.version.timeline.writtenExamDate)
-              : "待官方通知"
-          }
-          meta={
-            primaryGoal.version.timeline.writtenExamDate ? "已公布" : "未公布"
-          }
-        >
-          <Link href="/study" className="text-xs text-brand hover:underline">
-            安排备考
-          </Link>
-        </MetricCell>
-      </section>
+            <Link
+              href={`/opportunities/${primaryGoal.unitId}#follow`}
+              className="text-xs text-brand hover:underline"
+            >
+              查看清单
+            </Link>
+          </MetricCell>
+          <MetricCell
+            label="笔试时间"
+            value={
+              primaryGoal.version.timeline.writtenExamDate
+                ? formatIsoDate(primaryGoal.version.timeline.writtenExamDate)
+                : "待官方通知"
+            }
+            meta={
+              primaryGoal.version.timeline.writtenExamDate ? "已公布" : "未公布"
+            }
+          >
+            <Link href="/study" className="text-xs text-brand hover:underline">
+              安排备考
+            </Link>
+          </MetricCell>
+        </section>
 
+      </div>
       {/* 官方报名入口：只跳验证过的地址，不在站内伪造报名成功 */}
       <section className="grid gap-3 p-5 rounded-lg border border-line bg-surface shadow-1">
         <div>
@@ -320,10 +312,10 @@ export default function ApplicationsPage() {
         </section>
       )}
 
-      {/* 全部报考目标 */}
+      {/* 已保存岗位 */}
       <section className="space-y-3">
         <div>
-          <h2 className="text-base font-semibold text-ink">全部报考目标</h2>
+          <h2 className="text-base font-semibold text-ink">已保存岗位</h2>
           <p className="mt-0.5 text-xs text-ink-muted">
             正在跟进 {activeCount} 个目标{waitingCount > 0 ? ` · ${waitingCount} 个等待官方结果` : ""}
           </p>

@@ -187,6 +187,17 @@ function getTab(container: HTMLElement, id: string): HTMLButtonElement {
 }
 
 describe("WorkbenchTabs：默认与切换", () => {
+  it("刷新后从 URL 恢复筛选条件，清除时保留分类参数", async () => {
+    searchParams = new URLSearchParams("tab=supplement&subject=chinese&stage=middle");
+    const page = await renderTabs(makeWorkbench());
+    cleanup = page.unmount;
+    const fields = [...page.container.querySelectorAll("select")];
+    expect(fields.map((field) => field.value)).toEqual(["", "chinese", "middle"]);
+    const clear = [...page.container.querySelectorAll("button")]
+      .find((button) => button.textContent?.includes("清除筛选"));
+    await act(async () => clear?.click());
+    expect(replaceMock).toHaveBeenCalledWith("/opportunities?tab=supplement", { scroll: false });
+  });
   it("默认显示 priority 标签内容，supplement/outOfScope 面板不渲染", async () => {
     const wb = makeWorkbench();
     const page = await renderTabs(wb);

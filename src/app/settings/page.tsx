@@ -68,9 +68,8 @@ export default function SettingsPage() {
       <Card>
         <CardHeader
           title="学习设置"
-          description="这两项会直接影响每日任务的内容与时长。"
         />
-        <div className="space-y-4">
+        <div className="grid gap-4 md:grid-cols-2">
           <Select
             label="学段"
             options={Object.entries(EDUCATION_LEVEL_LABELS).map(([v, l]) => ({

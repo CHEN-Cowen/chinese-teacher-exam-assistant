@@ -22,8 +22,6 @@ interface TabDef {
   label: string;
   /** 面板为空时的提示文案 */
   emptyText: string;
-  /** 面板顶部说明（非空时展示） */
-  intro: string;
   /** 卡片渲染变体 */
   variant: ResultsCardVariant;
 }
@@ -33,7 +31,6 @@ const TABS: readonly TabDef[] = [
     id: "priority",
     label: "优先机会",
     emptyText: "当前没有资格和偏好都匹配的机会。完善报考信息后会重新判断。",
-    intro: "资格条件和报考偏好都匹配的机会，建议优先查看依据并保存。",
     variant: "priority",
   },
   {
@@ -41,16 +38,12 @@ const TABS: readonly TabDef[] = [
     label: "补充后判断",
     emptyText:
       "没有需要补充信息或向招聘单位确认的机会。补充报考信息后会重新判断。",
-    intro:
-      "这些岗位不是不符合：补充一项信息或向招聘单位确认一项条件后会重新判断，未确认前不要当作可报结论。",
     variant: "supplement",
   },
   {
     id: "outOfScope",
     label: "偏好范围外",
     emptyText: "没有「资格可能符合但不在报考偏好范围内」的岗位。",
-    intro:
-      "这些岗位的资格条件可能符合，但地点或用工形式不在你填写的偏好范围内。调整偏好后会重新判断，这里不是资格不符合结论。",
     variant: "outOfScope",
   },
 ];
@@ -163,7 +156,7 @@ export function ResultsWorkbench({
         aria-orientation="horizontal"
         id={tablistId}
         onKeyDown={onKeyDown}
-        className="mb-5 flex gap-5 overflow-x-auto border-b border-line"
+        className="mb-5 flex gap-2 overflow-x-auto rounded-xl border border-line bg-surface p-1.5"
       >
         {TABS.map((tab) => {
           const selected = tab.id === activeTab;
@@ -182,9 +175,9 @@ export function ResultsWorkbench({
               tabIndex={selected ? 0 : -1}
               onClick={() => selectTab(tab.id)}
               className={cn(
-                "relative flex h-12 shrink-0 items-center gap-1.5 whitespace-nowrap text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2",
+                "relative flex h-12 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2",
                 selected
-                  ? "font-semibold text-brand"
+                  ? "bg-brand-soft font-semibold text-brand"
                   : "font-medium text-ink-muted hover:text-ink",
               )}
             >
@@ -221,7 +214,6 @@ export function ResultsWorkbench({
             tabIndex={0}
             className="space-y-3 focus-visible:outline-none"
           >
-            <p className="text-xs leading-5 text-ink-muted">{tab.intro}</p>
             {cards.length === 0 ? (
               <p className="rounded-xl border border-dashed border-line bg-canvas p-4 text-sm text-ink-muted">
                 {tab.emptyText}

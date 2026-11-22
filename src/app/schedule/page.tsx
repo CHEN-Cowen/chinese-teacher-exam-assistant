@@ -95,7 +95,8 @@ export default function SchedulePage() {
   const nextAction = state.data.nextAction;
 
   return (
-    <div className="mx-auto max-w-2xl space-y-7 pb-2">
+    <div className="space-y-6 pb-2">
+      <h1 className="text-2xl font-semibold tracking-tight text-ink">报考日程</h1>
       <ScheduleAnalytics conflicts={view.conflicts} events={state.data.events} />
       {!online && (
         <Callout variant="ask" title="当前离线">
@@ -112,7 +113,7 @@ export default function SchedulePage() {
         </Hero>
       ) : view.next ? (
         <Hero
-          meta="下一件不能错过的事"
+          meta="最近节点"
           conclusion={`${view.next.groupTitle} · ${view.next.event.kindLabel}`}
           risk={{
             tone: view.next.event.urgency === "must" ? "must" : "info",

@@ -224,7 +224,7 @@ export default function StudyPage() {
   if (!goals) return <LoadingPage />;
 
   return (
-    <div className="mx-auto max-w-2xl space-y-7 pb-2">
+    <div className="mx-auto max-w-5xl space-y-6 pb-2">
       {!online && (
         <Callout variant="ask" title="当前离线">
           显示的是之前生成的备考计划，可能不是最新安排。恢复网络后会自动刷新。

@@ -36,6 +36,11 @@ export class OpportunitiesController {
     return this.service.coverage();
   }
 
+  @Get('public-notices')
+  listPublicNotices() {
+    return this.service.listPublicNotices();
+  }
+
   /**
    * 往年参考列表（D06 / PRD 11.7 U06：公开只读）。
    * 已截止/已撤回的往年公告，不进入当前可报名计数，无任何报名动作。

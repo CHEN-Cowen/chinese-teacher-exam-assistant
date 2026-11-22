@@ -156,6 +156,34 @@ export class OpportunitiesService {
    * 画像来源：请求体优先；未携带时读取服务端持久画像（受邀模式跨浏览器恢复）。
    * v7.1 M8：userId 可选——访客（未登录）必须在请求体携带画像。
    */
+  async listPublicNotices() {
+    const now = new Date();
+    const catalog = await this.loadCatalog(now);
+    return catalog
+      .filter((item) =>
+        item.dataset === 'real' &&
+        item.lifecycle === 'active' &&
+        item.sourceHealth?.ok !== false &&
+        isUserVisibleInCatalog(item) &&
+        /^https:\/\//i.test(item.officialUrl),
+      )
+      .sort((a, b) => b.firstPublishedAt.localeCompare(a.firstPublishedAt))
+      .slice(0, 100)
+      .map((item) => ({
+        id: item.id,
+        title: item.title,
+        publisher: item.publisher,
+        province: item.region.province,
+        subjects: item.subjectScope,
+        stages: [...new Set(currentVersion(item)?.units.map((unit) => unit.stage) ?? [])],
+        checkedAt: now.toISOString(),
+        publishedAt: item.firstPublishedAt,
+        officialUrl: item.officialUrl,
+        registrationStart: currentVersion(item)?.timeline.registrationStart,
+        registrationEnd: currentVersion(item)?.timeline.registrationEnd,
+      }));
+  }
+
   private async resolveProfile(
     profile: unknown,
     userId?: string,

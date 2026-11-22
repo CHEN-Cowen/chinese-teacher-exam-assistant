@@ -3,11 +3,11 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { PRIMARY_NAV, isNavActive } from "@/lib/ia/nav";
+import { APPLICATIONS_NAV, PRIMARY_NAV, isNavActive } from "@/lib/ia/nav";
 import { NavIcon } from "./navIcons";
 
 /**
- * 移动端主导航（U09）：当年招聘 / 往年参考 / 我的关注 / 我的资料 四个入口。
+ * 移动端主导航：报考工作台与招聘、往年参考、关注和资料入口。
  * - 固定高 56px + safe-area-inset-bottom；
  * - 文字 11/16px，图标 18/22px；
  * - 激活态用 颜色 + 字重 + aria-current 表达，不只靠颜色；
@@ -25,7 +25,7 @@ export function BottomNav() {
       }}
     >
       <div className="flex h-14 items-stretch justify-around">
-        {PRIMARY_NAV.map((item) => {
+        {[APPLICATIONS_NAV, ...PRIMARY_NAV].map((item) => {
           const active = isNavActive(pathname, item.href);
           return (
             <Link

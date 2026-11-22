@@ -413,7 +413,7 @@ export function SupplementPageView({
   const returnHref = getReturnHref(params.origin, unitId, afterOverall);
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6 pb-4">
+    <div className="mx-auto max-w-4xl space-y-6 pb-4">
       <nav className="text-xs text-ink-muted">
         <Link
           href={returnHref}
@@ -425,15 +425,14 @@ export function SupplementPageView({
       </nav>
 
       <Hero
-        conclusion="补充缺失信息后重新判断"
+        conclusion="补充报考信息"
         meta={`${unit.unit.name} · ${unit.unit.region.province}${unit.unit.region.city ? unit.unit.region.city : ""}`}
       />
 
       {/* 4. 解释为何需要该信息 */}
       <Callout variant="note">
         <p className="text-sm leading-relaxed text-ink-muted">
-          以下信息只在这个岗位需要时才补问。留空表示暂不提供，该条件会继续保持
-          「待确认」，不会被判定为不符合。保存后会立即根据新信息重新判断。
+          留空的条件保持待确认。保存后重新预筛。
         </p>
         {askableUnknown.length > 0 && (
           <p className="mt-1 text-xs text-ink-muted">

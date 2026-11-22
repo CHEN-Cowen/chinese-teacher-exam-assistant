@@ -45,6 +45,7 @@ describe("BottomNav 移动端主导航", () => {
     expect(html).toContain('href="/history"');
     expect(html).toContain('href="/follows"');
     expect(html).toContain('href="/me"');
+    expect(html).toContain('href="/applications"');
   });
 
   it("当前页带 aria-current=page 与「当前页面」文字提示", () => {

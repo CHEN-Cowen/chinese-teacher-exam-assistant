@@ -49,7 +49,7 @@ const NO_PROFILE_COPY: Record<string, { title: string; description: string }> = 
     description: "补全剩余信息后，机会列表会立即更新。",
   },
   subject_not_open: {
-    title: "当前只开放语文学科的机会匹配",
+    title: "暂无法匹配当前意向学科",
     description:
       "你的意向学科尚未开放。可以先登记意向，开放后会优先评估。",
   },
@@ -159,6 +159,9 @@ export default function OpportunitiesPage() {
           actionLabel="填写报考信息"
           actionHref="/onboarding?from=opportunities"
         />
+        <Link href="/recruitment" className="mt-4 inline-flex text-sm font-semibold text-brand hover:underline">
+          先浏览招聘公告
+        </Link>
       </div>
     );
   }
@@ -242,6 +245,10 @@ export default function OpportunitiesPage() {
 
   return (
     <div className="mx-auto max-w-[1440px] space-y-7 px-4 pb-2 sm:px-5 lg:px-6">
+      <nav aria-label="招聘浏览方式" className="flex flex-wrap gap-2 text-sm font-semibold">
+        <Link href="/recruitment" className="rounded-lg border border-line px-4 py-2 text-ink hover:bg-surface">浏览公告</Link>
+        <span aria-current="page" className="rounded-lg bg-brand-soft px-4 py-2 text-brand">按我的条件筛选</span>
+      </nav>
       {actionFeedback && (
         <StatusMessageRegion>
           <StatusMessage

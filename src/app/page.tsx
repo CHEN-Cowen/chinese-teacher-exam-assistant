@@ -1,27 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { BrandMark } from "@/components/layout/BrandMark";
 import { Button } from "@/components/ui/Button";
 import { LinkButton } from "@/components/ui/LinkButton";
-import { Disclosure } from "@/components/ui/Disclosure";
 import { LoadingPage } from "@/components/ui/Loading";
 import { useCurrentUser } from "@/lib/auth";
 import { guestSessionService } from "@/lib/guest/guestSession";
-import { GUEST_COVERAGE } from "@/lib/guest/coverage";
-import { coverageProvinceLine } from "@/lib/opportunities/coverage-view";
 import { track } from "@/lib/analytics/eventService";
 import { FLAGS } from "@/lib/flags";
-import type { CoverageDTO } from "@/lib/opportunities/api-types";
-
-/** "YYYY-MM-DD..." → "YYYY年M月D日"；无法解析时原样返回 */
-function formatDate(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
-}
+import { PublicRecruitment } from "@/components/opportunities/PublicRecruitment";
 
 /**
  * 首页路由规则（v6.1 模块 0A 双入口混合式，V7 视觉语言重写，v7.1 M1 单一入口）：
@@ -40,23 +30,6 @@ function formatDate(iso: string): string {
 export default function Home() {
   const router = useRouter();
   const { status } = useCurrentUser();
-  const [coverage, setCoverage] = useState<CoverageDTO>(GUEST_COVERAGE);
-
-  useEffect(() => {
-    if (process.env.NEXT_PUBLIC_AUTH_MODE !== "invited") return;
-    let cancelled = false;
-    fetch("/api/opportunities/coverage", { credentials: "include" })
-      .then((res) => (res.ok ? (res.json() as Promise<CoverageDTO>) : null))
-      .then((next) => {
-        if (next && !cancelled) setCoverage(next);
-      })
-      .catch(() => {
-        // 首页仍可使用本地镜像，避免覆盖接口暂时不可用时阻断访客。
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     if (status === "loading") return;
@@ -76,12 +49,6 @@ export default function Home() {
   }, [status, router]);
 
   if (status === "loading") return <LoadingPage />;
-
-  const regionText = coverageProvinceLine(coverage);
-  const sourceCount = coverage.regions.reduce(
-    (sum, region) => sum + region.sources.length,
-    0,
-  );
 
   const handleStart = () => {
     track("home_start_match_clicked", "home");
@@ -129,7 +96,7 @@ export default function Home() {
                 哪些教师岗，<br />你能报？
               </h1>
               <p className="mt-4 max-w-[30em] text-[15px] leading-6 text-ink-muted md:text-[17px]">
-                按条件预筛，查看官方依据。
+                支持全学科教师招聘资格预筛，查看官方依据。
               </p>
 
               <div className="mt-6 flex max-w-sm flex-col gap-3 sm:max-w-none sm:flex-row sm:items-center">
@@ -150,6 +117,9 @@ export default function Home() {
                   无需登录 · 约 30 秒
                 </span>
               </div>
+              <Link href="/recruitment" className="mt-4 inline-flex text-sm font-semibold text-brand hover:underline">
+                浏览招聘公告 →
+              </Link>
             </div>
 
             {/* 右：结果预览（桌面约 7 栏）——只展示结果形状，不展开完整公告 */}
@@ -203,18 +173,7 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* 查看官方依据（示意动作，不可交互） */}
-                <div
-                  className="mt-3 flex h-10 items-center justify-center gap-1.5 rounded-lg bg-brand-soft text-[13px] font-semibold text-brand-strong"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M14 3H7a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V7z" />
-                    <path d="M14 3v4h4M9 13h6M9 17h4" />
-                  </svg>
-                  查看官方依据
-                </div>
+                <ExampleEvidence />
               </div>
             </aside>
 
@@ -234,6 +193,7 @@ export default function Home() {
               ))}
             </ul>
           </section>
+          <PublicRecruitment featured />
         </main>
 
         <footer className="mx-auto w-full max-w-[1280px] px-5 pb-10 md:px-8">
@@ -261,7 +221,6 @@ export default function Home() {
           <div className="flex items-center gap-6">
             <div className="hidden items-center gap-6 text-sm text-ink-muted md:flex">
               <Link href="/learn" className="hover:text-brand">产品说明</Link>
-              <Link href="#coverage" className="hover:text-brand">服务范围</Link>
             </div>
             <LinkButton href="/login" variant="ghost" size="sm" className="text-ink-muted">
               登录
@@ -289,7 +248,7 @@ export default function Home() {
                 哪些教师岗，<br />你能报？
               </h1>
               <p className="mt-5 max-w-[30em] text-[15px] leading-6 text-ink-muted md:text-[17px]">
-                按条件预筛，查看官方依据。
+                支持全学科教师招聘资格预筛，查看官方依据。
               </p>
 
               <div className="mt-7 flex flex-col items-start gap-3 sm:flex-row sm:items-center">
@@ -309,16 +268,10 @@ export default function Home() {
                   无需登录即可体验
                 </span>
               </div>
+              <Link href="/recruitment" className="mt-4 inline-flex text-sm font-semibold text-brand hover:underline">
+                浏览招聘公告 →
+              </Link>
 
-              <div className="mt-7">
-                <Link href="#coverage" className="inline-flex items-center gap-1.5 text-[13px] font-medium text-brand hover:underline">
-                  浙江、江苏、安徽部分地区 · 语文
-                  <svg aria-hidden="true" className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2">
-                    <circle cx="10" cy="10" r="8" />
-                    <path d="M10 7v4M10 14h.01" strokeLinecap="round" />
-                  </svg>
-                </Link>
-              </div>
             </div>
 
             {/* 右：结果示例卡 */}
@@ -351,9 +304,7 @@ export default function Home() {
                 ))}
               </div>
 
-              <p className="mt-4 text-[13px] leading-5 text-ink-muted">
-                上述为关键条件节选，完整判断包含全部公告要求。
-              </p>
+              <ExampleEvidence />
               <div className="mt-3">
                 <Link href="/preview" className="text-[13px] font-medium text-brand hover:underline">
                   查看示例 →
@@ -376,30 +327,10 @@ export default function Home() {
               </div>
             ))}
           </div>
-          <p className="mt-5 rounded-lg bg-brand-soft px-4 py-3 text-[13px] text-brand-strong">
-            当前只开放语文学科，来源覆盖部分城市。没有收录不代表当地没有招聘。
-          </p>
         </section>
-
-        {/* 覆盖范围 */}
-        <section
-          id="coverage"
-          className="mx-auto max-w-[1120px] px-6 pb-16 md:px-10"
-        >
-          <div className="rounded-[10px] border border-line bg-surface p-5 md:p-6">
-            <h2 className="text-xl font-bold text-ink">服务覆盖范围</h2>
-            <p className="mt-1 text-[13px] text-ink-muted">以下为当前覆盖，实际以运行时来源状态为准。</p>
-            <div className="mt-4">
-              <p className="text-sm font-semibold text-ink">
-                {regionText} · 语文教师岗位
-              </p>
-              <p className="mt-1 text-[13px] text-ink-muted" data-testid="home-coverage-summary">
-                最近核对 {formatDate(coverage.lastCheckedAt)} · 官方来源共 {sourceCount} 个 ·
-                下一个窗口：{coverage.nextWindowNote}
-              </p>
-            </div>
-          </div>
-        </section>
+        <div className="mx-auto max-w-[1120px] px-6 pb-12 md:px-10">
+          <PublicRecruitment featured />
+        </div>
       </main>
 
       <footer className="border-t border-line bg-surface">
@@ -408,5 +339,17 @@ export default function Home() {
         </div>
       </footer>
     </div>
+  );
+}
+
+function ExampleEvidence() {
+  return (
+    <details className="mt-3 rounded-lg bg-brand-soft px-3 py-2 text-sm">
+      <summary className="cursor-pointer font-semibold text-brand-strong">查看依据示例</summary>
+      <dl className="mt-3 grid gap-2 border-t border-brand/15 pt-3 text-ink">
+        <div><dt className="font-medium">公告条款示例</dt><dd>应具有相应学科教师资格。</dd></div>
+        <div><dt className="font-medium">考生条件示例</dt><dd>已取得对应学科教师资格。</dd></div>
+      </dl>
+    </details>
   );
 }

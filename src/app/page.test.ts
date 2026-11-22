@@ -432,6 +432,10 @@ describe("v7.2 Feature Flag 回退：ff_new_home 关闭时旧首页可回退", (
     // 旧首页结构标记在场，新首页结果预览不在场（回退方向的结构守卫）
     expect(html).toContain('data-testid="result-example-card"');
     expect(html).not.toContain('data-testid="result-preview"');
+    expect(html).toContain("支持全学科教师招聘资格预筛");
+    expect(html).not.toContain("当前只开放语文学科");
+    expect(html).not.toContain("服务覆盖范围");
+    expect(html).not.toContain('href="#coverage"');
   });
 
   it("Flag 关闭时旧首页主按钮仍进入 /onboarding", async () => {

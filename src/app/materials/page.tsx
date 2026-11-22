@@ -86,8 +86,7 @@ export default function MaterialsPage() {
   return (
     <div className="space-y-7">
       <header>
-        <p className="text-xs font-semibold tracking-wide text-brand">备考资料</p>
-        <h1 className="mt-1 text-xl font-bold text-ink">资料与准备情况</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-ink">备考资料</h1>
       </header>
 
       <Hero
@@ -128,7 +127,6 @@ export default function MaterialsPage() {
               <EmptyState
                 icon={<span className="text-xl" aria-hidden="true">＋</span>}
                 title="这次考试下还没有资料"
-                description="先添加手上最常用的一份资料。填写名称和大致目录后，就能看到它是否覆盖这次考试的关键模块。"
                 actionLabel="新增我的第一份资料"
                 onAction={openCreate}
               />

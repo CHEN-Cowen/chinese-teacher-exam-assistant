@@ -3,7 +3,7 @@ import { LinkButton } from "./LinkButton";
 
 interface EmptyStateProps {
   title: string;
-  description: string;
+  description?: string;
   actionLabel?: string;
   actionHref?: string;
   onAction?: () => void;
@@ -25,8 +25,8 @@ export function EmptyState({
           {icon}
         </div>
       )}
-      <h3 className="mb-2 text-lg font-semibold text-ink">{title}</h3>
-      <p className="mb-6 max-w-sm text-sm leading-relaxed text-ink-muted">{description}</p>
+      <h3 className={description ? "mb-2 text-lg font-semibold text-ink" : "mb-4 text-lg font-semibold text-ink"}>{title}</h3>
+      {description && <p className="mb-6 max-w-sm text-sm leading-relaxed text-ink-muted">{description}</p>}
       {actionLabel && actionHref && (
         <LinkButton href={actionHref} variant="primary">
           {actionLabel}
