@@ -171,7 +171,7 @@ describe("价值首页：内容与结构", () => {
     expect(html).toContain("登录");
     // 次级入口：浏览最近收录的公告
     expect(html).toContain("浏览最近收录的公告");
-    expect(html).toContain('href="/recruitment"');
+    expect(html).toContain('href="/opportunities"');
   });
 });
 
