@@ -85,7 +85,7 @@ test("访客补充信息流程：点击补充进入定向补充页，绝不回 /
   );
   await expect(page).not.toHaveURL(/\/onboarding/);
   // 已知基础信息（学历/专业/教资）不被重新询问：页面是补充缺失信息，不是基础画像表单
-  await expect(page.getByText("补充缺失信息后重新判断")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "补充报考信息" })).toBeVisible();
 
   // 只补仍缺失的子字段：有哪些补哪些（出生日期/社保/工作经历）
   const birthInput = page.getByLabel("出生日期");
