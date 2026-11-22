@@ -89,6 +89,10 @@ services:
       REDIS_URL: redis://redis:6379
       # 定时投递器开关：置 false 可只保留手动运维触发
       CRAWL_SCHEDULER_ENABLED: ${CRAWL_SCHEDULER_ENABLED:-true}
+      OSS_BUCKET: ${OSS_BUCKET:-}
+      OSS_ENDPOINT: ${OSS_ENDPOINT:-}
+      OSS_ACCESS_KEY_ID: ${OSS_ACCESS_KEY_ID:-}
+      OSS_ACCESS_KEY_SECRET: ${OSS_ACCESS_KEY_SECRET:-}
       # 位于 Next.js 同源反代（以及你的 nginx）之后
       TRUST_PROXY: "true"
       AUTH_MODE: invited
@@ -135,6 +139,10 @@ services:
       REDIS_URL: redis://redis:6379
       CRAWL_WORKER_CONCURRENCY: ${CRAWL_WORKER_CONCURRENCY:-2}
       CRAWL_WORKER_PAUSED: ${CRAWL_WORKER_PAUSED:-false}
+      OSS_BUCKET: ${OSS_BUCKET:-}
+      OSS_ENDPOINT: ${OSS_ENDPOINT:-}
+      OSS_ACCESS_KEY_ID: ${OSS_ACCESS_KEY_ID:-}
+      OSS_ACCESS_KEY_SECRET: ${OSS_ACCESS_KEY_SECRET:-}
     volumes:
       - ./data/snapshots:/app/.data
     depends_on:

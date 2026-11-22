@@ -21,6 +21,7 @@ import { ChangzhouEducationAdapter } from '../adapters/changzhou-education.adapt
 import { LishuiEducationAdapter } from '../adapters/lishui-education.adapter.js';
 import { DocumentFetchService } from './document-fetch.service.js';
 import type { DocumentFetchPayload } from './task-queue.js';
+import { isTransientFetchFailure } from './task-queue.js';
 import {
   FakeCrawlTaskQueue,
   FakeObjectStore,
@@ -460,5 +461,27 @@ describe('DocumentFetchService.handle', () => {
     expect(
       factory.requestHeaders.some((headers) => headers.get('referer')),
     ).toBe(false);
+  });
+
+  it('附件 URL 返回 200 HTML（限流页）：不建快照，按瞬时限流失败', async () => {
+    const { prisma, queue, objectStore, service, payload } = await setup({
+      [ATTACHMENT_URL]: {
+        status: 200,
+        body: '<html><body>访问过于频繁，请稍后再试</body></html>',
+      },
+    });
+
+    const outcome = await service.handle({
+      ...payload,
+      canonicalUrl: ATTACHMENT_URL,
+      kind: 'attachment',
+    });
+
+    expect(outcome.status).toBe('failed');
+    expect(outcome.errorSummary).toContain('ATTACHMENT_HTML');
+    expect(isTransientFetchFailure(outcome.errorSummary)).toBe(true);
+    expect(prisma.snapshots).toHaveLength(0);
+    expect(objectStore.writes).toHaveLength(0);
+    expect(queue.count('document.parse')).toBe(0);
   });
 });

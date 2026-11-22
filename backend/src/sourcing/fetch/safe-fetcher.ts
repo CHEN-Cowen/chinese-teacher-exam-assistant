@@ -107,6 +107,24 @@ export interface RequestOptions {
   contentType?: SafePostContentType;
 }
 
+/**
+ * 请求闸门：每次**实际发起** HTTP 请求前调用（含重试与每一跳重定向）。
+ *
+ * 抛错即表示本次请求被预算/运行控制阻止，SafeFetcher 不会发出请求，
+ * 也不把它当作可重试错误；调用方据此把任务记为 skipped。
+ */
+export interface RequestGuard {
+  beforeRequest?: () => Promise<void>;
+}
+
+/** 预算或运行控制阻止了请求；reason 为 'exhausted' | 'stopped' 等 */
+export class RequestBlockedError extends Error {
+  constructor(readonly reason: string) {
+    super(`请求被运行预算阻止：${reason}`);
+    this.name = 'RequestBlockedError';
+  }
+}
+
 /** POST 请求体上限（字节）：栏目分页参数远小于此值 */
 export const MAX_POST_BODY_BYTES = 4096;
 
@@ -258,6 +276,7 @@ export class SafeFetcher {
     conditional: ConditionalHeaders = {},
     extraHeaders: ExtraRequestHeaders = {},
     request: RequestOptions = {},
+    guard?: RequestGuard,
   ): Promise<FetchResult> {
     const startedAt = Date.now();
     const deadline = startedAt + this.totalTimeoutMs;
@@ -274,6 +293,7 @@ export class SafeFetcher {
             conditional,
             extraHeaders,
             request,
+            guard,
           ),
           deadline,
         );
@@ -315,6 +335,7 @@ export class SafeFetcher {
     conditional: ConditionalHeaders,
     extraHeaders: ExtraRequestHeaders = {},
     request: RequestOptions = {},
+    guard?: RequestGuard,
   ): Promise<FetchResult> {
     let currentUrl = startUrl;
     let redirects = 0;
@@ -332,6 +353,8 @@ export class SafeFetcher {
       try {
         if (Date.now() >= deadline)
           throw new SafeFetchError('TIMEOUT', '等待同域许可超时');
+        // 每一跳、每次重试都先过预算闸门：没有额度就不发请求
+        await guard?.beforeRequest?.();
         const response = await this.doFetch(
           currentUrl,
           deadline,

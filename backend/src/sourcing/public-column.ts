@@ -209,6 +209,12 @@ export function publicColumnPages(
   maxPages = 20,
 ): string[] {
   if (!content.trimStart().startsWith('{')) return [];
+  if (
+    new URL(baseUrl).pathname !==
+    '/api-gateway/jpaas-publish-server/front/page/build/unit'
+  ) {
+    return [];
+  }
   const $ = load(publicColumnHtml(content));
   const paging = readPublicColumnPaging($);
   if (!paging) return [];
