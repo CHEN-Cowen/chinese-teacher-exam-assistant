@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { LinkButton } from "@/components/ui/LinkButton";
@@ -57,20 +58,13 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-5">
-      <header>
-        <p className="text-xs font-semibold tracking-wide text-brand">偏好与数据</p>
-        <h1 className="mt-1 text-xl font-bold text-ink">设置</h1>
-        <p className="mt-1 text-sm leading-relaxed text-ink-muted">
-          常用的学习设置放在前面，通知、隐私和账号操作按需展开。
-        </p>
-      </header>
+      <PageHeader title="设置" />
 
       <Card>
         <CardHeader
           title="学习设置"
-          description="这两项会直接影响每日任务的内容与时长。"
         />
-        <div className="space-y-4">
+        <div className="grid gap-4 md:grid-cols-2">
           <Select
             label="学段"
             options={Object.entries(EDUCATION_LEVEL_LABELS).map(([v, l]) => ({

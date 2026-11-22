@@ -12,14 +12,17 @@ import { BrandMark } from "./BrandMark";
 
 const PAGE_TITLES: Record<string, string> = {
   "/onboarding": "快速问答",
-  "/materials": "我的资料",
+  "/materials": "备考",
   "/settings": "设置",
-  "/study": "我的备考",
-  "/history": "往年参考",
-  "/follows": "我的关注",
+  "/study": "备考",
+  "/history": "机会",
+  "/follows": "我的报考",
+  "/schedule": "我的报考",
 };
 
-const BACK_BUTTON_PATHS = new Set(["/onboarding", "/settings", "/materials", "/study", "/history", "/follows"]);
+// 2026-11 合并后：/materials /history /follows /schedule 经 proxy 跳到主入口页内
+// 标签，仅作为兜底直达路径保留标题；/onboarding /settings 保留返回按钮。
+const BACK_BUTTON_PATHS = new Set(["/onboarding", "/settings", "/materials", "/study", "/history", "/follows", "/schedule"]);
 
 export function Header() {
   const pathname = usePathname();
@@ -66,7 +69,7 @@ export function Header() {
                 href="/me"
                 className="text-[13px] font-medium text-ink-muted hover:text-brand"
               >
-                我的资料
+                我的
               </Link>
             )}
           </div>

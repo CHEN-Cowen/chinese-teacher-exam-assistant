@@ -12,16 +12,9 @@ import { PRIMARY_NAV, isNavActive } from "@/lib/ia/nav";
 import { NavIcon } from "./navIcons";
 import { BrandMark } from "./BrandMark";
 
-// U09：主导航为 当年招聘 / 往年参考 / 我的关注 / 我的资料 四个入口；
-// 侧栏下半为日程、材料、备考、设置等次级入口。
+// 主导航固定四个入口：机会、我的报考、备考、我的（2026-11 UI 大改版）。
+// 运营后台不进侧栏，仅 staff 角色在头像菜单可见。
 // 桌面侧栏宽 190px，内边距左右 14px、上下 24px；主导航项 48px 高。
-
-const SECONDARY_NAV = [
-  { id: "schedule", href: "/schedule", label: "日程" },
-  { id: "materials", href: "/materials", label: "材料清单" },
-  { id: "study", href: "/study", label: "辅助备考" },
-  { id: "settings", href: "/settings", label: "账号设置" },
-];
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -41,6 +34,7 @@ export function Sidebar() {
   }, [menuOpen]);
 
   const ready = status === "authenticated";
+  const isStaff = ready && hasRole(STAFF_ROLES) && !isDemoMode;
 
   return (
     <aside
@@ -52,11 +46,11 @@ export function Sidebar() {
       {/* 品牌 Logo */}
       <div className="flex h-16 items-center px-3.5">
         <Link href="/opportunities" aria-label="教招有据首页">
-          <BrandMark size="sm" />
+          <BrandMark size="lg" />
         </Link>
       </div>
 
-      {/* 主导航 */}
+      {/* 主导航：四个入口 */}
       <nav aria-label="主导航" className="flex-1 space-y-0.5 overflow-y-auto px-2.5 py-3">
         {PRIMARY_NAV.map((item) => {
           const active = isNavActive(pathname, item.href);
@@ -75,46 +69,6 @@ export function Sidebar() {
               <NavIcon id={item.id} className="h-5 w-5 shrink-0" />
               <span className="truncate">{item.label}</span>
               {active && <span className="sr-only">（当前页面）</span>}
-            </Link>
-          );
-        })}
-
-        {ready && hasRole(STAFF_ROLES) && !isDemoMode && (
-          <Link
-            href="/admin"
-            className={cn(
-              "flex h-12 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors",
-              pathname.startsWith("/admin")
-                ? "bg-ink text-white"
-                : "text-ink-muted hover:bg-surface-2 hover:text-ink"
-            )}
-          >
-            <svg aria-hidden="true" className="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-              <path d="M12 2 4 5v6c0 5 3.5 8.5 8 11 4.5-2.5 8-6 8-11V5l-8-3Z" strokeLinejoin="round" />
-            </svg>
-            <span className="truncate">运营后台</span>
-          </Link>
-        )}
-
-        {/* 分隔线 */}
-        <hr className="my-3 border-line" />
-
-        {/* 次级导航：日程、材料、备考、设置 */}
-        {SECONDARY_NAV.map((item) => {
-          const active = pathname === item.href;
-          return (
-            <Link
-              key={item.id}
-              href={item.href}
-              aria-current={active ? "page" : undefined}
-              className={cn(
-                "flex h-12 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors",
-                active
-                  ? "bg-brand-soft font-semibold text-brand"
-                  : "text-ink-muted hover:bg-surface-2 hover:text-ink"
-              )}
-            >
-              <span className="truncate">{item.label}</span>
             </Link>
           );
         })}
@@ -140,15 +94,24 @@ export function Sidebar() {
                     onClick={() => setMenuOpen(false)}
                     className="flex items-center gap-2 px-3 py-2 text-sm text-ink hover:bg-surface-2"
                   >
-                    设置
+                    账号设置
                   </Link>
                   <Link
-                    href="/materials"
+                    href="/me"
                     onClick={() => setMenuOpen(false)}
                     className="flex items-center gap-2 px-3 py-2 text-sm text-ink hover:bg-surface-2"
                   >
-                    学习资料
+                    我的
                   </Link>
+                  {isStaff && (
+                    <Link
+                      href="/admin"
+                      onClick={() => setMenuOpen(false)}
+                      className="flex items-center gap-2 px-3 py-2 text-sm text-ink hover:bg-surface-2"
+                    >
+                      运营后台
+                    </Link>
+                  )}
                   <button
                     type="button"
                     onClick={() => {

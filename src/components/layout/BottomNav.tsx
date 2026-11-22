@@ -7,7 +7,7 @@ import { PRIMARY_NAV, isNavActive } from "@/lib/ia/nav";
 import { NavIcon } from "./navIcons";
 
 /**
- * 移动端主导航（U09）：当年招聘 / 往年参考 / 我的关注 / 我的资料 四个入口。
+ * 移动端主导航：与桌面侧栏一致的四个入口（机会 / 我的报考 / 备考 / 我的）。
  * - 固定高 56px + safe-area-inset-bottom；
  * - 文字 11/16px，图标 18/22px；
  * - 激活态用 颜色 + 字重 + aria-current 表达，不只靠颜色；

@@ -129,7 +129,44 @@ function TaskDefinition({ label, value }: { label: string; value: string }) {
   );
 }
 
+import { Suspense } from "react";
+import { useSearchParams } from "next/navigation";
+import { MaterialsView } from "@/components/materials/MaterialsView";
+
+/**
+ * 备考（2026-11 合并「辅助备考 + 材料清单」）：
+ * - 默认「今日计划」= 辅助备考；?tab=materials = 材料清单；
+ * - useSearchParams 需要 Suspense 边界（生产 prerender 约束）。
+ */
 export default function StudyPage() {
+  return (
+    <Suspense fallback={<LoadingPage />}>
+      <StudyInner />
+    </Suspense>
+  );
+}
+
+/** 备考页内标签：今日计划 / 资料 */
+function StudyTabs({ active }: { active: "plan" | "materials" }) {
+  const tabClass = "rounded-lg px-4 py-2";
+  const idleClass = "border border-line text-ink hover:bg-surface";
+  return (
+    <nav aria-label="备考分区" className="flex flex-wrap gap-2 text-sm font-semibold">
+      {active === "plan" ? (
+        <span aria-current="page" className={`${tabClass} bg-brand-soft text-brand`}>今日计划</span>
+      ) : (
+        <Link href="/study" className={`${tabClass} ${idleClass}`}>今日计划</Link>
+      )}
+      {active === "materials" ? (
+        <span aria-current="page" className={`${tabClass} bg-brand-soft text-brand`}>资料</span>
+      ) : (
+        <Link href="/study?tab=materials" className={`${tabClass} ${idleClass}`}>资料</Link>
+      )}
+    </nav>
+  );
+}
+
+function StudyInner() {
   const { status, session } = useCurrentUser();
   const [goals, setGoals] = useState<GoalsResponse | null>(null);
   const [goalsError, setGoalsError] = useState<string | null>(null);
@@ -175,6 +212,17 @@ export default function StudyPage() {
       ),
     [goals, confirmation],
   );
+
+  const searchParams = useSearchParams();
+
+  if (searchParams.get("tab") === "materials") {
+    return (
+      <div className="space-y-5 pb-2">
+        <StudyTabs active="materials" />
+        <MaterialsView />
+      </div>
+    );
+  }
 
   if (status === "loading") return <LoadingPage />;
 
@@ -224,7 +272,7 @@ export default function StudyPage() {
   if (!goals) return <LoadingPage />;
 
   return (
-    <div className="mx-auto max-w-2xl space-y-7 pb-2">
+    <div className="mx-auto max-w-5xl space-y-6 pb-2">
       {!online && (
         <Callout variant="ask" title="当前离线">
           显示的是之前生成的备考计划，可能不是最新安排。恢复网络后会自动刷新。
@@ -720,6 +768,9 @@ function ReadySection({
 
   return (
     <>
+      <div className="space-y-5 pb-2">
+        <StudyTabs active="plan" />
+      </div>
       {/* 目标条：主要目标 + 软警告 */}
       <div>
         <div className="flex items-center justify-between gap-3">

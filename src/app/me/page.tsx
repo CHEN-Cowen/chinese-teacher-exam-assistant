@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { LinkButton } from "@/components/ui/LinkButton";
@@ -77,112 +78,97 @@ export default function MePage() {
   if (!user || !role) return null;
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6 pb-4">
-      <header>
-        <p className="text-xs font-semibold tracking-wide text-brand">我的资料</p>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">
-          {user.name}
-        </h1>
-        <p className="mt-1 text-sm text-ink-muted">查看当前进度，继续最重要的一步</p>
-      </header>
+    <div className="space-y-6 pb-4">
+      <PageHeader title="我的" />
 
-      {/* 当前进度：首屏只推动一个下一步 */}
-      <MyProgressCard />
+      <div className="grid items-start gap-6 lg:grid-cols-2">
+        <div className="min-w-0 space-y-6">
+          <ProfileCard />
+          <MyProgressCard />
 
-      {/* 会员状态（M11：免费/有效/已到期三态，失败静默不展示） */}
-      <MembershipCard />
+          {/* 我的纠错 */}
+          <MyCorrectionsCard />
 
-      {/* 报考信息 */}
-      <ProfileCard />
+          {/* 我的公告补录（D08） */}
+          <MySubmissionsCard />
 
-      {/* 我的纠错 */}
-      <MyCorrectionsCard />
-
-      {/* 我的公告补录（D08） */}
-      <MySubmissionsCard />
-
-      {/* 次级入口集中收纳，避免与首屏主行动竞争 */}
-      <Card>
-        <CardHeader
-          title="资料与设置"
-          description="不常用的内容统一放在这里"
-        />
-        <div className="divide-y divide-line">
-          <SettingsRow
-            href="/applications"
-            title="日程与报考"
-            description="保存的机会、报考状态与考试时间线汇总"
-          />
-          <SettingsRow
-            href="/schedule"
-            title="日程时间线"
-            description="报名、缴费、考试等关键时间与变更记录"
-          />
-          <SettingsRow
-            href="/study"
-            title="备考练习"
-            description="按已保存机会生成的每日备考任务"
-          />
-          <SettingsRow
-            href="/policy"
-            title="政策检索"
-            description="按地区和年份检索已发布的官方政策与招聘材料"
-          />
-          <SettingsRow
-            href="/me/education"
-            title="教育经历"
-            description="按本科、硕士等阶段分别填写专业与师范背景"
-          />
-          <SettingsRow
-            href="/materials"
-            title="学习资料"
-            description="管理已有资料及其适用方式"
-          />
-          <SettingsRow
-            href="/settings"
-            title="通知与学习偏好"
-            description="管理学习提醒、考情变化与每日可用时间"
-          />
-          <SettingsRow
-            href="/settings"
-            title="隐私与数据"
-            description="查看我们保存的数据类别，申请删除测试数据或注销账号"
-          />
         </div>
-      </Card>
+        <aside aria-label="资料与设置" className="min-w-0 space-y-6">
+          <MembershipCard />
+          <Card>
+            <CardHeader
+              title="资料与设置"
+            />
+            <div className="divide-y divide-line">
+              <SettingsRow
+                href="/applications"
+                title="日程与报考"
+              />
+              <SettingsRow
+                href="/schedule"
+                title="日程时间线"
+              />
+              <SettingsRow
+                href="/study"
+                title="备考练习"
+              />
+              <SettingsRow
+                href="/policy"
+                title="政策检索"
+              />
+              <SettingsRow
+                href="/me/education"
+                title="教育经历"
+              />
+              <SettingsRow
+                href="/materials"
+                title="学习资料"
+              />
+              <SettingsRow
+                href="/settings"
+                title="通知与学习偏好"
+              />
+              <SettingsRow
+                href="/settings"
+                title="隐私与数据"
+              />
+            </div>
+          </Card>
 
-      <details className="group rounded-2xl border border-line bg-surface">
-        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-4 [&::-webkit-details-marker]:hidden">
-          <span>
-            <span className="flex items-center gap-2 text-sm font-semibold text-ink">
-              账号信息
-              <Badge variant="primary">
-                {role === "admin"
-                  ? "管理员"
-                  : role === "exam_reviewer"
-                    ? "考情审核员"
-                    : role === "resource_reviewer"
-                      ? "资源审核员"
-                      : "受邀用户"}
-              </Badge>
-            </span>
-            <span className="mt-0.5 block text-xs text-ink-muted">用户ID：{user.id}</span>
-          </span>
-          <svg aria-hidden="true" className="h-4 w-4 text-ink-muted transition-transform group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m6 9 6 6 6-6" />
-          </svg>
-        </summary>
-        <div className="flex flex-wrap gap-2 border-t border-line p-4">
-          <Button variant="outline" size="sm" onClick={() => void logout()}>
-            退出登录
-          </Button>
-          {hasRole(STAFF_ROLES) && !isDemoMode && (
-            <LinkButton href="/admin/corrections" variant="outline" size="sm">
-              进入运营后台
-            </LinkButton>
-          )}
-        </div>
-      </details>
+          <details className="group rounded-2xl border border-line bg-surface">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-4 [&::-webkit-details-marker]:hidden">
+              <span>
+                <span className="flex items-center gap-2 text-sm font-semibold text-ink">
+                  账号信息
+                  <Badge variant="primary">
+                    {role === "admin"
+                      ? "管理员"
+                      : role === "exam_reviewer"
+                        ? "考情审核员"
+                        : role === "resource_reviewer"
+                          ? "资源审核员"
+                          : "受邀用户"}
+                  </Badge>
+                </span>
+                <span className="mt-0.5 block text-xs text-ink-muted">用户ID：{user.id}</span>
+              </span>
+              <svg aria-hidden="true" className="h-4 w-4 text-ink-muted transition-transform group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m6 9 6 6 6-6" />
+              </svg>
+            </summary>
+            <div className="flex flex-wrap gap-2 border-t border-line p-4">
+              <Button variant="outline" size="sm" onClick={() => void logout()}>
+                退出登录
+              </Button>
+              {hasRole(STAFF_ROLES) && !isDemoMode && (
+                <LinkButton href="/admin/corrections" variant="outline" size="sm">
+                  进入运营后台
+                </LinkButton>
+              )}
+            </div>
+          </details>
+        </aside>
+      </div>
     </div>
   );
 }
@@ -190,11 +176,9 @@ export default function MePage() {
 function SettingsRow({
   href,
   title,
-  description,
 }: {
   href: string;
   title: string;
-  description: string;
 }) {
   return (
     <Link
@@ -203,7 +187,6 @@ function SettingsRow({
     >
       <span className="flex-1 min-w-0">
         <span className="block text-sm font-medium text-ink">{title}</span>
-        <span className="block text-xs text-ink-muted mt-0.5">{description}</span>
       </span>
       <span className="text-ink-muted" aria-hidden="true">
         ›
@@ -353,7 +336,7 @@ function ProfileCard() {
       <h2 className="mt-2 text-2xl font-semibold tracking-tight text-ink">
         {missingGraduationDate
           ? "补充毕业时间，机会判断会更准确"
-          : "信息已填写，筛选结果会自动更新"}
+          : "已填写"}
       </h2>
       <p className="mt-2 text-sm text-ink-muted">
         当前条件：{regionSummary}{targetSummary ? ` · ${targetSummary}` : ""}
@@ -435,8 +418,7 @@ function MyProgressCard() {
   return (
     <Card className="border-brand/15 p-5 shadow-2">
       <p className="text-xs font-semibold tracking-wide text-brand">当前进度</p>
-      <h2 className="mt-2 text-2xl font-semibold tracking-tight text-ink">{view.conclusion}</h2>
-      <p className="mt-2 text-sm leading-6 text-ink-muted">{view.description}</p>
+      <h2 className="mt-2 text-2xl font-semibold tracking-tight text-ink">报考进度</h2>
 
       <dl className="mt-4 divide-y divide-line border-y border-line text-sm">
         <div className="flex items-center justify-between gap-4 py-2.5">

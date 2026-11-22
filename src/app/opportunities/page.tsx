@@ -18,6 +18,7 @@ import {
 import { buildNoResultPanel } from "@/lib/opportunities/no-result";
 import { opportunitiesApi } from "@/lib/opportunities/api";
 import { OpportunityListItem } from "@/components/opportunities/OpportunityListItem";
+import { HistoryListView } from "@/components/history/HistoryListView";
 import { PreferencePreviewCard } from "@/components/opportunities/PreferencePreviewCard";
 import { MigrationConflictBanner } from "@/components/opportunities/MigrationConflictBanner";
 import type { SupplementFacts } from "@/lib/profile/activeProfile";
@@ -49,13 +50,48 @@ const NO_PROFILE_COPY: Record<string, { title: string; description: string }> = 
     description: "补全剩余信息后，机会列表会立即更新。",
   },
   subject_not_open: {
-    title: "当前只开放语文学科的机会匹配",
+    title: "暂无法匹配当前意向学科",
     description:
       "你的意向学科尚未开放。可以先登记意向，开放后会优先评估。",
   },
 };
 
+/**
+ * 机会页（2026-11 合并「当年招聘 + 往年参考」）：
+ * - 默认「正在报名」= 按画像条件评估的当年机会；
+ * - ?tab=history = 往年参考列表（与旧 /history 兜底页共用 HistoryListView）；
+ * - useSearchParams 需要 Suspense 边界（生产 prerender 约束）。
+ */
 export default function OpportunitiesPage() {
+  return (
+    <Suspense fallback={<LoadingPage />}>
+      <OpportunitiesInner />
+    </Suspense>
+  );
+}
+
+/** 机会页页内标签：正在报名 / 往年参考 / 浏览公告（公告广场） */
+function OpportunityTabs({ active }: { active: "current" | "history" }) {
+  const tabClass = "rounded-lg px-4 py-2";
+  const idleClass = "border border-line text-ink hover:bg-surface";
+  return (
+    <nav aria-label="机会浏览方式" className="flex flex-wrap gap-2 text-sm font-semibold">
+      {active === "current" ? (
+        <span aria-current="page" className={`${tabClass} bg-brand-soft text-brand`}>正在报名</span>
+      ) : (
+        <Link href="/opportunities" className={`${tabClass} ${idleClass}`}>正在报名</Link>
+      )}
+      {active === "history" ? (
+        <span aria-current="page" className={`${tabClass} bg-brand-soft text-brand`}>往年参考</span>
+      ) : (
+        <Link href="/opportunities?tab=history" className={`${tabClass} ${idleClass}`}>往年参考</Link>
+      )}
+      <Link href="/recruitment" className={`${tabClass} ${idleClass}`}>浏览公告</Link>
+    </nav>
+  );
+}
+
+function OpportunitiesInner() {
   const router = useRouter();
   const [loginNotice, setLoginNotice] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
@@ -147,6 +183,18 @@ export default function OpportunitiesPage() {
       ?.scrollIntoView({ block: "center" });
   }, [state.status]);
 
+  const searchParams = useSearchParams();
+  const isHistoryTab = searchParams.get("tab") === "history";
+
+  if (isHistoryTab) {
+    return (
+      <div className="mx-auto max-w-[1440px] space-y-5 px-4 pb-2 sm:px-5 lg:px-6">
+        <OpportunityTabs active="history" />
+        <HistoryListView />
+      </div>
+    );
+  }
+
   if (state.status === "loading") return <LoadingPage />;
 
   if (state.status === "no-profile") {
@@ -159,6 +207,9 @@ export default function OpportunitiesPage() {
           actionLabel="填写报考信息"
           actionHref="/onboarding?from=opportunities"
         />
+        <Link href="/recruitment" className="mt-4 inline-flex text-sm font-semibold text-brand hover:underline">
+          先浏览招聘公告
+        </Link>
       </div>
     );
   }
@@ -242,6 +293,7 @@ export default function OpportunitiesPage() {
 
   return (
     <div className="mx-auto max-w-[1440px] space-y-7 px-4 pb-2 sm:px-5 lg:px-6">
+      <OpportunityTabs active="current" />
       {actionFeedback && (
         <StatusMessageRegion>
           <StatusMessage
