@@ -1142,6 +1142,19 @@ export class FakeObjectStore implements ObjectStore {
     if (value === undefined) throw new Error(`object not found: ${storageKey}`);
     return value;
   }
+
+  readonly deleted: string[] = [];
+
+  async delete(storageKey: string): Promise<void> {
+    if (!this.binaries.has(storageKey)) return;
+    this.binaries.delete(storageKey);
+    this.files.delete(storageKey);
+    this.deleted.push(storageKey);
+  }
+
+  async statSize(storageKey: string): Promise<number | null> {
+    return this.binaries.get(storageKey)?.byteLength ?? null;
+  }
 }
 
 /** ---------- 离线抓取工厂 ---------- */

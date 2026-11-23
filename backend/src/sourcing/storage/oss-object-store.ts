@@ -97,6 +97,25 @@ export class OssObjectStore implements ObjectStore {
    * 删除对象。本地遗留副本必须先删：getBinary 会优先命中本地，
    * 只删 OSS 会留下「行已删、字节仍被读到」的假象。
    */
+  async delete(storageKey: string): Promise<void> {
+    if (this.legacyStore) {
+      try {
+        await this.legacyStore.delete(storageKey);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
+    }
+    try {
+      await this.client.delete(storageKey);
+    } catch (error) {
+      // OSS 删除本身幂等；NoSuchKey 视为成功，其余错误上抛交保留策略记账
+      const status = (error as { status?: number }).status;
+      const code = (error as { code?: string }).code;
+      if (status === 404 || code === 'NoSuchKey') return;
+      throw error;
+    }
+  }
+
   private async request(url: string, init?: RequestInit): Promise<Response> {
     try {
       return await fetch(url, { ...init, redirect: 'error', signal: AbortSignal.timeout(30_000) });

@@ -12,6 +12,10 @@
 
 ## 1. 前置条件
 
+轻量主机使用一个 API 实例和一个采集 Worker。恢复定时采集时，在实际生效的 Compose 配置中给 API 设置 `CRAWL_SCHEDULER_ENABLED=true` 和 `CRAWL_SCHEDULER_SERIAL=true`，给 Worker 设置 `CRAWL_WORKER_CONCURRENCY=1`、`CRAWL_WORKER_PAUSED=false`。串行模式每次最多投递一个到期来源，等待采集队列中的待执行、执行中和延迟重试任务全部处理后再投递下一个。手动发起的任务也会进入采集队列，恢复观察期间避免并行发起手动批次。上线后用运行记录核对连续两个来源的投递顺序，并同时观察主机内存和 Worker 健康状态。
+
+2026-11-22 生产恢复期间，镜像 `sha-6c97bdc` 通过额外的 `docker-compose.serial.yml` 挂载只读调度补丁。生产 Compose 文件顺序为 `docker-compose.standalone.yml`、`docker-compose.oss.yml`、`docker-compose.serial.yml`，环境文件顺序为 `.env`、`.env.oss`。补丁每两分钟检查一次，队列有任务或主机可用内存低于 384 MiB 时暂缓投递。每轮使用现有的小预算，Worker 并发为 1，限制 0.5 CPU 和 512 MiB 内存。紧急暂停可用同目录 `docker-compose.serial.disabled.yml` 恢复第三份配置并仅重建 `backend`。后续升级镜像时，应复核同等约束并移除旧镜像专用的 JS 挂载。
+
 | 项 | 要求 |
 |---|---|
 | Docker | 20.10+，含 Compose v2 插件（`docker compose version` 能跑即可） |
@@ -93,7 +97,7 @@ IMAGE_TAG=sha-替换为成功构建的完整提交SHA
 cd /opt/jiaozhao
 # Linux 主机必需：backend 以 node（uid 1000）运行，快照目录属主必须先给对；
 # Windows/macOS 的 Docker Desktop 可跳过这一行
-mkdir -p data/snapshots data/redis && chown 1000:1000 data/snapshots && chown 999:999 data/redis
+mkdir -p data/objectstore data/redis && chown 1000:1000 data/objectstore && chown 999:999 data/redis
 docker compose -f docker-compose.standalone.yml pull
 docker compose -f docker-compose.standalone.yml up -d
 docker compose -f docker-compose.standalone.yml ps
@@ -264,6 +268,89 @@ docker compose -f docker-compose.standalone.yml up -d
 
 升级版本前建议先备份。
 
+### 线上用叠加层部署时，如何让运维配置生效
+
+如果线上实际启动命令是 `-f standalone.yml -f oss.yml -f serial.yml`（这几个文件只存在于服务器上，不在仓库），那么**改仓库里的 `docker-compose.standalone.yml` 不会影响线上**——这正是「日志轮转配了但没生效」的典型原因。
+
+仓库提供了 `deploy/docker-compose.ops.yml` 作为运维叠加层，承载三件事：容器日志轮转、快照保留策略开关、快照存储目录映射。叠在最后即可：
+
+```bash
+# 1. 上传叠加层
+scp deploy/docker-compose.ops.yml user@server:/opt/jiaozhao/ops.yml
+
+# 2. 先看合并结果，确认 backend 的 /app/.data 挂到了 data/objectstore、
+#    且 logging 已生效，再真正启动
+docker compose -p jiaozhao-standalone --env-file .env --env-file .env.oss \
+  -f standalone.yml -f oss.yml -f serial.yml -f ops.yml config | grep -A6 'backend:' | head -20
+
+# 3. 确认无误后生效
+docker compose -p jiaozhao-standalone --env-file .env --env-file .env.oss \
+  -f standalone.yml -f oss.yml -f serial.yml -f ops.yml up -d
+```
+
+彻底脱离 OSS 时，去掉 `--env-file .env.oss` 和 `-f oss.yml`，**保留 `-f ops.yml`**（日志轮转与保留策略都靠它）。
+
+> 叠加层里刻意没写 `migrate`：它是一次性容器，日志量可忽略；而如果基线文件里没有同名服务，在叠加层里声明一个空服务会让 compose 直接报「既无 image 也无 build」。
+
+### 磁盘空间与快照保留（小系统盘必看）
+
+单机把 `data/postgres`、`data/redis`、`data/objectstore` 放在同一块盘上，**磁盘写满的后果不是变慢，而是 PostgreSQL 写不进 WAL 直接崩**，随后全部抓取任务失败。40GB 系统盘的机器务必先做这三件事。
+
+```bash
+# 1. 看现状：整体、快照、数据库各占多少
+df -h /
+du -sh ./data/objectstore ./data/postgres ./data/redis
+# 按 hash 前缀分桶统计，确认是否出现异常膨胀的单桶
+du -sh ./data/objectstore/snapshots/* | sort -rh | head
+
+# 2. 容器日志已在上面的 compose 里限制为 50MB × 3 份/容器；
+#    旧镜像层要自己清（每次发布都会留一份）
+docker image prune -af --filter "until=168h"
+
+# 3. 预演快照保留策略（只读，不删任何东西）
+curl -s -H "x-internal-token: $INTERNAL_TOKEN" \
+  http://127.0.0.1:3000/api/admin/sources/snapshots/retention/plan | head -c 800
+```
+
+保留策略的安全边界：**只清理 HTML**，PDF/XLS 附件原件永不清理；被文档最新指针、URL 缓存、解析运行、抽取运行引用的快照一律保留；同一 `contentHash` 若还有其他来源在用，只删数据库行不删对象字节。确认预演数字无误后，把 `.env` 里 `SNAPSHOT_RETENTION_DRY_RUN` 改为 `false` 才会真删。
+
+### 从 OSS 把快照迁回本地
+
+快照是内容寻址的，OSS 的 key 和本地路径完全一致（`snapshots/<hash前2位>/<sha256>`），数据库里的 `storageKey` 不需要改。容器内 `OBJECT_STORE_DIR=/app/.data` 映射到主机 `./data/objectstore`，所以主机上的目标目录是 `data/objectstore/snapshots/`——**只有一个 snapshots 层**。
+
+```bash
+# 0. 先量真实体积，别靠估算
+ossutil du oss://<bucket>/snapshots/
+
+# 1. 镜像回本地（目标写 objectstore 下的 snapshots，不要写成 data/snapshots）
+ossutil cp -r oss://<bucket>/snapshots/ ./data/objectstore/snapshots/ --update
+
+# 2. 属主必须与容器内 node（uid 1000）一致，否则读取一律 EACCES
+chown -R 1000:1000 ./data/objectstore
+
+# 3. 去掉 .env 里的 OSS_* 四个变量后重建，后端会自动回落到本地存储
+docker compose -f docker-compose.standalone.yml up -d --force-recreate backend worker
+```
+
+迁完自检一条：主机上的文件数与桶里的对象数应当一致。
+
+```bash
+find ./data/objectstore/snapshots -type f | wc -l
+```
+
+**如果你之前用的是旧的 `data/snapshots` 目录**（那会形成两层 `data/snapshots/snapshots/`），先把它平移过来再启动，否则历史快照会读不到：
+
+```bash
+mkdir -p ./data/objectstore
+if [ -d ./data/snapshots/snapshots ]; then
+  mv ./data/snapshots/snapshots/* ./data/objectstore/snapshots/ 2>/dev/null || true
+  rmdir ./data/snapshots/snapshots ./data/snapshots 2>/dev/null || true
+fi
+chown -R 1000:1000 ./data/objectstore
+```
+
+迁移过程中如需灰度，可先保留 `OSS_*` 配置：实现上会**优先读本地、未命中再回落到 OSS**，因此历史数据搬完即可，新数据继续写 OSS；确认全量落地后再删配置。
+
 ---
 
 ## 8. 故障排查
@@ -276,7 +363,8 @@ docker compose -f docker-compose.standalone.yml up -d
 | `/api/health` 返回 `"db":"down"` | `logs db` 看数据库是否异常；若刚修改过 `POSTGRES_*`：这些变量只在数据库**首次初始化**时生效，改已有库的口令需 `exec db psql` 进库 `ALTER ROLE … WITH PASSWORD`，或 `down` 后 `rm -rf ./data` 重建（数据全丢） |
 | 页面报 502 upstream unreachable | backend 还没就绪或已挂，`logs backend`；frontend 本身正常 |
 | `up -d` 报 `dependency failed to start: ...backend... is unhealthy`，但 `logs backend` 显示 Nest 正常启动 | 进程好、健康检查没过。`docker inspect --format '{{json .State.Health}}' <backend容器名>` 看健康日志：401 说明健康检查没带 `x-internal-token` 头（全局守卫拦截一切无令牌请求含 `/health`，本文件健康检查已内置该头；手改过才可能出现）；connection refused 则是进程/端口问题 |
-| backend 日志报 `EACCES` 无法写 `/app/.data` | `./data/snapshots` 属主不对（目录不存在时 docker 会以 root 自动创建）；执行 `chown -R 1000:1000 data/snapshots` 后 `restart backend` |
+| backend 日志报 `EACCES` 无法写 `/app/.data` | `./data/objectstore` 属主不对（目录不存在时 docker 会以 root 自动创建）；执行 `chown -R 1000:1000 data/objectstore` 后 `restart backend` |
+| 迁回后老公告打不开、日志报 `ENOENT` | 快照路径对不上。确认 `find ./data/objectstore/snapshots -type f \| wc -l` 与桶里对象数一致；误写成 `data/snapshots/` 会多套一层 |
 | 登录提示"邮箱或密码不正确" | 本模式没有 demo 内置账号；确认账号是按第 4 节创建的 |
 | `bootstrap-admin` 返回 403 `Forbidden resource` | 旧后端镜像的 bug：全局会话守卫漏把该接口放进匿名白名单（修复见 `backend/src/auth/session.guard.ts` 的 `PUBLIC_PATHS`）。`pull` 新镜像后 `up -d` 即可 |
 | 调接口 401 | 会话 cookie 失效或未携带；重新登录 |

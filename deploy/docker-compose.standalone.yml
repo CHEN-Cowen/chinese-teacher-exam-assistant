@@ -8,8 +8,8 @@
 # 自动永久关闭）。
 #
 # 快速开始（不建 .env 也能跑）：
-#   mkdir -p data/snapshots data/redis
-#   chown 1000:1000 data/snapshots && chown 999:999 data/redis   # Linux 主机必需；Docker Desktop 可跳过
+#   mkdir -p data/objectstore data/redis
+#   chown 1000:1000 data/objectstore && chown 999:999 data/redis   # Linux 主机必需；Docker Desktop 可跳过
 #   docker compose -f docker-compose.standalone.yml pull
 #   docker compose -f docker-compose.standalone.yml up -d
 #   docker compose -f docker-compose.standalone.yml logs -f migrate backend
@@ -35,10 +35,20 @@ name: jiaozhao-standalone
 x-database-url: &database-url
   DATABASE_URL: postgresql://${POSTGRES_USER:-jiaozhao}:${POSTGRES_PASSWORD:-jiaozhao-pg-local}@db:5432/${POSTGRES_DB:-jiaozhao}
 
+# 日志轮转：json-file 驱动默认无上限，抓取 Worker 长期运行会把 40GB 系统盘写满，
+# 磁盘满会让 PostgreSQL 写不进 WAL 直接崩（不是渐进降级，是突发故障）。
+# 每个容器上限 150MB（50m × 3 份），六个容器合计封顶约 900MB。
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "3"
+
 services:
   db:
     # 默认 Docker Hub 官方镜像；境内拉不动时 .env 设 DB_IMAGE=docker.nju.edu.cn/postgres:17-alpine
     image: ${DB_IMAGE:-postgres:17-alpine}
+    logging: *default-logging
     environment:
       # 仅内网可达，固定默认值即可。注意：POSTGRES_* 只在数据库首次初始化时生效，
       # 事后修改不会改变已有库的口令（需进库 ALTER ROLE 或重建数据卷）。
@@ -59,6 +69,7 @@ services:
   # 单机重启后任务仍在；若不想持久化可删掉 volumes 行。
   redis:
     image: ${REDIS_IMAGE:-redis:7-alpine}
+    logging: *default-logging
     command: ["redis-server", "--appendonly", "yes", "--dir", "/data"]
     volumes:
       - ./data/redis:/data
@@ -73,6 +84,7 @@ services:
   migrate:
     image: ${REGISTRY:-ghcr.nju.edu.cn}/${GHCR_OWNER:-chen-cowen}/chinese-teacher-exam-assistant-api:${IMAGE_TAG:-latest}
     command: npx prisma migrate deploy
+    logging: *default-logging
     environment:
       <<: *database-url
     depends_on:
@@ -82,6 +94,7 @@ services:
 
   backend:
     image: ${REGISTRY:-ghcr.nju.edu.cn}/${GHCR_OWNER:-chen-cowen}/chinese-teacher-exam-assistant-api:${IMAGE_TAG:-latest}
+    logging: *default-logging
     environment:
       <<: *database-url
       PORT: "3000"
@@ -89,6 +102,21 @@ services:
       REDIS_URL: redis://redis:6379
       # 定时投递器开关：置 false 可只保留手动运维触发
       CRAWL_SCHEDULER_ENABLED: ${CRAWL_SCHEDULER_ENABLED:-true}
+      CRAWL_SCHEDULER_SERIAL: ${CRAWL_SCHEDULER_SERIAL:-true}
+      # 快照保留策略（单机小磁盘保护）：只清理「HTML 且无任何引用且超版本数」的历史版本，
+      # PDF/XLS 附件原件永不清理。只在这里（backend）开启，worker 不设——两个进程都跑会重复清理。
+      # SNAPSHOT_RETENTION_DRY_RUN 默认 true：先只写日志预演，确认数字无误再改 false 真删。
+      SNAPSHOT_RETENTION_ENABLED: ${SNAPSHOT_RETENTION_ENABLED:-true}
+      SNAPSHOT_RETENTION_DRY_RUN: ${SNAPSHOT_RETENTION_DRY_RUN:-true}
+      SNAPSHOT_RETENTION_KEEP_VERSIONS: ${SNAPSHOT_RETENTION_KEEP_VERSIONS:-20}
+      SNAPSHOT_RETENTION_MIN_AGE_DAYS: ${SNAPSHOT_RETENTION_MIN_AGE_DAYS:-30}
+      # 对象存储根目录：显式钉死绝对路径，不依赖进程 cwd。
+      # 未配置 OSS_* 时快照就落在这里；主机侧映射为 ./data/objectstore
+      OBJECT_STORE_DIR: /app/.data
+      OSS_BUCKET: ${OSS_BUCKET:-}
+      OSS_ENDPOINT: ${OSS_ENDPOINT:-}
+      OSS_ACCESS_KEY_ID: ${OSS_ACCESS_KEY_ID:-}
+      OSS_ACCESS_KEY_SECRET: ${OSS_ACCESS_KEY_SECRET:-}
       # 位于 Next.js 同源反代（以及你的 nginx）之后
       TRUST_PROXY: "true"
       AUTH_MODE: invited
@@ -105,10 +133,14 @@ services:
       # 不设置 CORS_ORIGINS：浏览器永远经 frontend 同源反代，从不直连 backend，
       # 后端 CORS 白名单在此拓扑下不起任何作用。
     volumes:
-      # 公告快照留档，落在 ./data/snapshots。backend 以 node（uid=1000）非 root 运行，
-      # Linux 主机首次启动前必须：mkdir -p data/snapshots && chown 1000:1000 data/snapshots
+      # 公告快照留档，落在 ./data/objectstore。backend 以 node（uid=1000）非 root 运行，
+      # Linux 主机首次启动前必须：mkdir -p data/objectstore && chown 1000:1000 data/objectstore
       # （Windows/macOS 的 Docker Desktop 由桌面虚拟机处理权限，不需要这一步）
-      - ./data/snapshots:/app/.data
+      #
+      # 容器内 OBJECT_STORE_DIR=/app/.data，而对象 key 以 snapshots/ 开头，
+      # 因此主机上的真实路径是 data/objectstore/snapshots/<hash前2位>/<sha256>。
+      # 不要把主机目录再命名成 data/snapshots，否则会变成 data/snapshots/snapshots/...
+      - ./data/objectstore:/app/.data
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -130,13 +162,22 @@ services:
   worker:
     image: ${REGISTRY:-ghcr.nju.edu.cn}/${GHCR_OWNER:-chen-cowen}/chinese-teacher-exam-assistant-api:${IMAGE_TAG:-latest}
     command: ["node", "dist/worker.js"]
+    logging: *default-logging
     environment:
       <<: *database-url
       REDIS_URL: redis://redis:6379
-      CRAWL_WORKER_CONCURRENCY: ${CRAWL_WORKER_CONCURRENCY:-2}
+      CRAWL_WORKER_CONCURRENCY: ${CRAWL_WORKER_CONCURRENCY:-1}
       CRAWL_WORKER_PAUSED: ${CRAWL_WORKER_PAUSED:-false}
+      # 对象存储根目录：显式钉死绝对路径，不依赖进程 cwd。
+      # 未配置 OSS_* 时快照就落在这里；主机侧映射为 ./data/objectstore
+      OBJECT_STORE_DIR: /app/.data
+      OSS_BUCKET: ${OSS_BUCKET:-}
+      OSS_ENDPOINT: ${OSS_ENDPOINT:-}
+      OSS_ACCESS_KEY_ID: ${OSS_ACCESS_KEY_ID:-}
+      OSS_ACCESS_KEY_SECRET: ${OSS_ACCESS_KEY_SECRET:-}
     volumes:
-      - ./data/snapshots:/app/.data
+      # 与 backend 共用同一份快照目录（key 与主机路径一一对应见 backend 注释）
+      - ./data/objectstore:/app/.data
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -146,6 +187,7 @@ services:
 
   frontend:
     image: ${REGISTRY:-ghcr.nju.edu.cn}/${GHCR_OWNER:-chen-cowen}/chinese-teacher-exam-assistant:${IMAGE_TAG:-latest}
+    logging: *default-logging
     environment:
       # 镜像构建期已固定 NEXT_PUBLIC_* 为 invited 生产模式，这里只有运行时变量
       BACKEND_URL: http://backend:3000

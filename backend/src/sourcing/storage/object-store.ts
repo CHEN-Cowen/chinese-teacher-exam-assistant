@@ -8,7 +8,7 @@
  * 二进制 API（putBinary/getBinary）用于 PDF/Excel 等附件原件：
  * 字符串 API 会破坏二进制内容，附件一律走二进制通道。
  */
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, stat, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 export interface ObjectStore {
@@ -29,6 +29,14 @@ export interface ObjectStore {
   getBinary(storageKey: string): Promise<Buffer>;
   /** 受控下载：短期签名 URL（默认 5 分钟）；实现不得打印或持久化该 URL */
   getSignedUrl?(storageKey: string, ttlSeconds?: number): Promise<string>;
+  /**
+   * 删除一份对象。仅快照保留策略使用：
+   * 调用方必须先确认没有任何其他快照行引用同一 storageKey，
+   * 否则会把别的来源还在用的正文/附件删掉。
+   */
+  delete(storageKey: string): Promise<void>;
+  /** 对象字节数；无法廉价获取时返回 null（用于保留策略估算可回收空间） */
+  statSize?(storageKey: string): Promise<number | null>;
 }
 
 export function snapshotStorageKey(contentHash: string): string {
@@ -65,5 +73,24 @@ export class LocalObjectStore implements ObjectStore {
 
   async getBinary(storageKey: string): Promise<Buffer> {
     return readFile(path.join(this.baseDir, storageKey));
+  }
+
+  /** 幂等删除：对象不存在视为成功（保留策略重入/中断恢复时会遇到） */
+  async delete(storageKey: string): Promise<void> {
+    try {
+      await unlink(path.join(this.baseDir, storageKey));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+      throw error;
+    }
+  }
+
+  async statSize(storageKey: string): Promise<number | null> {
+    try {
+      const info = await stat(path.join(this.baseDir, storageKey));
+      return info.isFile() ? info.size : null;
+    } catch {
+      return null;
+    }
   }
 }

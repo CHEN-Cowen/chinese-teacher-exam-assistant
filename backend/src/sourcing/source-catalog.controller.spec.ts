@@ -11,6 +11,7 @@ function setup() {
     {} as never,
     {} as never, // CrawlHealthService（M02/F3 health 聚合，本用例不触达）
     {} as never, // SourcingAlertService
+    {} as never, // SnapshotRetentionService（保留策略，本用例不触达）
   );
   return { controller, upsertSource };
 }

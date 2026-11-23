@@ -1,0 +1,62 @@
+# 运维叠加层：日志轮转 + 快照保留策略 + 快照存储目录映射
+#
+# 用途：线上实际部署用的是服务器上的 standalone.yml + oss.yml + serial.yml，
+# 那几份文件不在仓库里。直接改仓库的 standalone.yml 不会影响线上，
+# 所以把需要生效的运维配置单独做成这一层，叠加在最上面。
+#
+# 用法（在服务器的部署目录，注意 ops.yml 必须放在最后）：
+#   cp /path/to/docker-compose.ops.yml ./ops.yml
+#   docker compose -p jiaozhao-standalone \
+#     --env-file .env --env-file .env.oss \
+#     -f standalone.yml -f oss.yml -f serial.yml -f ops.yml up -d
+#
+# 想彻底脱离 OSS 时：去掉 --env-file .env.oss 和 -f oss.yml，
+# 但保留 -f ops.yml（它负责日志轮转与保留策略）。
+#
+# 叠加规则说明：compose 对 service.environment 按 key 合并、对 service.volumes
+# 按容器内目标路径（/app/.data）合并并以后出现的为准，所以下面的挂载会替换掉
+# 基线文件里同样的 /app/.data 挂载。
+#
+# 刻意不包含 migrate 服务：它是一次性容器，日志量可忽略；若基线文件里没有该
+# 服务名，在叠加层里声明一个空服务会让 compose 直接报错「既无 image 也无 build」。
+#
+# 这里不写 name，项目名由启动命令的 -p jiaozhao-standalone 决定，避免与基线文件冲突。
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "3"
+
+services:
+  db:
+    logging: *default-logging
+
+  redis:
+    logging: *default-logging
+
+  backend:
+    logging: *default-logging
+    environment:
+      # 对象存储根目录钉死绝对路径，不依赖进程 cwd
+      OBJECT_STORE_DIR: /app/.data
+      # 快照保留策略：只清 HTML 历史版本，PDF/XLS 附件永不清理。
+      # 先保持 DRY_RUN=true 观察日志，确认候选数量合理再改 false。
+      SNAPSHOT_RETENTION_ENABLED: ${SNAPSHOT_RETENTION_ENABLED:-true}
+      SNAPSHOT_RETENTION_DRY_RUN: ${SNAPSHOT_RETENTION_DRY_RUN:-true}
+      SNAPSHOT_RETENTION_KEEP_VERSIONS: ${SNAPSHOT_RETENTION_KEEP_VERSIONS:-20}
+      SNAPSHOT_RETENTION_MIN_AGE_DAYS: ${SNAPSHOT_RETENTION_MIN_AGE_DAYS:-30}
+    volumes:
+      # 主机目录与容器 /app/.data 对应；key 以 snapshots/ 开头，
+      # 所以真实路径是 data/objectstore/snapshots/<hash前2位>/<sha256>
+      - ./data/objectstore:/app/.data
+
+  worker:
+    logging: *default-logging
+    environment:
+      OBJECT_STORE_DIR: /app/.data
+    volumes:
+      - ./data/objectstore:/app/.data
+
+  frontend:
+    logging: *default-logging

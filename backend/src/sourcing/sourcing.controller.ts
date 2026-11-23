@@ -25,6 +25,7 @@ import { SourceDocumentStore } from './source-document-store.js';
 import { CrawlHealthService } from './crawl-health.service.js';
 import { SourcingAlertService } from './sourcing-alert.service.js';
 import { SourcingMetrics } from './observability.js';
+import { SnapshotRetentionService } from './snapshot-retention.js';
 import type {
   CrawlTrigger,
   CrawlTaskQueue,
@@ -65,6 +66,7 @@ export class SourcingController {
     private readonly metrics: SourcingMetrics,
     private readonly healthService: CrawlHealthService,
     private readonly alerts: SourcingAlertService,
+    private readonly retention: SnapshotRetentionService,
     @Optional() private readonly budget?: PrismaCrawlBudgetStore,
   ) {}
 
@@ -144,6 +146,60 @@ export class SourcingController {
       );
     }
     return { count: registered.length, sources: registered };
+  }
+
+  // ==================== 快照保留策略（单机磁盘保护） ====================
+  // 声明在任何 ':sourceId' 路由之前，避免静态段被路径参数捕获。
+
+  /**
+   * 只读预演：算出会删多少条、能回收多少字节，不做任何修改。
+   * 迁移回本地磁盘或磁盘告警时先用它看规模。
+   */
+  @Get('snapshots/retention/plan')
+  @UseGuards(AdminGuard)
+  async retentionPlan(
+    @Query('keep') keep?: string,
+    @Query('minAgeDays') minAgeDays?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.retention.prune(
+      {
+        keepVersions: keep === undefined ? undefined : Number(keep),
+        minAgeDays: minAgeDays === undefined ? undefined : Number(minAgeDays),
+        scanLimit: limit === undefined ? undefined : Number(limit),
+      },
+      true,
+    );
+  }
+
+  /**
+   * 执行清理。dryRun 默认取 SNAPSHOT_RETENTION_DRY_RUN（未设置时为 true），
+   * 因此不带 body 调用只会再跑一次预演；必须显式传 {"dryRun": false} 才真删。
+   */
+  @Post('snapshots/retention/run')
+  @UseGuards(StrictAdminGuard)
+  async retentionRun(
+    @Body()
+    body: {
+      keepVersions?: number;
+      minAgeDays?: number;
+      scanLimit?: number;
+      dryRun?: boolean;
+    } = {},
+  ) {
+    if (body.dryRun === false && body.keepVersions !== undefined) {
+      if (!Number.isFinite(body.keepVersions) || body.keepVersions < 1) {
+        throw new BadRequestException('keepVersions 必须是 ≥1 的整数');
+      }
+    }
+    return this.retention.prune(
+      {
+        keepVersions: body.keepVersions,
+        minAgeDays: body.minAgeDays,
+        scanLimit: body.scanLimit,
+      },
+      body.dryRun,
+    );
   }
 
   /**
