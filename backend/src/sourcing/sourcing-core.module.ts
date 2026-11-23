@@ -15,6 +15,7 @@ import {
   readOssConfigFromEnv,
 } from './storage/oss-object-store.js';
 import { CrawlRunStore } from './crawl-run-store.js';
+import { PrismaCrawlBudgetStore } from './crawl-budget.store.js';
 import { SourceDocumentStore } from './source-document-store.js';
 import { CrawlHealthService } from './crawl-health.service.js';
 import { SourcingAlertService } from './sourcing-alert.service.js';
@@ -51,6 +52,8 @@ import { ShijiazhuangEducationAdapter } from './adapters/shijiazhuang-education.
 import { WuhanEducationAdapter } from './adapters/wuhan-education.adapter.js';
 import { ChangshaEducationAdapter } from './adapters/changsha-education.adapter.js';
 import { GuiyangEducationAdapter } from './adapters/guiyang-education.adapter.js';
+import { BeijingRsjRecruitmentAdapter } from './adapters/beijing-rsj.adapter.js';
+import { ChongqingRsjRecruitmentAdapter } from './adapters/chongqing-rsj.adapter.js';
 import { BullmqTaskQueue } from './jobs/bullmq-task-queue.js';
 
 @Module({
@@ -85,9 +88,12 @@ import { BullmqTaskQueue } from './jobs/bullmq-task-queue.js';
     WuhanEducationAdapter,
     ChangshaEducationAdapter,
     GuiyangEducationAdapter,
+    BeijingRsjRecruitmentAdapter,
+    ChongqingRsjRecruitmentAdapter,
     AdapterRegistry,
     SafeFetcherFactory,
     CrawlRunStore,
+    PrismaCrawlBudgetStore,
     SourceDocumentStore,
     CrawlHealthService,
     SourcingAlertService,
@@ -108,7 +114,7 @@ import { BullmqTaskQueue } from './jobs/bullmq-task-queue.js';
       // 生产（配置 OSS_* 环境变量）→ 私有版本化 OSS；开发/测试 → 本地内容寻址快照
       useFactory: () => {
         const oss = readOssConfigFromEnv();
-        return oss ? new OssObjectStore(oss) : new LocalObjectStore();
+        return oss ? new OssObjectStore(oss, new LocalObjectStore()) : new LocalObjectStore();
       },
     },
     BullmqTaskQueue,
@@ -118,6 +124,7 @@ import { BullmqTaskQueue } from './jobs/bullmq-task-queue.js';
     AdapterRegistry,
     SafeFetcherFactory,
     CrawlRunStore,
+    PrismaCrawlBudgetStore,
     SourceDocumentStore,
     CrawlHealthService,
     SourcingAlertService,

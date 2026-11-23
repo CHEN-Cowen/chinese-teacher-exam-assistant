@@ -44,7 +44,9 @@ describe('S5 来源目录', () => {
     // 石家庄（河北首个，PageFront 表单 POST 分页，官方整站仅 HTTP）、
     // 武汉（湖北首个，navbox 静态锚点 index_N.shtml 分页）、
     // 长沙（湖南首个，WCM createPageHTML5 静态分页，官方整站仅 HTTP）、
-    // 贵阳（贵州首个，WCM createPage 4 参静态分页）。
+    // 贵阳（贵州首个，WCM createPage 4 参静态分页）；
+    // N4 全国扩源首批：北京（直辖市人社局综合事业单位栏目 + ul.list 静态分页 + .view 正文）、
+    // 重庆（直辖市人社局综合事业单位栏目 + createPage 静态分页 + .xl-article 正文 + hasFJ 附件）。
     expect(seedable.map((source) => source.adapterKey)).toEqual([
       'nanjing-education',
       'hangzhou-education',
@@ -74,6 +76,8 @@ describe('S5 来源目录', () => {
       'lishui-education',
       'bengbu-education',
       'xiaoshan-education',
+      'beijing-rsj-recruitment',
+      'chongqing-rsj-recruitment',
       'anhui-education-policy',
     ]);
     expect(
@@ -225,9 +229,12 @@ describe('S5 来源级检查记录与监测状态', () => {
         e.sourceKey !== 'shijiazhuang-education' &&
         e.sourceKey !== 'wuhan-education' &&
         e.sourceKey !== 'changsha-education' &&
-        e.sourceKey !== 'guiyang-education',
+        e.sourceKey !== 'guiyang-education' &&
+        // 北京/重庆人社局为 N4 新增来源，尚无第二次真实检查记录。
+        e.sourceKey !== 'beijing-rsj-recruitment' &&
+        e.sourceKey !== 'chongqing-rsj-recruitment',
     );
-    expect(ready.length).toBe(29);
+    expect(ready.length).toBe(31);
     for (const entry of readyWith2Checks) {
       const record = getSourceMonitoringRecord(entry.sourceKey);
       expect(record.checks.length, entry.sourceKey).toBe(2);

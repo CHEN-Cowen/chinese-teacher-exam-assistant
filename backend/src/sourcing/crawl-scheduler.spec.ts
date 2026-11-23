@@ -17,13 +17,44 @@ function setup() {
   const store = new CrawlRunStore(prisma as never);
   const orchestrator = new CrawlOrchestrator(store, queue);
   const alerts = { sweep: vi.fn(async () => {}) };
+  const getJobCounts = vi.fn(async () => ({ waiting: 0, active: 0, delayed: 0 }));
   const scheduler = new CrawlScheduler(
     orchestrator,
     store,
     alerts as never,
+    { enqueue: queue.enqueue.bind(queue), getJobCounts },
   );
-  return { prisma, queue, store, orchestrator, alerts, scheduler };
+  return { prisma, queue, store, orchestrator, alerts, scheduler, getJobCounts };
 }
+
+it('serial scheduling starts one source and waits for the queue to drain', async () => {
+  vi.stubEnv('CRAWL_SCHEDULER_SERIAL', 'true');
+  try {
+    const { prisma, queue, scheduler, getJobCounts } = setup();
+    for (const id of ['first', 'second']) {
+      prisma.seedSource({
+        id,
+        publisher: id,
+        officialUrl: `https://${id}.gov.cn/`,
+        nextCheckAt: new Date(0),
+      });
+    }
+    await scheduler.tick();
+    expect(queue.count('source.discover')).toBe(1);
+
+    getJobCounts.mockResolvedValueOnce({ waiting: 1, active: 0, delayed: 0 });
+    getJobCounts.mockResolvedValueOnce({ waiting: 0, active: 1, delayed: 0 });
+    getJobCounts.mockResolvedValueOnce({ waiting: 0, active: 0, delayed: 1 });
+    getJobCounts.mockRejectedValueOnce(new Error('Redis unavailable'));
+    for (let tick = 0; tick < 4; tick++) await scheduler.tick();
+    expect(queue.count('source.discover')).toBe(1);
+
+    await scheduler.tick();
+    expect(queue.count('source.discover')).toBe(2);
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});
 
 describe('CrawlScheduler.tick（到期投递与重启续跑）', () => {
   it('到期来源被投递且 nextCheckAt 推进一个周期；未到期不投递', async () => {

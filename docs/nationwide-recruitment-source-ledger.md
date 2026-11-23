@@ -19,15 +19,16 @@
 | 指标 | 当前值 | 说明 |
 |---|---|---|
 | 省级行政区目录登记 | 31 / 31 | 已建立省级目录行；多数入口仍待逐站核验 |
-| 有招聘来源实际接入的省级行政区 | 13 / 31 | 浙江、江苏、安徽、山东、江西、山西、河南、福建、广东、河北、湖北、**湖南**、**贵州**；其余 18 个省级行政区无已接入招聘来源 |
-| 已登记来源总数 | 32 | 28 个教师招聘 ready + 1 个政策 ready + 2 个省级候选 + 1 个受阻 |
-| 已接入招聘来源 | 28 | 浙江 8、江苏 4、安徽 3、山东 4、江西 1、山西 1、河南 1、福建 1、广东 1、河北 1、湖北 1、**湖南 1**、**贵州 1** |
-| 样本通过来源 | 3 | 宁波（B 级真实材料闭环）、南京与丽水（A 级独立清单发现对账）；其余 25 个为 fixture 级（含 N1/N2/N3 真实样本回放） |
+| 有本地招聘适配器的省级行政区 | 15 / 31 | 浙江、江苏、安徽、山东、江西、山西、河南、福建、广东、河北、湖北、湖南、贵州、北京、重庆；其余 16 个省级行政区待接入 |
+| 有招聘来源已登记到生产数据库的省级行政区 | 13 / 31 | 2026-11-20 登记了原有 28 个招聘来源；北京和重庆尚未发布或登记，存量首采也尚未逐站验收 |
+| 已登记来源总数 | 34 | 30 个教师招聘 ready + 1 个政策 ready + 2 个省级候选 + 1 个受阻 |
+| 本地已有招聘适配器的来源 | 30 | 浙江 8、江苏 4、安徽 3、山东 4、江西 1、山西 1、河南 1、福建 1、广东 1、河北 1、湖北 1、湖南 1、贵州 1、北京 1、重庆 1 |
+| 样本通过来源 | 3 | 宁波（B 级真实材料闭环）、南京与丽水（A 级独立清单发现对账）；其余 27 个为 fixture 级（含 N1/N2/N3/N4 真实样本回放） |
 | 持续运行通过来源 | 0 | 连续 7 天观察 0/7，不能声称持续运行通过 |
-| 市级/区县级目录分母 | 待建立 | 现有账本覆盖 26 个地市/区县地区（28 个招聘来源），不能据此计算全国缺口 |
+| 市级/区县级目录分母 | 待建立 | 现有账本覆盖 28 个地市/区县地区（30 个招聘来源），不能据此计算全国缺口 |
 | 全国完整召回 | 未验证 | 无全国独立清单，不能声称完整召回 |
 
-口径说明：`docs/m08-source-acceptance-report.md` 中的 A/B/C 是**证据档位**，D 是**持续运行档位**。当前 28 个招聘来源按持续运行口径全部为 D（待持续验收），因此本账本不把任何来源标记为“持续运行通过”；“样本通过 3”仅表示宁波（B）、南京与丽水（A）具备真实官方样本与材料/对账证据。N1 新增的湖州、泰州、亳州、阜阳，N2 新增的济南、烟台、泰安、潍坊与 N3 新增的南昌、太原、郑州、福州、广州、石家庄、武汉、长沙、贵阳已完成真实样本采集与离线回放，但尚未做独立清单对账，故记为 fixture 级。
+口径说明：`docs/m08-source-acceptance-report.md` 中的 A/B/C 是**证据档位**，D 是**持续运行档位**。当前 30 个招聘来源按持续运行口径全部为 D（待持续验收），因此本账本不把任何来源标记为“持续运行通过”；“样本通过 3”仅表示宁波（B）、南京与丽水（A）具备真实官方样本与材料/对账证据。N1 新增的湖州、泰州、亳州、阜阳，N2 新增的济南、烟台、泰安、潍坊，N3 新增的南昌、太原、郑州、福州、广州、石家庄、武汉、长沙、贵阳，以及 N4 新增的北京、重庆已完成真实样本采集与离线回放，但尚未做独立清单对账，故记为 fixture 级。
 
 ### 2.1 2026-11-20 线上批次核验（部署版本未升级）
 
@@ -55,7 +56,7 @@
 
 | # | 省级行政区 | 区划代码 | 省级教育主管单位 | 目录入口（目录登记） | 入口类型/待核验项 | 已接入招聘来源 | 覆盖状态 | 主要缺口 |
 |---|---|---|---|---|---|---|---|---|
-| 1 | 北京市 | 110000 | 北京市教育委员会 | http://www.bjtcc.org.cn | 教师资格业务入口；教委门户与招聘栏目待核验 | 0 | 未覆盖 | 省级/市级/区县招聘入口均待接入 |
+| 1 | 北京市 | 110000 | 北京市教育委员会 | http://www.bjtcc.org.cn | 教师资格业务入口；**市人社局「事业单位公开招聘」已核验并接入** | 1 | 部分接入 | 北京市人社局综合栏目已接入（只监测最新 3 页 / 约 60 条）；市教委、各区教委独立招聘栏目仍待接入 |
 | 2 | 天津市 | 120000 | 天津市教育委员会 | http://www.tjgspx.cn | 高校师资培训入口；教委门户与招聘栏目待核验 | 0 | 未覆盖 | 同上 |
 | 3 | 河北省 | 130000 | 河北省教育厅 | http://jszg.hee.gov.cn/ | 教师资格入口；招聘栏目待核验 | 1 | 部分接入 | 石家庄已接入（官网整站仅 HTTP）；省级统一招聘与其余地市入口待接入 |
 | 4 | 山西省 | 140000 | 山西省教育厅 | http://jyt.shanxi.gov.cn/ | 教育厅门户；招聘栏目待核验 | 1 | 部分接入 | 太原已接入；其余地市与区县待补齐 |
@@ -76,7 +77,7 @@
 | 19 | 广东省 | 440000 | 广东省教育厅 | http://edu.gd.gov.cn | 教育厅门户；招聘栏目待核验 | 1 | 部分接入 | 广州已接入；省级与其余地市待补齐 |
 | 20 | 广西壮族自治区 | 450000 | 广西壮族自治区教育厅 | http://jyt.gxzf.gov.cn/ | 教育厅门户；招聘栏目待核验 | 0 | 未覆盖 | 同上 |
 | 21 | 海南省 | 460000 | 海南省教育厅 | http://edu.hainan.gov.cn | 教育厅门户；招聘栏目待核验 | 0 | 未覆盖 | 同上 |
-| 22 | 重庆市 | 500000 | 重庆市教育委员会 | https://www.cque.edu.cn/tdc/ | 教师发展中心入口；教委门户待补 | 0 | 未覆盖 | 省级/区县招聘入口待接入 |
+| 22 | 重庆市 | 500000 | 重庆市教育委员会 | https://www.cque.edu.cn/tdc/ | 教师发展中心入口；**市人社局「事业单位公开招聘」已核验并接入** | 1 | 部分接入 | 重庆市人社局综合栏目已接入（年度子目录需按年滚动）；区县教育事业单位独立栏目仍待补齐 |
 | 23 | 四川省 | 510000 | 四川省教育厅 | http://edu.sc.gov.cn/ | 教育厅门户；招聘栏目待核验 | 0 | 未覆盖 | 同上 |
 | 24 | 贵州省 | 520000 | 贵州省教育厅 | http://jyt.guizhou.gov.cn/ | 教育厅门户；招聘栏目待核验 | 1 | 部分接入 | 贵阳已接入；其余地市与区县待补齐 |
 | 25 | 云南省 | 530000 | 云南省教育厅 | https://jyt.yn.gov.cn | 教育厅门户；招聘栏目待核验 | 0 | 未覆盖 | 同上 |
@@ -121,6 +122,8 @@
 | changsha-education | 长沙市教育局 | 430100 | 市 | 招聘 | ready | 2026-11-06 | fixture 级（真实样本） | 未通过 | 「教师招聘」栏目（**湖南首个来源**，官方整站仅 HTTP，已登记 HTTP_ONLY_HOSTS）；服务端渲染列表 div.xxgk-item li，嵌套 `<a>` 经 parse5 扁平化后须取带 title 的内层锚点 + span 日期 YYYY-MM-DD，首屏 15 条；官方脚本 `createPageHTML5("8","0","index","html")` 派生 index_1..index_7.html（官方 8 页 / 约 120 条全量监测，窗口已登记 WCM5_PAGE_WINDOWS）；第 2 页 1 条长沙市人社局 rsj.changsha.gov.cn 跨站招考条目按同源过滤剔除、保留 14 条，与首屏重叠 1 条置顶公告；正文 meta ArticleTitle/Pubdate（meta 名带空格须 trim）+ div.content-main，附件（1 pdf / 3 附件 xlsx+2 docx / 7 附件 5 pdf+2 docx）与零附件条目回放通过；7 天观察未完成 |
 | wuhan-education | 武汉市教育局 | 420100 | 市 | 招聘 | ready | 2026-11-06 | fixture 级（真实样本） | 未通过 | 「通知公告」混合栏目（**湖北首个来源**）；目录形态栏目 /zwdt/tsgg/ 服务端渲染列表（li.box-sizing > a.item-li-a[title] + div.other 时间：YYYY-MM-DD，首屏 10 条）+ div#navbox 静态锚点 index_N.shtml 分页（pagenav_tail 尾页给出官方 50 页 / 约 500 条 / 每页 10 条），按单来源窗口只监测最新 6 页（60 条），GET 无 Referer 要求；正文 meta ArticleTitle/PubDate/ContentSource + div#article-box（TRS_UEDITOR）、./P0…pdf 附件（1 个 / 4 个多附件）与零附件条目回放通过；含直属单位公开招聘拟聘用公示与公费师范生专项招聘成绩公告；7 天观察未完成 |
 | guiyang-education | 贵阳市教育局 | 520100 | 市 | 招聘 | ready | 2026-11-06 | fixture 级（真实样本） | 未通过 | 「教师工作」栏目（**贵州首个来源**）；目录形态栏目 /newsite/zwgk/zdlyxxgk/jsgz/ 服务端渲染列表（ul.right-cont_list li > a[href][title]，锚点内 p 标题 + span 日期 YYYY-MM-DD，首屏 15 条）；官方脚本 createPage(19,0,"index","html")（WCM 4 参裸调用）派生 index_1..index_18.html（官方 19 页 / 277 条全量监测，窗口已登记 WCM5_PAGE_WINDOWS），GET 无 Referer 要求；第 2 页 15 条与首屏 0 重叠；正文 meta ArticleTitle/PubDate（标准名无空格，值带时分）/ContentSource + div.TRS_UEDITOR，./P0…pdf|xls|xlsx|doc|docx 附件（1 pdf / 4 附件 / 2 附件）与零附件条目回放通过；7 天观察未完成 |
+| beijing-rsj-recruitment | 北京市人力资源和社会保障局 | 110000 | 市 | 招聘 | ready | 2026-11-20 | fixture 级（真实样本） | 未通过 | 「事业单位公开招聘」综合栏目（**北京首个来源**）；服务端渲染列表 ul.list li > a[title] + span 日期，首屏 12 条，其中 6 条教育/学校/大学/教委相关；同目录静态锚点 index_N.html 分页，按单来源窗口只监测最新 3 页（约 60 条）；正文 meta ArticleTitle/PubDate + div.view（TRS CMS）、同域 xlsx/doc/pdf 附件回放通过；医院/广电/剧院/科学院等非教师条目按标题过滤；直辖市市级综合栏目不能替代各区独立渠道；真实运行与 7 天观察未完成 |
+| chongqing-rsj-recruitment | 重庆市人力资源和社会保障局 | 500000 | 市 | 招聘 | ready | 2026-11-20 | fixture 级（真实样本） | 未通过 | 「事业单位公开招聘」综合栏目（**重庆首个来源**）；服务端渲染列表 ul li > a[title] + span 日期，首屏 20 条中 9 条教育/学校/高校/党校相关；createPage(N,0,"index","html") 派生 index_N.html，按单来源窗口只监测最新 3 页（约 60 条）；正文 meta ArticleTitle/PubDate + div.xl-article；附件在正文外脚本变量 hasFJ 中，已解析并补全岗位一览表/专业参考目录 xlsx；年度子目录 sydwgkzp<YYYY> 需按年滚动；卫健/科学院等非教师条目按标题过滤；真实运行与 7 天观察未完成 |
 | anhui-education-policy | 安徽省教育厅 | 340000 | 省 | 政策 | ready | 2026-11-05 | fixture 级 | 未通过 | 只服务政策检索，不计招聘覆盖 |
 | jiangsu-education-candidate | 江苏省教育厅 | 320000 | 省 | 招聘候选 | candidate | 未核验 | 无 | 未接入 | 省级不发布市县招聘，不能替代市县覆盖 |
 | zhejiang-education-candidate | 浙江省教育厅 | 330000 | 省 | 招聘候选 | candidate | 未核验 | 无 | 未接入 | 公告公示为聚合页，无独立教师招聘栏目 |
@@ -134,7 +137,7 @@
 | N1 现有三省补缺 | 浙江、江苏、安徽 | 补齐已接入省份的市级/区县缺口；确认省级入口边界 | 自动发现、正文、岗位附件、去重、补充通知、重试、告警、审核发布、用户可见性 | 各市教育局/区县政府官网可达性；人工审核 |
 | N2 公开接口族 | jpaas / AuthorizedRead 公开列表类站点，跨省选取 | 复用公开栏目请求、分页、正文定位能力 | 独立清单对账；正文与附件；受限来源替代入口 | 同源公开接口稳定性；接口参数变化 |
 | N3 静态列表族 | `.shtml` / `.listContent` 静态列表类站点，跨省选取 | 复用静态列表与 `_N.shtml` 分页 | 岗位附件完整性；补充通知关联；更新延迟 | 静态页面改版；附件防盗链 |
-| N4 表格与服务端渲染族 | 表格列表、`FX_PageDiv`、`pageCount/pageIndex` 类站点 | 复用表格/服务端渲染列表、Referer、分页 | 失败重试与恢复；结构漂移告警；发布门禁 | 分页参数变化；站点限速 |
+| N4 表格与服务端渲染族 | 表格列表、`FX_PageDiv`、`pageCount/pageIndex`、`ul.list`/`createPage` 静态列表类站点 | 复用表格/服务端渲染列表、Referer、分页、`.view`/`.xl-article` 正文、`hasFJ` 脚本附件 | 失败重试与恢复；结构漂移告警；发布门禁 | 分页参数变化；站点限速；年度子目录滚动 |
 | N5 剩余与受限来源 | 未覆盖行政区、受限站点 | 继续接入可用官方入口；建立替代入口 | 全国缺口清单；受限原因与替代入口；专项验收报告 | 登录/验证码/封禁站点的人工处置 |
 
 ## 6. 每批验收指标
@@ -273,12 +276,21 @@
 | 沈阳市教育局 | https://jyj.shenyang.gov.cn/ | 不作为招聘来源 | 仅见教师资格类栏目，无教师招聘公告栏目 |
 | 贵阳市教育局 | https://jyj.guiyang.gov.cn/ | 已接入（2026-11-06） | 「教师工作」栏目（**贵州首个来源**）：WCM `createPage` 4 参裸调用静态分页族（官方 19 页 / 277 条全量监测），列表 `ul.right-cont_list li > a[title]` 内嵌 `<p>` 标题 + `<span>` 日期；正文 meta 标准名（PubDate 带时分）+ `div.TRS_UEDITOR` + `./P0…` 附件（1 pdf / 4 附件 / 2 附件 / 零附件回放通过），见 8.1 |
 
+### 8.5 N4 首批（北京 / 重庆）真实样本核验（2026-11-20）
+
+| 来源 | 官方栏目 | 真实样本 | 适配能力 | 证据 | 当前状态 |
+|---|---|---|---|---|---|
+| 北京市人社局「事业单位公开招聘」 | https://rsj.beijing.gov.cn/xxgk/gkzp/ | 首屏 12 条，6 条教育/学校/大学/教委相关；详情 meta + `div.view`；同域 xlsx 附件 | `ul.list li` 静态列表、`index_N.html` 分页、组织标题过滤（医院/广电/剧院/科学院排除）、`.view` 正文回退 | `backend/src/sourcing/adapters/beijing-rsj.adapter.spec.ts`、`tests/fixtures/golden-sources/beijing-rsj/` | 已实现并通过离线测试；待镜像发布、来源登记、真实首采与 7 天观察 |
+| 重庆市人社局「事业单位公开招聘」 | https://rlsbj.cq.gov.cn/zwxx_182/sydw/ | 首屏 20 条，9 条教育/学校/高校/党校相关；详情 meta + `div.xl-article`；`hasFJ` 脚本含 2 个岗位附件 | `ul li` 静态列表、`createPage` `index_N.html` 分页、标题过滤、`.xl-article` 正文、`hasFJ` 附件解析 | `backend/src/sourcing/adapters/chongqing-rsj.adapter.spec.ts`、`tests/fixtures/golden-sources/chongqing-rsj/` | 已实现并通过离线测试；待镜像发布、来源登记、真实首采与 7 天观察 |
+
+边界说明：两个来源均为直辖市**市级综合事业单位**栏目，只能证明其实际发布范围，不能替代市教委、区教委/区县独立招聘栏目；真实首采与持续运行未完成前，不把北京、重庆计入“持续运行通过”。
+
 ## 9. 当前结论与缺口
 
-1. 省级目录登记 31/31，但仅 13 个省级行政区有招聘来源实际接入；18 个省级行政区未覆盖。
-2. 已接入 28 个招聘来源，其中样本级证据 3 个，持续运行通过 0 个。
-3. N1 新增湖州、泰州、亳州、阜阳 4 个跨省市级来源；N2 新增山东济南、烟台、泰安、潍坊 4 个公开接口族来源；N3 新增江西南昌（静态锚点列表族）、山西太原（JS 跳转分页族）、河南郑州（老站静态列表 + 双域名详情）、福建福州（fjdzapp 表单 POST 列表族）、广东广州（NFCMS 静态锚点分页族）、河北石家庄（PageFront 表单 POST 分页族，官方整站仅 HTTP 已显式登记）、湖北武汉（navbox 静态锚点 index_N.shtml 分页族）、湖南长沙（WCM createPageHTML5 静态分页族，官方整站仅 HTTP 已显式登记）与贵州贵阳（WCM createPage 4 参静态分页族）9 个来源；均完成真实样本回放；烟台/潍坊/福州/广州/武汉按单来源分页窗口分别只监测最新 6 页（官方 91 页 / 49 页 / 178 页 / 20 页 / 50 页），石家庄官方仅 6 页、长沙官方仅 8 页、贵阳官方仅 19 页全量监测，窗口均已登记；运行链路验证与 7 天观察尚未完成。
-4. 市级、区县级全国分母尚未建立，现有 26 个地市/区县地区（28 个招聘来源）不能代表全国。
+1. 省级目录登记 31/31，15 个省级行政区已有本地招聘适配器，其中 13 个有来源已登记到生产数据库。生产登记后仍需逐站核验采集结果。
+2. 本地已有 30 个招聘来源适配配置，其中 28 个已登记到生产数据库；北京和重庆待上线。独立对账或真实材料闭环证据较充分的来源有 3 个，持续运行通过 0 个。
+3. N1 新增湖州、泰州、亳州、阜阳 4 个跨省市级来源；N2 新增山东济南、烟台、泰安、潍坊 4 个公开接口族来源；N3 新增江西南昌（静态锚点列表族）、山西太原（JS 跳转分页族）、河南郑州（老站静态列表 + 双域名详情）、福建福州（fjdzapp 表单 POST 列表族）、广东广州（NFCMS 静态锚点分页族）、河北石家庄（PageFront 表单 POST 分页族，官方整站仅 HTTP 已显式登记）、湖北武汉（navbox 静态锚点 index_N.shtml 分页族）、湖南长沙（WCM createPageHTML5 静态分页族，官方整站仅 HTTP 已显式登记）与贵州贵阳（WCM createPage 4 参静态分页族）9 个来源；N4 新增北京（直辖市人社局综合事业单位栏目，`ul.list` + `index_N.html` + `.view`）与重庆（直辖市人社局综合事业单位栏目，`createPage` + `.xl-article` + `hasFJ` 脚本附件）2 个来源；均完成真实样本回放；烟台/潍坊/福州/广州/武汉按单来源分页窗口分别只监测最新 6 页（官方 91 页 / 49 页 / 178 页 / 20 页 / 50 页），石家庄官方仅 6 页、长沙官方仅 8 页、贵阳官方仅 19 页全量监测，北京/重庆按单来源窗口只监测最新 3 页，窗口均已登记；运行链路验证与 7 天观察尚未完成。
+4. 市级、区县级全国分母尚未建立，现有 28 个地市/区县地区（30 个招聘来源）不能代表全国。
 5. 全国完整召回未验证；本文件不宣称全部覆盖或完整召回。
 6. 下一步：继续 N1 补齐浙江、江苏、安徽其余市级/区县缺口，同时推进 N2 公开接口族扩省与 7 天真实观察；随后按网站类型推进 N3—N5。
 
@@ -297,9 +309,190 @@
 | 2026-11-06 | N3 扩源接入山西太原「通知公告」；服务端渲染静态列表（`ul.List_list li > span.fr` + `a[title]`），新增 `jsPaginationPages` 解析 JS 跳转式分页（`onclick=location.href='tzgg_<n>.html'`，官方 93 条 / 5 页 / 每页 20 条），发现服务接入该分页通道；正文官方 meta + `#zoom` 与 `/u/cms/site28/` xlsx 附件、零附件条目回放通过；首日两次真实采样已记录；山西成为第 6 个有接入省份 | `backend/src/sourcing/adapters/taiyuan-education.adapter.ts`；`backend/src/sourcing/public-column.ts`；`backend/src/sourcing/jobs/source-discover.service.ts`；`backend/src/sourcing/public-column-s5.spec.ts`；`tests/fixtures/golden-sources/taiyuan` |
 | 2026-11-06 | N3 扩源接入河南郑州「通知公告」（**河南首个来源**）；老站 http news.zzedu.net.cn/tz/ 静态列表（`ul#pageCont a.new_link` + M月D日 短日期补当年年份），JS 按钮"加载更多"分页（pageTotal=7）首版只抓首屏；双域名详情——老站 .shtml（SourceTitle meta + `div#article`）与新政务 .jhtml（ArticleTitle/PubDate meta + `div.news_content_content` + xlsx 附件）；含 10 条教师招聘/事业单位拟聘用公示；首日首次真实采样已记录 | `backend/src/sourcing/adapters/zhengzhou-education.adapter.ts`；`backend/src/sourcing/adapters/zhengzhou-education.adapter.spec.ts`；`tests/fixtures/golden-sources/zhengzhou-education` |
 | 2026-11-06 | N3 扩源接入福建福州「通知公告」（**福建首个来源**，福建成为第 8 个有接入省份）；列表页 JS 壳，新增 `fz-list.ts` 解析 `POST /fjdzapp/search` 表单接口（官方 178 页 / 2658 条 / 每页 15 条，body 固定模板 channelid/classsql=chnlid=/sortfield/classcol/classsort/page/prepage），`SafeFetcher` 为该通道携带同源 Referer（缺 Referer 返回"获取站点配置失败"），按 `FJ_PAGE_WINDOWS` 只监测最新 6 页（90 条），doctitle 检索参数不生效按栏目全量翻页；正文 meta ArticleTitle/PubDate + `div.article_content` 与 `div.article_attachment` 相对路径附件（P0…xlsx/pdf）回放通过；首日首次真实采样已记录 | `backend/src/sourcing/adapters/fuzhou-education.adapter.ts`；`backend/src/sourcing/fz-list.ts`；`backend/src/sourcing/fz-list.spec.ts`；`backend/src/sourcing/jobs/source-discover.service.ts`；`tests/fixtures/golden-sources/fuzhou-education` |
+| 2026-11-20 | N4 首批接入北京、重庆两个直辖市人社局「事业单位公开招聘」综合栏目；新增 `.view`/`.xl-article` 正文回退与重庆 `hasFJ` 脚本附件解析；真实首屏/详情样本离线回放通过 | `backend/src/sourcing/adapters/{beijing-rsj,chongqing-rsj}.adapter.ts`；`backend/src/sourcing/public-column.ts`；`tests/fixtures/golden-sources/{beijing-rsj,chongqing-rsj}`；`backend/src/sourcing/source-catalog.spec.ts` |
 | 2026-11-06 | N3 扩源接入广东广州「网上公示」（**广东首个来源**，广东成为第 9 个有接入省份）；NFCMS 集约化平台服务端渲染列表（`div.news_list li > a[title]` + 方括号日期 `[YYYY-MM-DD]`），新增 `nfcms-list.ts` 从 `a.last`/数字页码锚点派生静态分页 `index_N.html`（官方 20 页 / 400 条，页内 `createPageHTML` 声明已被注释失效、`staticListPages` 返回空），按 `NFCMS_PAGE_WINDOWS` 只监测最新 6 页（120 条）；正文 meta ArticleTitle/PubDate + `div#zoomcon` 与 `/attachment/…xlsx` 附件回放通过；首屏 20 条、第 2 页 20 条无重叠且招聘密度 14/20；首日首次真实采样已记录 | `backend/src/sourcing/adapters/guangzhou-education.adapter.ts`；`backend/src/sourcing/nfcms-list.ts`；`backend/src/sourcing/nfcms-list.spec.ts`；`backend/src/sourcing/jobs/source-discover.service.ts`；`backend/src/sourcing/public-column.ts`；`tests/fixtures/golden-sources/guangzhou-education` |
 | 2026-11-06 | N3 扩源接入河北石家庄「通知公告」（**河北首个来源**，河北成为第 10 个有接入省份）；服务端渲染列表（`li.clearF > div.ul_zi > a` 文章绝对地址 + `div.ul_ziriqi` 日期，首屏 20 条），新增 `pagefront-list.ts` 解析 `form[name=pageForm]` POST `/dynamic/PageFront.jsp` 表单分页（parseId/categoryId/keyword/pageNo 由 URL query 确定性派生，无 Referer 要求），官方 6 页 / 120 条全量监测（`PAGEFRONT_PAGE_WINDOWS` 已登记）；官方整站仅 HTTP（HTTPS 实测超时），`validateSourceCatalog` 新增 `HTTP_ONLY_HOSTS` 显式放行登记；微信公众号站外转载条目按详情路径过滤；正文 meta ArticleTitle（内嵌 `<br>` 清洗）/PubDate + `div.content_fenye2` 与 `/resources/43/*.zip\|docx` 附件（3 zip / 2 docx / 零附件三类回放通过）；首日首次真实采样已记录（POST 第 2 页过滤后 18 条与首屏无重叠）；广州批漏登的 4.x 明细行本批补登 | `backend/src/sourcing/adapters/shijiazhuang-education.adapter.ts`；`backend/src/sourcing/pagefront-list.ts`；`backend/src/sourcing/pagefront-list.spec.ts`；`backend/src/sourcing/source-catalog.ts`；`backend/src/sourcing/jobs/source-discover.service.ts`；`tests/fixtures/golden-sources/shijiazhuang-education` |
 | 2026-11-06 | 新增离线运行链路联调（调度→投递→Worker→发现→失败重试→告警→恢复），暴露并修复 `staticListPages` 末页重复派生 `nav_list_2_2.shtml` 的真实缺陷；真实 PostgreSQL/Redis 调度与逐来源发布可见性仍待验证 | `backend/src/sourcing/runtime-chain.spec.ts`；`backend/src/sourcing/public-column.ts`；`backend/src/sourcing/public-column-s5.spec.ts`；`backend/src/sourcing/testing/crawl-testing.ts` |
 | 2026-11-06 | N3 扩源接入湖北武汉「通知公告」（**湖北首个来源**，湖北成为第 11 个有接入省份）；目录形态栏目 `/zwdt/tsgg/` 服务端渲染列表（`li.box-sizing > a.item-li-a[title]` + `div.other` 时间：YYYY-MM-DD，首屏 10 条），新增 `whsnav-list.ts` 解析 `div#navbox` 静态锚点分页 `index_N.shtml`（数字页码文本校验 + `pagenav_tail` 尾页给出官方 50 页 / 约 500 条 / 每页 10 条，目录为第 1 页），按 `WHSNAV_PAGE_WINDOWS` 只监测最新 6 页（60 条），GET 无 Referer 要求；正文 meta ArticleTitle/PubDate/ContentSource + `div#article-box`（TRS_UEDITOR）与 `./P0…pdf` 附件（1 个 / 4 个多附件）、零附件条目回放通过；首日首次真实采样已记录（第 2 页 10 条与首屏无重叠，含直属单位公开招聘拟聘用公示与公费师范生专项招聘成绩公告） | `backend/src/sourcing/adapters/wuhan-education.adapter.ts`；`backend/src/sourcing/whsnav-list.ts`；`backend/src/sourcing/whsnav-list.spec.ts`；`backend/src/sourcing/source-catalog.ts`；`backend/src/sourcing/jobs/source-discover.service.ts`；`tests/fixtures/golden-sources/wuhan-education` |
 | 2026-11-06 | N3 扩源接入湖南长沙「教师招聘」（**湖南首个来源**，湖南成为第 12 个有接入省份）；服务端渲染列表（`div.xxgk-item li`，嵌套 `<a>` 经 parse5 扁平化后须取带 title 的内层锚点 + 同级 span 日期），新增 `wcm5-list.ts` 解析官方脚本 `createPageHTML5("8","0","index","html")` 并派生同目录 `index_1..index_7.html`（官方 8 页 / 约 120 条全量监测，`WCM5_PAGE_WINDOWS` 已登记）；跨站条目按同源过滤（第 2 页剔除 1 条长沙市人社局 rsj 招考链接，保留 14 条，与首屏重叠 1 条置顶公告）；官方整站仅 HTTP（HTTPS 实测握手失败 SSL alert 40），`HTTP_ONLY_HOSTS` 追加 `jyj.changsha.gov.cn`；正文 meta ArticleTitle/Pubdate（meta 名带前后空格须 trim + 大小写不敏感）+ `div.content-main` 与 `./P0…pdf|xlsx|docx` 附件（1 pdf / 3 附件 / 7 附件）、零附件条目回放通过；首日首次真实采样已记录；来源目录上限 60 已留出扩源余量 | `backend/src/sourcing/adapters/changsha-education.adapter.ts`；`backend/src/sourcing/wcm5-list.ts`；`backend/src/sourcing/wcm5-list.spec.ts`；`backend/src/sourcing/source-catalog.ts`；`backend/src/sourcing/adapter-registry.ts`；`backend/src/sourcing/sourcing-core.module.ts`；`backend/src/sourcing/jobs/source-discover.service.ts`；`tests/fixtures/golden-sources/changsha-education` |
 | 2026-11-06 | N3 扩源接入贵州贵阳「教师工作」（**贵州首个来源**，贵州成为第 13 个有接入省份）；目录形态栏目 `/newsite/zwgk/zdlyxxgk/jsgz/` 服务端渲染列表（`ul.right-cont_list li > a[href][title]`，锚点内 `<p>` 标题 + `<span>` 日期 YYYY-MM-DD，首屏 15 条），`wcm5-list.ts` 扩展支持 WCM `createPage(19,0,"index","html")` 4 参裸调用分页声明（无 `wcmUtil.` 前缀、数字无引号），派生同目录 `index_1..index_18.html`（官方 19 页 / 277 条全量监测，`WCM5_PAGE_WINDOWS` 已登记），GET 无 Referer 要求；第 2 页 15 条与首屏 0 重叠；正文 meta ArticleTitle/PubDate（标准名无空格，值带时分）/ContentSource + `div.TRS_UEDITOR` 与 `./P0…pdf\|xls\|xlsx\|doc\|docx` 附件（1 pdf / 4 附件 / 2 附件 / 零附件回放通过）；首日首次真实采样已记录；候选排除登记：成都 412 防护、南宁连接失败、西安/昆明/沈阳无独立教师招聘栏目 | `backend/src/sourcing/adapters/guiyang-education.adapter.ts`；`backend/src/sourcing/wcm5-list.ts`；`backend/src/sourcing/wcm5-list.spec.ts`；`backend/src/sourcing/source-catalog.ts`；`backend/src/sourcing/adapter-registry.ts`；`backend/src/sourcing/sourcing-core.module.ts`；`tests/fixtures/golden-sources/guiyang-education` |
+| 2026-11-21 | 28 个生产招聘来源逐站对账与离线验收复查；修复「附件 URL 返回 200 HTML 限流页被当作成功附件入库」缺陷并补回归；北京/重庆仅本地验证，未发布未登记 | `backend/src/sourcing/jobs/document-fetch.service.ts`；`backend/src/sourcing/jobs/task-queue.ts`；`backend/src/sourcing/jobs/document-fetch.spec.ts`；本文件第 11 节；`docs/recruitment-upgrade-acceptance.md` 第 10 节 |
+
+## 11. 2026-11-21 28 来源逐站对账与离线验收（复查）
+
+本节是对 2026-11-20 交接基线的独立复查，不是新的接入批次。生产环境只执行有界、低负载只读查询；未执行生产写入、复跑、发布或扩源。
+
+### 11.1 环境、代码版本与证据口径
+
+- 仓库：`E:\游戏\考编助手`，分支 `codex/all-subject-rag`，提交 `dc4cce3`。工作区存在其他开发者未提交改动，本轮未回滚、未覆盖；本轮新增修改仅为 3 个采集代码/测试文件和 2 个文档（见 11.5）。
+- 生产：`https://kbzs.al.qich.top`，运行镜像 `sha-3fb504a`，容器 `jiaozhao-standalone-{backend,worker,db,redis,frontend}-1`。数据库时间字段按 UTC 存储，本节引用运行时间时同时标注北京时间（UTC+8）。
+- 只读核查方式：`ssh -o BatchMode=yes admin@47.101.32.47` 进入部署目录后，用 `docker compose -f docker-compose.standalone.yml exec -T db psql -U jiaozhao -d jiaozhao` 执行带 `LIMIT` 的逐来源/小批量查询；未做全库大范围聚合。
+- 官方站点核验与离线回放均在本地执行，使用 2026-11-21 的公开页面/接口样本；样本只包含公开栏目、公告与附件信息。
+- 口径区分：`succeeded`/`partial` 只表示该 run 的技术状态，不等于材料完整；附件快照数不等于可读文件数，`text/html` 快照可能是限流页。持续运行通过仍为 0。
+
+### 11.2 A. 逐站对账总表（28 行）
+
+用同一 `sourceKey` 关联 11.2.1（配置对账）与 11.2.2（运行与材料验收）。生产 `sourceId` 均为 2026-11-20 登记值；`登记/暂停` 为查询时快照。
+
+#### 11.2.1 配置对账
+
+| # | 地区 | sourceKey / adapterKey | 官方主站与招聘栏目 | 生产 sourceId | 登记/健康 | 配置差异 | 分页与例行扫描 |
+|---|---|---|---|---|---|---|---|
+| 1 | 河北·石家庄 | `shijiazhuang-education` | http://sjzjyj.sjz.gov.cn/ 「通知公告」`/a/zwgk/tzgg/index.html` | `10782ab8-eaba-4913-840c-f469136d00d0` | enabled / structure_changed | 无；官方整站仅 HTTP，已登记 `HTTP_ONLY_HOSTS` | `PageFront.jsp` POST 分页，官方 6 页 / 120 条，全量监测（窗口 6） |
+| 2 | 山西·太原 | `taiyuan-education` | https://jyj.taiyuan.gov.cn/ 「通知公告」`/tzgg.html` | `5ef33c15-4d93-4d65-91c1-e9453e1ef2fa` | enabled / healthy | 无 | JS 跳转分页 `tzgg_<n>.html`，官方 5 页 / 93 条 |
+| 3 | 江苏·南京 | `nanjing-education` | https://edu.nanjing.gov.cn/ 「招聘招考」`/bsfw/zpzk/index.html` | `f0a42c15-603d-4fd8-9219-9fad7a8b2534` | enabled / healthy | `listUrls` 显式为首页 + `index_1.html`（第 2 页），与代码一致 | 固定两页入口；跨站 `rsj.nanjing.gov.cn` 受白名单限制 |
+| 4 | 江苏·苏州 | `suzhou-education` | https://jyj.suzhou.gov.cn/ 「人事信息」`/szjyj/rsxx/xxgk_list.shtml` | `6c405096-1e02-447e-92b0-4e5ca82580ed` | enabled / healthy | **配置性缺口**：登记栏目最新 2025-03-12 已停更；2026 活跃公告在市人社局 `hrss.suzhou.gov.cn/jsszhrss/gsgg/` | `createPageHTML` 3 页 / 34 条（15/15/4） |
+| 5 | 江苏·常州 | `changzhou-education` | https://jyj.changzhou.gov.cn/ 「教育要闻/公示」`/class/QFJEPCBL` | `9281c407-00e0-4abd-8221-c010d4425317` | enabled / healthy | 无 | 静态列表，通用预算 ≤20 页 |
+| 6 | 江苏·泰州 | `taizhou-education` | https://jyj.taizhou.gov.cn/ 「最新文件」`/zxwj/index.html` | `42d78c49-e1f1-4331-a39b-9a7673ac483d` | enabled / healthy | 无；混合栏目 | jpaas `li` + DOM 属性分页，2 页 |
+| 7 | 浙江·杭州 | `hangzhou-education` | https://edu.hangzhou.gov.cn/ 「公示公告」`/col/col1228921906/index.html` | `20fddc8d-ffcf-4444-8802-ac59622e06f2` | enabled / healthy | 无 | jpaas 公共栏目 API，通用预算 ≤20 页 |
+| 8 | 浙江·宁波 | `ningbo-education` | https://jyj.ningbo.gov.cn/ 「通知公告」`/col/col1229166692/index.html` | `5943c9b0-7309-44e1-8707-0be5e43820e1` | enabled / healthy | 生产 `listUrls` 保留手工修正的 `?number=`，与代码目录一致 | jpaas 公共栏目 API，通用预算 ≤20 页 |
+| 9 | 浙江·鄞州 | `yinzhou-government` | https://www.nbyz.gov.cn/ 「教师招聘」`/col/col1229108032/jszp/index.html` | `5a186329-e353-48d2-af96-3f8964ade027` | enabled / healthy | 无 | jpaas 公共栏目 API |
+| 10 | 浙江·嘉兴 | `jiaxing-education` | https://jyj.jiaxing.gov.cn/ 「公示公告」`/col/col1569769/index.html` | `2bdd6488-063d-4d06-a507-6d1ee5549101` | enabled / structure_changed | 无；2026-11-21 live 复核 `data.html` 未解析出条目，与生产异常一致 | jpaas 公共栏目 API |
+| 11 | 浙江·湖州 | `huzhou-education` | https://huedu.huzhou.gov.cn/ 「公示公告」`/col/col1229210603/index.html` | `75de9be1-db37-482b-bff8-f682100e65d0` | enabled / healthy | 无 | jpaas 表格行 + `initJpage`，3 页 |
+| 12 | 浙江·绍兴 | `shaoxing-education` | https://jyj.sx.gov.cn/ 「公示公告」`/col/col1489173/index.html` | `988e7e45-ac2d-4f5d-a6c0-59854662a959` | enabled / healthy | 无 | jpaas 公共栏目 API |
+| 13 | 浙江·丽水 | `lishui-education` | https://jyj.lishui.gov.cn/ 「公示公告」`/col/col1229223905/index.html` | `879a60f8-1437-4855-8035-271d1246a550` | enabled / structure_changed | 无 | jpaas 公共栏目 API |
+| 14 | 浙江·萧山 | `xiaoshan-education` | https://www.xiaoshan.gov.cn/ 「公示公告」`/col/col1228964830/index.html` | `af40206a-c07b-4950-b942-c02e3d6b3e84` | enabled / structure_changed | 无 | jpaas 公共栏目 API |
+| 15 | 安徽·蚌埠 | `bengbu-education` | https://jyj.bengbu.gov.cn/ 「考试招聘」`/xwdt/kszp/` | `3a4b82e2-1550-47ab-8346-ef2965dc8eda` | enabled / healthy | 无 | 静态列表，官方 18 页 / 267 条 |
+| 16 | 安徽·亳州 | `bozhou-education` | https://www.bozhou.gov.cn/ 「教师管理」`/XxgkContent/showList/295/65767/page_1.html` | `fdf1f4ca-417c-4865-bc30-7562150ac75e` | enabled / structure_changed | 无 | 静态 `pagination`，13 页 / 191 条 |
+| 17 | 安徽·阜阳 | `fuyang-education` | https://edu.fy.gov.cn/ 「师资建设」`/Content/showList/843/page_1.html` | `3751655f-855d-4915-8773-d31a3738599c` | enabled / healthy | 无；跨站条目按路径过滤 | 静态列表，12 页 / 175 条 |
+| 18 | 福建·福州 | `fuzhou-education` | https://jyj.fuzhou.gov.cn/ 「通知公告」`/fjdzapp/search` | `0206b611-7a2e-4380-b8ce-fbf07d853e74` | enabled / structure_changed | 生产 `listUrls` 为 GET 展示 URL；适配器实际 `POST /fjdzapp/search` 且需同源 Referer，配置未变 | 官方 178 页 / 2,659 条 / 每页 15，窗口 6 页 |
+| 19 | 江西·南昌 | `nanchang-education` | https://edu.nc.gov.cn/ 「教师科发文」`/ncjyj/jskfw/nav_list.shtml` | `4931b6c8-b63f-47cf-99a8-28a54db62b1f` | enabled / healthy | 无 | `createPageHTML` 2 页 / 34 条 |
+| 20 | 山东·济南 | `jinan-education` | https://jnedu.jinan.gov.cn/ 「教师招聘专栏」`/col/col19032/index.html` | `42803fa3-10ce-4892-882b-35425a94a9ab` | enabled / structure_changed | 无 | jpaas 表格行 + DOM 属性分页，6 页 / 79 条 |
+| 21 | 山东·烟台 | `yantai-education` | https://jyj.yantai.gov.cn/ 「通知公告」`/col/col17078/index.html` | `4d47b4d0-40d6-4163-8494-8bf34e13bac6` | enabled / healthy | 无；混合栏目 | 官方 91 页 / 1,365 条，窗口 6 页 |
+| 22 | 山东·潍坊 | `weifang-education` | https://jyj.weifang.gov.cn/ 「公告公示」`/els-service/article/1/20?...` | `8b80858d-9928-4f70-a736-336e3d2e2870` | enabled / structure_changed | 生产 `listUrls` 为 JSON 接口 URL，适配器 POST，配置未变 | 官方 49 页 / 每页 20，窗口 6 页 |
+| 23 | 山东·泰安 | `taian-education` | https://jyj.taian.gov.cn/ 「公示公告」`/col/col45480/index.html` | `7e334d49-ce28-4be5-9a14-d802b4641261` | enabled / blocked | 无 | datastore 每页 45，官方 16 页 / 227 条 |
+| 24 | 河南·郑州 | `zhengzhou-education` | https://zzjy.zhengzhou.gov.cn/ 「通知公告」`/tzgg/index.jhtml` | `c18b5d52-079d-4706-8233-517ef51af195` | enabled / healthy | 已切新版 `.jhtml`；`allowedHosts` 同时保留旧站 `news.zzedu.net.cn` | `.jhtml` 4 页 / 35 条 |
+| 25 | 湖北·武汉 | `wuhan-education` | https://jyj.wuhan.gov.cn/ 「通知公告」`/zwdt/tsgg/` | `1c472c8e-b80f-48f2-a49c-73bddbbc6b43` | enabled / blocked | 无 | navbox `index_N.shtml`，官方 50 页，窗口 6 页 |
+| 26 | 湖南·长沙 | `changsha-education` | http://jyj.changsha.gov.cn/ 「教师招聘」`/zfxxgk/fdzdgk/jszp/index.html` | `de7c6a83-4bae-4dae-9928-f515604a379f` | enabled / structure_changed | 整站仅 HTTP，已登记 `HTTP_ONLY_HOSTS` | `createPageHTML5` 8 页 / 约 120 条，全量 |
+| 27 | 广东·广州 | `guangzhou-education` | https://jyj.gz.gov.cn/ 「网上公示」`/yw/wsgs/index.html` | `9e4158a6-4add-4923-bdaa-de98d81dbf0b` | enabled / healthy | 无 | NFCMS `index_N.html`，官方 20 页 / 400 条，窗口 6 页 |
+| 28 | 贵州·贵阳 | `guiyang-education` | https://jyj.guiyang.gov.cn/ 「教师工作」`/newsite/zwgk/zdlyxxgk/jsgz/` | `5aadc730-26eb-40ff-8de9-511e1511fe3d` | enabled / structure_changed | 无 | `createPage` 19 页 / 277 条，全量 |
+
+#### 11.2.2 运行与材料验收
+
+运行时间为北京时间；`发现/下载/未变/失败` 取自各来源最新一条 run 的计数。`官方首屏样本` 为 2026-11-21 本地核验的列表首屏日期范围（仅证明该页内容，不等于该 run 的完整日期覆盖）。
+
+| # | sourceKey | 最新 runId（北京时间） | 状态 | 发现/下载/未变/失败 | 官方首屏样本（2026-11-21） | 正文/岗位表缺口 | 待审 | 离线回放 | 逐站结论与下一步 |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | shijiazhuang | `8fefc0e9-e157-49bf-8d01-159615471533`（11-20 17:44–17:53） | structure_changed | 111/154/0/14 | 静态首屏解析 0（列表需 POST `PageFront.jsp`） | `div.content_fenye2` 空 10 篇；附件 57、快照 53、4 无快照 | 62 | fixture 通过 | 列表与附件可采，正文容器失配；用 2026-11 详情样本更新选择器后复跑 |
+| 2 | taiyuan | `e94b4339-84db-441c-b057-1baa8bceb0de`（11-20 17:44–17:53） | partial | 93/146/3/1 | 2026-05-22～2026-11-10（21 条） | 1 篇 `TOO_LARGE`；附件 57、快照 56 | 64 | fixture 通过 | 基本可用；单篇超大正文需上限核验 |
+| 3 | nanjing | `48209b63-2f0a-4e08-b774-dc4b002ff488`（11-20 17:36–17:36） | partial | 30/0/78/1 | 2026-03-26～2026-09-14（15 条） | 1 条 `HOST_NOT_ALLOWED`（`rsj.nanjing.gov.cn`）；附件 49/49 | 55 | fixture 通过 | 主栏目稳定；跨站公告按规则不采，需人工渠道兜底 |
+| 4 | changzhou | `6b53f2c4-e9aa-4730-bb1d-13eb173ebcdc`（11-20 17:53–11-21 08:06） | succeeded | 20/20/21/0 | 2026-05-11～2026-10-22（20 条） | 附件 21/21，无缺口 | 30 | fixture 通过 | 通过；附件名兜底已生效，保持观察 |
+| 5 | suzhou | `9dd3b2db-8e59-45a0-b26b-b887b23cf250`（11-20 17:48–11-21 08:04） | succeeded | 34/42/0/0 | 仅 2 条可确认：2024-10-10、2025-03-12 | 栏目停更；附件 8/8 | 17 | 3 页 34 条回放通过 | **配置性缺口**：运行成功但栏目已停更；需新增/迁移市人社局 `hrss.suzhou.gov.cn/jsszhrss/gsgg/` 来源 |
+| 6 | taizhou | `72869c52-5cdf-4bab-8159-8ff6e74a11fc`（11-20 17:44–17:50） | succeeded | 30/31/0/0 | 2025-05-27～2026-10-15（15 条） | 附件 29、快照仅 1，28 个无快照 | 18 | fixture 通过 | 运行成功但岗位表材料大面积缺失；需按附件端点补采或转人工 |
+| 7 | hangzhou | `a682253b-8841-4af7-bea7-c0f3e6fbb3e9`（11-20 17:36–17:36） | succeeded | 20/0/32/0 | 2025-05-08～2026-05-28（15 条） | 附件 18 个快照均为约 102B 限流 HTML，非真实文件 | 10 | fixture 通过 | 运行成功但附件不可读；新版代码会把该情形记失败，需复跑替换坏快照 |
+| 8 | xiaoshan | `f779049d-e0eb-4ff3-a765-bb1c2e7893fc`（11-20 17:37–17:39） | structure_changed | 173/0/368/20 | 2026-05-19～2026-08-20（15 条） | 附件 274、快照 254（多为限流 HTML）；`skipped` 59；另有 HTTP 404 | 147 | fixture 通过 | 正文与附件双重缺口；优先核对详情选择器与 `document/file-download` 端点 |
+| 9 | ningbo | `14083880-2ace-459b-a8a3-f6034ca82272`（11-20 17:00–17:00，admin） | succeeded | 34/0/50/0 | 2025-09-10～2026-08-03（15 条） | **岗位表 8/8 快照均为 102B「访问过于频繁」HTML；`skipped` 17** | 28 | fixture 通过 | **运行成功但岗位表缺失**；官方 URL 已定位，下载被 `blocked_endpoint:path` 拦截，需人工补录或授权会话 |
+| 10 | yinzhou | `6e210473-d243-424b-8dcd-b92b584b527a`（11-20 17:02–17:03） | succeeded | 74/2/82/0 | 2026-06-23～2026-11-05（15 条） | 附件 56、快照 52；4 个岗位表快照为限流 HTML；`skipped` 46 | 44 | fixture 通过 | 运行成功但岗位表缺失；处理同上 |
+| 11 | jiaxing | `f7613a0a-64bd-4b60-8180-2ddb476e98e1`（11-20 17:48–11-21 08:04） | structure_changed | 138/0/202/14 | jpaas `data.html` 解析 0 条，与生产异常一致 | 附件 152、快照 137（限流 HTML）；`skipped` 135 | 82 | fixture 通过 | 上游 API 结构/响应变化；需用 2026-11 样本重定列表与附件解析 |
+| 12 | huzhou | `096d3d29-0ebd-4031-aad7-ca63fdc0bc83`（11-20 17:44–17:50） | partial | 41/41/0/31 | 2025-07-21～2026-11-16（14 条） | **附件 56、快照 0；岗位表 9、快照 0**；31 个 `HOST_NOT_ALLOWED` | 17 | fixture 通过 | 正文成功、附件全缺；核对附件域名白名单与官方替代入口 |
+| 13 | shaoxing | `c94a82c5-0ad3-453c-ad49-4c485daad779`（11-20 17:48–11-21 08:03） | succeeded | 9/0/9/0 | 2026-03-13～2026-07-06（9 条） | 附件 1/1 | 5 | fixture 通过 | 通过（低频来源），继续观察 |
+| 14 | lishui | `2d330940-a4a2-4394-8753-96cf076c7442`（11-20 17:38–17:39） | structure_changed | 130/0/158/38 | 2026-07-30～2026-09-23（10 条） | 附件 99、快照 70（限流 HTML）；`skipped` 33；跨域 `rsj.lishui.gov.cn` 48 次失败 | 56 | fixture 通过 | 附件跨域/白名单拒绝；区分官方同源替代与人工补录 |
+| 15 | bengbu | `3f6a2dd3-9504-4849-a309-9e539f522e6b`（11-20 17:37–17:37） | succeeded | 9/2/16/0 | 2026-07-24～2026-10-13（15 条） | 附件 9/9 | 8 | fixture 通过 | 通过；前次「附件缺少名称」已由兜底修复覆盖 |
+| 16 | fuyang | `819e5f81-4510-4def-8c05-b94fbd6e5959`（11-20 17:44–17:52） | partial | 155/252/10/1 | 2026-05-11～2026-11-11（15 条） | 1 条 `HOST_NOT_ALLOWED`（`rsj.fy.gov.cn`）；附件 108/108 | 84 | fixture 通过 | 基本可用；1 条跨站公告需人工兜底 |
+| 17 | bozhou | `c032357e-df9e-4a0b-9f26-de2ca7c34581`（11-20 17:44–21:56） | structure_changed | 193/367/14/6 | 2026-08-05～2026-11-12（15 条） | 5 篇正文缺标题/日期/正文；1 条 `HOST_NOT_ALLOWED`（`www.sxx.gov.cn`）；附件 194/193 | 108 | fixture 通过 | 主体可采，少量详情异常；按 5 条失败 URL 逐条修样本 |
+| 18 | fuzhou | `a14b3ceb-fba4-48ea-b73e-987843212782`（11-20 17:44–17:45） | structure_changed | 0/0/0/0 | **11-21 live POST 通过：15 条/页，178 页，2,659 条；2026-10-21～11-19；详情 docx 200** | 生产 0 文档 | 0 | 实时回放 4/4 通过 | 生产 run 早于本轮 live 验证；需在暂停解除后单来源复跑，并核对 `data.html` 为空时的 Referer/参数分支 |
+| 19 | nanchang | `b64167cc-67f7-4f58-863a-a9107f0356bb`（11-20 17:44–17:53） | partial | 39/123/2/1 | 2025-11-17～2026-11-17（25 条） | 1 篇 `TOO_LARGE`；附件 87/86 | 20 | fixture 通过 | 基本可用 |
+| 20 | jinan | `b1d95c1a-2a9a-419f-bf4b-64ac6f22f7ca`（11-20 17:44–17:52） | structure_changed | 80/113/0/1 | 2026-04-16～2026-11-10（15 条） | 1 篇相对地址来自提示文本导致失败；附件 80/34；岗位表 7/0；`skipped` 46 | 42 | fixture 通过 | 附件大面积缺失 + 1 条正文解析异常；先修提示文本被当作 URL 的分支 |
+| 21 | yantai | `c005708b-63fe-4018-9375-90c93df39529`（11-20 17:44–17:50） | succeeded | 85/85/0/0 | 2024-03-19～2026-11-20（15 条） | **附件 128、快照 0；岗位表 12、快照 0**；`skipped` 128 | 6 | fixture 通过 | 运行成功但材料全缺；需核对 jpaas 附件端点与白名单 |
+| 22 | weifang | `6b76d72e-2586-4609-8355-18d364c094ff`（11-20 17:44–17:44） | structure_changed | 0/0/0/0 | **11-21 live POST 通过：20 条/页，49 页；2026-09-30～11-16；详情 xlsx 200** | 生产 0 文档 | 0 | 实时回放 4/4 通过 | 同福州：需单来源复跑并核对接口响应判定 |
+| 23 | taian | `355e482d-f4e5-4adc-8062-bce38f279522`（11-20 17:44–17:51） | blocked | 227/380/7/8 | 首屏 45 条（datastore 总 227），列表无日期字段 | 6 次 `captcha_challenge` + 2 次 `HOST_NOT_ALLOWED`；附件 168/167 但下载被验证码拦截 | 97 | fixture 通过 | 人工介入；不绕过验证码，保留 blocked 与人工补录入口 |
+| 24 | zhengzhou | `4820cd85-6cb1-47b5-ab86-e7bae6862441`（11-20 17:44–17:53） | partial | 35/84/0/1 | 2026-10-12（首屏 10 条；4 页共 35） | 1 篇 `TOO_LARGE`；附件 50/49；岗位表 10/10 | 15 | 实时回放 4/4 通过 | 新版 `.jhtml` 列表/详情有效；补超大正文上限 |
+| 25 | wuhan | `0dd620f0-59c7-4171-b805-95bb8f82181a`（11-20 17:44–17:45） | blocked | 0/0/0/0（`forbidden`） | **11-21 live GET 200：10 条；2026-09-15～11-19；详情 PDF 200** | 生产 0 文档 | 0 | 实时回放通过 | 生产 blocked 早于本轮验证；需单来源复跑确认反爬是否已解除 |
+| 26 | changsha | `3610fe95-0602-4496-acad-aeb9c4fb03cc`（11-20 17:44–17:55） | structure_changed | 118/225/11/2 | 2025-03-30～2026-11-16（15 条） | 1 篇 `div.content-main` 空；1 篇 `TOO_LARGE`；附件 120/119 | 64 | fixture 通过 | 少量正文失败；按 2 条失败 URL 修样本 |
+| 27 | guangzhou | `5d55745a-b71e-420e-a47e-c1234a4346ac`（11-20 17:44–17:53） | succeeded | 120/192/0/0 | 2026-10-08～2026-11-19（20 条） | 附件 72/72 | 49 | fixture 通过 | 通过 |
+| 28 | guiyang | `c00560d5-0cf3-4c42-b75c-6db85c2e56ff`（11-20 17:44–17:56） | structure_changed | 277/505/9/18 | 2026-08-18～2026-10-17（15 条） | 多篇 `div.TRS_UEDITOR` 空/缺 A；附件 255/251 | 115 | fixture 通过 | 主体可采，详情失败 18 需按样本修复 |
+
+汇总：28 个招聘来源最新运行 10 `succeeded`、6 `partial`、10 `structure_changed`、2 `blocked`；0 条 `published` 审核记录。生产累计 4,537 文档、2,248 公告、4,010 快照；28 个招聘来源 `pending_review` 合计 1,243（加上政策来源 14、人工来源 4，共 1,261）。
+
+### 11.3 B. 重点异常报告
+
+每项按「复现证据 → 影响范围 → 原因/假设 → 本地修复与测试 → 仍需线上验证」记录。
+
+**福州（fuzhou-education）**
+- 复现：生产 run `a14b3ceb…` 于 11-20 17:44 开始、17:45 结束，`0/0/0/0`，错误 `公开栏目接口未返回有效 data.html`。11-21 本地按适配器同一路径 `POST https://jyj.fuzhou.gov.cn/fjdzapp/search`（`channelid=229105&chnlid=47610&page=1`，同源 Referer）返回 15 条；接口声明 `pageCount=178`、`recordCount=2659`；首屏日期 2026-10-21～2026-11-19；抽查详情 `docx` 返回 200。
+- 影响：生产该来源 0 文档、0 公告。
+- 原因：生产失败发生在适配器部署/生效窗口之前或接口响应判定分支未命中；本轮 live 已证明当前公开入口可用，但不能据此认定生产配置已正确。
+- 修复与测试：现有 `fz-list` 与适配器离线 fixture 通过；实时回放 4/4（福州/潍坊/苏州/郑州）通过。
+- 待线上：暂停解除后单来源复跑，记录新 `runId`；若仍返回空 `data.html`，核对 Referer、`classsql` 与响应 JSON 结构。
+
+**潍坊（weifang-education）**
+- 复现：生产 run `6b76d72e…` 于 11-20 17:44 开始并立即结束，`0/0/0/0`，错误同上。11-21 本地 `POST https://jyj.weifang.gov.cn/els-service/article/1/20?catas=trs1308521&dwid=55332&dq=162` 返回 20 条、`totalPages=49`；首屏 2026-09-30～2026-11-16；详情 `xlsx` 200。GET 仍为 405，与“栏目只接受 POST”一致。
+- 影响：生产该来源 0 文档。
+- 原因：适配器 POST 通道可用；生产失败更像部署前状态或响应判定过严，而非上游结构变化。
+- 修复与测试：`els-list` fixture 通过；实时回放通过。
+- 待线上：单来源复跑；确认 GET 405 不会被误判为结构变化。
+
+**苏州（suzhou-education）**
+- 复现：11-20 回放 `xxgk_list.shtml` / `_2` / `_3` 均 200，34 条（15/15/4），最新 2025-03-12、最旧 2013-05-16；11-21 复核同一栏目仅 2 条可确认日期，仍为停更状态。生产最新 run `9dd3b2db…` 已 `succeeded`，34 发现、42 下载。
+- 影响：运行技术成功，但 2026 年活跃教师招聘公告不在该栏目。11-21 核验到 `hrss.suzhou.gov.cn/jsszhrss/gsgg/` 存在 2026-04-22 教师 26 名、2026-05 高层次毕业生 20 名、2026-03 常熟教师公告，岗位表 PDF 可访问。
+- 原因：**配置性缺口**，不是适配器解析缺陷。
+- 修复与测试：本轮不迁移来源；建议新增市人社局来源或把 `listUrls` 指向活跃栏目，并重新做分页/详情/附件回放。
+- 待线上：确认新栏目 `sourceId`、`allowedHosts`、分页窗口后再登记；旧来源保留历史但不计入活跃覆盖。
+
+**宁波 / 鄞州（ningbo-education / yinzhou-government）**
+- 复现：两来源最新 run 均 `succeeded`（宁波 34 发现、鄞州 74 发现）。附件计数宁波 33/33、鄞州 56/52，但岗位表 URL 在运行审计中为 `skipped`，原因 `blocked_endpoint:path`（`api-gateway/jpaas-web-server/front/document/download`）；已入库快照为约 102 字节 `访问过于频繁，请稍后再试` HTML。11-21 直接请求同一 URL 可返回真实 `xlsx`（`PK` 头），但内容哈希与快照不同。
+- 影响：**运行成功但岗位表缺失**；宁波 8/8 岗位表、鄞州 4/4 岗位表均不可读。
+- 原因：官方附件端点反爬/会话校验；旧代码把 200 HTML 限流页当作成功附件入库。
+- 修复与测试：已修改 `document-fetch.service.ts`：附件扩展名为二进制但 magic bytes 判定为 `html` 时返回 `failed` + `ATTACHMENT_HTML:rate_limited_or_antibot`，不建快照；`task-queue.ts` 将该错误纳入瞬时可重试；新增回归测试断言 `snapshots=0`、`objectStore.writes=0`、`document.parse=0`，专项 16/16 通过。
+- 待线上：复跑后坏快照需人工清理或由新逻辑重采；官方端点仍需授权会话/人工补录，不能靠放宽 allowlist。
+
+**武汉 / 泰安（wuhan-education / taian-education）**
+- 武汉：生产 run `0dd620f0…` 于 11-20 17:44 立即 `blocked`（`forbidden`）；11-21 live `GET https://jyj.wuhan.gov.cn/zwdt/tsgg/` 200、首屏 10 条、2026-09-15～11-19，详情 PDF 200。结论：生产 blocked 早于本轮验证，需单来源复跑。
+- 泰安：生产 run `355e482d…` 为 `blocked`，227 发现、380 下载、8 失败；6 次 `captcha_challenge`。11-21 官方 datastore 仍为 227 条、首屏 45 条，最新 2026-11-19；附件下载触发验证码。结论：保持 blocked，不绕过；附件缺口记录为材料不完整，寻找同机构公开替代渠道或人工补录。
+
+**嘉兴 / 丽水 / 萧山 / 亳州 / 石家庄 / 阜阳**
+- 嘉兴：11-21 jpaas `data.html` 未解析出条目，与生产 `structure_changed` 一致；附件 152、快照 137（限流 HTML）、`skipped` 135；附件事项失败 34。属上游结构/响应变化，需用最新样本重定解析。
+- 丽水：`HOST_NOT_ALLOWED` 38（含 `rsj.lishui.gov.cn` 48 次、`mp.weixin.qq.com` 8 次），附件 99、快照 70、`skipped` 33；属跨域/白名单与附件不可读叠加。
+- 萧山：`structure_changed`，173 发现、0 下载、失败 20（含 HTTP 404 与白名单），附件 274、快照 254（多为限流 HTML）、`skipped` 59；正文与附件双重缺口。
+- 亳州：`structure_changed`，5 篇“正文缺少标题、日期或正文”，1 条跨站 `www.sxx.gov.cn` 被拒；附件 194/193。
+- 石家庄：`structure_changed`，10 篇 `div.content_fenye2` 空；附件 57/53、4 无快照；列表需 POST 才能取到首屏，因此 11-21 静态探测为 0 条。
+- 阜阳：`partial`，仅 1 条 `HOST_NOT_ALLOWED`（`rsj.fy.gov.cn`）；附件 108/108，主体可用。
+
+**郑州（zhengzhou-education）**
+- 复现：生产已登记 `https://zzjy.zhengzhou.gov.cn/tzgg/index.jhtml`，最新 run `4820cd85…` 为 `partial`（35 发现、84 下载、1 `TOO_LARGE`）。11-21 live 复核 `.jhtml` 首屏 10 条、4 页共 35 条、最新 2026-10-12；详情 `xlsx` 200；旧站 `news.zzedu.net.cn` 仍在 `allowedHosts`。
+- 结论：新版入口与分页/详情解析对应一致；只需处理超大正文上限，不存在入口漂移。
+
+**北京 / 重庆（本地扩源，不计入生产 28）**
+- 北京：`https://rsj.beijing.gov.cn/xxgk/gkzp/` 三页各 12 条，页间重叠 0；第 1 页 2026-11-18 起，第 2/3 页日期递降；适配器 spec 5 项通过。
+- 重庆：`https://rlsbj.cq.gov.cn/zwxx_182/sydw/` 使用 `sydwgkzp2026` 年度子目录；详情 `hasFJ` 含 2 个 `xlsx`（岗位一览表、专业目录），下载 200 `PK`；适配器 spec 5 项通过。
+- 二者均未发布镜像、未登记生产、无真实首采 `runId`；市级综合栏目只按实际发布范围记录，不替代市/区教委独立栏目。
+
+### 11.4 C. 覆盖结论与后续清单
+
+| 指标 | 结果 | 说明 |
+|---|---|---|
+| 省级行政区目录登记 | 31 / 31 | 目录行齐全，不等于招聘栏目已核验 |
+| 有本地招聘适配器的省级行政区 | 15 / 31 | 浙江、江苏、安徽、山东、江西、山西、河南、福建、广东、河北、湖北、湖南、贵州、北京、重庆 |
+| 生产已登记招聘来源 | 28 | 覆盖 13 个省级行政区；另有 1 个政策来源、4 条人工补录 |
+| 生产已登记来源总数 | 33 | 28 招聘 + 1 政策 + 4 人工（松江、大田、黄石、玄武，均 disabled/degraded） |
+| 真实采集已核验 | 28 / 28 | 均有 2026-11-20 补跑窗口的 run 记录；10 succeeded、6 partial、10 structure_changed、2 blocked |
+| 材料完整可读 | 未达标 | 2,225 个附件文档中 340 个无快照，572 个最新快照为 `text/html`（萧山 254、嘉兴 137、丽水 70、鄞州 52、宁波 33、杭州 18） |
+| 持续运行通过 | 0 / 28 | 7 天观察未完成；本轮不标记任何来源持续通过 |
+| 无生产招聘来源的省级行政区 | 16 | 天津、内蒙古、辽宁、吉林、黑龙江、上海（仅人工松江）、广西、海南、四川、云南、西藏、陕西、甘肃、青海、宁夏、新疆 |
+
+已登记但验收未完成的来源：28 个招聘来源全部尚未达到“材料完整 + 持续运行通过”；其中福州、潍坊、武汉需复跑，苏州需迁移活跃栏目，宁波/鄞州需解决岗位表，湖州/丽水/烟台/济南/泰州/杭州/萧山/嘉兴需补附件，泰安需人工介入，亳州/石家庄/长沙/贵阳需修详情选择器。
+
+后续优先级（恢复生产后按此顺序，单来源、小批次、可回滚）：
+1. 福州、潍坊、武汉：单来源复跑，记录新 `runId` 与日期覆盖；每站只跑最新窗口。
+2. 苏州：新增/迁移市人社局活跃栏目，完成分页、详情、岗位表回放后再登记。
+3. 宁波、鄞州：用授权会话或人工补录修复岗位表；复跑时确认不再写 102B HTML 快照。
+4. 湖州、丽水、烟台、济南、泰州：核对附件端点与白名单，优先同源官方替代；无法自动获取的转人工。
+5. 嘉兴、萧山：用 2026-11 样本重定列表/正文/附件解析。
+6. 石家庄、亳州、长沙、贵阳：按失败 URL 逐条修正文选择器。
+7. 泰安：保持 blocked，人工补录或等待官方取消验证码。
+8. 北京、重庆：发布镜像、登记来源、单来源首采，再做 7 天观察。
+9. 人工来源：松江补岗位表（若有独立链接）、大田补 3 个附件与三部门发布单位、黄石补岗位表并核对已截止报名时间、玄武去重/停用。
+
+### 11.5 D. 文档、代码与测试记录
+
+- 代码修改（仅 3 个文件）：
+  - `backend/src/sourcing/jobs/document-fetch.service.ts`：附件按 magic bytes 识别格式；二进制扩展名却返回 HTML 时判失败，避免限流页入库。
+  - `backend/src/sourcing/jobs/task-queue.ts`：`ATTACHMENT_HTML` 纳入瞬时错误，允许退避重试。
+  - `backend/src/sourcing/jobs/document-fetch.spec.ts`：新增“附件 URL 返回 200 HTML 限流页”回归，断言不建快照、不写对象存储、不投递解析。
+- 测试命令与结果：
+  - `npm --prefix backend test -- src/sourcing/jobs/document-fetch.spec.ts` → 16/16 通过。
+  - `npm --prefix backend test -- src/sourcing` → 39 个测试文件通过，458 项通过，2 项跳过（修复前基线为 457 通过）。
+  - 2026-11-21 实时回放：福州、潍坊、苏州、郑州 4/4 通过；北京 5/5、重庆 5/5（均为本地隔离样本/公开页面）。
+- 证据位置：生产只读查询结果与 live 样本为本轮临时证据，关键数值已写入本节；临时目录不随仓库交付。官方 URL、页码、样本标题/日期与响应类别见 11.2.2、11.3。
+- 生产状态：容器内 `CRAWL_SCHEDULER_ENABLED=false`、`CRAWL_WORKER_PAUSED=false`；查询时队列 `waiting/active/delayed=0`、`failed=8`。需特别说明：9.4 节记录的积压 waiting=2,753 已在恢复后被 Worker 消费，多条长任务于 11-21 08:03–08:06（北京时间）完成；因此本轮**不能声称“积压队列保持不变”**。本轮未恢复调度、未清空队列、未删除历史公告/快照；建议在下一次操作前重新确认暂停状态并查明 Worker 恢复消费的原因。
+- 未执行：生产复跑、生产登记变更、镜像发布、北京/重庆首采、7 天持续观察。

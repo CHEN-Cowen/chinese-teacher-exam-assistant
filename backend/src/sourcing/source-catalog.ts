@@ -529,6 +529,46 @@ export const SOURCE_CATALOG: readonly SourceCatalogEntry[] = [
       '「教师招考」专栏真实核验（2026-10-26）：jpaas 公开动态接口列表（rows=15 / count=173）+ 官方 paramJson 分页、正文 #zoom 与官方附件下载链接离线回放通过；本来源为区县级层级，按 S0 规范 6.2 独立于杭州市级来源提供区县覆盖；持续监测见检查记录。',
   },
   {
+    sourceKey: 'beijing-rsj-recruitment',
+    publisher: '北京市人力资源和社会保障局',
+    regionCode: '110000',
+    authorityLevel: 'city',
+    officialUrl: 'https://rsj.beijing.gov.cn/',
+    // 同目录静态锚点分页 index_N.html；按单来源窗口只监测最新 3 页（约 60 条）。
+    listUrls: [
+      'https://rsj.beijing.gov.cn/xxgk/gkzp/',
+      'https://rsj.beijing.gov.cn/xxgk/gkzp/index_1.html',
+      'https://rsj.beijing.gov.cn/xxgk/gkzp/index_2.html',
+    ],
+    allowedHosts: ['rsj.beijing.gov.cn'],
+    adapterKey: 'beijing-rsj-recruitment',
+    status: 'ready',
+    verifiedAt: '2026-11-20',
+    sampleRef: 'tests/fixtures/golden-sources/beijing-rsj',
+    coverageNote:
+      '「事业单位公开招聘」综合栏目真实核验（2026-11-20，北京市首个来源）：服务端渲染列表 ul.list li > a[title] + span 日期、同目录 index_N.html 静态分页（只监测最新 3 页 / 约 60 条）、正文官方 meta（ArticleTitle/PubDate）+ div.view、同域 xlsx/doc/pdf 附件离线回放通过；栏目混有医院/广电/艺术院团等非教师岗位，适配器按标题只保留教育、教师、学校相关条目；直辖市市级综合栏目不能替代各区独立发布渠道。',
+  },
+  {
+    sourceKey: 'chongqing-rsj-recruitment',
+    publisher: '重庆市人力资源和社会保障局',
+    regionCode: '500000',
+    authorityLevel: 'city',
+    officialUrl: 'https://rlsbj.cq.gov.cn/',
+    // 栏目按年度子目录滚动；createPage(N,0,"index","html") 生成 index_N.html。
+    listUrls: [
+      'https://rlsbj.cq.gov.cn/zwxx_182/sydw/sydwgkzp2026/',
+      'https://rlsbj.cq.gov.cn/zwxx_182/sydw/sydwgkzp2026/index_1.html',
+      'https://rlsbj.cq.gov.cn/zwxx_182/sydw/sydwgkzp2026/index_2.html',
+    ],
+    allowedHosts: ['rlsbj.cq.gov.cn'],
+    adapterKey: 'chongqing-rsj-recruitment',
+    status: 'ready',
+    verifiedAt: '2026-11-20',
+    sampleRef: 'tests/fixtures/golden-sources/chongqing-rsj',
+    coverageNote:
+      '「事业单位公开招聘」综合栏目真实核验（2026-11-20，重庆市首个来源）：服务端渲染列表 ul li > a[title] + span 日期、createPage 同目录 index_N.html 分页（只监测最新 3 页 / 约 60 条）、正文官方 meta（ArticleTitle/PubDate）+ div.xl-article；附件不在正文 DOM，需解析脚本变量 hasFJ 才能补全岗位一览表；栏目含万州等区县教育事业单位教师/公费师范生岗位，也混有卫健等非教师公告，适配器按标题过滤；年度子目录 sydwgkzp<YYYY> 需按年滚动更新，且省级综合栏目不能替代各区县独立渠道。',
+  },
+  {
     sourceKey: 'anhui-education-policy',
     publisher: '安徽省教育厅',
     regionCode: '340000',

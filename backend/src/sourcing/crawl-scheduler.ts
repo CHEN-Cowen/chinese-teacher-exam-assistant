@@ -8,11 +8,13 @@
  * - 重入保护：上一轮未结束则跳过本轮，避免堆积；
  * - 可用 CRAWL_SCHEDULER_ENABLED=false 关闭定时（例如仅手动运维）。
  */
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
 import { CrawlOrchestrator } from './crawl-orchestrator.js';
 import { CrawlRunStore } from './crawl-run-store.js';
 import { SourcingAlertService } from './sourcing-alert.service.js';
+import type { CrawlTaskQueue } from './jobs/task-queue.js';
+import { CRAWL_TASK_QUEUE } from './sourcing.tokens.js';
 
 function intFromEnv(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
@@ -28,6 +30,7 @@ const TICK_BATCH_SIZE = intFromEnv(process.env.CRAWL_SCHEDULER_BATCH, 20);
 export class CrawlScheduler {
   private readonly logger = new Logger(CrawlScheduler.name);
   private readonly enabled = process.env.CRAWL_SCHEDULER_ENABLED !== 'false';
+  private readonly serial = process.env.CRAWL_SCHEDULER_SERIAL === 'true';
   private ticking = false;
 
   constructor(
@@ -35,6 +38,7 @@ export class CrawlScheduler {
     private readonly store: CrawlRunStore,
     // M02/F3：运行告警巡检挂在既有调度 tick 上，不新增调度体系
     private readonly alerts: SourcingAlertService,
+    @Inject(CRAWL_TASK_QUEUE) private readonly queue?: CrawlTaskQueue,
   ) {}
 
   @Interval('crawl-due-sources', TICK_INTERVAL_MS)
@@ -51,7 +55,14 @@ export class CrawlScheduler {
           `告警巡检失败：${error instanceof Error ? error.message : String(error)}`,
         );
       }
-      const due = await this.store.listDueSources(new Date(), TICK_BATCH_SIZE);
+      if (this.serial) {
+        const counts = await this.queue?.getJobCounts?.();
+        if (!counts || counts.waiting || counts.active || counts.delayed) return;
+      }
+      const due = await this.store.listDueSources(
+        new Date(),
+        this.serial ? 1 : TICK_BATCH_SIZE,
+      );
       for (const source of due) {
         try {
           await this.orchestrator.checkSource(source.id, 'schedule');

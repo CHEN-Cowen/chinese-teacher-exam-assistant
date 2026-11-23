@@ -147,3 +147,157 @@ pathDenylist 命中 `\/front\/document\/download(?:\?|$)`，fetch 前拦截不�
 - **生产 IMAGE_TAG 漂移历史**：服务器 `.env` 的 `IMAGE_TAG` 长期与实际运行版本不一致（之前是 `sha-2a7fb10f`，运行 `sha-a3c881a9`），本次修正为 `sha-3fb504a` 并同步到 `.env.bak-*`。
 - **其他来源附件失败**：常州（"公开正文附件缺少名称"）在 attachmentNameFromLink 修复后应归零，但本轮未批量复跑，需在后续观察窗口中验证。
 
+## 9. 2026-11-20 存量对账与全国扩源首批（执行中，发生生产过载）
+
+本节记录按“先对账、再补跑、后扩源”执行的真实结果；所有数字来自当次 `psql` 查询与容器日志，未完成项明确标注。
+
+### 9.1 来源对账与登记
+
+- 线上版本：`sha-3fb504a`（含 N1—N3），API/Worker/DB/Redis 健康；执行开始时队列 waiting/active=0、delayed=0、failed=6（历史）。
+- 线上数据库原有 15 条来源：11 条可运行招聘来源 + 4 条人工补录（上海松江、福建大田、湖北黄石、南京玄武区，`adapter_key` 为空）。**N1—N3 的 17 条来源并未完成线上登记**，与交接记录中“28 个来源已接入”不一致。
+- 代码目录（N4 前）32 项 = 28 招聘 ready + 1 政策 ready + 2 候选 + 1 受阻；线上仅 11 个招聘来源可运行，实际省级覆盖 13 个。
+- 通过容器内 Node 脚本调用 `getSeedableSources()` + `CrawlRunStore.upsertSource()` 完成登记（绕过 invited 模式 AdminGuard）；共 29 个可登记来源（28 招聘 + 1 政策）。登记前逐项比对 `officialUrl`：11 个旧来源全部精确匹配，宁波 `listUrls`（含生产手工修正的 `?number=`）与鄞州 `listUrls` 在代码目录中已一致，未被覆盖；无重复 `officialUrl`。
+- 登记结果：新增 17 条招聘来源 + 1 条政策来源，总数 15 → 33（29 个有 adapter + 4 条人工补录）；`sourceId`、历史运行、快照与关联关系全部保留。
+- 4 条人工补录来源的 `adapter_key` 为空，但仍为 `enabled=true`，被每小时调度反复投递并失败；已将其置为 `enabled=false`，停止无效投递（公告与审核数据不变）。
+
+### 9.2 补跑与生产过载
+
+- 登记完成后调度器在同一分钟内将 17 个新来源全部置为到期并投递（代码实际配置键为 `CRAWL_SCHEDULER_BATCH`，默认 20），每个来源首次全量回看产生约 100—230 条文档；累计发现约 2,900 条，队列 waiting 峰值约 2,900。
+- 观察到的中间结果：快照 2,920；`document_parse_runs` 新建 1,298；`extraction_runs` 新建 41，`pending_review` 454 → 495；随后 22 端口 TCP 可连但 SSH banner 超时、3000 端口超时、80/443 仍响应，宿主进入假死，执行中断。故障与大批量任务同时发生，但宿主 OOM/负载日志尚未取得，不能把直接资源原因仅归结为并发或实例规格。
+- 中间结果中的来源状态（中断前）：13 个成功/部分成功；武汉 `blocked`（反爬）；福州、潍坊、苏州、嘉兴、丽水、萧山 `structure_changed`；亳州、石家庄存在正文抓取失败；泰安触发验证码且部分附件跨域；阜阳 1 条主机白名单拒绝。福州 live 返回“获取站点配置失败”，潍坊公开接口 GET 返回 405（仅 POST），属上游接口变化，需改代码或更换入口。
+- 人工补录复核：松江仅有正文、无图片/岗位表附件；大田 2 个附件齐全但 `unit_name` 误取联系电话“陈老师05987222650”；黄石仅 1 个附件（联系方式一览表），岗位表缺失，报名时间仅保留开始日 2026-11-11、截止日缺失。三条均保持 `pending_review`，不擅自改字段。
+
+### 9.3 代码与测试
+
+- N4 首批新增北京市人社局、重庆市人社局两个直辖市综合事业单位栏目适配器；新增 `.view` / `.xl-article` 正文回退；重庆额外解析正文外 `hasFJ` 脚本变量补全岗位表附件。
+- 本地验证：`cd backend && npx vitest run src/sourcing` → 39 文件、457 通过、2 跳过；新增 N4 两个 adapter spec 与可登记列表断言。
+- 未完成：N4 镜像尚未构建发布，两个来源尚未登记到线上、无真实首采 `runId`；北京/重庆不能计入已覆盖或持续运行通过。
+
+### 9.4 两次恢复尝试与当前阻塞
+
+- 第一次控制台重启后，19:33（北京时间）宿主恢复：1.6GB 内存可用约 939MB、磁盘使用 59%，DB/Redis 健康；用户已停止 Worker/Backend。队列保留完整：waiting=2,780、active=3、delayed=3、failed=6（历史）；waiting 中包含 `announcement.extract` 1,371、`document.parse` 1,087、`document.fetch` 321、`source.discover` 1。没有清空队列或删除任务。
+- 19:36 仅以 `CRAWL_SCHEDULER_ENABLED=false` 重建并恢复 Backend，健康检查通过；19:37 以 `CRAWL_WORKER_CONCURRENCY=1` 恢复 Worker。19:38 API/DB/Redis/Worker 均为 up，waiting 降至 2,753、active=2、delayed=0，但宿主可用内存降至约 328MB。随后公网再次 502、SSH 再次 banner 超时，证明不能把“单并发”视为已经验证的安全恢复方案。
+- 用户随后在控制台报告 Worker 已停止，但 SSH 仍无法连接；进一步停止 Backend 的命令也无法执行。当前宿主与各容器的最终状态未知，已停止一切远程探测和应用启动，需先通过阿里云实例诊断/强制重启/运维支持恢复宿主。恢复后不得自动消费现有队列。
+- 恢复后的前置条件：先停止 Worker/Backend，保存宿主日志、`dmesg`/OOM 证据、Docker 状态与队列快照；确认故障原因并制定内存/解析任务隔离方案后，再以受控方式处理积压。调度批次如需调整，应使用 `CRAWL_SCHEDULER_BATCH=1`，不是无效的 `CRAWL_SCHEDULER_BATCH_SIZE`。
+- N4 镜像构建、北京/重庆登记与真实首采均未执行；最终 `runId`、日期覆盖、附件缺口与公告增量仍未完成。本轮不宣称生产恢复、存量补跑完成或全国扩源完成。
+
+## 10. 2026-11-21 28 来源逐站复查（只读）
+
+逐站明细、证据与后续优先级见 `docs/nationwide-recruitment-source-ledger.md` 第 11 节。本节只记录验收结论。
+
+### 10.1 环境与范围
+
+- 仓库分支 `codex/all-subject-rag`，提交 `dc4cce3`；保留其他开发者未提交改动。
+- 生产镜像 `sha-3fb504a`；只执行带 `LIMIT` 的逐来源/小批量只读查询，未写入、未复跑、未发布。
+- 官方站点核验与离线回放在本地完成；数据库时间为 UTC，报告统一换算北京时间。
+
+### 10.2 复查结果
+
+- 28 个生产招聘来源全部可追溯到官方栏目、代码适配器、生产 `sourceId` 与 2026-11-20 补跑窗口的 `runId`。
+- 最新运行分层：10 `succeeded`、6 `partial`、10 `structure_changed`、2 `blocked`；`published` 审核记录 0 条。
+- 生产累计 4,537 文档、2,248 公告、4,010 快照；28 个招聘来源 `pending_review` 合计 1,243，连同政策来源 14 条、人工来源 4 条共 1,261。
+- 材料完整性未达标：2,225 个附件文档中 340 个无快照，572 个最新快照为 `text/html`（萧山 254、嘉兴 137、丽水 70、鄞州 52、宁波 33、杭州 18），其中宁波/鄞州岗位表属于“运行成功但岗位表缺失”。
+- 持续运行通过仍为 0/28；北京、重庆仅本地回放通过，未发布、未登记、无首采 `runId`。
+
+### 10.3 重点阻塞与下一步
+
+1. 福州、潍坊、武汉：生产 run 早于本轮 live 验证；需单来源复跑并记录新 `runId`。
+2. 苏州：登记栏目已停更（最新 2025-03-12），2026 活跃公告在市人社局 `hrss.suzhou.gov.cn/jsszhrss/gsgg/`；需迁移或新增来源。
+3. 宁波、鄞州：岗位表下载被官方反爬端点拦截，已入库快照为 102B 限流 HTML；需授权会话或人工补录。
+4. 湖州、丽水、烟台、济南、泰州、杭州、萧山、嘉兴：附件无快照或为限流 HTML，需按端点/白名单补采。
+5. 石家庄、亳州、长沙、贵阳、嘉兴、萧山：正文选择器或上游 API 响应变化，需用 2026-11 样本修复。
+6. 泰安：验证码拦截，保持 `blocked`，不绕过。
+7. 北京、重庆：待镜像发布后登记、首采并做 7 天观察。
+8. 人工来源：松江附件、大田 3 个缺失附件与发布单位、黄石岗位表与截止日期、玄武重复公告，走后续审核。
+
+### 10.4 代码修复与测试
+
+- 修复“附件 URL 返回 200 HTML 限流页被当作成功附件入库”：`document-fetch.service.ts` 按 magic bytes 判格式，二进制扩展名却返回 HTML 时记 `failed` + `ATTACHMENT_HTML`，不建快照；`task-queue.ts` 将其纳入瞬时重试；新增回归。
+- `npm --prefix backend test -- src/sourcing/jobs/document-fetch.spec.ts` → 16/16 通过。
+- `npm --prefix backend test -- src/sourcing` → 39 个测试文件通过、458 项通过、2 项跳过（修复前 457）。
+- 2026-11-21 实时回放：福州、潍坊、苏州、郑州 4/4；北京 5/5、重庆 5/5。
+
+### 10.5 队列与暂停状态
+
+- 容器内 `CRAWL_SCHEDULER_ENABLED=false`、`CRAWL_WORKER_PAUSED=false`；查询时 `waiting/active/delayed=0`、`failed=8`。
+- 9.4 节记录的 waiting=2,753 积压已被恢复后的 Worker 消费，多条长任务于 11-21 08:03–08:06（北京时间）完成；本次**不能声称积压队列保持不变**。
+- 本轮未恢复调度、未清空队列、未删除历史公告/快照；下次操作前需重新确认暂停状态并查明 Worker 恢复消费原因。
+- 未执行：生产复跑、生产登记变更、镜像发布、北京/重庆首采、7 天持续观察。
+
+### 10.6 2026-11-21 蚌埠单来源试跑前置核查（未投递生产）
+
+- 硬上限核查（代码级）：来源只登记 1 个栏目页，`SourceDiscoverService` 当前不会调用适配器的 `paginationListings`，因此单轮列表请求实际为 1；但**详情与附件没有每轮数量上限**，会把全部已知文档 + 全部新发现文档逐个投递 `document.fetch`。网络层仅有单响应 8MB、3 次重试、Worker 并发 1。
+- 停止手段：`POST /admin/sources/:sourceId/pause` 只阻止后续发现，不停已排队任务；立即停消费需改 `CRAWL_WORKER_PAUSED=true` 并重启 worker；队列无按 `runId` 批量删除的接口，清理需手写 Redis 脚本。均为应急手段，不构成前置硬限制。
+- 结论：**无法把本轮限制在可接受范围，故未投递生产**（无新 `runId`、无派生任务），改做隔离回放。
+- 隔离回放（2026-11-21 11:38 CST，本地直连官网，不写库、不投递队列）：列表 200、9 条、18 页；详情 200，正文 513 字；附件 2 个均 200——PDF 100,806B（magic `25504446`）、xlsx 19,002B（magic `504b0304`），格式与扩展名一致，未见 HTML 限流页。
+- 生产监控（11:45 CST 复查）：`CRAWL_SCHEDULER_ENABLED=false`、`CRAWL_WORKER_PAUSED` 未设置、并发 1；队列 `waiting/active/delayed=0`、`failed=8` 保留；5 个容器 Up 2h，最近 run 仍为 11-21 08:06 CST 完成，重启后无新 run；蚌埠来源 `enabled`、`healthy`，`last_checked_at` 为 11-20 17:37 CST。
+- 未执行：生产投递、来源暂停/恢复、失败任务清理、附件修复发布。
+
+### 10.7 2026-11-21 受控单来源试跑预算（本地开发 + 隔离验证，未发布）
+
+**结论：已实现可执行预算与按 runId 停止，隔离验证通过；生产未部署、未投递，调度仍关闭，队列与 8 条历史失败未动。**
+
+#### 改动文件
+
+- `backend/prisma/schema.prisma`：新增 `CrawlRunBudget`、`CrawlRunAdmission`（纯增量）。
+- `backend/prisma/migrations/20261121120000_crawl_run_budget/migration.sql`：建表与索引，可重复执行。
+- `backend/src/sourcing/crawl-budget.ts`：预算类型、默认值、服务端硬上限、校验与端口定义。
+- `backend/src/sourcing/crawl-budget.store.ts`：PostgreSQL 原子扣减与准入事务（行锁 + 唯一键）。
+- `backend/src/sourcing/crawl-orchestrator.ts`：试跑先落预算行，失败则不投递。
+- `backend/src/sourcing/sourcing.controller.ts`：`check` 接受 `trial`/`budget`；新增 `POST runs/:runId/stop`、`GET runs/:runId/budget`。
+- `backend/src/sourcing/jobs/source-discover.service.ts`：列表页扣减、详情准入、未覆盖标记、`partial_budget`。
+- `backend/src/sourcing/jobs/document-fetch.service.ts`：执行前复核准入、附件双限额、请求闸门、停止后不派生。
+- `backend/src/sourcing/fetch/safe-fetcher.ts`：`RequestGuard` / `RequestBlockedError`，每次实际请求（含重试与重定向）前校验。
+- `backend/src/sourcing/jobs/task-queue.ts`：解析/抽取任务携带 `runId`。
+- `backend/src/document-processing/jobs/document-parse.service.ts`、`backend/src/announcements/jobs/announcement-extract.service.ts`：运行停止即跳过。
+- `backend/src/sourcing/crawl-run-store.ts`：审计写入预算快照；`markRunStopped` 把未执行 URL 标记为 `skipped/run_stopped`。
+- `backend/src/sourcing/sourcing-core.module.ts`：注册并导出预算 provider。
+- `backend/src/sourcing/testing/crawl-testing.ts`：内存预算实现（与 Prisma 口径一致）。
+- 新测试：`crawl-budget.spec.ts`、`jobs/source-discover.budget.spec.ts`、`jobs/document-fetch.budget.spec.ts`。
+
+#### 计数口径（服务端）
+
+| 预算项 | 首轮默认 | 口径 |
+|---|---|---|
+| `maxListPages` | 1 | 实际发起的栏目页请求数（含 304/失败，防止原地重试） |
+| `maxDetails` | 3 | 准入的**逻辑任务数**，按 `canonicalUrl` 去重；历史与新发现共用 |
+| `maxAttachmentsPerDocument` | 2 | 每篇公告准入的附件逻辑任务数 |
+| `maxAttachmentsTotal` | 6 | 整轮附件逻辑任务数 |
+| `maxHttpRequests` | 20 | 实际发出的 **HTTP 请求次数**，含 SafeFetcher 重试与重定向跳转；每次请求前原子扣减 |
+
+- 硬上限：20 页 / 50 详情 / 每篇 10 附件 / 整轮 100 附件 / 300 请求；越界、非整数、每篇大于整轮、请求预算不足以完成一次完整执行均返回 400。
+- 幂等：准入唯一键 `(runId, kind, canonicalUrl)`；BullMQ 重投、Worker 重放、重复点击不会重复占用额度，但仍按实际 HTTP 次数消耗请求预算。
+- 未覆盖：未准入的公告/附件在运行审计中为 `skipped`，错误标记 `budget_deferred` 或 `run_stopped`，运行状态为 `partial_budget` 或 `stopped`；未准入的新文档不写入 `source_documents`，因此不会被误认为“已收录/公告消失”；列表被截断时不触发 `zero_suspect`。
+
+#### 隔离验证结果（全量测试 126 文件 / 1519 用例通过；预算相关 20 用例）
+
+| 场景 | 输入 | 实际派生/请求 | 结果 |
+|---|---|---|---|
+| 列表超限 | 配置 18 个栏目页，预算 1 页 | 请求 1，17 页未扫描 | `listPagesUsed=1`，`deferred=17` |
+| 详情共用额度 | 新发现 9 + 历史公告 5，预算 3 | 投递 3，11 条 `skipped` | `detailsUsed=3`，`partial_budget` |
+| 附件双限额 | 两篇各 4 附件，每篇 2 / 整轮 3 | 准入 3（2+1），5 条 `skipped` | `attachmentsUsed=3` |
+| 重试计入请求 | 详情持续 503，`maxHttpRequests=2` | 请求 2 次，第 3 次被闸门拦截 | `skipped/budget_http_exhausted`，非可重试 |
+| 重复投递 | 同一详情执行 2 次，2 个附件 | 附件仅准入 2，请求 2 | 额度不重复占用，队列幂等吸收 |
+| 停止（执行前） | 停止后投递 | HTTP 0 次 | `skipped/run_stopped` |
+| 停止（执行中） | 正文返回后停止 | 本次收尾，附件/解析 0 个 | 不再派生新任务 |
+
+#### 生产试跑步骤（待另行确认后执行）
+
+1. 备份数据库；发布新镜像（`migrate` 服务会自动执行增量迁移，旧镜像可忽略新表）。
+2. 保持 `CRAWL_SCHEDULER_ENABLED=false`；确认 `CRAWL_WORKER_PAUSED` 未设置、并发 1；记录队列现状 `0/0/0/8`。
+3. 用管理员会话投递一次：`POST /admin/sources/3a4b82e2-1550-47ab-8346-ef2965dc8eda/check`，body `{"trigger":"admin","trial":true}`；返回 `runId` 与预算快照。
+4. 监控：`GET /admin/sources/runs/<runId>/budget`、`GET /admin/sources/health`，以及 `crawl_runs.source_documents` 计数；预期列表 1 次、详情 ≤3、附件 ≤6、HTTP ≤20。
+5. 异常时：`POST /admin/sources/runs/<runId>/stop`；待执行任务会被跳过，执行中的请求结束后不再派生；必要时再暂停来源或按 10.6 的 Worker 级方式停消费。
+
+#### 回退步骤
+
+- 代码回退：重新部署旧镜像（`sha-3fb504a`）；新表为增量，旧代码不读取，无需回滚数据库。
+- 数据清理（可选，确认无进行中试跑后）：`DROP TABLE crawl_run_admissions; DROP TABLE crawl_run_budgets;`。
+- 常规调度逻辑未改变；回退后 `CRAWL_SCHEDULER_ENABLED=false` 继续保持，直到人工确认。
+
+#### 本轮未执行
+
+- 生产部署、镜像发布、生产任务投递、来源暂停/恢复、失败任务清理、附件 HTML 修复发布。
+- 本机无 Docker/PostgreSQL，`PrismaCrawlBudgetStore` 的 SQL 路径只做了 `prisma validate` + `nest build` 校验，未在真实库执行；隔离测试覆盖的是与生产同端口的内存实现。生产发布前需在预发库跑一次迁移与预算准入冒烟。
+- 生产现状复查（本轮结束，北京时间 12:05）：`CRAWL_SCHEDULER_ENABLED=false`、`CRAWL_WORKER_PAUSED` 未设置、并发 1；队列 `waiting=0/active=0/delayed=0/failed=8`；最近 run 仍为 11-21 08:06 CST 完成，无新 run。
+

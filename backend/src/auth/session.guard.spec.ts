@@ -57,6 +57,7 @@ describe('SessionAuthGuard（invited 模式）', () => {
   it('M01/F1：无会话时放行公开覆盖摘要 /opportunities/coverage', async () => {
     const guard = new SessionAuthGuard(authService);
     await expect(guard.canActivate(mockContext('/opportunities/coverage'))).resolves.toBe(true);
+    await expect(guard.canActivate(mockContext('/opportunities/public-notices'))).resolves.toBe(true);
   });
 
   it('M01/F1：公开路径为精确匹配，类似前缀不得误放行', async () => {

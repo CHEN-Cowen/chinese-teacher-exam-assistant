@@ -22,6 +22,16 @@ import {
   SafeFetcherFactory,
   resolveAllowedHosts,
 } from '../fetch/safe-fetcher-factory.js';
+import {
+  remainingOf,
+  type AdmissionResult,
+  type BudgetGate,
+  type CrawlBudgetPort,
+  type DeferrableKind,
+  type TrialBudgetLimits,
+  type TrialBudgetSnapshot,
+  type TrialBudgetStatus,
+} from '../crawl-budget.js';
 import type { SourceRecord } from '../crawl-run-store.js';
 
 export { CRAWL_TASK_QUEUE, OBJECT_STORE };
@@ -864,7 +874,199 @@ export class FakePrisma {
   };
 }
 
-/** ---------- 内存队列 ---------- */
+/** ---------- 内存试跑预算（与 Prisma 实现同口径） ---------- */
+
+interface MemoryBudgetRow {
+  sourceId: string;
+  limits: TrialBudgetLimits;
+  listPagesUsed: number;
+  detailsUsed: number;
+  attachmentsUsed: number;
+  httpRequestsUsed: number;
+  listPagesDeferred: number;
+  detailsDeferred: number;
+  attachmentsDeferred: number;
+  status: TrialBudgetStatus;
+  stopReason: string | null;
+  stoppedAt: string | null;
+  /** key = kind|canonicalUrl，value = parentDocumentId */
+  admissions: Map<string, string | null>;
+}
+
+export class InMemoryCrawlBudgetStore implements CrawlBudgetPort {
+  private readonly rows = new Map<string, MemoryBudgetRow>();
+
+  async create(
+    runId: string,
+    sourceId: string,
+    limits: TrialBudgetLimits,
+  ): Promise<TrialBudgetSnapshot> {
+    const existing = this.rows.get(runId);
+    if (existing) return this.snapshot(runId, existing);
+    this.rows.set(runId, {
+      sourceId,
+      limits,
+      listPagesUsed: 0,
+      detailsUsed: 0,
+      attachmentsUsed: 0,
+      httpRequestsUsed: 0,
+      listPagesDeferred: 0,
+      detailsDeferred: 0,
+      attachmentsDeferred: 0,
+      status: 'active',
+      stopReason: null,
+      stoppedAt: null,
+      admissions: new Map(),
+    });
+    return this.snapshot(runId, this.rows.get(runId)!);
+  }
+
+  async get(runId: string): Promise<TrialBudgetSnapshot | null> {
+    const row = this.rows.get(runId);
+    return row ? this.snapshot(runId, row) : null;
+  }
+
+  async consumeListPage(runId: string): Promise<BudgetGate> {
+    const row = this.rows.get(runId);
+    if (!row) return 'unbudgeted';
+    if (row.status !== 'active') return row.status;
+    if (row.listPagesUsed >= row.limits.maxListPages) return 'exhausted';
+    row.listPagesUsed += 1;
+    return 'ok';
+  }
+
+  async admitDocument(
+    runId: string,
+    canonicalUrl: string,
+  ): Promise<AdmissionResult> {
+    return this.admit(runId, 'document', canonicalUrl, null);
+  }
+
+  async admitAttachment(
+    runId: string,
+    parentDocumentId: string,
+    canonicalUrl: string,
+  ): Promise<AdmissionResult> {
+    return this.admit(runId, 'attachment', canonicalUrl, parentDocumentId);
+  }
+
+  async isAdmitted(
+    runId: string,
+    kind: 'document' | 'attachment',
+    canonicalUrl: string,
+  ): Promise<boolean | 'unbudgeted'> {
+    const row = this.rows.get(runId);
+    if (!row) return 'unbudgeted';
+    return row.admissions.has(`${kind}|${canonicalUrl}`);
+  }
+
+  async consumeHttpAttempt(runId: string): Promise<BudgetGate> {
+    const row = this.rows.get(runId);
+    if (!row) return 'unbudgeted';
+    if (row.status !== 'active') return row.status;
+    if (row.httpRequestsUsed >= row.limits.maxHttpRequests)
+      return 'exhausted';
+    row.httpRequestsUsed += 1;
+    return 'ok';
+  }
+
+  async markDeferred(
+    runId: string,
+    kind: DeferrableKind,
+    count: number,
+  ): Promise<void> {
+    const row = this.rows.get(runId);
+    if (!row || count <= 0) return;
+    if (kind === 'listPages') row.listPagesDeferred += count;
+    if (kind === 'details') row.detailsDeferred += count;
+    if (kind === 'attachments') row.attachmentsDeferred += count;
+  }
+
+  async stop(
+    runId: string,
+    reason: string,
+  ): Promise<TrialBudgetSnapshot | null> {
+    const row = this.rows.get(runId);
+    if (!row) return null;
+    if (row.status !== 'stopped') {
+      row.status = 'stopped';
+      row.stopReason = reason;
+      row.stoppedAt = new Date().toISOString();
+    }
+    return this.snapshot(runId, row);
+  }
+
+  async isStopped(runId: string): Promise<boolean> {
+    return this.rows.get(runId)?.status === 'stopped';
+  }
+
+  private admit(
+    runId: string,
+    kind: 'document' | 'attachment',
+    canonicalUrl: string,
+    parentDocumentId: string | null,
+  ): AdmissionResult {
+    const row = this.rows.get(runId);
+    if (!row) return 'unbudgeted';
+    if (row.status !== 'active') return row.status;
+    const key = `${kind}|${canonicalUrl}`;
+    if (row.admissions.has(key)) return 'duplicate';
+    if (kind === 'document') {
+      if (row.detailsUsed >= row.limits.maxDetails) {
+        row.detailsDeferred += 1;
+        return 'exhausted';
+      }
+      row.admissions.set(key, null);
+      row.detailsUsed += 1;
+      return 'admitted';
+    }
+    const perParent = [...row.admissions.entries()].filter(
+      ([entryKey, parent]) =>
+        entryKey.startsWith('attachment|') && parent === parentDocumentId,
+    ).length;
+    if (
+      row.attachmentsUsed >= row.limits.maxAttachmentsTotal ||
+      perParent >= row.limits.maxAttachmentsPerDocument
+    ) {
+      row.attachmentsDeferred += 1;
+      return 'exhausted';
+    }
+    row.admissions.set(key, parentDocumentId);
+    row.attachmentsUsed += 1;
+    return 'admitted';
+  }
+
+  private snapshot(runId: string, row: MemoryBudgetRow): TrialBudgetSnapshot {
+    const counters = {
+      maxListPages: row.limits.maxListPages,
+      maxDetails: row.limits.maxDetails,
+      maxAttachmentsTotal: row.limits.maxAttachmentsTotal,
+      maxHttpRequests: row.limits.maxHttpRequests,
+      listPagesUsed: row.listPagesUsed,
+      detailsUsed: row.detailsUsed,
+      attachmentsUsed: row.attachmentsUsed,
+      httpRequestsUsed: row.httpRequestsUsed,
+    };
+    return {
+      runId,
+      sourceId: row.sourceId,
+      ...row.limits,
+      listPagesUsed: row.listPagesUsed,
+      detailsUsed: row.detailsUsed,
+      attachmentsUsed: row.attachmentsUsed,
+      httpRequestsUsed: row.httpRequestsUsed,
+      listPagesDeferred: row.listPagesDeferred,
+      detailsDeferred: row.detailsDeferred,
+      attachmentsDeferred: row.attachmentsDeferred,
+      remaining: remainingOf(counters),
+      status: row.status,
+      stopReason: row.stopReason,
+      stoppedAt: row.stoppedAt,
+    };
+  }
+}
+
+/** ---------- 内存抓取队列 ---------- */
 
 export class FakeCrawlTaskQueue implements CrawlTaskQueue {
   readonly jobs = new Map<string, { name: string; payload: unknown }>();

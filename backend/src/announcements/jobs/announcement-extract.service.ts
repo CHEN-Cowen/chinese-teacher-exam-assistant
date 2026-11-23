@@ -11,7 +11,7 @@
  * - 幂等键 = snapshotId + 抽取版本；重跑只更新 failed 记录，
  *   已进入 pending_review 的候选不被自动覆盖。
  */
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service.js';
 import {
   extractionIdempotencyKey,
@@ -33,9 +33,10 @@ import type { MaterialFileStatus } from '../manual-extraction.service.js';
 import { DocumentParseStore } from '../../document-processing/document-parse-store.js';
 import type { DocumentParseRunRecord } from '../../document-processing/document-parse-store.js';
 import type { ParsedDocument } from '../../document-processing/parsed-document.js';
+import { PrismaCrawlBudgetStore } from '../../sourcing/crawl-budget.store.js';
 
 export interface AnnouncementExtractOutcome {
-  status: 'pending_review' | 'failed' | 'skipped_already_done';
+  status: 'pending_review' | 'failed' | 'skipped_already_done' | 'stopped';
   runId?: string;
   fieldCount?: number;
   errorSummary?: string;
@@ -46,13 +47,20 @@ export class AnnouncementExtractService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly parseStore: DocumentParseStore,
+    // 可选试跑预算：按 runId 停止后跳过待执行的抽取任务
+    @Optional() private readonly budget?: PrismaCrawlBudgetStore,
   ) {}
 
   async handle(payload: {
     snapshotId: string;
     parserVersion: string;
     documentId?: string;
+    runId?: string;
   }): Promise<AnnouncementExtractOutcome> {
+    if (payload.runId && this.budget) {
+      const stopped = await this.budget.isStopped(payload.runId);
+      if (stopped) return { status: 'stopped', errorSummary: 'run_stopped' };
+    }
     const version = FIELD_EXTRACTOR_VERSION;
     const material = await this.loadMaterialPack(payload);
     const idempotencyKey = extractionIdempotencyKey(

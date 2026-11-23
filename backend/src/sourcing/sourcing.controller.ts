@@ -11,6 +11,8 @@ import {
   Get,
   Inject,
   Logger,
+  NotFoundException,
+  Optional,
   Param,
   Post,
   Query,
@@ -37,6 +39,12 @@ import {
 } from './source-catalog.js';
 import { summarizeAllMonitoring } from './source-monitoring.js';
 import { CRAWL_TASK_QUEUE } from './sourcing.tokens.js';
+import { PrismaCrawlBudgetStore } from './crawl-budget.store.js';
+import {
+  TrialBudgetValidationError,
+  resolveTrialBudget,
+  type TrialBudgetLimits,
+} from './crawl-budget.js';
 import {
   CONFIRMED_RELATION_TYPES,
   type RelationKind,
@@ -57,6 +65,7 @@ export class SourcingController {
     private readonly metrics: SourcingMetrics,
     private readonly healthService: CrawlHealthService,
     private readonly alerts: SourcingAlertService,
+    @Optional() private readonly budget?: PrismaCrawlBudgetStore,
   ) {}
 
   // ==================== v7.2：公告关系（补充/延期/取消）人工确认 ====================
@@ -137,12 +146,53 @@ export class SourcingController {
     return { count: registered.length, sources: registered };
   }
 
+  /**
+   * 按运行停止试跑：本次待执行任务在 Worker 取到时跳过，正在执行的任务
+   * 在下一次 HTTP 请求闸门处终止，且不再派生附件/解析/抽取任务。
+   *
+   * 只影响指定 runId；不删除队列、不动其它运行与历史失败记录。
+   */
+  @Post('runs/:runId/stop')
+  @UseGuards(AdminGuard)
+  async stopRun(
+    @Param('runId') runId: string,
+    @Body() body: { reason?: string } = {},
+  ) {
+    if (!this.budget) {
+      throw new BadRequestException('试跑预算组件未配置');
+    }
+    const reason = body.reason?.slice(0, 200) || 'stopped_by_admin';
+    const snapshot = await this.budget.stop(runId, reason);
+    if (!snapshot) throw new NotFoundException(`未找到试跑预算：${runId}`);
+    await this.store.markRunStopped(runId, reason);
+    return { runId, stopped: true, budget: snapshot };
+  }
+
+  /** 查询试跑预算的执行口径：已用/剩余/预算内未覆盖量 */
+  @Get('runs/:runId/budget')
+  @UseGuards(AdminGuard)
+  async runBudget(@Param('runId') runId: string) {
+    if (!this.budget) {
+      throw new BadRequestException('试跑预算组件未配置');
+    }
+    const snapshot = await this.budget.get(runId);
+    if (!snapshot) throw new NotFoundException(`未找到试跑预算：${runId}`);
+    return { budget: snapshot };
+  }
+
   /** 手动检查来源；trigger 缺省为 admin，重试失败来源用 retry */
   @Post(':sourceId/check')
   @UseGuards(AdminGuard)
   async check(
     @Param('sourceId') sourceId: string,
-    @Body() body: { trigger?: string } = {},
+    @Body()
+    body: {
+      trigger?: string;
+      /** 手动试跑：开启预算约束（默认值=1 页/3 详情/每篇 2 附件/整轮 6 附件/20 请求） */
+      trial?: boolean;
+      /** 覆盖默认预算；服务端会按硬上限校验并拒绝越界值 */
+      budget?: Partial<TrialBudgetLimits>;
+    } = {},
   ) {
     const trigger = (body.trigger ?? 'admin') as CrawlTrigger;
     if (!MANUAL_TRIGGERS.includes(trigger)) {
@@ -150,8 +200,23 @@ export class SourcingController {
         `手动触发只接受 admin / retry，收到：${body.trigger}`,
       );
     }
+    let trialBudget: TrialBudgetLimits | undefined;
+    if (body.trial || body.budget) {
+      try {
+        trialBudget = resolveTrialBudget(body.budget);
+      } catch (error) {
+        if (error instanceof TrialBudgetValidationError) {
+          throw new BadRequestException(error.message);
+        }
+        throw error;
+      }
+      if (!this.budget) {
+        throw new BadRequestException('试跑预算组件未配置，拒绝无预算试跑');
+      }
+    }
     return this.orchestrator.checkSource(sourceId, trigger, {
       nonce: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+      ...(trialBudget ? { trialBudget } : {}),
     });
   }
 

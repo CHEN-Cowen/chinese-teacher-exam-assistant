@@ -209,6 +209,12 @@ export function publicColumnPages(
   maxPages = 20,
 ): string[] {
   if (!content.trimStart().startsWith('{')) return [];
+  if (
+    new URL(baseUrl).pathname !==
+    '/api-gateway/jpaas-publish-server/front/page/build/unit'
+  ) {
+    return [];
+  }
   const $ = load(publicColumnHtml(content));
   const paging = readPublicColumnPaging($);
   if (!paging) return [];
@@ -346,7 +352,7 @@ export function locatePublicArticle(
   };
 }
 
-/** 正文容器候选顺序：#zoom 为主，实测嘉兴/绍兴亦同，苏州为 .article-content，常州为 .NewsText，蚌埠为 .j-fontContent，泰州为 .content。 */
+/** 正文容器候选顺序：#zoom 为主，实测嘉兴/绍兴亦同，苏州为 .article-content，常州为 .NewsText，蚌埠为 .j-fontContent，泰州为 .content，北京人社局为 .view，重庆人社局为 .xl-article。 */
 const ARTICLE_BODY_SELECTORS = [
   '#zoom',
   '.article-content',
@@ -355,6 +361,8 @@ const ARTICLE_BODY_SELECTORS = [
   '.art_con',
   '.j-fontContent',
   '.content',
+  '.view',
+  '.xl-article',
 ] as const;
 
 /**
